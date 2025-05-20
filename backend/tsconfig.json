@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "CommonJS",
+    // Agora consideramos todo o diretório como fonte, não só "src"
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "moduleResolution": "Node",
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/@types"
+    ],
+    "skipLibCheck": true
+  },
+  // Incluímos src e também __tests__ para que o TS encontre seus arquivos de teste
+  "include": [
+    "src",
+    "__tests__"
+  ],
+  "files": [
+    "src/@types/express/index.d.ts"
+  ]
+}

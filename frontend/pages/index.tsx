@@ -18,7 +18,10 @@ export default function LandingPage() {
         Escolha uma opção para continuar:
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+        <Link href="/financial">
+          <Button variant="primary" className="w-full">💰 Financeiro</Button>
+        </Link>
         <Link href="/companies">
           <Button variant="primary" className="w-full">🏢 Empresas</Button>
         </Link>

@@ -5,6 +5,7 @@ import { json, urlencoded } from 'body-parser';
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import companyRoutes from './routes/company.routes';
+import financialRoutes from './routes/financial.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
@@ -33,10 +34,11 @@ app.use('/api/auth', authRoutes);
 
 // 6) Middlewares de segurança
 app.use(authMiddleware);    // <– verifica JWT e preenche req.user
-app.use(tenantMiddleware);  // <– verifica req.user.companyIds
+app.use(tenantMiddleware);  // <– verifica req.user.companyId
 
 // 7) Rotas protegidas
 app.use('/api/users',    userRoutes);
 app.use('/api/companies', companyRoutes);
+app.use('/api/financial', financialRoutes); // Novas rotas financeiras
 
 export default app;

@@ -24,22 +24,48 @@ export default class UserService {
 
   /**
    * Cria usuário + associação na tabela userCompany.
-   * Retorna todos os campos do User, exceto password.
+   * Versão simplificada: um usuário pertence a apenas uma empresa.
    */
   static async createUser(params: CreateUserParams): Promise<Omit<User, 'password'>> {
     const { email, password, name, role, companyId } = params;
     const hashed = await this.hashPassword(password);
 
-    const user = await prisma.user.create({
-      data: { email, password: hashed, name, role }
+    // Verificar se o usuário já tem alguma associação com empresa
+    const existingUser = await prisma.user.findUnique({
+      where: { email },
+      include: { companies: true }
     });
 
-    await prisma.userCompany.create({
-      data: { userId: user.id, companyId, isDefault: true }
-    });
+    if (existingUser) {
+      if (existingUser.companies.length > 0) {
+        throw new Error('Este email já está associado a uma empresa');
+      }
+    }
 
-    const { password: _, ...rest } = user;
-    return rest;
+    // Realizar toda a operação em uma transação para garantir consistência
+    return prisma.$transaction(async (tx) => {
+      // Criar ou atualizar o usuário
+      const user = existingUser 
+        ? await tx.user.update({
+            where: { id: existingUser.id },
+            data: { name, role, password: hashed }
+          })
+        : await tx.user.create({
+            data: { email, password: hashed, name, role }
+          });
+
+      // Criar a associação com a empresa (única)
+      await tx.userCompany.create({
+        data: { 
+          userId: user.id, 
+          companyId, 
+          isDefault: true  // Sempre true, pois só há uma empresa por usuário
+        }
+      });
+
+      const { password: _, ...rest } = user;
+      return rest;
+    });
   }
 
   /**
@@ -63,12 +89,27 @@ export default class UserService {
   }
 
   /**
-   * Lista muitos usuários com qualquer filtro/seleção.
+   * Lista usuários com qualquer filtro/seleção.
+   * Simplificado para considerar apenas usuários da empresa atual.
    */
   static async listUsers<T extends Prisma.UserFindManyArgs>(
-    args: T
+    args: T,
+    companyId: number
   ): Promise<Prisma.UserGetPayload<T>[]> {
-    const users = await prisma.user.findMany(args);
+    // Adicionar filtro de empresa ao args.where existente
+    const whereWithCompany = {
+      ...args.where,
+      companies: {
+        some: { companyId }
+      }
+    };
+
+    const updatedArgs = {
+      ...args,
+      where: whereWithCompany
+    };
+
+    const users = await prisma.user.findMany(updatedArgs as any);
     return users as Prisma.UserGetPayload<T>[];
   }
 
@@ -99,5 +140,18 @@ export default class UserService {
     await prisma.userCompany.deleteMany({ where: { userId: id } });
     // Agora deleta o usuário
     await prisma.user.delete({ where: { id } });
+  }
+
+  /**
+   * Verifica se o usuário pertence à empresa especificada
+   */
+  static async userBelongsToCompany(userId: number, companyId: number): Promise<boolean> {
+    const association = await prisma.userCompany.findFirst({
+      where: {
+        userId,
+        companyId
+      }
+    });
+    return !!association;
   }
 }

@@ -12,3 +12,8 @@ export const loginSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),
   password: z.string().min(1, { message: 'Password é obrigatório.' })
 });
+
+// Schema para refresh token
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(10, { message: 'Refresh token inválido.' })
+});

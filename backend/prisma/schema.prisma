@@ -14,26 +14,51 @@ enum Role {
   USER
 }
 
+enum AccountType {
+  CHECKING
+  SAVINGS
+  CREDIT_CARD
+  INVESTMENT
+  CASH
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  CANCELED
+}
+
 model User {
-  id        Int           @id @default(autoincrement())
-  email     String        @unique
-  password  String
-  name      String
-  role      Role          @default(USER)
-  companies UserCompany[]
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id                  Int                   @id @default(autoincrement())
+  email               String                @unique
+  password            String
+  name                String
+  role                Role                  @default(USER)
+  companies           UserCompany[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  financialTransactions FinancialTransaction[]
 }
 
 model Company {
-  id        Int            @id @default(autoincrement())
-  name      String
-  address   String?
-  code      Int            @unique
-  users     UserCompany[]
-  groups    CompanyGroup[]
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id                  Int                   @id @default(autoincrement())
+  name                String
+  address             String?
+  code                Int                   @unique
+  users               UserCompany[]
+  groups              CompanyGroup[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  financialAccounts   FinancialAccount[]
+  financialCategories FinancialCategory[]
+  financialTransactions FinancialTransaction[]
+  financialTags       FinancialTag[]
 }
 
 model CompanyGroup {
@@ -53,4 +78,89 @@ model UserCompany {
   company   Company @relation(fields: [companyId], references: [id])
 
   @@unique([userId, companyId])
+}
+
+model FinancialAccount {
+  id                Int                 @id @default(autoincrement())
+  name              String
+  type              AccountType
+  balance           Decimal            @db.Decimal(15, 2) @default(0)
+  accountNumber     String?
+  bankName          String?
+  isActive          Boolean            @default(true)
+  companyId         Int
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  
+  // Relações
+  outgoingTransactions FinancialTransaction[] @relation("FromAccount")
+  incomingTransactions FinancialTransaction[] @relation("ToAccount")
+
+  @@unique([name, companyId])
+  @@index([companyId])
+}
+
+model FinancialCategory {
+  id              Int                  @id @default(autoincrement())
+  name            String
+  type            TransactionType      @default(EXPENSE)
+  color           String               @default("#6366F1") // Cor padrão indigo
+  parentId        Int?
+  parent          FinancialCategory?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children        FinancialCategory[]  @relation("CategoryHierarchy")
+  companyId       Int
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  accountingCode  String?              // Código do plano de contas
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  
+  // Relações
+  transactions    FinancialTransaction[]
+
+  @@unique([name, parentId, companyId])
+  @@index([companyId])
+  @@index([parentId])
+}
+
+model FinancialTransaction {
+  id              Int                  @id @default(autoincrement())
+  description     String
+  amount          Decimal              @db.Decimal(15, 2)
+  date            DateTime
+  type            TransactionType
+  status          TransactionStatus    @default(PENDING)
+  notes           String?
+  fromAccountId   Int?
+  fromAccount     FinancialAccount?    @relation("FromAccount", fields: [fromAccountId], references: [id])
+  toAccountId     Int?
+  toAccount       FinancialAccount?    @relation("ToAccount", fields: [toAccountId], references: [id])
+  categoryId      Int?
+  category        FinancialCategory?   @relation(fields: [categoryId], references: [id])
+  companyId       Int
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy       Int
+  createdByUser   User                 @relation(fields: [createdBy], references: [id])
+  tags            FinancialTag[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([companyId])
+  @@index([fromAccountId])
+  @@index([toAccountId])
+  @@index([categoryId])
+  @@index([date])
+}
+
+model FinancialTag {
+  id              Int                  @id @default(autoincrement())
+  name            String
+  companyId       Int
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  transactions    FinancialTransaction[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([name, companyId])
+  @@index([companyId])
 }

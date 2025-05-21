@@ -19,6 +19,10 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Instalar netcat para teste de disponibilidade do banco
+# e postgresql-client para verificação/criação do banco
+RUN apk add --no-cache netcat-openbsd postgresql-client
+
 # 1) Copia apenas o código compilado e as deps de produção
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
@@ -26,7 +30,11 @@ COPY --from=builder /app/node_modules ./node_modules
 # 2) Copia o prisma/schema e as migrations para rodar migrate deploy
 COPY --from=builder /app/prisma ./prisma
 
+# 3) Adicionar script de inicialização
+COPY --from=builder /app/docker-entrypoint.sh ./
+RUN chmod +x /app/docker-entrypoint.sh
+
 EXPOSE 3000
 
-# 3) Aplica migrações e inicia o servidor compilado
-CMD ["sh", "-c", "npx prisma migrate deploy --schema=./prisma/schema.prisma && node dist/server.js"]
+# 4) Use o script de inicialização como ponto de entrada
+CMD ["/app/docker-entrypoint.sh"]

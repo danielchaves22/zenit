@@ -4,13 +4,13 @@ import { Input } from './Input'
 import { Button } from './Button'
 import axios from 'axios'
 
-type Company = {
+export type Company = {
   id: number
   name: string
   code: string
 }
 
-type User = {
+export type User = {
   id: number
   name: string
   email: string

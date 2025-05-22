@@ -19,9 +19,9 @@ export default class FinancialTransactionService {
     type: TransactionType;
     status?: TransactionStatus;
     notes?: string;
-    fromAccountId?: number;
-    toAccountId?: number;
-    categoryId?: number;
+    fromAccountId?: number | null;
+    toAccountId?: number | null;
+    categoryId?: number | null;
     companyId: number;
     createdBy: number;
     tags?: string[];
@@ -58,6 +58,7 @@ export default class FinancialTransactionService {
           type,
           status,
           notes,
+          // Usando operador ternário com verificação explícita para valor truthy
           fromAccount: fromAccountId ? { connect: { id: fromAccountId } } : undefined,
           toAccount: toAccountId ? { connect: { id: toAccountId } } : undefined,
           category: categoryId ? { connect: { id: categoryId } } : undefined,
@@ -79,8 +80,10 @@ export default class FinancialTransactionService {
           id: transaction.id,
           type,
           amount: parsedAmount,
-          fromAccountId,
-          toAccountId
+          // Estamos usando null aqui porque esta é uma função interna que lida 
+          // corretamente com valores nulos
+          fromAccountId: fromAccountId || null,
+          toAccountId: toAccountId || null
         });
       }
 
@@ -94,8 +97,8 @@ export default class FinancialTransactionService {
    */
   private static validateTransactionData(
     type: TransactionType,
-    fromAccountId?: number,
-    toAccountId?: number
+    fromAccountId?: number | null,
+    toAccountId?: number | null
   ): void {
     if (type === 'INCOME' && !toAccountId) {
       throw new Error('Receitas requerem conta de destino');
@@ -128,9 +131,9 @@ export default class FinancialTransactionService {
       type: TransactionType;
       status: TransactionStatus;
       notes?: string;
-      fromAccountId?: number;
-      toAccountId?: number;
-      categoryId?: number;
+      fromAccountId?: number | null;
+      toAccountId?: number | null;
+      categoryId?: number | null;
       tags?: string[];
     }>,
     companyId: number
@@ -163,12 +166,16 @@ export default class FinancialTransactionService {
         });
       }
 
-      // 4. Conversão de valores 
-      const updateData: Prisma.FinancialTransactionUpdateInput = {
-        ...data,
-        // Se estiver atualizando o valor, converte para decimal
-        ...(data.amount !== undefined && { amount: parseDecimal(data.amount) })
-      };
+      // 4. Preparar dados de atualização
+      const updateData: Prisma.FinancialTransactionUpdateInput = {};
+      
+      // Campos escalares
+      if (data.description !== undefined) updateData.description = data.description;
+      if (data.amount !== undefined) updateData.amount = parseDecimal(data.amount);
+      if (data.date !== undefined) updateData.date = data.date;
+      if (data.type !== undefined) updateData.type = data.type;
+      if (data.status !== undefined) updateData.status = data.status;
+      if (data.notes !== undefined) updateData.notes = data.notes;
 
       // 5. Atualiza as relações
       if (data.fromAccountId !== undefined) {
@@ -202,12 +209,14 @@ export default class FinancialTransactionService {
         });
 
         // Adiciona as novas tags
-        updateData.tags = {
-          connectOrCreate: data.tags.map(tagName => ({
-            where: { name_companyId: { name: tagName, companyId } },
-            create: { name: tagName, company: { connect: { id: companyId } } }
-          }))
-        };
+        if (data.tags.length > 0) {
+          updateData.tags = {
+            connectOrCreate: data.tags.map(tagName => ({
+              where: { name_companyId: { name: tagName, companyId } },
+              create: { name: tagName, company: { connect: { id: companyId } } }
+            }))
+          };
+        }
       }
 
       // 7. Atualiza a transação

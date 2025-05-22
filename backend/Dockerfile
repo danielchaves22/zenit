@@ -23,18 +23,21 @@ ENV NODE_ENV=production
 # e postgresql-client para verificação/criação do banco
 RUN apk add --no-cache netcat-openbsd postgresql-client
 
-# 1) Copia apenas o código compilado e as deps de produção
+# 1) Copia o package.json (ESSENCIAL para o seed do Prisma)
+COPY --from=builder /app/package.json ./
+
+# 2) Copia apenas o código compilado e as deps de produção
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 
-# 2) Copia o prisma/schema e as migrations para rodar migrate deploy
+# 3) Copia o prisma/schema e as migrations para rodar migrate deploy
 COPY --from=builder /app/prisma ./prisma
 
-# 3) Adicionar script de inicialização
+# 4) Adicionar script de inicialização
 COPY --from=builder /app/docker-entrypoint.sh ./
 RUN chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 3000
 
-# 4) Use o script de inicialização como ponto de entrada
+# 5) Use o script de inicialização como ponto de entrada
 CMD ["/app/docker-entrypoint.sh"]

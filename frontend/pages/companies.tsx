@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
-import { Layout } from '@/components/ui/Layout'
-import { Card } from '@/components/ui/Card'
-import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
-import { Skeleton } from '@/components/ui/Skeleton'
-import { useToast } from '@/components/ui/ToastContext'
+import { useAuth } from '../contexts/AuthContext'
+import { Layout } from '../components/ui/Layout'
+import { Card } from '../components/ui/Card'
+import { Input } from '../components/ui/Input'
+import { Button } from '../components/ui/Button'
+import { Skeleton } from '../components/ui/Skeleton'
+import { useToast } from '../components/ui/ToastContext'
 
 interface Company {
   id: string;

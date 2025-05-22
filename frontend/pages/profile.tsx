@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
-import ProfileForm from '@/components/ui/ProfileForm'
-import api from '@/lib/api'
-import { Layout } from '@/components/ui/Layout'
-import type { User } from '@/components/ui/ProfileForm'
+import { useAuth } from '../contexts/AuthContext'
+import ProfileForm from '../components/ui/ProfileForm'
+import api from '../lib/api'
+import { Layout } from '../components/ui/Layout'
+import type { User } from '../components/ui/ProfileForm'
 
 export default function ProfilePage() {
   const { userId, token } = useAuth()

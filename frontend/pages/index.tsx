@@ -1,13 +1,12 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
-import { useAuth } from '@/contexts/AuthContext'
-import { Layout } from '@/components/ui/Layout'
-import { Button } from '@/components/ui/Button'
+import { useAuth } from '../contexts/AuthContext'
+import { Layout } from '../components/ui/Layout'
+import { Button } from '../components/ui/Button'
 
 export default function LandingPage() {
   const { token } = useAuth()
   const [showToken, setShowToken] = useState(false)
-
 
   return (
     <Layout>

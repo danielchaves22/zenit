@@ -1,10 +1,10 @@
 // frontend/pages/_app.tsx
-import '@/styles/globals.css'
+import '../styles/globals.css'
 import { AppProps } from 'next/app'
 import { useRouter } from 'next/router'
 import { ReactNode, useEffect, useState } from 'react'
-import { AuthProvider, useAuth } from '@/contexts/AuthContext'
-import { ToastProvider } from '@/components/ui/ToastContext'
+import { AuthProvider, useAuth } from '../contexts/AuthContext'
+import { ToastProvider } from '../components/ui/ToastContext'
 
 function AuthGuard({ children }: { children: ReactNode }) {
   const { token } = useAuth()

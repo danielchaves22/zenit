@@ -1,3 +1,4 @@
+// frontend/pages/login.tsx
 import React, { useState } from 'react'
 import { useRouter } from 'next/router'
 import { useAuth } from '@/contexts/AuthContext'
@@ -10,17 +11,16 @@ export default function LoginPage() {
   const router = useRouter();
   const { redirect } = router.query as { redirect?: string };
 
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]       = useState<string | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
     try {
-      console.log(router.query.redirect)
       await login(email, password);
       const target = redirect && redirect !== '/' ? redirect : '/';
       router.replace(target);
@@ -32,13 +32,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral">
+    <div className="min-h-screen flex items-center justify-center bg-[#1e2126]">
       <Card className="w-full max-w-md">
         <div className="flex justify-center mb-6">
-          <img src="/assets/logo.png" alt="Logo" className="h-16" />
+          <div className="text-center">
+            <div className="text-4xl font-bold text-[#f59e0b] mb-2">₹</div>
+            <div className="text-2xl font-bold text-white">Zenit</div>
+            <p className="text-gray-400 text-sm mt-2">Sistema de Gestão Financeira</p>
+          </div>
         </div>
-
-        <h1 className="text-2xl font-heading text-center mb-6">Login</h1>
 
         <form onSubmit={handleSubmit}>
           <Input
@@ -61,7 +63,7 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            variant="primary"
+            variant="accent"
             className="w-full"
             disabled={loading}
           >
@@ -69,7 +71,7 @@ export default function LoginPage() {
           </Button>
 
           {error && (
-            <p className="mt-4 text-center text-danger">{error}</p>
+            <p className="mt-4 text-center text-red-400">{error}</p>
           )}
         </form>
       </Card>

@@ -8,15 +8,21 @@ import { Skeleton } from '../components/ui/Skeleton'
 import { useToast } from '../components/ui/ToastContext'
 
 interface User {
-  id: string
+  id: number
   name: string
   email: string
   role: string
-  companies: string[]
+  companies: {
+    company: {
+      id: number
+      name: string
+      code: number
+    }
+  }[]
 }
 
 interface Company {
-  id: string
+  id: number
   name: string
 }
 
@@ -33,7 +39,7 @@ export default function UsersPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('USER');
+  const [newRole, setNewRole] = useState('USER');
   const [companyId, setCompanyId] = useState('');
 
   useEffect(() => {
@@ -45,7 +51,7 @@ export default function UsersPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/users`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Falha ao carregar usuários');
@@ -59,7 +65,7 @@ export default function UsersPage() {
 
   async function fetchCompanies() {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/companies`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/companies`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) setCompanies(await res.json());
@@ -74,7 +80,7 @@ export default function UsersPage() {
       return;
     }
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || '/api'}/users`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -84,15 +90,18 @@ export default function UsersPage() {
           name,
           email,
           password,
-          role,
+          newRole, // CORRIGIDO: era 'role', agora é 'newRole'
           companyId: Number(companyId),
         }),
       });
-      if (!res.ok) throw new Error('Falha ao criar usuário');
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Falha ao criar usuário');
+      }
       setName('');
       setEmail('');
       setPassword('');
-      setRole('USER');
+      setNewRole('USER');
       setCompanyId('');
       setCreating(false);
       fetchUsers();
@@ -118,6 +127,7 @@ export default function UsersPage() {
                 label="Nome"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                required
               />
               <Input
                 id="user-email"
@@ -125,6 +135,7 @@ export default function UsersPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                required
               />
               <Input
                 id="user-password"
@@ -132,6 +143,7 @@ export default function UsersPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                required
               />
               <div className="mb-4">
                 <label className="block text-sm font-medium mb-1" htmlFor="user-role">
@@ -139,12 +151,14 @@ export default function UsersPage() {
                 </label>
                 <select
                   id="user-role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:border-primary"
+                  required
                 >
-                  <option value="USER">USER</option>
-                  <option value="ADMIN">ADMIN</option>
+                  <option value="USER">Usuário</option>
+                  <option value="SUPERUSER">Superusuário</option>
+                  <option value="ADMIN">Administrador</option>
                 </select>
               </div>
               <div className="mb-4">
@@ -156,6 +170,7 @@ export default function UsersPage() {
                   value={companyId}
                   onChange={(e) => setCompanyId(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:border-primary"
+                  required
                 >
                   <option value="">-- Selecione --</option>
                   {companies.map((c) => (
@@ -192,7 +207,7 @@ export default function UsersPage() {
                   <th className="text-left p-2">Nome</th>
                   <th className="text-left p-2">Email</th>
                   <th className="text-left p-2">Perfil</th>
-                  <th className="text-left p-2">Empresas</th>
+                  <th className="text-left p-2">Empresa</th>
                 </tr>
               </thead>
               <tbody>
@@ -201,7 +216,9 @@ export default function UsersPage() {
                     <td className="p-2">{u.name}</td>
                     <td className="p-2">{u.email}</td>
                     <td className="p-2">{u.role}</td>
-                    <td className="p-2">{u.companies.join(', ')}</td>
+                    <td className="p-2">
+                      {u.companies.map(uc => uc.company.name).join(', ')}
+                    </td>
                   </tr>
                 ))}
               </tbody>

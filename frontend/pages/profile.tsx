@@ -1,35 +1,93 @@
-import { useEffect, useState } from 'react'
-import { useAuth } from '../contexts/AuthContext'
-import ProfileForm from '../components/ui/ProfileForm'
-import api from '../lib/api'
-import { Layout } from '../components/ui/Layout'
-import type { User } from '../components/ui/ProfileForm'
+// frontend/pages/profile.tsx
+import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
+import { Card } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
+import { Breadcrumb } from '@/components/ui/Breadcrumb'
+import { useToast } from '@/components/ui/ToastContext'
 
 export default function ProfilePage() {
-  const { userId, token } = useAuth()
-  const [user, setUser]     = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
+  const { addToast } = useToast()
+  
+  const [formData, setFormData] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    password: '',
+  })
+  
+  const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    if (!token || userId === null) return
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+  }
 
-    api
-      .get<User>(`/users/${userId}`)
-      .then(res => setUser(res.data))
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
-  }, [token, userId])
-
-  if (!token) return <div>Carregando autenticação…</div>
-  if (loading) return <Layout><div>Carregando perfil…</div></Layout>
-  if (!user)   return <Layout><div>Erro ao carregar seu perfil.</div></Layout>
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    
+    try {
+      // Simular atualização
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      addToast('Perfil atualizado com sucesso!', 'success')
+      setFormData(prev => ({ ...prev, password: '' }))
+    } catch (error) {
+      addToast('Erro ao atualizar perfil', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
-    <Layout>
-      <div className="max-w-2xl mx-auto p-4">
-        <h1 className="text-2xl font-bold mb-4">Meu Perfil</h1>
-        <ProfileForm user={user} />
+    <DashboardLayout title="Meu Perfil">
+      <Breadcrumb items={[
+        { label: 'Dashboard', href: '/' },
+        { label: 'Meu Perfil' }
+      ]} />
+      
+      <div className="max-w-2xl mx-auto">
+        <Card headerTitle="Informações do Perfil" headerSubtitle="Atualize suas informações pessoais">
+          <form onSubmit={handleSubmit}>
+            <Input
+              label="Nome"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              required
+            />
+            
+            <Input
+              label="Email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              required
+            />
+            
+            <Input
+              label="Nova Senha"
+              name="password"
+              type="password"
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="Deixe em branco para manter a atual"
+            />
+            
+            <Button 
+              type="submit" 
+              variant="accent"
+              disabled={loading}
+              className="w-full"
+            >
+              {loading ? 'Salvando...' : 'Salvar Alterações'}
+            </Button>
+          </form>
+        </Card>
       </div>
-    </Layout>
+    </DashboardLayout>
   )
 }

@@ -1,3 +1,4 @@
+// frontend/components/ui/Button.tsx
 import React from 'react';
 
 export type ButtonVariant = 'primary' | 'accent' | 'outline' | 'danger';
@@ -15,10 +16,10 @@ export function Button({
 }: ButtonProps) {
   const base = 'px-4 py-2 rounded-lg font-semibold transition';
   const variants: Record<ButtonVariant, string> = {
-    primary: `${base} bg-primary text-white hover:bg-primary/90`,
-    accent:  `${base} bg-accent text-white hover:bg-accent/90`,
-    outline: `${base} border border-primary text-primary hover:bg-primary/10`,
-    danger:  `${base} bg-danger text-white hover:bg-danger/90`,
+    primary: `${base} bg-blue-600 text-white hover:bg-blue-700`,
+    accent:  `${base} bg-[#f59e0b] text-white hover:bg-[#e08c07]`,
+    outline: `${base} border border-gray-600 text-gray-300 hover:bg-[#1e2126]`,
+    danger:  `${base} bg-red-600 text-white hover:bg-red-700`,
   };
 
   return (

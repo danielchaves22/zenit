@@ -10,7 +10,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children }: LayoutProps) {
-  const { logout } = useAuth();
+  const { logout, userName, companyName, userRole } = useAuth();
   const router = useRouter();
 
   const isHome = router.pathname === '/';
@@ -29,7 +29,18 @@ export function Layout({ children }: LayoutProps) {
             </Link>
           )}
         </div>
-        <Button variant="danger" onClick={logout}>Sair</Button>
+
+        {/* Info do usuário */}
+        <div className="flex items-center space-x-4">
+          <div className="text-right hidden sm:block">
+            <div className="text-sm font-medium">{userName}</div>
+            <div className="text-xs text-gray-500">{companyName}</div>
+            <div className="text-xs text-primary">{userRole}</div>
+          </div>
+          <Button variant="danger" onClick={logout}>
+            Sair
+          </Button>
+        </div>
       </header>
 
       <main className="max-w-5xl mx-auto py-12 px-6">{children}</main>

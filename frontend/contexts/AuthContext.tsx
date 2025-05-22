@@ -2,87 +2,133 @@
 import {
   createContext, useContext, useEffect, useState, ReactNode,
 } from 'react'
-import api from '../lib/api'
+import api from '@/lib/api'
 
-interface AuthContextData {
-  token: string | null
-  login: (email: string, password: string) => Promise<void>
-  logout: () => void
-  userRole: string | null
-  userId: number | null
-  companyIds: number[]
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  company?: {
+    id: number;
+    name: string;
+  };
 }
 
-const AuthContext = createContext<AuthContextData>({} as AuthContextData)
+interface AuthContextData {
+  token: string | null;
+  user: User | null;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  isLoading: boolean;
+  userRole: string | null;
+  userId: number | null;
+  companyId: number | null;
+  userName: string | null;
+  companyName: string | null;
+}
+
+const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken]       = useState<string|null>(null)
-  const [userRole, setUserRole] = useState<string|null>(null)
-  const [userId, setUserId]     = useState<number|null>(null)
-  const [companyIds, setCompanyIds] = useState<number[]>([])
+  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // 1) Carrega token do localStorage só uma vez
+  // Carrega token do localStorage
   useEffect(() => {
-    const t = localStorage.getItem('token')
-    setToken(t)
-  }, [])
-
-  // 2) Sempre que token muda, decodifica e popula claims
-  useEffect(() => {
-    if (!token) {
-      setUserRole(null)
-      setUserId(null)
-      setCompanyIds([])
-      return
+    const t = localStorage.getItem('token');
+    if (t) {
+      setToken(t);
+      // Não buscar perfil imediatamente, deixar o JWT payload fazer isso
+      decodeTokenAndSetUser(t);
+    } else {
+      setIsLoading(false);
     }
-    const payload = decodeJwt(token)
-    setUserRole(payload.role  ?? null)
-    setUserId(   payload.userId ?? null)
-    setCompanyIds(Array.isArray(payload.companyIds) ? payload.companyIds : [])
-  }, [token])
+  }, []);
+
+  // Decodifica JWT e extrai informações básicas
+  function decodeTokenAndSetUser(authToken: string) {
+    try {
+      const payload = decodeJwt(authToken);
+      
+      // Criar objeto user básico do token
+      if (payload.userId) {
+        setUser({
+          id: payload.userId,
+          name: payload.userName || 'Usuário',
+          email: payload.userEmail || '',
+          role: payload.role || 'USER',
+          company: payload.companyId ? {
+            id: payload.companyId,
+            name: payload.companyName || 'Empresa'
+          } : undefined
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao decodificar token:', error);
+      localStorage.removeItem('token');
+      setToken(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Decodifica JWT puro
+  function decodeJwt(token: string): any {
+    try {
+      const [, payload] = token.split('.');
+      const b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+      const json = atob(b64)
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('');
+      return JSON.parse(decodeURIComponent(json));
+    } catch {
+      return {};
+    }
+  }
 
   async function login(email: string, password: string) {
-    const res = await api.post('/auth/login', { email, password })
-    const t: string = res.data.token
+    const res = await api.post('/auth/login', { email, password });
+    const { token: newToken, user: userData } = res.data;
 
-    // grava nos dois lugares: localStorage **e** cookie
-    localStorage.setItem('token', t)
-    document.cookie = `token=${t}; path=/`
+    // Armazena token
+    localStorage.setItem('token', newToken);
+    document.cookie = `token=${newToken}; path=/`;
 
-    setToken(t)
+    setToken(newToken);
+    setUser(userData);
   }
 
   function logout() {
-    localStorage.removeItem('token')
-    document.cookie = 'token=; Max-Age=0; path=/'
-    setToken(null)
-    window.location.href = '/login'
-  }
-
-  // decodifica JWT puro
-  function decodeJwt(token: string): any {
-    try {
-      const [, payload] = token.split('.')
-      const b64 = payload.replace(/-/g,'+').replace(/_/g,'/')
-      const json = atob(b64)
-        .split('')
-        .map(c => '%' + ('00'+c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-      return JSON.parse(decodeURIComponent(json))
-    } catch {
-      return {}
-    }
+    localStorage.removeItem('token');
+    document.cookie = 'token=; Max-Age=0; path=/';
+    setToken(null);
+    setUser(null);
+    window.location.href = '/login';
   }
 
   return (
     <AuthContext.Provider
-      value={{ token, login, logout, userRole, userId, companyIds }}
+      value={{ 
+        token, 
+        user, 
+        login, 
+        logout, 
+        isLoading,
+        userRole: user?.role || null,
+        userId: user?.id || null,
+        companyId: user?.company?.id || null,
+        userName: user?.name || null,
+        companyName: user?.company?.name || null
+      }}
     >
       {children}
     </AuthContext.Provider>
-  )
+  );
 }
 
 export function useAuth() {
-  return useContext(AuthContext)
+  return useContext(AuthContext);
 }

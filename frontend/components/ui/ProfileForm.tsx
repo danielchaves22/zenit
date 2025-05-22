@@ -2,12 +2,12 @@ import { useState } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { Input } from './Input'
 import { Button } from './Button'
-import axios from 'axios'
+import api from '../../lib/api'
 
 export type Company = {
   id: number
   name: string
-  code: string
+  code: number
 }
 
 export type User = {
@@ -37,6 +37,7 @@ export default function ProfileForm({ user }: Props) {
   })
 
   const [message, setMessage] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const isSelf = user.id === Number(authId)
 
@@ -51,26 +52,31 @@ export default function ProfileForm({ user }: Props) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setMessage(null)
+    setLoading(true)
 
     if (formData.newRole !== user.role && isSelf) {
       setMessage('Você não pode alterar seu próprio tipo de acesso.')
+      setLoading(false)
       return
     }
 
     try {
+      const payload: Partial<typeof formData> = { ...formData }
 
-        const payload: Partial<typeof formData> = { ...formData }
+      if (!canEditRole) delete payload.newRole
+      if (!canEditCompany) delete payload.companyId
+      if (!payload.password) delete payload.password
 
-        if (!canEditRole) delete payload.newRole
-        if (!canEditCompany) delete payload.companyId
-        if (!payload.password) delete payload.password
+      await api.put(`/users/${user.id}`, payload)
 
-        await axios.put(`/api/users/${user.id}`, payload)
-
-        setMessage('Perfil atualizado com sucesso.')
+      setMessage('Perfil atualizado com sucesso.')
+      // Limpar senha após sucesso
+      setFormData(prev => ({ ...prev, password: '' }))
     } catch (err: any) {
-        const msg = err.response?.data?.error || 'Erro ao salvar perfil.'
-        setMessage(msg)
+      const msg = err.response?.data?.error || 'Erro ao salvar perfil.'
+      setMessage(msg)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -81,6 +87,7 @@ export default function ProfileForm({ user }: Props) {
         label="Nome"
         value={formData.name}
         onChange={handleChange}
+        required
       />
       <Input
         name="email"
@@ -88,6 +95,7 @@ export default function ProfileForm({ user }: Props) {
         type="email"
         value={formData.email}
         onChange={handleChange}
+        required
       />
       <Input
         name="password"
@@ -105,7 +113,7 @@ export default function ProfileForm({ user }: Props) {
             name="newRole"
             value={formData.newRole}
             onChange={handleChange}
-            className="w-full p-2 border rounded"
+            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:border-primary"
           >
             <option value="USER">Usuário</option>
             <option value="SUPERUSER">Superusuário</option>
@@ -114,14 +122,14 @@ export default function ProfileForm({ user }: Props) {
         </div>
       )}
 
-      {canEditCompany && (
+      {canEditCompany && user.companies.length > 1 && (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
           <select
             name="companyId"
             value={formData.companyId}
             onChange={handleChange}
-            className="w-full p-2 border rounded"
+            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:border-primary"
           >
             {user.companies.map(c => (
               <option key={c.company.id} value={c.company.id}>
@@ -132,10 +140,20 @@ export default function ProfileForm({ user }: Props) {
         </div>
       )}
 
-      <Button type="submit">Salvar</Button>
+      <Button 
+        type="submit" 
+        disabled={loading}
+        className="w-full"
+      >
+        {loading ? 'Salvando...' : 'Salvar'}
+      </Button>
 
       {message && (
-        <div className="mt-2 text-sm text-red-600">{message}</div>
+        <div className={`mt-2 text-sm ${
+          message.includes('sucesso') ? 'text-success' : 'text-danger'
+        }`}>
+          {message}
+        </div>
       )}
     </form>
   )

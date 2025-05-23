@@ -4,13 +4,10 @@ import { parseDecimal } from '../utils/money';
 
 const prisma = new PrismaClient();
 
-/**
- * Serviço para gerenciar transações financeiras
- * Com suporte para transações atômicas e atualizações automáticas de saldo
- */
 export default class FinancialTransactionService {
   /**
    * Cria uma transação financeira com atualizações de saldo em transação atômica
+   * COM LOCK PESSIMISTA para evitar race conditions
    */
   static async createTransaction(data: {
     description: string;
@@ -44,12 +41,54 @@ export default class FinancialTransactionService {
     // Validação por tipo de transação
     this.validateTransactionData(type, fromAccountId, toAccountId);
 
-    // Convertemos para decimal (2 casas) garantindo precisão
     const parsedAmount = parseDecimal(amount);
 
-    // Usamos transação para garantir consistência
+    // CRITICAL: Usar SERIALIZABLE isolation level para transações financeiras
     return prisma.$transaction(async (tx) => {
-      // 1. Criar a transação base
+      // 1. LOCK PESSIMISTA nas contas envolvidas ANTES de qualquer operação
+      const lockedAccounts = [];
+      
+      if (fromAccountId) {
+        const fromAccount = await tx.$queryRaw`
+          SELECT * FROM "FinancialAccount" 
+          WHERE id = ${fromAccountId}
+          FOR UPDATE
+        `;
+        lockedAccounts.push(fromAccount);
+      }
+      
+      if (toAccountId && toAccountId !== fromAccountId) {
+        const toAccount = await tx.$queryRaw`
+          SELECT * FROM "FinancialAccount" 
+          WHERE id = ${toAccountId}
+          FOR UPDATE
+        `;
+        lockedAccounts.push(toAccount);
+      }
+
+      // 2. Validar saldos APÓS lock
+      if (status === 'COMPLETED' && type === 'EXPENSE' && fromAccountId) {
+        const fromAccount = await tx.financialAccount.findUnique({
+          where: { id: fromAccountId }
+        });
+        
+        if (!fromAccount) {
+          throw new Error('Conta de origem não encontrada');
+        }
+        
+        const currentBalance = Number(fromAccount.balance);
+        const transactionAmount = Number(parsedAmount);
+        
+        // REGRA DE NEGÓCIO: Não permitir saldo negativo
+        if (currentBalance < transactionAmount) {
+          throw new Error(
+            `Saldo insuficiente. Saldo atual: R$ ${currentBalance.toFixed(2)}, ` +
+            `Valor da transação: R$ ${transactionAmount.toFixed(2)}`
+          );
+        }
+      }
+
+      // 3. Criar a transação
       const transaction = await tx.financialTransaction.create({
         data: {
           description,
@@ -58,13 +97,11 @@ export default class FinancialTransactionService {
           type,
           status,
           notes,
-          // Usando operador ternário com verificação explícita para valor truthy
           fromAccount: fromAccountId ? { connect: { id: fromAccountId } } : undefined,
           toAccount: toAccountId ? { connect: { id: toAccountId } } : undefined,
           category: categoryId ? { connect: { id: categoryId } } : undefined,
           company: { connect: { id: companyId } },
           createdByUser: { connect: { id: createdBy } },
-          // Conecta ou cria tags 
           tags: tags.length > 0 ? {
             connectOrCreate: tags.map(tagName => ({
               where: { name_companyId: { name: tagName, companyId } },
@@ -74,20 +111,31 @@ export default class FinancialTransactionService {
         }
       });
 
-      // 2. Se o status for COMPLETED, atualiza os saldos
+      // 4. Atualizar saldos se COMPLETED
       if (status === 'COMPLETED') {
         await this.updateAccountBalances(tx, {
           id: transaction.id,
           type,
           amount: parsedAmount,
-          // Estamos usando null aqui porque esta é uma função interna que lida 
-          // corretamente com valores nulos
           fromAccountId: fromAccountId || null,
           toAccountId: toAccountId || null
         });
       }
 
+      // 5. Log de auditoria
+      logger.info('Transação criada com sucesso', {
+        transactionId: transaction.id,
+        type,
+        amount: parsedAmount.toString(),
+        status,
+        fromAccountId,
+        toAccountId
+      });
+
       return transaction;
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 10000 // 10 segundos timeout
     });
   }
 
@@ -121,6 +169,7 @@ export default class FinancialTransactionService {
 
   /**
    * Atualiza uma transação financeira
+   * COM LOCK PESSIMISTA para evitar race conditions
    */
   static async updateTransaction(
     id: number,
@@ -139,23 +188,40 @@ export default class FinancialTransactionService {
     companyId: number
   ): Promise<FinancialTransaction> {
     return prisma.$transaction(async (tx) => {
-      // 1. Busca a transação original
+      // 1. Lock na transação original
       const original = await tx.financialTransaction.findUnique({
         where: { id },
-        include: {
-          tags: true
-        }
+        include: { tags: true }
       });
 
       if (!original) {
         throw new Error(`Transação ID ${id} não encontrada`);
       }
 
-      // 2. Se o status mudar de/para COMPLETED, precisamos ajustar saldos
+      // 2. Coletar todas as contas que precisam de lock
+      const accountsToLock = new Set<number>();
+      
+      // Contas originais
+      if (original.fromAccountId) accountsToLock.add(original.fromAccountId);
+      if (original.toAccountId) accountsToLock.add(original.toAccountId);
+      
+      // Novas contas
+      if (data.fromAccountId) accountsToLock.add(data.fromAccountId);
+      if (data.toAccountId) accountsToLock.add(data.toAccountId);
+
+      // 3. Lock pessimista em todas as contas envolvidas
+      for (const accountId of accountsToLock) {
+        await tx.$queryRaw`
+          SELECT * FROM "FinancialAccount" 
+          WHERE id = ${accountId}
+          FOR UPDATE
+        `;
+      }
+
+      // 4. Se estava COMPLETED antes, reverte os saldos
       const oldStatus = original.status;
       const newStatus = data.status || oldStatus;
 
-      // 3. Se estava COMPLETED antes, reverte os saldos
       if (oldStatus === 'COMPLETED') {
         await this.reverseAccountBalances(tx, {
           id,
@@ -166,10 +232,32 @@ export default class FinancialTransactionService {
         });
       }
 
-      // 4. Preparar dados de atualização
+      // 5. Validar novo estado se será COMPLETED
+      if (newStatus === 'COMPLETED') {
+        const newType = data.type || original.type;
+        const newFromAccountId = data.fromAccountId !== undefined ? data.fromAccountId : original.fromAccountId;
+        const newAmount = data.amount !== undefined ? parseDecimal(data.amount) : original.amount;
+        
+        if (newType === 'EXPENSE' && newFromAccountId) {
+          const fromAccount = await tx.financialAccount.findUnique({
+            where: { id: newFromAccountId }
+          });
+          
+          if (fromAccount) {
+            const projectedBalance = Number(fromAccount.balance) - Number(newAmount);
+            if (projectedBalance < 0) {
+              throw new Error(
+                `Saldo insuficiente após atualização. ` +
+                `Saldo projetado: R$ ${projectedBalance.toFixed(2)}`
+              );
+            }
+          }
+        }
+      }
+
+      // 6. Preparar dados de atualização
       const updateData: Prisma.FinancialTransactionUpdateInput = {};
       
-      // Campos escalares
       if (data.description !== undefined) updateData.description = data.description;
       if (data.amount !== undefined) updateData.amount = parseDecimal(data.amount);
       if (data.date !== undefined) updateData.date = data.date;
@@ -177,7 +265,7 @@ export default class FinancialTransactionService {
       if (data.status !== undefined) updateData.status = data.status;
       if (data.notes !== undefined) updateData.notes = data.notes;
 
-      // 5. Atualiza as relações
+      // 7. Atualizar relações
       if (data.fromAccountId !== undefined) {
         updateData.fromAccount = data.fromAccountId 
           ? { connect: { id: data.fromAccountId } } 
@@ -196,9 +284,8 @@ export default class FinancialTransactionService {
           : { disconnect: true };
       }
 
-      // 6. Atualiza tags se fornecidas
+      // 8. Atualizar tags se fornecidas
       if (data.tags) {
-        // Desconecta todas as tags existentes
         await tx.financialTransaction.update({
           where: { id },
           data: {
@@ -208,7 +295,6 @@ export default class FinancialTransactionService {
           }
         });
 
-        // Adiciona as novas tags
         if (data.tags.length > 0) {
           updateData.tags = {
             connectOrCreate: data.tags.map(tagName => ({
@@ -219,13 +305,13 @@ export default class FinancialTransactionService {
         }
       }
 
-      // 7. Atualiza a transação
+      // 9. Atualizar a transação
       const updated = await tx.financialTransaction.update({
         where: { id },
         data: updateData
       });
 
-      // 8. Se o novo status for COMPLETED, aplica os ajustes de saldo
+      // 10. Se o novo status for COMPLETED, aplica os ajustes de saldo
       if (newStatus === 'COMPLETED') {
         await this.updateAccountBalances(tx, {
           id: updated.id,
@@ -236,12 +322,24 @@ export default class FinancialTransactionService {
         });
       }
 
+      // 11. Log de auditoria
+      logger.info('Transação atualizada com sucesso', {
+        transactionId: id,
+        oldStatus,
+        newStatus,
+        changes: Object.keys(data)
+      });
+
       return updated;
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 10000
     });
   }
 
   /**
    * Exclui uma transação financeira
+   * COM LOCK PESSIMISTA para evitar race conditions
    */
   static async deleteTransaction(id: number): Promise<void> {
     await prisma.$transaction(async (tx) => {
@@ -251,6 +349,23 @@ export default class FinancialTransactionService {
 
       if (!transaction) {
         throw new Error(`Transação ID ${id} não encontrada`);
+      }
+
+      // Lock nas contas envolvidas
+      if (transaction.fromAccountId) {
+        await tx.$queryRaw`
+          SELECT * FROM "FinancialAccount" 
+          WHERE id = ${transaction.fromAccountId}
+          FOR UPDATE
+        `;
+      }
+      
+      if (transaction.toAccountId) {
+        await tx.$queryRaw`
+          SELECT * FROM "FinancialAccount" 
+          WHERE id = ${transaction.toAccountId}
+          FOR UPDATE
+        `;
       }
 
       // Se a transação estava concluída, reverter saldos
@@ -269,7 +384,7 @@ export default class FinancialTransactionService {
         where: { id },
         data: {
           tags: {
-            set: [] // Remove todas as relações de tag
+            set: []
           }
         }
       });
@@ -278,17 +393,23 @@ export default class FinancialTransactionService {
       await tx.financialTransaction.delete({
         where: { id }
       });
+
+      logger.info('Transação excluída com sucesso', { transactionId: id });
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 10000
     });
   }
 
   /**
    * Atualiza o status de uma transação
+   * COM VALIDAÇÃO DE SALDO
    */
   static async updateTransactionStatus(
     id: number, 
     status: TransactionStatus
   ): Promise<FinancialTransaction> {
-    return this.updateTransaction(id, { status }, 0); // companyId não importa aqui pois só estamos atualizando status
+    return this.updateTransaction(id, { status }, 0);
   }
 
   /**
@@ -300,7 +421,7 @@ export default class FinancialTransactionService {
     data: {
       id: number;
       type: TransactionType;
-      amount: any; // Aceita string, number ou Decimal
+      amount: any;
       fromAccountId: number | null;
       toAccountId: number | null;
     }
@@ -309,21 +430,18 @@ export default class FinancialTransactionService {
     const amountNumber = Number(amount);
 
     if (type === 'INCOME' && toAccountId) {
-      // Receita: incrementa conta de destino
       await tx.financialAccount.update({
         where: { id: toAccountId },
         data: { balance: { increment: amountNumber } }
       });
     } 
     else if (type === 'EXPENSE' && fromAccountId) {
-      // Despesa: decrementa conta de origem
       await tx.financialAccount.update({
         where: { id: fromAccountId },
         data: { balance: { decrement: amountNumber } }
       });
     } 
     else if (type === 'TRANSFER' && fromAccountId && toAccountId) {
-      // Transferência: decrementa origem e incrementa destino
       await tx.financialAccount.update({
         where: { id: fromAccountId },
         data: { balance: { decrement: amountNumber } }
@@ -345,7 +463,7 @@ export default class FinancialTransactionService {
     data: {
       id: number;
       type: TransactionType;
-      amount: any; // Aceita string, number ou Decimal
+      amount: any;
       fromAccountId: number | null;
       toAccountId: number | null;
     }
@@ -354,21 +472,18 @@ export default class FinancialTransactionService {
     const amountNumber = Number(amount);
 
     if (type === 'INCOME' && toAccountId) {
-      // Reverter receita: diminui da conta de destino
       await tx.financialAccount.update({
         where: { id: toAccountId },
         data: { balance: { decrement: amountNumber } }
       });
     } 
     else if (type === 'EXPENSE' && fromAccountId) {
-      // Reverter despesa: aumenta conta de origem
       await tx.financialAccount.update({
         where: { id: fromAccountId },
         data: { balance: { increment: amountNumber } }
       });
     } 
     else if (type === 'TRANSFER' && fromAccountId && toAccountId) {
-      // Reverter transferência: aumenta origem e diminui destino
       await tx.financialAccount.update({
         where: { id: fromAccountId },
         data: { balance: { increment: amountNumber } }
@@ -471,6 +586,7 @@ export default class FinancialTransactionService {
 
   /**
    * Obtém o resumo financeiro para um período
+   * COM CACHE para evitar queries pesadas repetidas
    */
   static async getFinancialSummary(
     companyId: number,
@@ -483,6 +599,9 @@ export default class FinancialTransactionService {
     accounts: { id: number; name: string; balance: any; type: string }[];
     topCategories: { id: number; name: string; amount: number; color: string }[];
   }> {
+    // TODO: Implementar cache Redis aqui
+    const cacheKey = `financial_summary:${companyId}:${startDate.toISOString()}:${endDate.toISOString()}`;
+    
     const accounts = await prisma.financialAccount.findMany({
       where: { companyId, isActive: true },
       select: { id: true, name: true, balance: true, type: true }

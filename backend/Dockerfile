@@ -1,43 +1,86 @@
+# ============================================
+# MULTI-STAGE DOCKER BUILD - CORRIGIDO
+# ============================================
+
 # Stage 1: Builder
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# 1) Copia manifestos e schema para gerar o Prisma Client no postinstall
-COPY package.json package-lock.json ./
+# Install build dependencies for native modules
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    git
+
+# Copy package files
+COPY package*.json ./
 COPY prisma ./prisma
 
-# 2) Instala dependências (prod + dev) e gera o client
-RUN npm ci
+# Install ALL dependencies (including dev) for build
+RUN npm ci && npm cache clean --force
+
+# Generate Prisma client
 RUN npx prisma generate
 
-# 3) Copia todo o código e compila o TypeScript
+# Copy source code
 COPY . .
+
+# Build TypeScript
 RUN npm run build
 
-# Stage 2: Runner
-FROM node:20-alpine AS runner
+# ============================================
+# Stage 2: Production Runtime
+FROM node:20-alpine AS production
 WORKDIR /app
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    postgresql-client \
+    curl \
+    tini \
+    && rm -rf /var/cache/apk/*
+
+# Copy package files for production install
+COPY package*.json ./
+COPY prisma ./prisma
+
+# Install ONLY production dependencies
+RUN npm ci --only=production && npm cache clean --force
+
+# Generate Prisma client for production
+RUN npx prisma generate
+
+# Copy built application from builder stage
+COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
+
+# Copy startup script
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
+# Create logs directory
+RUN mkdir -p logs && chown nextjs:nodejs logs
+
+# Environment variables
 ENV NODE_ENV=production
+ENV PORT=3000
 
-# Instalar netcat para teste de disponibilidade do banco
-# e postgresql-client para verificação/criação do banco
-RUN apk add --no-cache netcat-openbsd postgresql-client
+# Security: Run as non-root user
+USER nextjs
 
-# 1) Copia o package.json (ESSENCIAL para o seed do Prisma)
-COPY --from=builder /app/package.json ./
-
-# 2) Copia apenas o código compilado e as deps de produção
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-
-# 3) Copia o prisma/schema e as migrations para rodar migrate deploy
-COPY --from=builder /app/prisma ./prisma
-
-# 4) Adicionar script de inicialização
-COPY --from=builder /app/docker-entrypoint.sh ./
-RUN chmod +x /app/docker-entrypoint.sh
-
+# Expose port
 EXPOSE 3000
 
-# 5) Use o script de inicialização como ponto de entrada
-CMD ["/app/docker-entrypoint.sh"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+# Use tini as init system for proper signal handling
+ENTRYPOINT ["tini", "--"]
+
+# Start application
+CMD ["./docker-entrypoint.sh"]

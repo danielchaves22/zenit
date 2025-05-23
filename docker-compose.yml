@@ -94,6 +94,15 @@ services:
       - backend
     networks:
       - monitoring
+  
+  redis:
+    image: redis:7-alpine
+    container_name: zenit-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - monitoring
+    restart: unless-stopped
 
 volumes:
   postgres-data:

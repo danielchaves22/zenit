@@ -1,21 +1,97 @@
 import { Request, Response, NextFunction } from 'express';
-import { RateLimiterRedis } from 'rate-limiter-flexible';
+import { RateLimiterRedis, RateLimiterMemory } from 'rate-limiter-flexible';
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
 
-// Configuração do Redis
-const redisClient = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD,
-  enableOfflineQueue: false
-});
+/**
+ * Helper para extrair IP de forma segura
+ */
+function getClientIP(req: Request): string {
+  return req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
+}
+
+// Configuração do Redis com fallback
+let redisClient: Redis | null = null;
+let useRedis = false;
+
+try {
+  redisClient = new Redis({
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+    password: process.env.REDIS_PASSWORD,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 3,
+    lazyConnect: true,
+    connectTimeout: 5000,
+    commandTimeout: 3000
+  });
+
+  // Handle Redis connection events
+  redisClient.on('error', (err) => {
+    logger.error('Redis connection error - falling back to memory store', { 
+      error: err.message 
+    });
+    useRedis = false;
+  });
+
+  redisClient.on('connect', () => {
+    logger.info('Redis connected successfully for rate limiting');
+    useRedis = true;
+  });
+
+  redisClient.on('ready', () => {
+    logger.info('Redis ready for rate limiting');
+    useRedis = true;
+  });
+
+  // Test connection
+  redisClient.ping().then(() => {
+    useRedis = true;
+    logger.info('Redis ping successful');
+  }).catch((err) => {
+    logger.warn('Redis ping failed, using memory store', { error: err.message });
+    useRedis = false;
+  });
+
+} catch (error) {
+  logger.warn('Failed to initialize Redis, using memory store', { 
+    error: error instanceof Error ? error.message : String(error) 
+  });
+  useRedis = false;
+}
+
+/**
+ * Cria um rate limiter com fallback para memory se Redis não estiver disponível
+ */
+function createRateLimiter(config: {
+  keyPrefix: string;
+  points: number;
+  duration: number;
+  blockDuration: number;
+}) {
+  if (useRedis && redisClient) {
+    return new RateLimiterRedis({
+      storeClient: redisClient,
+      keyPrefix: config.keyPrefix,
+      points: config.points,
+      duration: config.duration,
+      blockDuration: config.blockDuration,
+    });
+  } else {
+    logger.warn(`Using memory store for rate limiter: ${config.keyPrefix}`);
+    return new RateLimiterMemory({
+      keyPrefix: config.keyPrefix,
+      points: config.points,
+      duration: config.duration,
+      blockDuration: config.blockDuration,
+    });
+  }
+}
 
 // Configurações diferentes por tipo de endpoint
 const rateLimiters = {
   // Auth endpoints - mais restritivos
-  auth: new RateLimiterRedis({
-    storeClient: redisClient,
+  auth: createRateLimiter({
     keyPrefix: 'rl:auth',
     points: 5, // 5 tentativas
     duration: 900, // por 15 minutos
@@ -23,8 +99,7 @@ const rateLimiters = {
   }),
   
   // API geral - balanceado
-  api: new RateLimiterRedis({
-    storeClient: redisClient,
+  api: createRateLimiter({
     keyPrefix: 'rl:api',
     points: 100, // 100 requisições
     duration: 60, // por minuto
@@ -32,8 +107,7 @@ const rateLimiters = {
   }),
   
   // Endpoints financeiros - mais cuidado
-  financial: new RateLimiterRedis({
-    storeClient: redisClient,
+  financial: createRateLimiter({
     keyPrefix: 'rl:financial',
     points: 30, // 30 operações
     duration: 60, // por minuto
@@ -41,8 +115,7 @@ const rateLimiters = {
   }),
   
   // Reports/Analytics - pesados
-  reports: new RateLimiterRedis({
-    storeClient: redisClient,
+  reports: createRateLimiter({
     keyPrefix: 'rl:reports',
     points: 10, // 10 relatórios
     duration: 300, // por 5 minutos
@@ -57,7 +130,8 @@ export function createRateLimitMiddleware(type: keyof typeof rateLimiters) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const limiter = rateLimiters[type];
-      const key = `${req.ip}:${req.user?.id || 'anonymous'}`;
+      const clientIP = getClientIP(req);
+      const key = `${clientIP}:${req.user?.id || 'anonymous'}`;
       
       await limiter.consume(key);
       
@@ -66,10 +140,11 @@ export function createRateLimitMiddleware(type: keyof typeof rateLimiters) {
       // Log apenas tentativas excessivas (não cada rate limit)
       if (rejRes.remainingPoints === 0) {
         logger.warn('Rate limit exceeded', {
-          ip: req.ip,
+          ip: getClientIP(req),
           userId: req.user?.id,
           endpoint: req.path,
-          type
+          type,
+          storeType: useRedis ? 'redis' : 'memory'
         });
       }
       
@@ -93,16 +168,14 @@ export function createRateLimitMiddleware(type: keyof typeof rateLimiters) {
  * Rate limiter específico para proteção contra brute force de login
  */
 export const loginRateLimiter = {
-  byIP: new RateLimiterRedis({
-    storeClient: redisClient,
+  byIP: createRateLimiter({
     keyPrefix: 'rl:login:ip',
     points: 10, // 10 tentativas por IP
     duration: 900, // em 15 minutos
     blockDuration: 900,
   }),
   
-  byEmail: new RateLimiterRedis({
-    storeClient: redisClient,
+  byEmail: createRateLimiter({
     keyPrefix: 'rl:login:email',
     points: 5, // 5 tentativas por email
     duration: 900, // em 15 minutos
@@ -110,8 +183,7 @@ export const loginRateLimiter = {
   }),
   
   // Penalidade progressiva por falhas consecutivas
-  consecutive: new RateLimiterRedis({
-    storeClient: redisClient,
+  consecutive: createRateLimiter({
     keyPrefix: 'rl:login:consecutive',
     points: 1,
     duration: 0, // sem expiração automática
@@ -127,8 +199,8 @@ export async function loginRateLimitMiddleware(
   res: Response, 
   next: NextFunction
 ) {
-  const email = req.body.email?.toLowerCase();
-  const ip = req.ip;
+  const email = req.body.email?.toLowerCase?.();
+  const ip = getClientIP(req);
   
   try {
     // Verifica limite por IP
@@ -144,7 +216,8 @@ export async function loginRateLimitMiddleware(
     logger.warn('Login rate limit exceeded', {
       ip,
       email,
-      remainingPoints: rejRes.remainingPoints
+      remainingPoints: rejRes.remainingPoints,
+      storeType: useRedis ? 'redis' : 'memory'
     });
     
     res.status(429).json({
@@ -164,8 +237,9 @@ export async function resetLoginAttempts(email: string, ip: string) {
       loginRateLimiter.byEmail.delete(email),
       loginRateLimiter.consecutive.delete(email)
     ]);
-  } catch (error) {
-    logger.error('Error resetting login attempts', { error, email, ip });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('Error resetting login attempts', { error: errorMessage, email, ip });
   }
 }
 
@@ -184,7 +258,16 @@ export async function recordFailedLogin(email: string, ip: string) {
     } else {
       await loginRateLimiter.consecutive.consume(consecutiveKey);
     }
-  } catch (error) {
-    logger.error('Error recording failed login', { error, email, ip });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error('Error recording failed login', { error: errorMessage, email, ip });
   }
+}
+
+// Exportar status do Redis para monitoramento
+export function getRedisStatus() {
+  return {
+    connected: useRedis,
+    client: redisClient?.status || 'disconnected'
+  };
 }

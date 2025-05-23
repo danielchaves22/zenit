@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -36,9 +37,14 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <div className="flex justify-center mb-6">
           <div className="text-center">
-            <div className="text-4xl font-bold text-[#f59e0b] mb-2">₹</div>
-            <div className="text-2xl font-bold text-white">Zenit</div>
-            <p className="text-gray-400 text-sm mt-2">Sistema de Gestão Financeira</p>
+            <Image
+              src="/assets/images/logo.png"
+              alt="ZENIT"
+              width={2000}
+              height={1000}
+              priority
+              className="w-auto"
+            />
           </div>
         </div>
 

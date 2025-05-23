@@ -1,4 +1,4 @@
-# Arquivo: ./docker-compose.yml
+# docker-compose.yml - VERSÃO CORRIGIDA
 version: '3.8'
 
 networks:
@@ -6,21 +6,7 @@ networks:
     driver: bridge
 
 services:
-  # === Backend (API Node/Express + Prisma) ===
-  backend:
-    build:
-      context: ./backend
-    container_name: zenit-backend
-    ports:
-      - '3000:3000'
-    env_file:
-      - ./backend/.env.docker   # variáveis de runtime do app
-    depends_on:
-      - db
-    networks:
-      - monitoring
-
-  # === Banco de Dados Postgres ===
+  # === Banco de Dados Postgres (DEVE SUBIR PRIMEIRO) ===
   db:
     image: postgres:14-alpine
     container_name: zenit-db
@@ -28,14 +14,86 @@ services:
     ports:
       - '5432:5432'
     environment:
-      - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=zenit
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./backend/docker/initdb:/docker-entrypoint-initdb.d
     networks:
       - monitoring
+    # ✅ CRÍTICO: Health check real do PostgreSQL
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zenit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # === Redis ===
+  redis:
+    image: redis:7-alpine
+    container_name: zenit-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./backend/redis/redis.conf:/etc/redis/redis.conf:ro
+    command: redis-server /etc/redis/redis.conf
+    networks:
+      - monitoring
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # === Backend (ESPERA BANCO ESTAR SAUDÁVEL) ===
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: zenit-backend
+    ports:
+      - '3000:3000'
+    env_file:
+      - ./backend/.env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoring
+    # ✅ CRÍTICO: Health check do backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # === Frontend ===
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: zenit-frontend
+    ports:
+      - '3001:3000'
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # === Prometheus ===
   prometheus:
@@ -63,7 +121,7 @@ services:
     networks:
       - monitoring
   
-    # === pgAdmin ===
+  # === pgAdmin ===
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: zenit-pgadmin
@@ -77,32 +135,10 @@ services:
     volumes:
       - pgadmin-data:/var/lib/pgadmin
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - monitoring
-
-  # === Frontend Next.js ===
-  frontend:
-    build:
-      context: ./frontend
-    container_name: zenit-frontend
-    ports:
-      - '3001:3000'
-    env_file:
-      - ./frontend/.env.local   # NEXT_PUBLIC_API_URL etc.
-    depends_on:
-      - backend
-    networks:
-      - monitoring
-  
-  redis:
-    image: redis:7-alpine
-    container_name: zenit-redis
-    ports:
-      - "6379:6379"
-    networks:
-      - monitoring
-    restart: unless-stopped
 
 volumes:
   postgres-data:

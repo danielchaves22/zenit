@@ -21,6 +21,8 @@ import { metricsMiddleware, metricsEndpoint } from './metrics';
 import { setupSwagger } from './swagger';
 import { logger } from './utils/logger';
 
+import { cacheMiddleware, cacheHealthMiddleware } from './middlewares/cache.middleware';
+
 const app = express();
 
 /**
@@ -124,6 +126,28 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Enhanced health check with cache status
+app.get('/health/detailed', cacheHealthMiddleware, async (req, res) => {
+  try {
+    res.json({ 
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      version: process.env.npm_package_version || '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
+      cache: {
+        redis: req.cacheHealth || false
+      }
+    });
+  } catch (error) {
+    logger.error('Detailed health check failed', { error });
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // 11) Swagger docs (desenvolvimento apenas)
 if (process.env.NODE_ENV !== 'production') {
   setupSwagger(app);
@@ -153,6 +177,11 @@ app.use('/api', tenantMiddleware);
 // 16) Rate limiting para APIs autenticadas
 app.use('/api/users', createRateLimitMiddleware('api'), userRoutes);
 app.use('/api/companies', createRateLimitMiddleware('api'), companyRoutes);
+app.use('/api/financial', createRateLimitMiddleware('financial'), financialRoutes);
+// Financial routes with cache for read operations
+app.use('/api/financial/summary', createRateLimitMiddleware('financial'), cacheMiddleware(600)); // 10min cache
+app.use('/api/financial/accounts', createRateLimitMiddleware('financial'), cacheMiddleware(300)); // 5min cache
+app.use('/api/financial/transactions', createRateLimitMiddleware('financial'), cacheMiddleware(120)); // 2min cache
 app.use('/api/financial', createRateLimitMiddleware('financial'), financialRoutes);
 
 // 17) 404 handler

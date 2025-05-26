@@ -1,5 +1,6 @@
 import { PrismaClient, FinancialAccount, Prisma, AccountType } from '@prisma/client';
 import { logger } from '../utils/logger';
+import cacheService from './cache.service';
 
 const prisma = new PrismaClient();
 
@@ -131,9 +132,25 @@ export default class FinancialAccountService {
    * Obtém uma conta financeira por ID
    */
   static async getAccountById(id: number): Promise<FinancialAccount | null> {
-    return prisma.financialAccount.findUnique({
+    // CACHE: Try cache first for balance
+    const cacheKey = cacheService.getAccountBalanceKey(id);
+    const cached = await cacheService.get<FinancialAccount>(cacheKey);
+    
+    if (cached) {
+      logger.debug('Account served from cache', { accountId: id });
+      return cached;
+    }
+
+    const account = await prisma.financialAccount.findUnique({
       where: { id }
     });
+
+    if (account) {
+      // CACHE: Store for 5 minutes
+      await cacheService.set(cacheKey, account, 300);
+    }
+
+    return account;
   }
 
   /**

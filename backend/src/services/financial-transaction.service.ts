@@ -1,6 +1,7 @@
 import { PrismaClient, FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { parseDecimal } from '../utils/money';
+import cacheService from './cache.service';
 
 const prisma = new PrismaClient();
 
@@ -201,6 +202,10 @@ export default class FinancialTransactionService {
         duration: Date.now() - startTime,
         accountsAffected: accountsToLock.length
       });
+
+      // ✅ CRITICAL: Invalidate relevant caches
+      const affectedAccountIds = accountsToLock;
+      await this.invalidateFinancialCaches(data.companyId, affectedAccountIds);
       
       return transaction;
       
@@ -664,6 +669,27 @@ export default class FinancialTransactionService {
     accounts: { id: number; name: string; balance: any; type: string }[];
     topCategories: { id: number; name: string; amount: number; color: string }[];
   }> {
+    // CACHE: Try to get from cache first
+    const cacheKey = cacheService.getDashboardKey(
+      companyId,
+      startDate.toISOString(),
+      endDate.toISOString()
+    );
+    
+    const cached = await cacheService.get<{
+      income: number;
+      expense: number;
+      balance: number;
+      accounts: { id: number; name: string; balance: any; type: string }[];
+      topCategories: { id: number; name: string; amount: number; color: string }[];
+    }>(cacheKey);
+
+    if (cached) {
+      logger.debug('Financial summary served from cache', { companyId, cacheKey });
+      return cached;
+    }
+
+    // ORIGINAL LOGIC (unchanged)
     const accounts = await prisma.financialAccount.findMany({
       where: { companyId, isActive: true },
       select: { id: true, name: true, balance: true, type: true }
@@ -728,12 +754,36 @@ export default class FinancialTransactionService {
     const expense = Number(expenseAggregate._sum.amount || 0);
     const balance = income - expense;
 
-    return {
+    const result = {
       income,
       expense,
       balance,
       accounts,
       topCategories
     };
+
+    // CACHE: Store for 10 minutes
+    await cacheService.set(cacheKey, result, 600);
+    
+    logger.info('Financial summary cached', { companyId, cacheKey });
+    return result;
+  }
+
+  /**
+   * CRITICAL: Invalidate caches after financial operations
+   */
+  private static async invalidateFinancialCaches(companyId: number, accountIds: number[]): Promise<void> {
+    // Invalidate dashboard cache
+    await cacheService.invalidatePattern(`dashboard:${companyId}:*`);
+    
+    // Invalidate account balance caches
+    for (const accountId of accountIds) {
+      await cacheService.del(cacheService.getAccountBalanceKey(accountId));
+    }
+    
+    // Invalidate transaction list caches
+    await cacheService.invalidatePattern(`transactions:${companyId}:*`);
+    
+    logger.debug('Financial caches invalidated', { companyId, accountIds });
   }
 }

@@ -34,6 +34,14 @@ enum TransactionStatus {
   CANCELED
 }
 
+enum RecurringFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
 model User {
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
@@ -59,6 +67,7 @@ model Company {
   financialCategories FinancialCategory[]
   financialTransactions FinancialTransaction[]
   financialTags       FinancialTag[]
+  recurringTransactions RecurringTransaction[]
 }
 
 model CompanyGroup {
@@ -90,6 +99,8 @@ model FinancialAccount {
   isActive          Boolean            @default(true)
   companyId         Int
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  recurringOutgoing RecurringTransaction[] @relation("RecurringFromAccount")
+  recurringIncoming RecurringTransaction[] @relation("RecurringToAccount")
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   
@@ -117,6 +128,7 @@ model FinancialCategory {
   
   // Relações
   transactions    FinancialTransaction[]
+  recurringTransactions RecurringTransaction[]
 
   @@unique([name, parentId, companyId])
   @@index([companyId])
@@ -142,6 +154,9 @@ model FinancialTransaction {
   createdBy       Int
   createdByUser   User                 @relation(fields: [createdBy], references: [id])
   tags            FinancialTag[]
+  scheduledDate           DateTime?
+  recurringTransactionId  Int?
+  recurringTransaction    RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
@@ -150,6 +165,39 @@ model FinancialTransaction {
   @@index([toAccountId])
   @@index([categoryId])
   @@index([date])
+}
+
+model RecurringTransaction {
+  id              Int                  @id @default(autoincrement())
+  description     String
+  amount          Decimal              @db.Decimal(15, 2)
+  type            TransactionType
+  frequency       RecurringFrequency
+  dayOfMonth      Int?                 // Para MONTHLY: dia do mês (1-31)
+  dayOfWeek       Int?                 // Para WEEKLY: dia da semana (0-6)
+  startDate       DateTime
+  endDate         DateTime?            // null = sem fim
+  nextDueDate     DateTime
+  isActive        Boolean              @default(true)
+  notes           String?
+  fromAccountId   Int?
+  fromAccount     FinancialAccount?    @relation("RecurringFromAccount", fields: [fromAccountId], references: [id])
+  toAccountId     Int?
+  toAccount       FinancialAccount?    @relation("RecurringToAccount", fields: [toAccountId], references: [id])
+  categoryId      Int?
+  category        FinancialCategory?   @relation(fields: [categoryId], references: [id])
+  companyId       Int
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy       Int
+  createdByUser   User                 @relation(fields: [createdBy], references: [id])
+  transactions    FinancialTransaction[] // Transações geradas
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([companyId])
+  @@index([type])
+  @@index([nextDueDate])
+  @@index([isActive])
 }
 
 model FinancialTag {

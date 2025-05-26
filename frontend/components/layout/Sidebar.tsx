@@ -6,6 +6,7 @@ import {
   PieChart, DollarSign, CreditCard, Building2, 
   Users, Settings, ChevronLeft, ChevronRight, User, Receipt
 } from 'lucide-react';
+import { TrendingDown, TrendingUp } from 'lucide-react';
 
 // Tipo para submenu - href é opcional para itens não clicáveis
 type SubMenuItem = {
@@ -63,39 +64,75 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
 
   const menuItems: SidebarItem[] = [
     {
+      title: 'Financeiro',
+      type: 'title'
+    },
+    {
       icon: <PieChart size={20} />,
       label: 'Dashboard',
       subItems: [
-        { label: 'Dashboard', href: '/', showWhenExpanded: true },
+        { label: 'Dashboard', href: '/financial', showWhenExpanded: true },
       ],
     },
     {
-      icon: <DollarSign size={20} />,
-      label: 'Financeiro',
+      icon: <CreditCard size={20} />,
+      label: 'Contas',
       subItems: [
-        { label: 'Financeiro', isHeader: true, showWhenExpanded: false },
-        { label: 'Dashboard', href: '/financial', showWhenExpanded: true },
         { label: 'Contas', href: '/financial/accounts', showWhenExpanded: true },
-        { label: 'Categorias', href: '/financial/categories', showWhenExpanded: true },
-        { label: 'Transações', href: '/financial/transactions', showWhenExpanded: true },
-      ]
+      ],
     },
     {
       icon: <Receipt size={20} />,
-      label: 'Relatórios',
+      label: 'Transações',
       subItems: [
-        { label: 'Relatórios', isHeader: true, showWhenExpanded: false },
-        { label: 'Fluxo de Caixa', href: '/reports/cashflow', showWhenExpanded: true },
-        { label: 'DRE', href: '/reports/income', showWhenExpanded: true },
-        { label: 'Balancete', href: '/reports/balance', showWhenExpanded: true },
-      ]
+        { label: 'Transações', href: '/financial/transactions', showWhenExpanded: true },
+      ],
     },
     {
       icon: <Building2 size={20} />,
-      label: 'Empresas',
+      label: 'Categorias',
       subItems: [
-        { label: 'Empresas', href: '/companies', showWhenExpanded: true },
+        { label: 'Categorias', href: '/financial/categories', showWhenExpanded: true },
       ],
+    },
+    {
+      title: 'Despesas',
+      type: 'title'
+    },
+    {
+      icon: <TrendingDown size={20} />,
+      label: 'Despesas Fixas',
+      subItems: [
+        { label: 'Despesas Fixas', href: '/expenses/recurring', showWhenExpanded: true },
+        { label: 'Projeções', href: '/expenses/projections', showWhenExpanded: true },
+      ],
+    },
+    {
+      title: 'Receitas',
+      type: 'title'
+    },
+    {
+      icon: <TrendingUp size={20} />,
+      label: 'Receitas Fixas',
+      subItems: [
+        { label: 'Receitas Fixas', href: '/income/recurring', showWhenExpanded: true },
+        { label: 'Projeções', href: '/income/projections', showWhenExpanded: true },
+      ],
+    },
+    {
+      title: 'Configurações',
+      type: 'title'
+    },
+    {
+      icon: <Settings size={20} />,
+      label: 'Sistema',
+      subItems: [
+        { label: 'Meu Perfil', href: '/profile', showWhenExpanded: true },
+      ],
+    },
+    {
+      title: 'Administração',
+      type: 'title'
     },
     {
       icon: <Users size={20} />,
@@ -105,10 +142,10 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       ],
     },
     {
-      icon: <User size={20} />,
-      label: 'Perfil',
+      icon: <Building2 size={20} />,
+      label: 'Empresas',
       subItems: [
-        { label: 'Meu Perfil', href: '/profile', showWhenExpanded: true },
+        { label: 'Empresas', href: '/companies', showWhenExpanded: true },
       ],
     },
   ];

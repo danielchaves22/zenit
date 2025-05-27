@@ -131,11 +131,13 @@ const rateLimiters = {
   })
 };
 
-/**
- * Middleware de rate limiting por tipo de endpoint
- */
 export function createRateLimitMiddleware(type: keyof typeof rateLimiters) {
   return async (req: Request, res: Response, next: NextFunction) => {
+    // ✅ PULAR RATE LIMITING EM DESENVOLVIMENTO
+    if (process.env.NODE_ENV === 'development') {
+      return next();
+    }
+    
     try {
       const limiter = rateLimiters[type];
       const clientIP = getClientIP(req);

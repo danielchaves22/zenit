@@ -23,6 +23,7 @@ import { logger } from './utils/logger';
 
 import { cacheMiddleware, cacheHealthMiddleware } from './middlewares/cache.middleware';
 import { getRedisStatus } from './middlewares/rate-limit.middleware';
+import { REDIS_ENABLED } from './config';
 
 const app = express();
 
@@ -110,27 +111,6 @@ app.use(mongoSanitize());
 // 10) Health check endpoint (sem rate limit)
 app.get('/health', async (req, res) => {
   try {
-    // Teste básico - pode expandir com verificações de DB/Redis
-    res.json({ 
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      version: process.env.npm_package_version || '1.0.0',
-      environment: process.env.NODE_ENV || 'development'
-    });
-  } catch (error) {
-    logger.error('Health check failed', { error });
-    res.status(503).json({
-      status: 'unhealthy',
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Enhanced health check with cache status
-app.get('/health', async (req, res) => {
-  try {
-    // Teste básico - pode expandir com verificações de DB/Redis
     const redisStatus = getRedisStatus();
     
     res.json({ 
@@ -139,10 +119,13 @@ app.get('/health', async (req, res) => {
       uptime: process.uptime(),
       version: process.env.npm_package_version || '1.0.0',
       environment: process.env.NODE_ENV || 'development',
-      // ✅ INCLUIR STATUS DO REDIS
       redis: redisStatus,
+      cache: {
+        enabled: REDIS_ENABLED,
+        status: REDIS_ENABLED ? (redisStatus.connected ? 'connected' : 'disconnected') : 'disabled'
+      },
       rateLimiting: {
-        store: redisStatus.enabled && redisStatus.connected ? 'redis' : 'memory',
+        store: REDIS_ENABLED && redisStatus.connected ? 'redis' : 'memory',
         status: 'operational'
       }
     });
@@ -151,7 +134,7 @@ app.get('/health', async (req, res) => {
     res.status(503).json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      redis: getRedisStatus()
+      error: 'Service temporarily unavailable'
     });
   }
 });

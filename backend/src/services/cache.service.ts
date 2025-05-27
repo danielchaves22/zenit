@@ -1,20 +1,32 @@
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
+import { REDIS_ENABLED, REDIS_CONFIG } from '../config';
 
 class CacheService {
   private redis: Redis | null = null;
   private isConnected = false;
+  private enabled = false;
 
   constructor() {
-    this.initializeRedis();
+    // ✅ SÓ INICIALIZAR SE REDIS ESTIVER HABILITADO
+    if (REDIS_ENABLED && REDIS_CONFIG) {
+      this.initializeRedis();
+    } else {
+      logger.info('Cache service: Redis disabled, using no-op cache');
+      this.enabled = false;
+    }
   }
 
   private async initializeRedis() {
+    if (!REDIS_ENABLED || !REDIS_CONFIG) {
+      return;
+    }
+
     try {
       this.redis = new Redis({
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
-        password: process.env.REDIS_PASSWORD,
+        host: REDIS_CONFIG.host,
+        port: REDIS_CONFIG.port,
+        password: REDIS_CONFIG.password,
         enableOfflineQueue: false,
         maxRetriesPerRequest: 3,
         lazyConnect: true,
@@ -24,11 +36,13 @@ class CacheService {
 
       this.redis.on('connect', () => {
         this.isConnected = true;
+        this.enabled = true;
         logger.info('Cache Redis connected successfully');
       });
 
       this.redis.on('error', (error) => {
         this.isConnected = false;
+        this.enabled = false;
         logger.error('Cache Redis connection error', { error: error.message });
       });
 
@@ -36,11 +50,13 @@ class CacheService {
     } catch (error) {
       logger.error('Failed to initialize Redis cache', { error });
       this.isConnected = false;
+      this.enabled = false;
     }
   }
 
   async get<T>(key: string): Promise<T | null> {
-    if (!this.isConnected || !this.redis) {
+    // ✅ RETURN NULL SE REDIS DISABLED
+    if (!this.enabled || !this.isConnected || !this.redis) {
       return null;
     }
 
@@ -54,7 +70,8 @@ class CacheService {
   }
 
   async set(key: string, value: any, ttlSeconds: number = 300): Promise<boolean> {
-    if (!this.isConnected || !this.redis) {
+    // ✅ RETURN FALSE SE REDIS DISABLED
+    if (!this.enabled || !this.isConnected || !this.redis) {
       return false;
     }
 
@@ -68,7 +85,7 @@ class CacheService {
   }
 
   async del(key: string): Promise<boolean> {
-    if (!this.isConnected || !this.redis) {
+    if (!this.enabled || !this.isConnected || !this.redis) {
       return false;
     }
 
@@ -82,7 +99,7 @@ class CacheService {
   }
 
   async invalidatePattern(pattern: string): Promise<void> {
-    if (!this.isConnected || !this.redis) {
+    if (!this.enabled || !this.isConnected || !this.redis) {
       return;
     }
 
@@ -113,7 +130,13 @@ class CacheService {
   }
 
   isHealthy(): boolean {
-    return this.isConnected;
+    // ✅ SE REDIS DISABLED, CONSIDERA HEALTHY
+    return REDIS_ENABLED ? this.isConnected : true;
+  }
+
+  // ✅ MÉTODO PARA VERIFICAR SE ESTÁ HABILITADO
+  isEnabled(): boolean {
+    return this.enabled;
   }
 }
 

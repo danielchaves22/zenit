@@ -1,4 +1,4 @@
-# docker-compose.yml - VERSÃO CORRIGIDA
+# docker-compose.yml - REDIS DESABILITADO
 version: '3.8'
 
 networks:
@@ -30,25 +30,26 @@ services:
       retries: 5
       start_period: 30s
 
-  # === Redis ===
-  redis:
-    image: redis:7-alpine
-    container_name: zenit-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - ./backend/redis/redis.conf:/etc/redis/redis.conf:ro
-    command: redis-server /etc/redis/redis.conf
-    networks:
-      - monitoring
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+  # === Redis - TEMPORARIAMENTE DESABILITADO ===
+  # ✅ Para reativar: descomente este bloco e adicione dependência no backend
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: zenit-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - ./backend/redis/redis.conf:/etc/redis/redis.conf:ro
+  #   command: redis-server /etc/redis/redis.conf
+  #   networks:
+  #     - monitoring
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
 
-  # === Backend (ESPERA BANCO ESTAR SAUDÁVEL) ===
+  # === Backend (APENAS DEPENDE DO BANCO AGORA) ===
   backend:
     build:
       context: ./backend
@@ -61,8 +62,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
+      # ✅ REDIS DEPENDENCY REMOVIDA - usando memory store
+      # redis:
+      #   condition: service_healthy
     networks:
       - monitoring
     # ✅ CRÍTICO: Health check do backend
@@ -143,3 +145,10 @@ services:
 volumes:
   postgres-data:
   pgadmin-data:
+
+# ============================================
+# PARA REATIVAR REDIS NO FUTURO:
+# 1. Descomente o serviço redis acima
+# 2. Adicione redis dependency no backend
+# 3. Configure REDIS_ENABLED=true no .env.docker
+# ============================================

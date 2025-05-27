@@ -42,6 +42,8 @@ async function main() {
     });
     console.log('✅ Empresa Equinox criada:', { id: company.id, name: company.name, code: company.code });
 
+    const { defaultAccount } = await createDefaultFinancialStructure(company.id)
+
     // Cria o usuário admin com role ADMIN
     const hashedPassword = await bcrypt.hash('@dmin05c10', 10);
     console.log('🔐 Senha hasheada gerada');
@@ -83,6 +85,52 @@ async function main() {
     throw error;
   }
 }
+
+// Adicionar ao backend/prisma/seed.js após criar empresa e usuário admin
+
+async function createDefaultFinancialStructure(companyId) {
+  console.log('🏦 Criando estrutura financeira padrão...');
+
+  // 1. Conta padrão "Caixa Geral"
+  const defaultAccount = await prisma.financialAccount.create({
+    data: {
+      name: 'Caixa Geral',
+      type: 'CHECKING',
+      balance: 0,
+      companyId: companyId,
+      accountNumber: null,
+      bankName: null,
+      isActive: true
+    }
+  });
+
+  // 2. Categorias padrão simplificadas
+  const categories = [
+    { name: 'Receita Geral', type: 'INCOME', color: '#16A34A' },
+    { name: 'Vendas', type: 'INCOME', color: '#059669' },
+    { name: 'Serviços', type: 'INCOME', color: '#0D9488' },
+    
+    { name: 'Despesa Operacional', type: 'EXPENSE', color: '#DC2626' },
+    { name: 'Fornecedores', type: 'EXPENSE', color: '#B91C1C' },
+    { name: 'Impostos e Taxas', type: 'EXPENSE', color: '#991B1B' },
+    { name: 'Despesas Administrativas', type: 'EXPENSE', color: '#7F1D1D' },
+  ];
+
+  for (const category of categories) {
+    await prisma.financialCategory.create({
+      data: {
+        ...category,
+        companyId: companyId
+      }
+    });
+  }
+
+  console.log(`✅ Estrutura padrão criada - Conta: ${defaultAccount.name}, Categorias: ${categories.length}`);
+  return { defaultAccount };
+}
+
+// Chamar após criar empresa:
+// const { defaultAccount } = await createDefaultFinancialStructure(company.id);
 
 main()
   .catch((error) => {

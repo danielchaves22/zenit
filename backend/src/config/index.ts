@@ -31,7 +31,8 @@ if (IS_PRODUCTION) {
 // Database URL SEMPRE obrigatório
 const DATABASE_URL = getRequiredEnv('DATABASE_URL');
 
-// Redis (necessário para rate limiting)
+// ✅ REDIS - CONTROLE DE ATIVAÇÃO/DESATIVAÇÃO
+export const REDIS_ENABLED = process.env.REDIS_ENABLED === 'true';
 const REDIS_HOST = getOptionalEnv('REDIS_HOST', 'localhost');
 const REDIS_PORT = parseInt(getOptionalEnv('REDIS_PORT', '6379'));
 const REDIS_PASSWORD = process.env.REDIS_PASSWORD; // Opcional
@@ -40,14 +41,14 @@ const REDIS_PASSWORD = process.env.REDIS_PASSWORD; // Opcional
 export const PORT = parseInt(getOptionalEnv('PORT', '3000'));
 export { JWT_SECRET, DATABASE_URL };
 
-export const REDIS_CONFIG = {
+export const REDIS_CONFIG = REDIS_ENABLED ? {
   host: REDIS_HOST,
   port: REDIS_PORT,
   password: REDIS_PASSWORD,
   retryDelayOnFailover: 100,
   enableOfflineQueue: false,
   maxRetriesPerRequest: 3
-};
+} : null;
 
 export const CORS_CONFIG = {
   origin: IS_PRODUCTION 
@@ -91,4 +92,11 @@ if (IS_PRODUCTION) {
   console.log('✅ All critical environment variables validated');
 } else {
   console.log('🔧 Development environment - using default values where appropriate');
+}
+
+// ✅ Log do status do Redis
+if (REDIS_ENABLED) {
+  console.log('🔴 Redis ENABLED - will attempt connection');
+} else {
+  console.log('🟡 Redis DISABLED - using memory store for rate limiting');
 }

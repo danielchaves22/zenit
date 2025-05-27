@@ -22,6 +22,7 @@ import { setupSwagger } from './swagger';
 import { logger } from './utils/logger';
 
 import { cacheMiddleware, cacheHealthMiddleware } from './middlewares/cache.middleware';
+import { getRedisStatus } from './middlewares/rate-limit.middleware';
 
 const app = express();
 
@@ -127,23 +128,30 @@ app.get('/health', async (req, res) => {
 });
 
 // Enhanced health check with cache status
-app.get('/health/detailed', cacheHealthMiddleware, async (req, res) => {
+app.get('/health', async (req, res) => {
   try {
+    // Teste básico - pode expandir com verificações de DB/Redis
+    const redisStatus = getRedisStatus();
+    
     res.json({ 
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       version: process.env.npm_package_version || '1.0.0',
       environment: process.env.NODE_ENV || 'development',
-      cache: {
-        redis: req.cacheHealth || false
+      // ✅ INCLUIR STATUS DO REDIS
+      redis: redisStatus,
+      rateLimiting: {
+        store: redisStatus.enabled && redisStatus.connected ? 'redis' : 'memory',
+        status: 'operational'
       }
     });
   } catch (error) {
-    logger.error('Detailed health check failed', { error });
+    logger.error('Health check failed', { error });
     res.status(503).json({
       status: 'unhealthy',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      redis: getRedisStatus()
     });
   }
 });

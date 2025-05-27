@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { RateLimiterRedis, RateLimiterMemory } from 'rate-limiter-flexible';
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
+import { REDIS_ENABLED, REDIS_CONFIG } from '../config';
 
 /**
  * Helper para extrair IP de forma segura
@@ -10,53 +11,60 @@ function getClientIP(req: Request): string {
   return req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
 }
 
-// Configuração do Redis com fallback
+// ✅ REDIS - CONTROLE DE ATIVAÇÃO/DESATIVAÇÃO
 let redisClient: Redis | null = null;
 let useRedis = false;
 
-try {
-  redisClient = new Redis({
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-    password: process.env.REDIS_PASSWORD,
-    enableOfflineQueue: false,
-    maxRetriesPerRequest: 3,
-    lazyConnect: true,
-    connectTimeout: 5000,
-    commandTimeout: 3000
-  });
+// ✅ SÓ TENTAR CONECTAR SE REDIS ESTIVER HABILITADO
+if (REDIS_ENABLED && REDIS_CONFIG) {
+  try {
+    redisClient = new Redis({
+      host: REDIS_CONFIG.host,
+      port: REDIS_CONFIG.port,
+      password: REDIS_CONFIG.password,
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+      connectTimeout: 5000,
+      commandTimeout: 3000
+    });
 
-  // Handle Redis connection events
-  redisClient.on('error', (err) => {
-    logger.error('Redis connection error - falling back to memory store', { 
-      error: err.message 
+    // Handle Redis connection events
+    redisClient.on('error', (err) => {
+      logger.error('Redis connection error - falling back to memory store', { 
+        error: err.message 
+      });
+      useRedis = false;
+    });
+
+    redisClient.on('connect', () => {
+      logger.info('Redis connected successfully for rate limiting');
+      useRedis = true;
+    });
+
+    redisClient.on('ready', () => {
+      logger.info('Redis ready for rate limiting');
+      useRedis = true;
+    });
+
+    // Test connection
+    redisClient.ping().then(() => {
+      useRedis = true;
+      logger.info('Redis ping successful');
+    }).catch((err) => {
+      logger.warn('Redis ping failed, using memory store', { error: err.message });
+      useRedis = false;
+    });
+
+  } catch (error) {
+    logger.warn('Failed to initialize Redis, using memory store', { 
+      error: error instanceof Error ? error.message : String(error) 
     });
     useRedis = false;
-  });
-
-  redisClient.on('connect', () => {
-    logger.info('Redis connected successfully for rate limiting');
-    useRedis = true;
-  });
-
-  redisClient.on('ready', () => {
-    logger.info('Redis ready for rate limiting');
-    useRedis = true;
-  });
-
-  // Test connection
-  redisClient.ping().then(() => {
-    useRedis = true;
-    logger.info('Redis ping successful');
-  }).catch((err) => {
-    logger.warn('Redis ping failed, using memory store', { error: err.message });
-    useRedis = false;
-  });
-
-} catch (error) {
-  logger.warn('Failed to initialize Redis, using memory store', { 
-    error: error instanceof Error ? error.message : String(error) 
-  });
+  }
+} else {
+  // ✅ REDIS EXPLICITAMENTE DESABILITADO
+  logger.info('Redis explicitly disabled by configuration - using memory store for rate limiting');
   useRedis = false;
 }
 
@@ -69,7 +77,7 @@ function createRateLimiter(config: {
   duration: number;
   blockDuration: number;
 }) {
-  if (useRedis && redisClient) {
+  if (useRedis && redisClient && REDIS_ENABLED) {
     return new RateLimiterRedis({
       storeClient: redisClient,
       keyPrefix: config.keyPrefix,
@@ -78,7 +86,7 @@ function createRateLimiter(config: {
       blockDuration: config.blockDuration,
     });
   } else {
-    logger.warn(`Using memory store for rate limiter: ${config.keyPrefix}`);
+    logger.info(`Using memory store for rate limiter: ${config.keyPrefix} (Redis disabled: ${!REDIS_ENABLED})`);
     return new RateLimiterMemory({
       keyPrefix: config.keyPrefix,
       points: config.points,
@@ -144,7 +152,7 @@ export function createRateLimitMiddleware(type: keyof typeof rateLimiters) {
           userId: req.user?.id,
           endpoint: req.path,
           type,
-          storeType: useRedis ? 'redis' : 'memory'
+          storeType: useRedis && REDIS_ENABLED ? 'redis' : 'memory'
         });
       }
       
@@ -217,7 +225,7 @@ export async function loginRateLimitMiddleware(
       ip,
       email,
       remainingPoints: rejRes.remainingPoints,
-      storeType: useRedis ? 'redis' : 'memory'
+      storeType: useRedis && REDIS_ENABLED ? 'redis' : 'memory'
     });
     
     res.status(429).json({
@@ -264,10 +272,11 @@ export async function recordFailedLogin(email: string, ip: string) {
   }
 }
 
-// Exportar status do Redis para monitoramento
+// ✅ EXPORTAR STATUS DO REDIS PARA MONITORAMENTO
 export function getRedisStatus() {
   return {
-    connected: useRedis,
-    client: redisClient?.status || 'disconnected'
+    enabled: REDIS_ENABLED,
+    connected: REDIS_ENABLED ? useRedis : false,
+    client: REDIS_ENABLED ? (redisClient?.status || 'disconnected') : 'disabled'
   };
 }

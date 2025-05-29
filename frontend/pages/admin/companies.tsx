@@ -1,15 +1,17 @@
-// frontend/pages/admin/companies.tsx
+// frontend/pages/companies.tsx - VERSÃO PADRONIZADA
 import React, { useState, useEffect } from 'react';
-import { DashboardLayout } from '../../components/layout/DashboardLayout';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
-import { Breadcrumb } from '../../components/ui/Breadcrumb';
-import { PageLoader } from '../../components/ui/PageLoader';
-import { useToast } from '../../components/ui/ToastContext';
-import { useAuth } from '../../contexts/AuthContext';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Breadcrumb } from '@/components/ui/Breadcrumb';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { useToast } from '@/components/ui/ToastContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { Plus, Building2, Edit2, Trash2 } from 'lucide-react';
-import api from '../../lib/api';
+import api from '@/lib/api';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { useConfirmation } from '@/hooks/useConfirmation';
 
 interface Company {
   id: number;
@@ -20,88 +22,218 @@ interface Company {
   updatedAt: string;
 }
 
-export default function AdminCompaniesPage() {
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ name: '', address: '' });
-  const [formLoading, setFormLoading] = useState(false);
-  
+export default function CompaniesPage() {
+  const confirmation = useConfirmation();
   const { userRole } = useAuth();
   const { addToast } = useToast();
+
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Form states
+  const [showForm, setShowForm] = useState(false);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    address: ''
+  });
 
   useEffect(() => {
     fetchCompanies();
   }, []);
 
   async function fetchCompanies() {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
       const response = await api.get('/companies');
       setCompanies(response.data);
-    } catch (error) {
-      addToast('Erro ao carregar empresas', 'error');
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || 'Erro ao carregar empresas';
+      setError(errorMsg);
+      addToast(errorMsg, 'error');
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function openNewForm() {
+    setEditingCompany(null);
+    setFormData({ name: '', address: '' });
+    setShowForm(true);
+  }
+
+  function openEditForm(company: Company) {
+    setEditingCompany(company);
+    setFormData({ 
+      name: company.name, 
+      address: company.address || '' 
+    });
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingCompany(null);
+    setFormData({ name: '', address: '' });
+  }
+
+  async function handleSubmit() {
+    if (!formData.name.trim()) {
+      addToast('Nome da empresa é obrigatório', 'error');
+      return;
+    }
+
     setFormLoading(true);
 
     try {
-      await api.post('/companies', formData);
-      addToast('Empresa criada com sucesso', 'success');
-      setFormData({ name: '', address: '' });
-      setShowForm(false);
+      if (editingCompany) {
+        // Editing existing company
+        const updateData = formData.address 
+          ? formData
+          : { name: formData.name };
+          
+        await api.put(`/companies/${editingCompany.id}`, updateData);
+        addToast('Empresa atualizada com sucesso', 'success');
+      } else {
+        // Creating new company
+        await api.post('/companies', formData);
+        addToast('Empresa criada com sucesso', 'success');
+      }
+
+      closeForm();
       fetchCompanies();
-    } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao criar empresa', 'error');
+    } catch (err: any) {
+      addToast(err.response?.data?.error || 'Erro ao salvar empresa', 'error');
     } finally {
       setFormLoading(false);
     }
   }
 
-  if (loading) {
-    return (
-      <DashboardLayout title="Gestão de Empresas">
-        <PageLoader message="Carregando empresas..." />
-      </DashboardLayout>
+  async function handleDelete(company: Company) {
+    confirmation.confirm(
+      {
+        title: 'Confirmar Exclusão',
+        message: `Tem certeza que deseja excluir a empresa "${company.name}"? Esta ação não pode ser desfeita.`,
+        confirmText: 'Excluir',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        try {
+          await api.delete(`/companies/${company.id}`);
+          addToast('Empresa excluída com sucesso', 'success');
+          
+          // If we were editing this company, close the form
+          if (editingCompany?.id === company.id) {
+            closeForm();
+          }
+          
+          fetchCompanies();
+        } catch (err: any) {
+          addToast(err.response?.data?.error || 'Erro ao excluir empresa', 'error');
+          throw err; // Re-throw to keep modal open on error
+        }
+      }
     );
   }
 
   return (
-    <DashboardLayout title="Gestão de Empresas">
+    <DashboardLayout>
       <Breadcrumb items={[
-        { label: 'Dashboard', href: '/' },
-        { label: 'Administração' },
+        { label: 'Início', href: '/' },
         { label: 'Empresas' }
       ]} />
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-white">Gestão de Empresas</h1>
+        <h1 className="text-2xl font-semibold text-white">Empresas</h1>
         {userRole === 'ADMIN' && (
           <Button 
             variant="accent" 
-            onClick={() => setShowForm(true)}
+            onClick={() => showForm ? closeForm() : openNewForm()}
             className="flex items-center gap-2"
+            disabled={formLoading}
           >
             <Plus size={16} />
-            Nova Empresa
+            {showForm ? 'Cancelar' : 'Nova Empresa'}
           </Button>
         )}
       </div>
 
+      {/* Inline form */}
+      {showForm && userRole === 'ADMIN' && (
+        <Card className="mb-6 border-2 border-[#f59e0b]">
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-white">
+              {editingCompany ? `Editando: ${editingCompany.name}` : 'Nova Empresa'}
+            </h3>
+            
+            <Input
+              label="Nome da Empresa"
+              value={formData.name}
+              onChange={(e) => setFormData({...formData, name: e.target.value})}
+              required
+              placeholder="Ex: Minha Empresa Ltda"
+              disabled={formLoading}
+            />
+            
+            <Input
+              label="Endereço"
+              value={formData.address}
+              onChange={(e) => setFormData({...formData, address: e.target.value})}
+              placeholder="Ex: Rua das Flores, 123 - Centro"
+              disabled={formLoading}
+            />
+
+            <div className="flex gap-3">
+              <Button 
+                variant="accent" 
+                onClick={handleSubmit}
+                disabled={formLoading}
+              >
+                {formLoading 
+                  ? 'Salvando...' 
+                  : editingCompany 
+                    ? 'Salvar Alterações' 
+                    : 'Criar Empresa'
+                }
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={closeForm}
+                disabled={formLoading}
+              >
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card>
-        {companies.length === 0 ? (
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded bg-[#1e2126]" />
+            ))}
+          </div>
+        ) : error ? (
+          <div className="text-center py-10">
+            <div className="text-red-400 mb-4">{error}</div>
+            <Button variant="outline" onClick={fetchCompanies}>
+              Tentar Novamente
+            </Button>
+          </div>
+        ) : companies.length === 0 ? (
           <div className="text-center py-10">
             <Building2 size={48} className="mx-auto text-gray-400 mb-4" />
             <p className="text-gray-400 mb-4">Nenhuma empresa cadastrada</p>
             {userRole === 'ADMIN' && (
               <Button 
                 variant="accent" 
-                onClick={() => setShowForm(true)}
+                onClick={openNewForm}
                 className="inline-flex items-center gap-2"
               >
                 <Plus size={16} />
@@ -114,18 +246,47 @@ export default function AdminCompaniesPage() {
             <table className="w-full">
               <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
                 <tr>
+                  <th className="px-4 py-3 text-center w-24">Ações</th>
                   <th className="px-4 py-3 text-left">Código</th>
                   <th className="px-4 py-3 text-left">Nome</th>
                   <th className="px-4 py-3 text-left">Endereço</th>
                   <th className="px-4 py-3 text-left">Criada em</th>
-                  {userRole === 'ADMIN' && (
-                    <th className="px-4 py-3 text-center">Ações</th>
-                  )}
                 </tr>
               </thead>
               <tbody>
                 {companies.map((company) => (
-                  <tr key={company.id} className="border-b border-gray-700 hover:bg-[#1a1f2b]">
+                  <tr 
+                    key={company.id} 
+                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                      editingCompany?.id === company.id 
+                        ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                        : ''
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-center">
+                        {userRole === 'ADMIN' && (
+                          <>
+                            <button
+                              onClick={() => openEditForm(company)}
+                              className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                              title="Editar"
+                              disabled={formLoading}
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(company)}
+                              className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                              title="Excluir"
+                              disabled={formLoading}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="font-mono text-[#f59e0b] font-medium">
                         {company.code.toString().padStart(3, '0')}
@@ -143,24 +304,6 @@ export default function AdminCompaniesPage() {
                     <td className="px-4 py-3 text-gray-300">
                       {new Date(company.createdAt).toLocaleDateString('pt-BR')}
                     </td>
-                    {userRole === 'ADMIN' && (
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 justify-center">
-                          <button
-                            className="p-1 text-gray-300 hover:text-white"
-                            title="Editar"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            className="p-1 text-red-400 hover:text-red-300"
-                            title="Excluir"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>
@@ -169,50 +312,17 @@ export default function AdminCompaniesPage() {
         )}
       </Card>
 
-      {/* Modal de Formulário */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#151921] rounded-lg max-w-md w-full border border-gray-700">
-            <div className="p-6 border-b border-gray-700">
-              <h3 className="text-xl font-semibold text-white">Nova Empresa</h3>
-            </div>
-            
-            <form onSubmit={handleSubmit} className="p-6">
-              <Input
-                label="Nome da Empresa"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                required
-              />
-              
-              <Input
-                label="Endereço"
-                value={formData.address}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
-              />
-              
-              <div className="flex gap-3 mt-6">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setShowForm(false)}
-                  className="flex-1"
-                >
-                  Cancelar
-                </Button>
-                <Button 
-                  type="submit" 
-                  variant="accent"
-                  disabled={formLoading}
-                  className="flex-1"
-                >
-                  {formLoading ? 'Criando...' : 'Criar'}
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={confirmation.handleClose}
+        onConfirm={confirmation.handleConfirm}
+        title={confirmation.options.title}
+        message={confirmation.options.message}
+        confirmText={confirmation.options.confirmText}
+        cancelText={confirmation.options.cancelText}
+        type={confirmation.options.type}
+        loading={confirmation.loading}
+      />
     </DashboardLayout>
   );
 }

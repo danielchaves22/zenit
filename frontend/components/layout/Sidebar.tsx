@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { 
-  PieChart, DollarSign, CreditCard, Building2, Receipt, 
+  PieChart, DollarSign, CreditCard, Building2, Receipt, Home,
   Users, Settings, ChevronLeft, ChevronRight, User, 
   TrendingDown, TrendingUp, BarChart3, FileText, Calendar
 } from 'lucide-react';
@@ -64,6 +64,17 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
 
   const menuItems: SidebarItem[] = [
     {
+      title: 'Principal',
+      type: 'title'
+    },
+    {
+      icon: <Home size={20} />,
+      label: 'Início',
+      subItems: [
+        { label: 'Início', href: '/', showWhenExpanded: true },
+      ],
+    },
+    {
       title: 'Financeiro',
       type: 'title'
     },
@@ -71,7 +82,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       icon: <PieChart size={20} />,
       label: 'Dashboard',
       subItems: [
-        { label: 'Dashboard', href: '/financial', showWhenExpanded: true },
+        { label: 'Dashboard Financeiro', href: '/financial/dashboard', showWhenExpanded: true },
       ],
     },
     {
@@ -103,13 +114,16 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       ],
     },
     {
+      title: 'Relatórios',
+      type: 'title'
+    },
+    {
       icon: <BarChart3 size={20} />,
       label: 'Relatórios',
       subItems: [
-        { label: 'Dashboard de Relatórios', href: '/financial/reports', showWhenExpanded: true },
-        { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' },
-        { label: 'DRE', href: '/financial/reports/income' },
-        { label: 'Balancete', href: '/financial/reports/balance' },
+        { label: 'Fluxo de Caixa', href: '/reports/cashflow' },
+        { label: 'DRE', href: '/reports/income' },
+        { label: 'Balancete', href: '/reports/balance' },
       ],
     },
     {

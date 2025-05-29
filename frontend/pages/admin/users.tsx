@@ -1,15 +1,17 @@
-// frontend/pages/admin/users.tsx
+// frontend/pages/users.tsx - VERSÃO COMPLETA E FUNCIONAL
 import { useEffect, useState } from 'react'
-import { useAuth } from '../../contexts/AuthContext'
-import { DashboardLayout } from '../../components/layout/DashboardLayout'
-import { Card } from '../../components/ui/Card'
-import { Input } from '../../components/ui/Input'
-import { Button } from '../../components/ui/Button'
-import { Breadcrumb } from '../../components/ui/Breadcrumb'
-import { PageLoader } from '../../components/ui/PageLoader'
-import { useToast } from '../../components/ui/ToastContext'
-import { Plus, Edit2, Trash2, User } from 'lucide-react'
-import api from '../../lib/api'
+import { useAuth } from '@/contexts/AuthContext'
+import { DashboardLayout } from '@/components/layout/DashboardLayout'
+import { Card } from '@/components/ui/Card'
+import { Input } from '@/components/ui/Input'
+import { Button } from '@/components/ui/Button'
+import { Breadcrumb } from '@/components/ui/Breadcrumb'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { useToast } from '@/components/ui/ToastContext'
+import { Plus, Users, Edit2, Trash2 } from 'lucide-react'
+import api from '@/lib/api'
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { useConfirmation } from '@/hooks/useConfirmation';
 
 interface User {
   id: number
@@ -30,8 +32,9 @@ interface Company {
   name: string
 }
 
-export default function AdminUsersPage() {
-  const { token, userRole } = useAuth();
+export default function UsersPage() {
+  const confirmation = useConfirmation();
+  const { userRole } = useAuth();
   const { addToast } = useToast();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -39,26 +42,33 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [creating, setCreating] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [newRole, setNewRole] = useState('USER');
-  const [companyId, setCompanyId] = useState('');
+  // Form states
+  const [showForm, setShowForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    newRole: 'USER',
+    companyId: ''
+  });
 
   useEffect(() => {
     fetchUsers();
     if (userRole === 'ADMIN') fetchCompanies();
-  }, [token, userRole]);
+  }, [userRole]);
 
   async function fetchUsers() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/users');
-      setUsers(res.data);
+      const response = await api.get('/users');
+      setUsers(response.data);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Erro ao carregar usuários');
+      const errorMsg = err.response?.data?.error || 'Erro ao carregar usuários';
+      setError(errorMsg);
+      addToast(errorMsg, 'error');
     } finally {
       setLoading(false);
     }
@@ -66,114 +76,190 @@ export default function AdminUsersPage() {
 
   async function fetchCompanies() {
     try {
-      const res = await api.get('/companies');
-      setCompanies(res.data);
-    } catch (error) {
-      console.error('Erro ao carregar empresas:', error);
+      const response = await api.get('/companies');
+      setCompanies(response.data);
+    } catch (err) {
+      console.error('Erro ao carregar empresas:', err);
     }
   }
 
-  async function handleCreateUser() {
-    if (!name.trim() || !email.trim() || !password || !companyId) {
+  function openNewForm() {
+    setEditingUser(null);
+    setFormData({
+      name: '',
+      email: '',
+      password: '',
+      newRole: 'USER',
+      companyId: companies.length > 0 ? companies[0].id.toString() : ''
+    });
+    setShowForm(true);
+  }
+
+  function openEditForm(user: User) {
+    setEditingUser(user);
+    setFormData({
+      name: user.name,
+      email: user.email,
+      password: '', // Always empty for editing
+      newRole: user.role,
+      companyId: user.companies[0]?.company.id.toString() || ''
+    });
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditingUser(null);
+    setFormData({
+      name: '',
+      email: '',
+      password: '',
+      newRole: 'USER',
+      companyId: ''
+    });
+  }
+
+  async function handleSubmit() {
+    if (!formData.name.trim() || !formData.email.trim() || !formData.companyId) {
       addToast('Preencha todos os campos obrigatórios', 'error');
       return;
     }
+
+    if (!editingUser && !formData.password) {
+      addToast('Senha é obrigatória para novos usuários', 'error');
+      return;
+    }
+
+    setFormLoading(true);
+
     try {
-      await api.post('/users', {
-        name,
-        email,
-        password,
-        newRole,
-        companyId: Number(companyId),
-      });
-      
-      setName('');
-      setEmail('');
-      setPassword('');
-      setNewRole('USER');
-      setCompanyId('');
-      setCreating(false);
+      if (editingUser) {
+        // Editing existing user
+        const { password, ...updateDataWithoutPassword } = formData;
+        const updateData = formData.password 
+          ? { ...formData, companyId: Number(formData.companyId) }
+          : { ...updateDataWithoutPassword, companyId: Number(formData.companyId) };
+
+        await api.put(`/users/${editingUser.id}`, updateData);
+        addToast('Usuário atualizado com sucesso', 'success');
+      } else {
+        // Creating new user
+        await api.post('/users', {
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          newRole: formData.newRole,
+          companyId: Number(formData.companyId),
+        });
+        addToast('Usuário criado com sucesso', 'success');
+      }
+
+      closeForm();
       fetchUsers();
-      addToast('Usuário criado com sucesso', 'success');
     } catch (err: any) {
-      addToast(err.response?.data?.error || 'Erro ao criar usuário', 'error');
+      addToast(err.response?.data?.error || 'Erro ao salvar usuário', 'error');
+    } finally {
+      setFormLoading(false);
     }
   }
 
-  if (loading) {
-    return (
-      <DashboardLayout title="Gestão de Usuários">
-        <PageLoader message="Carregando usuários..." />
-      </DashboardLayout>
+  async function handleDelete(user: User) {
+    confirmation.confirm(
+      {
+        title: 'Confirmar Exclusão',
+        message: `Tem certeza que deseja excluir o usuário "${user.name}"? Esta ação não pode ser desfeita.`,
+        confirmText: 'Excluir',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        try {
+          await api.delete(`/users/${user.id}`);
+          addToast('Usuário excluído com sucesso', 'success');
+          
+          // If we were editing this user, close the form
+          if (editingUser?.id === user.id) {
+            closeForm();
+          }
+          
+          fetchUsers();
+        } catch (err: any) {
+          addToast(err.response?.data?.error || 'Erro ao excluir usuário', 'error');
+          throw err; // Re-throw to keep modal open on error
+        }
+      }
     );
   }
 
   return (
-    <DashboardLayout title="Gestão de Usuários">
+    <DashboardLayout>
       <Breadcrumb items={[
-        { label: 'Dashboard', href: '/' },
-        { label: 'Administração' },
+        { label: 'Início', href: '/' },
         { label: 'Usuários' }
       ]} />
 
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-white">Gestão de Usuários</h1>
+        <h1 className="text-2xl font-semibold text-white">Usuários</h1>
         {userRole === 'ADMIN' && (
           <Button 
             variant="accent" 
-            onClick={() => setCreating(!creating)}
+            onClick={() => showForm ? closeForm() : openNewForm()}
             className="flex items-center gap-2"
+            disabled={formLoading}
           >
             <Plus size={16} />
-            {creating ? 'Cancelar' : 'Novo Usuário'}
+            {showForm ? 'Cancelar' : 'Novo Usuário'}
           </Button>
         )}
       </div>
 
-      {/* Formulário de criação */}
-      {creating && userRole === 'ADMIN' && (
-        <Card className="mb-6">
+      {/* Inline form */}
+      {showForm && userRole === 'ADMIN' && (
+        <Card className="mb-6 border-2 border-[#f59e0b]">
           <div className="space-y-4">
-            <h3 className="text-lg font-medium text-white mb-4">Novo Usuário</h3>
+            <h3 className="text-lg font-medium text-white">
+              {editingUser ? `Editando: ${editingUser.name}` : 'Novo Usuário'}
+            </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
-                id="user-name"
                 label="Nome"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
+                value={formData.name}
+                onChange={(e) => setFormData({...formData, name: e.target.value})}
                 required
+                disabled={formLoading}
               />
+              
               <Input
-                id="user-email"
                 label="Email"
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
                 required
+                disabled={formLoading}
               />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
-                id="user-password"
-                label="Senha"
+                label={editingUser ? "Nova Senha (deixe em branco para manter)" : "Senha"}
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
+                value={formData.password}
+                onChange={(e) => setFormData({...formData, password: e.target.value})}
+                required={!editingUser}
+                disabled={formLoading}
+                placeholder={editingUser ? "Deixe em branco para não alterar" : ""}
               />
-              
+
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="user-role">
+                <label className="block text-sm font-medium mb-1 text-gray-300">
                   Perfil
                 </label>
                 <select
-                  id="user-role"
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value)}
+                  value={formData.newRole}
+                  onChange={(e) => setFormData({...formData, newRole: e.target.value})}
                   className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-                  required
+                  disabled={formLoading}
                 >
                   <option value="USER">Usuário</option>
                   <option value="SUPERUSER">Superusuário</option>
@@ -183,20 +269,20 @@ export default function AdminUsersPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="user-company">
+              <label className="block text-sm font-medium mb-1 text-gray-300">
                 Empresa
               </label>
               <select
-                id="user-company"
-                value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
+                value={formData.companyId}
+                onChange={(e) => setFormData({...formData, companyId: e.target.value})}
                 className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
                 required
+                disabled={formLoading}
               >
                 <option value="">-- Selecione uma empresa --</option>
-                {companies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
                   </option>
                 ))}
               </select>
@@ -204,41 +290,51 @@ export default function AdminUsersPage() {
 
             <div className="flex gap-3">
               <Button 
-                variant="outline" 
-                onClick={() => setCreating(false)}
-                className="flex-1"
+                variant="accent" 
+                onClick={handleSubmit}
+                disabled={formLoading}
               >
-                Cancelar
+                {formLoading 
+                  ? 'Salvando...' 
+                  : editingUser 
+                    ? 'Salvar Alterações' 
+                    : 'Criar Usuário'
+                }
               </Button>
               <Button 
-                variant="accent" 
-                onClick={handleCreateUser}
-                className="flex-1"
+                variant="outline" 
+                onClick={closeForm}
+                disabled={formLoading}
               >
-                Criar Usuário
+                Cancelar
               </Button>
             </div>
           </div>
         </Card>
       )}
 
-      {/* Lista de usuários */}
       <Card>
-        {error ? (
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-12 w-full rounded bg-[#1e2126]" />
+            ))}
+          </div>
+        ) : error ? (
           <div className="text-center py-10">
-            <p className="text-red-400 mb-4">{error}</p>
+            <div className="text-red-400 mb-4">{error}</div>
             <Button variant="outline" onClick={fetchUsers}>
               Tentar Novamente
             </Button>
           </div>
         ) : users.length === 0 ? (
           <div className="text-center py-10">
-            <User size={48} className="mx-auto text-gray-400 mb-4" />
+            <Users size={48} className="mx-auto text-gray-400 mb-4" />
             <p className="text-gray-400 mb-4">Nenhum usuário encontrado</p>
             {userRole === 'ADMIN' && (
               <Button 
                 variant="accent" 
-                onClick={() => setCreating(true)}
+                onClick={openNewForm}
                 className="inline-flex items-center gap-2"
               >
                 <Plus size={16} />
@@ -251,57 +347,55 @@ export default function AdminUsersPage() {
             <table className="w-full">
               <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
                 <tr>
+                  <th className="px-4 py-3 text-center w-24">Ações</th>
                   <th className="px-4 py-3 text-left">Nome</th>
                   <th className="px-4 py-3 text-left">Email</th>
                   <th className="px-4 py-3 text-left">Perfil</th>
                   <th className="px-4 py-3 text-left">Empresa</th>
-                  {userRole === 'ADMIN' && (
-                    <th className="px-4 py-3 text-center">Ações</th>
-                  )}
                 </tr>
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user.id} className="border-b border-gray-700 hover:bg-[#1a1f2b]">
+                  <tr 
+                    key={user.id} 
+                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                      editingUser?.id === user.id 
+                        ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                        : ''
+                    }`}
+                  >
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="bg-[#f59e0b] rounded-full p-2">
-                          <User size={16} className="text-white" />
-                        </div>
-                        <span className="font-medium text-white">{user.name}</span>
+                      <div className="flex items-center gap-1 justify-center">
+                        <button
+                          onClick={() => openEditForm(user)}
+                          className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                          title="Editar"
+                          disabled={formLoading}
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        {userRole === 'ADMIN' && (
+                          <button
+                            onClick={() => handleDelete(user)}
+                            className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                            title="Excluir"
+                            disabled={formLoading}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
                       </div>
                     </td>
+                    <td className="px-4 py-3 text-white font-medium">{user.name}</td>
                     <td className="px-4 py-3 text-gray-300">{user.email}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.role === 'ADMIN' ? 'bg-red-900 text-red-300' :
-                        user.role === 'SUPERUSER' ? 'bg-blue-900 text-blue-300' :
-                        'bg-green-900 text-green-300'
-                      }`}>
+                      <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full">
                         {user.role}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-300">
                       {user.companies.map(uc => uc.company.name).join(', ')}
                     </td>
-                    {userRole === 'ADMIN' && (
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2 justify-center">
-                          <button
-                            className="p-1 text-gray-300 hover:text-white"
-                            title="Editar"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            className="p-1 text-red-400 hover:text-red-300"
-                            title="Excluir"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>
@@ -309,6 +403,18 @@ export default function AdminUsersPage() {
           </div>
         )}
       </Card>
+
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={confirmation.handleClose}
+        onConfirm={confirmation.handleConfirm}
+        title={confirmation.options.title}
+        message={confirmation.options.message}
+        confirmText={confirmation.options.confirmText}
+        cancelText={confirmation.options.cancelText}
+        type={confirmation.options.type}
+        loading={confirmation.loading}
+      />
     </DashboardLayout>
   );
 }

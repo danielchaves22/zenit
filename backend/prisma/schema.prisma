@@ -98,6 +98,7 @@ model FinancialAccount {
   accountNumber     String?
   bankName          String?
   isActive          Boolean            @default(true)
+  isDefault         Boolean            @default(false)
   companyId         Int
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   recurringOutgoing RecurringTransaction[] @relation("RecurringFromAccount")
@@ -110,20 +111,23 @@ model FinancialAccount {
   incomingTransactions FinancialTransaction[] @relation("ToAccount")
 
   @@unique([name, companyId])
+  @@unique([companyId, isDefault], name: "unique_default_account_per_company") // ✅ CONSTRAINT
   @@index([companyId])
+  @@index([companyId, isDefault]) // ✅ ÍNDICE OTIMIZADO
 }
 
 model FinancialCategory {
   id              Int                  @id @default(autoincrement())
   name            String
   type            TransactionType      @default(EXPENSE)
-  color           String               @default("#6366F1") // Cor padrão indigo
+  color           String               @default("#6366F1")
+  isDefault       Boolean              @default(false)  // ✅ NOVO CAMPO
   parentId        Int?
   parent          FinancialCategory?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
   children        FinancialCategory[]  @relation("CategoryHierarchy")
   companyId       Int
   company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  accountingCode  String?              // Código do plano de contas
+  accountingCode  String?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
   
@@ -132,8 +136,10 @@ model FinancialCategory {
   recurringTransactions RecurringTransaction[]
 
   @@unique([name, parentId, companyId])
+  @@unique([companyId, type, isDefault], name: "unique_default_category_per_company_type") // ✅ CONSTRAINT
   @@index([companyId])
   @@index([parentId])
+  @@index([companyId, type, isDefault]) // ✅ ÍNDICE OTIMIZADO
 }
 
 model FinancialTransaction {

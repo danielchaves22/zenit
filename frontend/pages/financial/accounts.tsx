@@ -11,7 +11,7 @@ import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { 
   Plus, CreditCard, Edit2, Trash2, Eye, EyeOff, 
-  DollarSign, Settings, AlertTriangle 
+  DollarSign, Settings, AlertTriangle, Star, StarOff
 } from 'lucide-react';
 import api from '@/lib/api';
 
@@ -23,6 +23,7 @@ interface Account {
   accountNumber?: string;
   bankName?: string;
   isActive: boolean;
+  isDefault: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -78,6 +79,57 @@ export default function AccountsPage() {
       addToast(errorMsg, 'error');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSetDefault(account: Account) {
+    if (account.isDefault) {
+      // Se já é padrão, remover
+      confirmation.confirm(
+        {
+          title: 'Remover Conta Padrão',
+          message: `Tem certeza que deseja remover "${account.name}" como conta padrão?`,
+          confirmText: 'Remover Padrão',
+          cancelText: 'Cancelar',
+          type: 'warning'
+        },
+        async () => {
+          try {
+            await api.delete(`/financial/accounts/${account.id}/set-default`);
+            addToast('Conta padrão removida com sucesso', 'success');
+            fetchAccounts();
+          } catch (error: any) {
+            addToast(error.response?.data?.error || 'Erro ao remover conta padrão', 'error');
+            throw error;
+          }
+        }
+      );
+    } else {
+      // Se não é padrão, definir como padrão
+      const currentDefault = accounts.find(acc => acc.isDefault);
+      const message = currentDefault 
+        ? `Definir "${account.name}" como conta padrão? A conta "${currentDefault.name}" deixará de ser padrão.`
+        : `Definir "${account.name}" como conta padrão da empresa?`;
+        
+      confirmation.confirm(
+        {
+          title: 'Definir Conta Padrão',
+          message,
+          confirmText: 'Definir como Padrão',
+          cancelText: 'Cancelar',
+          type: 'info'
+        },
+        async () => {
+          try {
+            await api.post(`/financial/accounts/${account.id}/set-default`);
+            addToast('Conta definida como padrão com sucesso', 'success');
+            fetchAccounts();
+          } catch (error: any) {
+            addToast(error.response?.data?.error || 'Erro ao definir conta padrão', 'error');
+            throw error;
+          }
+        }
+      );
     }
   }
 
@@ -501,6 +553,9 @@ export default function AccountsPage() {
                     <div className="flex items-center gap-2">
                       {getAccountTypeIcon(account.type)}
                       {!account.isActive && <EyeOff size={16} className="text-gray-500" />}
+                      {account.isDefault && (
+                        <Star size={16} className="text-yellow-400 fill-current" />
+                      )}
                     </div>
                     
                     <div className="flex-1">
@@ -512,6 +567,12 @@ export default function AccountsPage() {
                         {!account.isActive && (
                           <span className="text-xs bg-red-900 text-red-300 px-2 py-1 rounded">
                             Inativa
+                          </span>
+                        )}
+                        {account.isDefault && (
+                          <span className="text-xs bg-yellow-700 text-yellow-300 px-2 py-1 rounded flex items-center gap-1">
+                            <Star size={12} className="fill-current" />
+                            Padrão
                           </span>
                         )}
                       </div>
@@ -541,6 +602,22 @@ export default function AccountsPage() {
                   </div>
 
                   <div className="flex items-center gap-1 ml-4">
+                    <button
+                      onClick={() => handleSetDefault(account)}
+                      className={`p-1 transition-colors ${
+                        account.isDefault 
+                          ? 'text-yellow-400 hover:text-yellow-300' 
+                          : 'text-gray-300 hover:text-yellow-400'
+                      }`}
+                      title={account.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                      disabled={formLoading || !account.isActive}
+                    >
+                      {account.isDefault ? (
+                        <Star size={16} className="fill-current" />
+                      ) : (
+                        <StarOff size={16} />
+                      )}
+                    </button>
                     <button
                       onClick={() => openBalanceModal(account)}
                       className="p-1 text-gray-300 hover:text-blue-400 transition-colors"

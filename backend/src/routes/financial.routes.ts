@@ -37,6 +37,14 @@ import {
 } from '../controllers/financial-category.controller';
 
 import {
+  setDefaultAccount,
+  unsetDefaultAccount,
+  setDefaultCategory,
+  unsetDefaultCategory,
+  getCompanyDefaults
+} from '../controllers/default.controller';
+
+import {
   createTransaction,
   getTransactions,
   getTransactionById,
@@ -51,6 +59,8 @@ import recurringRoutes from './financial-recurring.routes';
 
 const router = Router();
 
+router.get('/defaults', getCompanyDefaults);
+
 // Rotas de Contas Financeiras
 router.post('/accounts', validate(createAccountSchema), createAccount);
 router.get('/accounts', validate(listAccountsSchema), getAccounts);
@@ -59,12 +69,20 @@ router.put('/accounts/:id', validate(updateAccountSchema), updateAccount);
 router.delete('/accounts/:id', deleteAccount);
 router.post('/accounts/:id/adjust-balance', adjustBalance);
 
+// Gerenciar conta padrão
+router.post('/accounts/:id/set-default', setDefaultAccount);
+router.delete('/accounts/:id/set-default', unsetDefaultAccount);
+
 // Rotas de Categorias Financeiras
 router.post('/categories', validate(createCategorySchema), createCategory);
 router.get('/categories', validate(listCategoriesSchema), getCategories);
 router.get('/categories/:id', getCategoryById);
 router.put('/categories/:id', validate(updateCategorySchema), updateCategory);
 router.delete('/categories/:id', deleteCategory);
+
+// Gerenciar categoria padrão
+router.post('/categories/:id/set-default', setDefaultCategory);
+router.delete('/categories/:id/set-default', unsetDefaultCategory);
 
 // Rotas de Transações Financeiras
 router.post('/transactions', validate(createTransactionSchema), createTransaction);

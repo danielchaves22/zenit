@@ -12,16 +12,15 @@ export const createAccountSchema = z.object({
       const num = typeof val === 'string' ? Number(val.replace(/[^\d.-]/g, '')) : val;
       return isNaN(num) ? 0 : num;
     }),
-  accountNumber: z.string().optional(),
-  bankName: z.string().optional(),
+  accountNumber: z.string().optional().nullable(), // ✅ ACEITAR NULL
+  bankName: z.string().optional().nullable(), // ✅ ACEITAR NULL
 });
 
-// Schema para atualizar conta financeira
 export const updateAccountSchema = z.object({
   name: z.string().min(2, { message: 'Nome deve ter pelo menos 2 caracteres' }).optional(),
   type: z.enum(['CHECKING', 'SAVINGS', 'CREDIT_CARD', 'INVESTMENT', 'CASH']).optional(),
-  accountNumber: z.string().optional().nullable(),
-  bankName: z.string().optional().nullable(),
+  accountNumber: z.string().optional().nullable(), // ✅ ACEITAR NULL
+  bankName: z.string().optional().nullable(), // ✅ ACEITAR NULL
   isActive: z.boolean().optional(),
 }).refine(data => Object.keys(data).length > 0, {
   message: 'Pelo menos um campo deve ser fornecido para atualização'

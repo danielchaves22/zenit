@@ -57,14 +57,15 @@ export async function createCategory(req: Request, res: Response) {
       });
     }
 
-    // Criar a categoria
+    // ✅ CRIAR A CATEGORIA COM SINTAXE CORRETA DO PRISMA
     const category = await prisma.financialCategory.create({
       data: {
         name,
         type,
         color,
-        parentId,
-        accountingCode,
+        // ✅ USAR CONNECT QUANDO parentId EXISTE, SENÃO OMITIR
+        ...(parentId && { parent: { connect: { id: parentId } } }),
+        accountingCode: accountingCode || null, // ✅ TRATAR STRING VAZIA
         company: { connect: { id: companyId } }
       }
     });
@@ -239,15 +240,18 @@ export async function updateCategory(req: Request, res: Response) {
       }
     }
 
-    // Atualizar a categoria
+    // ✅ ATUALIZAR A CATEGORIA COM SINTAXE CORRETA
     const updatedCategory = await prisma.financialCategory.update({
       where: { id },
       data: {
         name,
         type,
         color,
-        parentId,
-        accountingCode
+        // ✅ LÓGICA CORRETA PARA PARENT
+        ...(parentId !== undefined && {
+          parent: parentId ? { connect: { id: parentId } } : { disconnect: true }
+        }),
+        accountingCode: accountingCode || null
       }
     });
 

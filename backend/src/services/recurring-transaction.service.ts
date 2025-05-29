@@ -309,6 +309,22 @@ export default class RecurringTransactionService {
   }
 
   /**
+   * Get recurring transaction by ID
+   */
+  static async getRecurringTransactionById(id: number): Promise<RecurringTransaction | null> {
+    return prisma.recurringTransaction.findUnique({
+      where: { id },
+      include: {
+        fromAccount: { select: { id: true, name: true } },
+        toAccount: { select: { id: true, name: true } },
+        category: { select: { id: true, name: true, color: true } },
+        createdByUser: { select: { id: true, name: true } },
+        _count: { select: { transactions: true } }
+      }
+    });
+  }
+
+  /**
    * Get next occurrence based on frequency
    */
   private static getNextOccurrence(

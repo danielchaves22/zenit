@@ -1,3 +1,5 @@
+// backend/src/routes/financial.routes.ts - ATUALIZAÇÃO PARA INCLUIR RECORRENTES
+
 import { Router } from 'express';
 import { validate } from '../middlewares/validate.middleware';
 import {
@@ -44,6 +46,9 @@ import {
   getFinancialSummary
 } from '../controllers/financial-transaction.controller';
 
+// ✅ IMPORTAR ROTAS RECORRENTES
+import recurringRoutes from './financial-recurring.routes';
+
 const router = Router();
 
 // Rotas de Contas Financeiras
@@ -68,6 +73,9 @@ router.get('/transactions/:id', getTransactionById);
 router.put('/transactions/:id', validate(updateTransactionSchema), updateTransaction);
 router.patch('/transactions/:id/status', validate(updateTransactionStatusSchema), updateTransactionStatus);
 router.delete('/transactions/:id', deleteTransaction);
+
+// ✅ ADICIONAR ROTAS RECORRENTES
+router.use('/recurring', recurringRoutes);
 
 // Rotas de Relatórios/Dashboard
 router.get('/summary', getFinancialSummary);

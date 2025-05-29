@@ -63,95 +63,97 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
   }, [collapsed]);
 
   const menuItems: SidebarItem[] = [
-    {
-      title: 'Principal',
-      type: 'title'
-    },
-    {
-      icon: <Home size={20} />,
-      label: 'Início',
-      subItems: [
-        { label: 'Início', href: '/', showWhenExpanded: true },
-      ],
-    },
-    {
-      title: 'Financeiro',
-      type: 'title'
-    },
-    {
-      icon: <PieChart size={20} />,
-      label: 'Dashboard',
-      subItems: [
-        { label: 'Dashboard Financeiro', href: '/financial/dashboard', showWhenExpanded: true },
-      ],
-    },
-    {
-      icon: <CreditCard size={20} />,
-      label: 'Contas',
-      subItems: [
-        { label: 'Contas', href: '/financial/accounts', showWhenExpanded: true },
-      ],
-    },
-    {
-      icon: <Receipt size={20} />,
-      label: 'Transações',
-      subItems: [
-        { label: 'Transações', href: '/financial/transactions', showWhenExpanded: true },
-      ],
-    },
-    {
-      icon: <Building2 size={20} />,
-      label: 'Categorias',
-      subItems: [
-        { label: 'Categorias', href: '/financial/categories', showWhenExpanded: true },
-      ],
-    },
-    {
-      icon: <Calendar size={20} />,
-      label: 'Recorrentes',
-      subItems: [
-        { label: 'Recorrentes', href: '/financial/recurring', showWhenExpanded: true },
-      ],
-    },
-    {
-      title: 'Relatórios',
-      type: 'title'
-    },
-    {
-      icon: <BarChart3 size={20} />,
-      label: 'Relatórios',
-      subItems: [
-        { label: 'Fluxo de Caixa', href: '/reports/cashflow' },
-        { label: 'DRE', href: '/reports/income' },
-        { label: 'Balancete', href: '/reports/balance' },
-      ],
-    },
-    {
-      title: 'Administração',
-      type: 'title'
-    },
-    {
-      icon: <Users size={20} />,
-      label: 'Usuários',
-      subItems: [
-        { label: 'Usuários', href: '/admin/users', showWhenExpanded: true },
-      ],
-    },
-    {
-      icon: <Building2 size={20} />,
-      label: 'Empresas',
-      subItems: [
-        { label: 'Empresas', href: '/admin/companies', showWhenExpanded: true },
-      ],
-    },
-    {
-      icon: <Settings size={20} />,
-      label: 'Configurações',
-      subItems: [
-        { label: 'Configurações', href: '/admin/settings', showWhenExpanded: true },
-      ],
-    },
-  ];
+  {
+    title: 'Principal',
+    type: 'title'
+  },
+  {
+    icon: <Home size={20} />,
+    label: 'Início',
+    subItems: [
+      { label: 'Início', href: '/', showWhenExpanded: true },
+    ],
+  },
+  {
+    title: 'Financeiro',
+    type: 'title'
+  },
+  {
+    icon: <PieChart size={20} />,
+    label: 'Dashboard',
+    subItems: [
+      { label: 'Dashboard Financeiro', href: '/financial/dashboard', showWhenExpanded: true },
+    ],
+  },
+  {
+    icon: <CreditCard size={20} />,
+    label: 'Contas',
+    subItems: [
+      { label: 'Contas', href: '/financial/accounts', showWhenExpanded: true },
+    ],
+  },
+  {
+  icon: <Receipt size={20} />,
+  label: 'Transações',
+  subItems: [
+    { label: 'Lista de Transações', href: '/financial/transactions' },
+    { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
+    { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
+  ],
+},
+  {
+    icon: <Building2 size={20} />,
+    label: 'Categorias',
+    subItems: [
+      { label: 'Categorias', href: '/financial/categories', showWhenExpanded: true },
+    ],
+  },
+  // {
+  //   icon: <Calendar size={20} />,
+  //   label: 'Recorrentes',
+  //   subItems: [
+  //     { label: 'Recorrentes', href: '/financial/recurring', showWhenExpanded: true },
+  //   ],
+  // },
+  {
+    title: 'Relatórios',
+    type: 'title'
+  },
+  {
+    icon: <BarChart3 size={20} />,
+    label: 'Relatórios',
+    subItems: [
+      { label: 'Fluxo de Caixa', href: '/reports/cashflow' },
+      { label: 'DRE', href: '/reports/income' },
+      { label: 'Balancete', href: '/reports/balance' },
+    ],
+  },
+  {
+    title: 'Administração',
+    type: 'title'
+  },
+  {
+    icon: <Users size={20} />,
+    label: 'Usuários',
+    subItems: [
+      { label: 'Usuários', href: '/admin/users', showWhenExpanded: true },
+    ],
+  },
+  {
+    icon: <Building2 size={20} />,
+    label: 'Empresas',
+    subItems: [
+      { label: 'Empresas', href: '/admin/companies', showWhenExpanded: true },
+    ],
+  },
+  {
+    icon: <Settings size={20} />,
+    label: 'Configurações',
+    subItems: [
+      { label: 'Configurações', href: '/admin/settings', showWhenExpanded: true },
+    ],
+  },
+];
 
   const toggleSidebar = () => {
     const newCollapsedState = !collapsed;
@@ -292,47 +294,6 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                       
                       {hasMultipleSubItems && <ChevronRight size={16} className="ml-2" />}
                     </Link>
-
-                    {/* Submenu normais para modo expandido - apenas visíveis quando o item está ativo */}
-                    {hasMultipleSubItems && (
-                      <div className={`pl-10 bg-[#111419] overflow-hidden transition-all duration-300 ease-in-out ${
-                        isActive ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'
-                      }`}>
-                        {menuItem.subItems
-                          // Filtra apenas os que devem ser mostrados quando expandido
-                          .filter(subItem => subItem.showWhenExpanded !== false)
-                          .map((subItem, subIndex) => {
-                            // Determina se deve renderizar como categoria de destaque
-                            const isSingleItem = menuItem.subItems.length === 1;
-                            const renderAsCategory = !subItem.href || isSingleItem;
-                            
-                            return renderAsCategory ? (
-                              <div 
-                                key={subIndex}
-                                className="block py-2 pl-2 pr-4 text-gray-300"
-                                onClick={() => {
-                                  if (subItem.href) {
-                                    router.push(subItem.href);
-                                  }
-                                }}
-                                style={{ cursor: subItem.href ? 'pointer' : 'default' }}
-                              >
-                                {subItem.label}
-                              </div>
-                            ) : (
-                              <Link
-                                key={subIndex}
-                                href={subItem.href || '#'}
-                                className={`block py-2 pl-2 pr-4 hover:bg-[#1e2126] text-sm ${
-                                  router.pathname === subItem.href ? 'text-[#f59e0b]' : 'text-gray-400'
-                                }`}
-                              >
-                                {subItem.label}
-                              </Link>
-                            );
-                          })}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>

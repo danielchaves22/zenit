@@ -52,6 +52,7 @@ model User {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   financialTransactions FinancialTransaction[]
+  recurringTransactions RecurringTransaction[] // ✅ ADICIONADO - Relação inversa
 }
 
 model Company {
@@ -189,7 +190,7 @@ model RecurringTransaction {
   companyId       Int
   company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy       Int
-  createdByUser   User                 @relation(fields: [createdBy], references: [id])
+  createdByUser   User                 @relation(fields: [createdBy], references: [id]) // ✅ CORRIGIDO
   transactions    FinancialTransaction[] // Transações geradas
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt

@@ -1,9 +1,9 @@
-// frontend/pages/reports/cashflow.tsx
+// frontend/pages/financial/reports/cashflow.tsx
 import React from 'react';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Breadcrumb } from '@/components/ui/Breadcrumb';
+import { DashboardLayout } from '../../../components/layout/DashboardLayout';
+import { Card } from '../../../components/ui/Card';
+import { Button } from '../../../components/ui/Button';
+import { Breadcrumb } from '../../../components/ui/Breadcrumb';
 import { TrendingUp, Download, Filter, Calendar } from 'lucide-react';
 
 export default function CashflowReportPage() {
@@ -11,7 +11,8 @@ export default function CashflowReportPage() {
     <DashboardLayout title="Fluxo de Caixa">
       <Breadcrumb items={[
         { label: 'Dashboard', href: '/' },
-        { label: 'Relatórios' },
+        { label: 'Financeiro', href: '/financial' },
+        { label: 'Relatórios', href: '/financial/reports' },
         { label: 'Fluxo de Caixa' }
       ]} />
 

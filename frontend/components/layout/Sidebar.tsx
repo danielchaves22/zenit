@@ -3,10 +3,10 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { 
-  PieChart, DollarSign, CreditCard, Building2, 
-  Users, Settings, ChevronLeft, ChevronRight, User, Receipt
+  PieChart, DollarSign, CreditCard, Building2, Receipt, 
+  Users, Settings, ChevronLeft, ChevronRight, User, 
+  TrendingDown, TrendingUp, BarChart3, FileText, Calendar
 } from 'lucide-react';
-import { TrendingDown, TrendingUp } from 'lucide-react';
 
 // Tipo para submenu - href é opcional para itens não clicáveis
 type SubMenuItem = {
@@ -96,38 +96,20 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       ],
     },
     {
-      title: 'Despesas',
-      type: 'title'
-    },
-    {
-      icon: <TrendingDown size={20} />,
-      label: 'Despesas Fixas',
+      icon: <Calendar size={20} />,
+      label: 'Recorrentes',
       subItems: [
-        { label: 'Despesas Fixas', href: '/expenses/recurring', showWhenExpanded: true },
-        { label: 'Projeções', href: '/expenses/projections', showWhenExpanded: true },
+        { label: 'Recorrentes', href: '/financial/recurring', showWhenExpanded: true },
       ],
     },
     {
-      title: 'Receitas',
-      type: 'title'
-    },
-    {
-      icon: <TrendingUp size={20} />,
-      label: 'Receitas Fixas',
+      icon: <BarChart3 size={20} />,
+      label: 'Relatórios',
       subItems: [
-        { label: 'Receitas Fixas', href: '/income/recurring', showWhenExpanded: true },
-        { label: 'Projeções', href: '/income/projections', showWhenExpanded: true },
-      ],
-    },
-    {
-      title: 'Configurações',
-      type: 'title'
-    },
-    {
-      icon: <Settings size={20} />,
-      label: 'Sistema',
-      subItems: [
-        { label: 'Meu Perfil', href: '/profile', showWhenExpanded: true },
+        { label: 'Dashboard de Relatórios', href: '/financial/reports', showWhenExpanded: true },
+        { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' },
+        { label: 'DRE', href: '/financial/reports/income' },
+        { label: 'Balancete', href: '/financial/reports/balance' },
       ],
     },
     {
@@ -138,14 +120,21 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       icon: <Users size={20} />,
       label: 'Usuários',
       subItems: [
-        { label: 'Usuários', href: '/users', showWhenExpanded: true },
+        { label: 'Usuários', href: '/admin/users', showWhenExpanded: true },
       ],
     },
     {
       icon: <Building2 size={20} />,
       label: 'Empresas',
       subItems: [
-        { label: 'Empresas', href: '/companies', showWhenExpanded: true },
+        { label: 'Empresas', href: '/admin/companies', showWhenExpanded: true },
+      ],
+    },
+    {
+      icon: <Settings size={20} />,
+      label: 'Configurações',
+      subItems: [
+        { label: 'Configurações', href: '/admin/settings', showWhenExpanded: true },
       ],
     },
   ];
@@ -232,7 +221,16 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         <div className="flex-1 overflow-y-auto">
           {menuItems.map((item, index) => {
             if ('type' in item && item.type === 'title') {
-              // Não renderizar separadores - removido completamente
+              // Separadores de seção - apenas no modo expandido
+              if (!collapsed) {
+                return (
+                  <div key={index} className="px-4 py-2 mt-4 first:mt-2">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                      {item.title}
+                    </span>
+                  </div>
+                );
+              }
               return null;
             }
 

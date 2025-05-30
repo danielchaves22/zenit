@@ -1,4 +1,4 @@
-// frontend/pages/financial/categories.tsx
+// frontend/pages/financial/categories.tsx - PADRONIZADA
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
@@ -9,14 +9,15 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
-import { Plus, Tag, Edit2, Trash2, TrendingUp, TrendingDown, Palette } from 'lucide-react';
+import { Plus, Tag, Edit2, Trash2, TrendingUp, TrendingDown, Star, StarOff } from 'lucide-react';
 import api from '@/lib/api';
 
 interface Category {
   id: number;
   name: string;
-  type: 'INCOME' | 'EXPENSE';
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   color: string;
+  isDefault: boolean;
   parentId?: number;
   parent?: { id: number; name: string };
   accountingCode?: string;
@@ -40,7 +41,7 @@ export default function CategoriesPage() {
   const [formLoading, setFormLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    type: 'EXPENSE' as 'INCOME' | 'EXPENSE',
+    type: 'EXPENSE' as 'INCOME' | 'EXPENSE' | 'TRANSFER',
     color: '#6366F1',
     parentId: '',
     accountingCode: ''
@@ -65,6 +66,58 @@ export default function CategoriesPage() {
     }
   }
 
+  async function handleSetDefault(category: Category) {
+    if (category.isDefault) {
+      // Se já é padrão, remover
+      confirmation.confirm(
+        {
+          title: 'Remover Categoria Padrão',
+          message: `Tem certeza que deseja remover "${category.name}" como categoria padrão para ${category.type === 'EXPENSE' ? 'despesas' : 'receitas'}?`,
+          confirmText: 'Remover Padrão',
+          cancelText: 'Cancelar',
+          type: 'warning'
+        },
+        async () => {
+          try {
+            await api.delete(`/financial/categories/${category.id}/set-default`);
+            addToast('Categoria padrão removida com sucesso', 'success');
+            fetchCategories();
+          } catch (error: any) {
+            addToast(error.response?.data?.error || 'Erro ao remover categoria padrão', 'error');
+            throw error;
+          }
+        }
+      );
+    } else {
+      // Se não é padrão, definir como padrão
+      const currentDefault = categories.find(cat => cat.isDefault && cat.type === category.type);
+      const typeLabel = category.type === 'EXPENSE' ? 'despesas' : 'receitas';
+      const message = currentDefault 
+        ? `Definir "${category.name}" como categoria padrão para ${typeLabel}? A categoria "${currentDefault.name}" deixará de ser padrão.`
+        : `Definir "${category.name}" como categoria padrão para ${typeLabel}?`;
+        
+      confirmation.confirm(
+        {
+          title: 'Definir Categoria Padrão',
+          message,
+          confirmText: 'Definir como Padrão',
+          cancelText: 'Cancelar',
+          type: 'info'
+        },
+        async () => {
+          try {
+            await api.post(`/financial/categories/${category.id}/set-default`);
+            addToast('Categoria definida como padrão com sucesso', 'success');
+            fetchCategories();
+          } catch (error: any) {
+            addToast(error.response?.data?.error || 'Erro ao definir categoria padrão', 'error');
+            throw error;
+          }
+        }
+      );
+    }
+  }
+
   function openNewForm() {
     setEditingCategory(null);
     setFormData({
@@ -81,7 +134,7 @@ export default function CategoriesPage() {
     setEditingCategory(category);
     setFormData({
         name: category.name,
-        type: category.type as 'INCOME' | 'EXPENSE', // ✅ CAST EXPLÍCITO
+        type: category.type as 'INCOME' | 'EXPENSE' | 'TRANSFER',
         color: category.color,
         parentId: category.parentId?.toString() || '',
         accountingCode: category.accountingCode || ''
@@ -192,30 +245,48 @@ export default function CategoriesPage() {
       </div>
 
       {/* Abas de Tipo */}
-      <div className="flex space-x-1 mb-6">
-        <button
-          onClick={() => setActiveTab('EXPENSE')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-            activeTab === 'EXPENSE' 
-              ? 'bg-red-600 text-white' 
-              : 'bg-[#1e2126] text-gray-400 hover:text-white'
-          }`}
-        >
-          <TrendingDown size={16} />
-          Despesas
-        </button>
-        <button
-          onClick={() => setActiveTab('INCOME')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-            activeTab === 'INCOME' 
-              ? 'bg-green-600 text-white' 
-              : 'bg-[#1e2126] text-gray-400 hover:text-white'
-          }`}
-        >
-          <TrendingUp size={16} />
-          Receitas
-        </button>
-      </div>
+      {!showForm && (
+        <div className="flex space-x-1 mb-6">
+          <button
+            onClick={() => setActiveTab('EXPENSE')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'EXPENSE' 
+                ? 'bg-red-600 text-white' 
+                : 'bg-[#1e2126] text-gray-400 hover:text-white'
+            }`}
+          >
+            <TrendingDown size={16} />
+            Despesas
+          </button>
+          <button
+            onClick={() => setActiveTab('INCOME')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'INCOME' 
+                ? 'bg-green-600 text-white' 
+                : 'bg-[#1e2126] text-gray-400 hover:text-white'
+            }`}
+          >
+            <TrendingUp size={16} />
+            Receitas
+          </button>
+        </div>
+      )}
+
+      {/* Info sobre categoria padrão */}
+      {!showForm && (
+        <Card className="mb-6 bg-blue-900/20 border-blue-600">
+          <div className="flex items-start gap-3">
+            <Star size={20} className="text-blue-400 mt-0.5" />
+            <div>
+              <h3 className="font-medium text-blue-300 mb-1">Categoria Padrão</h3>
+              <p className="text-sm text-blue-200">
+                Defina uma categoria padrão para {activeTab === 'EXPENSE' ? 'despesas' : 'receitas'} 
+                que será automaticamente selecionada em novos lançamentos.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Formulário Inline */}
       {showForm && (
@@ -365,167 +436,280 @@ export default function CategoriesPage() {
             </Button>
           </div>
         ) : (
-          <div className="space-y-4">
-            {/* Categorias Principais */}
-            {parentCategories.map((category) => (
-              <div key={category.id}>
-                {/* Categoria Pai */}
-                <div 
-                  className={`border border-gray-700 rounded-lg p-4 hover:bg-[#1a1f2b] transition-colors ${
-                    editingCategory?.id === category.id 
-                      ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
-                      : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1">
-                      <div 
-                        className="w-4 h-4 rounded-full border-2 border-white"
-                        style={{ backgroundColor: category.color }}
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-white">{category.name}</span>
-                          {category.accountingCode && (
-                            <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
-                              {category.accountingCode}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
+                <tr>
+                  <th className="px-4 py-3 text-center w-24">Ações</th>
+                  <th className="px-4 py-3 text-left">Categoria</th>
+                  <th className="px-4 py-3 text-left">Categoria Pai</th>
+                  <th className="px-4 py-3 text-left">Código</th>
+                  <th className="px-4 py-3 text-center">Padrão</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Categorias Principais */}
+                {parentCategories.map((category) => (
+                  <React.Fragment key={category.id}>
+                    <tr 
+                      className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                        editingCategory?.id === category.id 
+                          ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                          : ''
+                      } ${category.isDefault ? 'bg-yellow-900/10' : ''}`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 justify-center">
+                          <button
+                            onClick={() => handleSetDefault(category)}
+                            className={`p-1 transition-colors ${
+                              category.isDefault 
+                                ? 'text-yellow-400 hover:text-yellow-300' 
+                                : 'text-gray-300 hover:text-yellow-400'
+                            }`}
+                            title={category.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                            disabled={formLoading}
+                          >
+                            {category.isDefault ? (
+                              <Star size={16} className="fill-current" />
+                            ) : (
+                              <StarOff size={16} />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => openEditForm(category)}
+                            className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                            title="Editar"
+                            disabled={formLoading}
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(category)}
+                            className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                            title="Excluir"
+                            disabled={formLoading}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                      
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-4 h-4 rounded-full border-2 border-white"
+                            style={{ backgroundColor: category.color }}
+                          />
+                          <div>
+                            <div className="font-medium text-white flex items-center gap-2">
+                              {category.name}
+                              {category.isDefault && (
+                                <Star size={12} className="text-yellow-400 fill-current" />
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-400">
+                              Categoria principal • {getChildrenForParent(category.id).length} subcategorias
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      
+                      <td className="px-4 py-3 text-gray-300">
+                        -
+                      </td>
+                      
+                      <td className="px-4 py-3 text-gray-300">
+                        {category.accountingCode || '-'}
+                      </td>
+                      
+                      <td className="px-4 py-3 text-center">
+                        {category.isDefault && (
+                          <span className="px-2 py-1 bg-yellow-700 text-yellow-300 text-xs rounded-full">
+                            Padrão
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+
+                    {/* Subcategorias */}
+                    {getChildrenForParent(category.id).map((child) => (
+                      <tr 
+                        key={child.id}
+                        className={`border-b border-gray-700 hover:bg-[#1a1f2b] bg-[#0f1419] ${
+                          editingCategory?.id === child.id 
+                            ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                            : ''
+                        } ${child.isDefault ? 'bg-yellow-900/10' : ''}`}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1 justify-center">
+                            <button
+                              onClick={() => handleSetDefault(child)}
+                              className={`p-1 transition-colors ${
+                                child.isDefault 
+                                  ? 'text-yellow-400 hover:text-yellow-300' 
+                                  : 'text-gray-300 hover:text-yellow-400'
+                              }`}
+                              title={child.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                              disabled={formLoading}
+                            >
+                              {child.isDefault ? (
+                                <Star size={14} className="fill-current" />
+                              ) : (
+                                <StarOff size={14} />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => openEditForm(child)}
+                              className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                              title="Editar"
+                              disabled={formLoading}
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(child)}
+                              className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                              title="Excluir"
+                              disabled={formLoading}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                        
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3 ml-6">
+                            <div 
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: child.color }}
+                            />
+                            <div>
+                              <div className="text-white flex items-center gap-2">
+                                {child.name}
+                                {child.isDefault && (
+                                  <Star size={12} className="text-yellow-400 fill-current" />
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                Subcategoria
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        
+                        <td className="px-4 py-3 text-gray-300">
+                          {category.name}
+                        </td>
+                        
+                        <td className="px-4 py-3 text-gray-300">
+                          {child.accountingCode || '-'}
+                        </td>
+                        
+                        <td className="px-4 py-3 text-center">
+                          {child.isDefault && (
+                            <span className="px-2 py-1 bg-yellow-700 text-yellow-300 text-xs rounded-full">
+                              Padrão
                             </span>
                           )}
-                        </div>
-                        <div className="text-sm text-gray-400 mt-1">
-                          Categoria principal • {getChildrenForParent(category.id).length} subcategorias
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openEditForm(category)}
-                        className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
-                        title="Editar"
-                        disabled={formLoading}
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(category)}
-                        className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                        title="Excluir"
-                        disabled={formLoading}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Subcategorias */}
-                {getChildrenForParent(category.id).map((child) => (
-                  <div 
-                    key={child.id}
-                    className={`ml-8 mt-2 border border-gray-700 rounded-lg p-3 hover:bg-[#1a1f2b] transition-colors ${
-                      editingCategory?.id === child.id 
-                        ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
-                        : ''
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3 flex-1">
-                        <div 
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: child.color }}
-                        />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-white">{child.name}</span>
-                            {child.accountingCode && (
-                              <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
-                                {child.accountingCode}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1">
-                            Subcategoria de {category.name}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => openEditForm(child)}
-                          className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
-                          title="Editar"
-                          disabled={formLoading}
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(child)}
-                          className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                          title="Excluir"
-                          disabled={formLoading}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
                 ))}
-              </div>
-            ))}
 
-            {/* Categorias sem pai que ficaram órfãs */}
-            {childCategories
-              .filter(child => !parentCategories.find(parent => parent.id === child.parentId))
-              .map((orphan) => (
-                <div 
-                  key={orphan.id}
-                  className={`border border-yellow-600 rounded-lg p-4 bg-yellow-900/20 ${
-                    editingCategory?.id === orphan.id 
-                      ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
-                      : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1">
-                      <div 
-                        className="w-4 h-4 rounded-full"
-                        style={{ backgroundColor: orphan.color }}
-                      />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-white">{orphan.name}</span>
-                          <span className="text-xs bg-yellow-700 text-yellow-300 px-2 py-1 rounded">
-                            Categoria órfã
+                {/* Categorias órfãs */}
+                {childCategories
+                  .filter(child => !parentCategories.find(parent => parent.id === child.parentId))
+                  .map((orphan) => (
+                    <tr 
+                      key={orphan.id}
+                      className={`border-b border-gray-700 hover:bg-[#1a1f2b] bg-yellow-900/20 border-yellow-600/30 ${
+                        editingCategory?.id === orphan.id 
+                          ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                          : ''
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 justify-center">
+                          <button
+                            onClick={() => handleSetDefault(orphan)}
+                            className={`p-1 transition-colors ${
+                              orphan.isDefault 
+                                ? 'text-yellow-400 hover:text-yellow-300' 
+                                : 'text-gray-300 hover:text-yellow-400'
+                            }`}
+                            title={orphan.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                            disabled={formLoading}
+                          >
+                            {orphan.isDefault ? (
+                              <Star size={16} className="fill-current" />
+                            ) : (
+                              <StarOff size={16} />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => openEditForm(orphan)}
+                            className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                            title="Editar"
+                            disabled={formLoading}
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(orphan)}
+                            className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                            title="Excluir"
+                            disabled={formLoading}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                      
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-4 h-4 rounded-full"
+                            style={{ backgroundColor: orphan.color }}
+                          />
+                          <div>
+                            <div className="text-white flex items-center gap-2">
+                              {orphan.name}
+                              <span className="text-xs bg-yellow-700 text-yellow-300 px-2 py-1 rounded">
+                                Órfã
+                              </span>
+                              {orphan.isDefault && (
+                                <Star size={12} className="text-yellow-400 fill-current" />
+                              )}
+                            </div>
+                            <div className="text-sm text-yellow-400">
+                              Categoria pai foi excluída
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      
+                      <td className="px-4 py-3 text-yellow-400">
+                        Categoria pai excluída
+                      </td>
+                      
+                      <td className="px-4 py-3 text-gray-300">
+                        {orphan.accountingCode || '-'}
+                      </td>
+                      
+                      <td className="px-4 py-3 text-center">
+                        {orphan.isDefault && (
+                          <span className="px-2 py-1 bg-yellow-700 text-yellow-300 text-xs rounded-full">
+                            Padrão
                           </span>
-                        </div>
-                        <div className="text-sm text-yellow-400 mt-1">
-                          Categoria pai foi excluída
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => openEditForm(orphan)}
-                        className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
-                        title="Editar"
-                        disabled={formLoading}
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(orphan)}
-                        className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                        title="Excluir"
-                        disabled={formLoading}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>

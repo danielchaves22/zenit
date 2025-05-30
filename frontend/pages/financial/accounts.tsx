@@ -1,17 +1,18 @@
-// frontend/pages/financial/accounts.tsx
+// frontend/pages/financial/accounts.tsx - PADRONIZADA
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { 
-  Plus, CreditCard, Edit2, Trash2, Eye, EyeOff, 
-  DollarSign, Settings, AlertTriangle, Star, StarOff
+  Plus, CreditCard, Edit2, Trash2, Settings,
+  Star, StarOff, AlertTriangle
 } from 'lucide-react';
 import api from '@/lib/api';
 
@@ -45,7 +46,7 @@ export default function AccountsPage() {
   const [formData, setFormData] = useState({
     name: '',
     type: 'CHECKING' as Account['type'],
-    initialBalance: '0',
+    initialBalance: '0.00',
     accountNumber: '',
     bankName: '',
     isActive: true
@@ -55,13 +56,13 @@ export default function AccountsPage() {
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [adjustingAccount, setAdjustingAccount] = useState<Account | null>(null);
   const [balanceData, setBalanceData] = useState({
-    newBalance: '',
+    newBalance: '0.00',
     reason: ''
   });
 
   useEffect(() => {
     fetchAccounts();
-  }, []);
+  }, [filterType, filterStatus]);
 
   async function fetchAccounts() {
     setLoading(true);
@@ -138,7 +139,7 @@ export default function AccountsPage() {
     setFormData({
       name: '',
       type: 'CHECKING',
-      initialBalance: '0',
+      initialBalance: '0.00',
       accountNumber: '',
       bankName: '',
       isActive: true
@@ -165,7 +166,7 @@ export default function AccountsPage() {
     setFormData({
       name: '',
       type: 'CHECKING',
-      initialBalance: '0',
+      initialBalance: '0.00',
       accountNumber: '',
       bankName: '',
       isActive: true
@@ -185,7 +186,7 @@ export default function AccountsPage() {
     setShowBalanceModal(false);
     setAdjustingAccount(null);
     setBalanceData({
-      newBalance: '',
+      newBalance: '0.00',
       reason: ''
     });
   }
@@ -296,23 +297,6 @@ export default function AccountsPage() {
     return types[type] || type;
   }
 
-  function getAccountTypeIcon(type: string) {
-    switch (type) {
-      case 'CHECKING':
-        return <CreditCard size={16} className="text-blue-400" />;
-      case 'SAVINGS':
-        return <DollarSign size={16} className="text-green-400" />;
-      case 'CREDIT_CARD':
-        return <CreditCard size={16} className="text-purple-400" />;
-      case 'INVESTMENT':
-        return <DollarSign size={16} className="text-yellow-400" />;
-      case 'CASH':
-        return <DollarSign size={16} className="text-gray-400" />;
-      default:
-        return <CreditCard size={16} className="text-gray-400" />;
-    }
-  }
-
   // Filtrar contas
   const filteredAccounts = accounts.filter(account => {
     const typeMatch = !filterType || account.type === filterType;
@@ -327,6 +311,23 @@ export default function AccountsPage() {
   const totalBalance = filteredAccounts
     .filter(acc => acc.isActive)
     .reduce((sum, acc) => sum + parseFloat(acc.balance), 0);
+
+  function getAccountTypeIcon(type: string) {
+    switch (type) {
+      case 'CHECKING':
+        return <CreditCard size={16} className="text-blue-400" />;
+      case 'SAVINGS':
+        return <CreditCard size={16} className="text-green-400" />;
+      case 'CREDIT_CARD':
+        return <CreditCard size={16} className="text-purple-400" />;
+      case 'INVESTMENT':
+        return <CreditCard size={16} className="text-yellow-400" />;
+      case 'CASH':
+        return <CreditCard size={16} className="text-gray-400" />;
+      default:
+        return <CreditCard size={16} className="text-gray-400" />;
+    }
+  }
 
   return (
     <DashboardLayout>
@@ -350,60 +351,61 @@ export default function AccountsPage() {
       </div>
 
       {/* Filtros */}
-      <Card className="mb-6">
-        <div className="flex flex-wrap gap-4 items-end">
-          <div>
-            <label className="block text-sm font-medium mb-1 text-gray-300">
-              Tipo de Conta
-            </label>
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+      {!showForm && (
+        <Card className="mb-6">
+          <div className="flex flex-wrap gap-4 items-end">
+            <div>
+              <label className="block text-sm font-medium mb-1 text-gray-300">
+                Tipo de Conta
+              </label>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+              >
+                <option value="">Todos os tipos</option>
+                <option value="CHECKING">Conta Corrente</option>
+                <option value="SAVINGS">Poupança</option>
+                <option value="CREDIT_CARD">Cartão de Crédito</option>
+                <option value="INVESTMENT">Investimento</option>
+                <option value="CASH">Dinheiro</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1 text-gray-300">
+                Status
+              </label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+              >
+                <option value="">Todos</option>
+                <option value="true">Ativas</option>
+                <option value="false">Inativas</option>
+              </select>
+            </div>
+
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setFilterType('');
+                setFilterStatus('');
+              }}
             >
-              <option value="">Todos os tipos</option>
-              <option value="CHECKING">Conta Corrente</option>
-              <option value="SAVINGS">Poupança</option>
-              <option value="CREDIT_CARD">Cartão de Crédito</option>
-              <option value="INVESTMENT">Investimento</option>
-              <option value="CASH">Dinheiro</option>
-            </select>
-          </div>
+              Limpar Filtros
+            </Button>
 
-          <div>
-            <label className="block text-sm font-medium mb-1 text-gray-300">
-              Status
-            </label>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-            >
-              <option value="">Todos</option>
-              <option value="true">Ativas</option>
-              <option value="false">Inativas</option>
-            </select>
-          </div>
-
-          <Button 
-            variant="outline" 
-            onClick={() => {
-              setFilterType('');
-              setFilterStatus('');
-              fetchAccounts();
-            }}
-          >
-            Limpar Filtros
-          </Button>
-
-          <div className="ml-auto text-right">
-            <div className="text-sm text-gray-400">Saldo Total (Contas Ativas)</div>
-            <div className="text-xl font-bold text-white">
-              {formatCurrency(totalBalance)}
+            <div className="ml-auto text-right">
+              <div className="text-sm text-gray-400">Saldo Total (Contas Ativas)</div>
+              <div className="text-xl font-bold text-white">
+                {formatCurrency(totalBalance)}
+              </div>
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
       {/* Formulário Inline */}
       {showForm && (
@@ -444,11 +446,10 @@ export default function AccountsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {!editingAccount && (
-                <Input
+                <CurrencyInput
                   label="Saldo Inicial"
                   value={formData.initialBalance}
-                  onChange={(e) => setFormData({...formData, initialBalance: e.target.value})}
-                  placeholder="0,00"
+                  onChange={(value) => setFormData({...formData, initialBalance: value})}
                   disabled={formLoading}
                 />
               )}
@@ -514,7 +515,7 @@ export default function AccountsPage() {
         {loading ? (
           <div className="space-y-3">
             {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full rounded bg-[#1e2126]" />
+              <Skeleton key={i} className="h-12 w-full rounded bg-[#1e2126]" />
             ))}
           </div>
         ) : error ? (
@@ -524,7 +525,7 @@ export default function AccountsPage() {
               Tentar Novamente
             </Button>
           </div>
-        ) : filteredAccounts.length === 0 ? (
+        ) : accounts.length === 0 ? (
           <div className="text-center py-10">
             <CreditCard size={48} className="mx-auto text-gray-400 mb-4" />
             <p className="text-gray-400 mb-4">Nenhuma conta encontrada</p>
@@ -538,114 +539,122 @@ export default function AccountsPage() {
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
-            {filteredAccounts.map((account) => (
-              <div 
-                key={account.id}
-                className={`border border-gray-700 rounded-lg p-4 hover:bg-[#1a1f2b] transition-colors ${
-                  editingAccount?.id === account.id 
-                    ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
-                    : ''
-                } ${!account.isActive ? 'opacity-60' : ''}`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className="flex items-center gap-2">
-                      {getAccountTypeIcon(account.type)}
-                      {!account.isActive && <EyeOff size={16} className="text-gray-500" />}
-                      {account.isDefault && (
-                        <Star size={16} className="text-yellow-400 fill-current" />
-                      )}
-                    </div>
-                    
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-medium text-white">{account.name}</h3>
-                        <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded">
-                          {getAccountTypeLabel(account.type)}
-                        </span>
-                        {!account.isActive && (
-                          <span className="text-xs bg-red-900 text-red-300 px-2 py-1 rounded">
-                            Inativa
-                          </span>
-                        )}
-                        {account.isDefault && (
-                          <span className="text-xs bg-yellow-700 text-yellow-300 px-2 py-1 rounded flex items-center gap-1">
-                            <Star size={12} className="fill-current" />
-                            Padrão
-                          </span>
-                        )}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
+                <tr>
+                  <th className="px-4 py-3 text-center w-24">Ações</th>
+                  <th className="px-4 py-3 text-left">Conta</th>
+                  <th className="px-4 py-3 text-left">Tipo</th>
+                  <th className="px-4 py-3 text-left">Banco/Número</th>
+                  <th className="px-4 py-3 text-right">Saldo</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAccounts.map((account) => (
+                  <tr 
+                    key={account.id} 
+                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                      editingAccount?.id === account.id 
+                        ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                        : ''
+                    } ${!account.isActive ? 'opacity-60' : ''}`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-center">
+                        <button
+                          onClick={() => handleSetDefault(account)}
+                          className={`p-1 transition-colors ${
+                            account.isDefault 
+                              ? 'text-yellow-400 hover:text-yellow-300' 
+                              : 'text-gray-300 hover:text-yellow-400'
+                          }`}
+                          title={account.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                          disabled={formLoading || !account.isActive}
+                        >
+                          {account.isDefault ? (
+                            <Star size={16} className="fill-current" />
+                          ) : (
+                            <StarOff size={16} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => openBalanceModal(account)}
+                          className="p-1 text-gray-300 hover:text-blue-400 transition-colors"
+                          title="Ajustar Saldo"
+                          disabled={formLoading}
+                        >
+                          <Settings size={16} />
+                        </button>
+                        <button
+                          onClick={() => openEditForm(account)}
+                          className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                          title="Editar"
+                          disabled={formLoading}
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(account)}
+                          className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                          title="Excluir"
+                          disabled={formLoading}
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
-                      
-                      <div className="flex items-center gap-4 mt-1">
-                        <div className="text-sm text-gray-400">
-                          {account.bankName && (
-                            <span>{account.bankName}</span>
-                          )}
-                          {account.accountNumber && (
-                            <span className="ml-2">• {account.accountNumber}</span>
-                          )}
+                    </td>
+                    
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {getAccountTypeIcon(account.type)}
+                        <div>
+                          <div className="font-medium text-white flex items-center gap-2">
+                            {account.name}
+                            {account.isDefault && (
+                              <Star size={12} className="text-yellow-400 fill-current" />
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className={`text-xl font-bold ${
+                    </td>
+                    
+                    <td className="px-4 py-3 text-gray-300">
+                      {getAccountTypeLabel(account.type)}
+                    </td>
+                    
+                    <td className="px-4 py-3 text-gray-300">
+                      <div>
+                        {account.bankName && <div>{account.bankName}</div>}
+                        {account.accountNumber && (
+                          <div className="text-xs text-gray-500">{account.accountNumber}</div>
+                        )}
+                        {!account.bankName && !account.accountNumber && '-'}
+                      </div>
+                    </td>
+                    
+                    <td className="px-4 py-3 text-right">
+                      <span className={`font-medium ${
                         parseFloat(account.balance) >= 0 ? 'text-green-400' : 'text-red-400'
                       }`}>
                         {formatCurrency(account.balance)}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        Saldo atual
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 ml-4">
-                    <button
-                      onClick={() => handleSetDefault(account)}
-                      className={`p-1 transition-colors ${
-                        account.isDefault 
-                          ? 'text-yellow-400 hover:text-yellow-300' 
-                          : 'text-gray-300 hover:text-yellow-400'
-                      }`}
-                      title={account.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
-                      disabled={formLoading || !account.isActive}
-                    >
-                      {account.isDefault ? (
-                        <Star size={16} className="fill-current" />
-                      ) : (
-                        <StarOff size={16} />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => openBalanceModal(account)}
-                      className="p-1 text-gray-300 hover:text-blue-400 transition-colors"
-                      title="Ajustar Saldo"
-                      disabled={formLoading}
-                    >
-                      <Settings size={16} />
-                    </button>
-                    <button
-                      onClick={() => openEditForm(account)}
-                      className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
-                      title="Editar"
-                      disabled={formLoading}
-                    >
-                      <Edit2 size={16} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(account)}
-                      className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                      title="Excluir"
-                      disabled={formLoading}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+                      </span>
+                    </td>
+                    
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                        account.isActive 
+                          ? 'bg-green-900 text-green-300' 
+                          : 'bg-red-900 text-red-300'
+                      }`}>
+                        {account.isActive ? 'Ativa' : 'Inativa'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>
@@ -670,11 +679,10 @@ export default function AccountsPage() {
             </div>
             
             <div className="p-6 space-y-4">
-              <Input
+              <CurrencyInput
                 label="Novo Saldo"
                 value={balanceData.newBalance}
-                onChange={(e) => setBalanceData({...balanceData, newBalance: e.target.value})}
-                placeholder="0,00"
+                onChange={(value) => setBalanceData({...balanceData, newBalance: value})}
                 required
                 disabled={formLoading}
               />

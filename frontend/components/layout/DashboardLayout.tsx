@@ -1,11 +1,11 @@
-// frontend/components/layout/DashboardLayout.tsx
+// frontend/components/layout/DashboardLayout.tsx - SEM ÍCONE HOME
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
-import { User, Home } from 'lucide-react';
+import { User } from 'lucide-react';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -81,11 +81,6 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
         </div>
 
         <div className="flex items-center space-x-3">
-          {/* Botão Home */}
-          <Link href="/" className="text-white hover:text-gray-300 mr-2" title="Página Inicial">
-            <Home size={20} />
-          </Link>
-          
           <div className="relative" ref={userMenuRef}>
             <button 
               onClick={toggleUserMenu}

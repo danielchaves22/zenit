@@ -1,19 +1,22 @@
-// frontend/components/financial/TransactionForm.tsx
+// frontend/components/financial/TransactionForm.tsx - COM CURRENCY INPUT
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { ArrowLeft, Save, X, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save, X, Trash2, Star } from 'lucide-react';
 import api from '@/lib/api';
 
 interface Account {
   id: number;
   name: string;
   type: string;
+  isDefault: boolean;
+  isActive: boolean;
 }
 
 interface Category {
@@ -21,6 +24,7 @@ interface Category {
   name: string;
   type: string;
   color: string;
+  isDefault: boolean;
 }
 
 interface Transaction {
@@ -63,10 +67,12 @@ export default function TransactionForm({
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(mode === 'edit');
   const [saving, setSaving] = useState(false);
+  const [defaultsLoaded, setDefaultsLoaded] = useState(false);
+  const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
   
   const [formData, setFormData] = useState({
     description: '',
-    amount: '',
+    amount: '0.00',
     date: new Date().toISOString().split('T')[0],
     type: initialType,
     status: 'COMPLETED',
@@ -85,6 +91,27 @@ export default function TransactionForm({
       fetchTransaction();
     }
   }, [mode, transactionId]);
+
+  // Auto-foco no campo de valor para transações novas
+  useEffect(() => {
+    if (mode === 'create' && shouldFocusAmount && !loading) {
+      const amountInput = document.getElementById('amount');
+      if (amountInput) {
+        setTimeout(() => {
+          amountInput.focus();
+          setShouldFocusAmount(false);
+        }, 100);
+      }
+    }
+  }, [mode, shouldFocusAmount, loading]);
+
+  // Auto-selecionar valores padrão quando os dados estiverem carregados
+  useEffect(() => {
+    if (mode === 'create' && !defaultsLoaded && accounts.length > 0 && categories.length > 0) {
+      autoSelectDefaults();
+      setDefaultsLoaded(true);
+    }
+  }, [mode, accounts, categories, defaultsLoaded, formData.type]);
 
   async function fetchTransaction() {
     if (!transactionId) return;
@@ -119,16 +146,6 @@ export default function TransactionForm({
     try {
       const response = await api.get('/financial/accounts');
       setAccounts(response.data);
-      
-      // Auto-selecionar primeira conta se criando nova transação
-      if (mode === 'create' && response.data.length > 0 && !formData.fromAccountId && !formData.toAccountId) {
-        const firstAccount = response.data[0];
-        if (formData.type === 'EXPENSE') {
-          setFormData(prev => ({ ...prev, fromAccountId: firstAccount.id.toString() }));
-        } else if (formData.type === 'INCOME') {
-          setFormData(prev => ({ ...prev, toAccountId: firstAccount.id.toString() }));
-        }
-      }
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
       addToast('Erro ao carregar contas', 'error');
@@ -139,19 +156,55 @@ export default function TransactionForm({
     try {
       const response = await api.get('/financial/categories');
       setCategories(response.data);
-      
-      // Auto-selecionar primeira categoria do tipo apropriado se criando nova transação
-      if (mode === 'create' && response.data.length > 0 && !formData.categoryId) {
-        const filteredCategories = response.data.filter(
-          (c: Category) => c.type === formData.type
-        );
-        if (filteredCategories.length > 0) {
-          setFormData(prev => ({ ...prev, categoryId: filteredCategories[0].id.toString() }));
-        }
-      }
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
       addToast('Erro ao carregar categorias', 'error');
+    }
+  }
+
+  function autoSelectDefaults() {
+    const updates: Partial<typeof formData> = {};
+
+    // Auto-selecionar conta padrão
+    if (!formData.fromAccountId && !formData.toAccountId) {
+      const defaultAccount = accounts.find(acc => acc.isDefault && acc.isActive);
+      if (defaultAccount) {
+        if (formData.type === 'EXPENSE') {
+          updates.fromAccountId = defaultAccount.id.toString();
+        } else if (formData.type === 'INCOME') {
+          updates.toAccountId = defaultAccount.id.toString();
+        }
+      } else {
+        // Se não há conta padrão, usar a primeira conta ativa
+        const firstActiveAccount = accounts.find(acc => acc.isActive);
+        if (firstActiveAccount) {
+          if (formData.type === 'EXPENSE') {
+            updates.fromAccountId = firstActiveAccount.id.toString();
+          } else if (formData.type === 'INCOME') {
+            updates.toAccountId = firstActiveAccount.id.toString();
+          }
+        }
+      }
+    }
+
+    // Auto-selecionar categoria padrão
+    if (!formData.categoryId && formData.type !== 'TRANSFER') {
+      const defaultCategory = categories.find(cat => 
+        cat.isDefault && cat.type === formData.type
+      );
+      if (defaultCategory) {
+        updates.categoryId = defaultCategory.id.toString();
+      } else {
+        // Se não há categoria padrão, usar a primeira categoria do tipo
+        const firstCategoryOfType = categories.find(cat => cat.type === formData.type);
+        if (firstCategoryOfType) {
+          updates.categoryId = firstCategoryOfType.id.toString();
+        }
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      setFormData(prev => ({ ...prev, ...updates }));
     }
   }
 
@@ -168,19 +221,31 @@ export default function TransactionForm({
       } else if (newType === 'INCOME') {
         setFormData(prev => ({ ...prev, type: newType, fromAccountId: '' }));
       } else {
-        setFormData(prev => ({ ...prev, type: newType }));
+        setFormData(prev => ({ ...prev, type: newType as 'INCOME' | 'EXPENSE' | 'TRANSFER' }));
       }
       
-      // Filtrar categorias por tipo
-      const filteredCategories = categories.filter(c => c.type === newType);
-      if (filteredCategories.length > 0) {
-        setFormData(prev => ({ ...prev, categoryId: filteredCategories[0].id.toString() }));
+      // Auto-selecionar categoria padrão do novo tipo
+      const defaultCategory = categories.find(cat => 
+        cat.isDefault && cat.type === newType
+      );
+      if (defaultCategory) {
+        setFormData(prev => ({ ...prev, categoryId: defaultCategory.id.toString() }));
       } else {
-        setFormData(prev => ({ ...prev, categoryId: '' }));
+        // Se não há padrão, usar primeira categoria do tipo
+        const firstCategoryOfType = categories.filter(c => c.type === newType);
+        if (firstCategoryOfType.length > 0) {
+          setFormData(prev => ({ ...prev, categoryId: firstCategoryOfType[0].id.toString() }));
+        } else {
+          setFormData(prev => ({ ...prev, categoryId: '' }));
+        }
       }
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
+  };
+
+  const handleAmountChange = (value: string) => {
+    setFormData(prev => ({ ...prev, amount: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -191,7 +256,7 @@ export default function TransactionForm({
       // Preparar dados para envio
       const payload = {
         ...formData,
-        amount: parseFloat(formData.amount.replace(/[^\d.-]/g, '')),
+        amount: parseFloat(formData.amount),
         fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
         toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
         categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
@@ -275,6 +340,10 @@ export default function TransactionForm({
     }
   };
 
+  // Encontrar categorias e contas padrão para exibir informação visual
+  const defaultAccount = accounts.find(acc => acc.isDefault);
+  const defaultCategory = categories.find(cat => cat.isDefault && cat.type === formData.type);
+
   return (
     <>
       <div className="flex items-center justify-between mb-6">
@@ -312,92 +381,43 @@ export default function TransactionForm({
         </div>
       </div>
 
+      {/* Informações sobre valores padrão (apenas para criação) */}
+      {mode === 'create' && (defaultAccount || defaultCategory) && (
+        <Card className="mb-6 bg-blue-900/20 border-blue-600">
+          <div className="flex items-start gap-3">
+            <Star size={20} className="text-blue-400 mt-0.5" />
+            <div>
+              <h3 className="font-medium text-blue-300 mb-1">Valores Padrão Aplicados</h3>
+              <div className="text-sm text-blue-200 space-y-1">
+                {defaultAccount && (
+                  <p>• Conta: {defaultAccount.name}</p>
+                )}
+                {defaultCategory && (
+                  <p>• Categoria: {defaultCategory.name}</p>
+                )}
+                <p className="text-xs text-blue-300 mt-2">
+                  Estes valores foram selecionados automaticamente com base nas suas configurações padrão.
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="md:col-span-2">
-              <Input
-                id="description"
-                name="description"
-                label="Descrição *"
-                value={formData.description}
-                onChange={handleChange}
+          {/* Primeira linha: Valor (destaque) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="w-full max-w-xs">
+              <CurrencyInput
+                id="amount"
+                label="Valor *"
+                value={formData.amount}
+                onChange={handleAmountChange}
                 required
-                placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
                 disabled={saving}
               />
             </div>
-            
-            <Input
-              id="amount"
-              name="amount"
-              label="Valor *"
-              type="text"
-              value={formData.amount}
-              onChange={handleChange}
-              required
-              placeholder="0,00"
-              disabled={saving}
-            />
-            
-            <Input
-              id="date"
-              name="date"
-              label="Data *"
-              type="date"
-              value={formData.date}
-              onChange={handleChange}
-              required
-              disabled={saving}
-            />
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="type">
-                Tipo *
-              </label>
-              <select
-                id="type"
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-                required
-                disabled={isTypeLocked || saving}
-              >
-                <option value="EXPENSE">Despesa</option>
-                <option value="INCOME">Receita</option>
-                <option value="TRANSFER">Transferência</option>
-              </select>
-              {isTypeLocked && (
-                <p className="text-xs text-[#f59e0b] mt-1">
-                  Tipo definido pelo atalho do menu
-                </p>
-              )}
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
-                Status *
-              </label>
-              <select
-                id="status"
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-                required
-                disabled={saving}
-              >
-                <option value="PENDING">Pendente</option>
-                <option value="COMPLETED">Concluída</option>
-                <option value="CANCELED">Cancelada</option>
-              </select>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {(formData.type === 'EXPENSE' || formData.type === 'TRANSFER') && (
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="fromAccountId">
@@ -416,6 +436,7 @@ export default function TransactionForm({
                   {accounts.map(account => (
                     <option key={account.id} value={account.id}>
                       {account.name}
+                      {account.isDefault && ' ⭐'}
                     </option>
                   ))}
                 </select>
@@ -440,6 +461,7 @@ export default function TransactionForm({
                   {accounts.map(account => (
                     <option key={account.id} value={account.id}>
                       {account.name}
+                      {account.isDefault && ' ⭐'}
                     </option>
                   ))}
                 </select>
@@ -465,6 +487,7 @@ export default function TransactionForm({
                     .map(category => (
                       <option key={category.id} value={category.id}>
                         {category.name}
+                        {category.isDefault && ' ⭐'}
                       </option>
                     ))
                   }
@@ -472,16 +495,90 @@ export default function TransactionForm({
               </div>
             )}
           </div>
+
+          {/* Segunda linha: Descrição */}
+          <div>
+            <Input
+              id="description"
+              name="description"
+              label="Descrição *"
+              value={formData.description}
+              onChange={handleChange}
+              required
+              placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
+              disabled={saving}
+            />
+          </div>
           
-          <Input
-            id="tags"
-            name="tags"
-            label="Tags (separadas por vírgula)"
-            value={formData.tags}
-            onChange={handleChange}
-            placeholder="Ex: alimentação, mercado, urgente"
-            disabled={saving}
-          />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="type">
+                Tipo *
+              </label>
+              <select
+                id="type"
+                name="type"
+                value={formData.type}
+                onChange={handleChange}
+                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                required
+                disabled={isTypeLocked || saving}
+              >
+                <option value="EXPENSE">Despesa</option>
+                <option value="INCOME">Receita</option>
+                <option value="TRANSFER">Transferência</option>
+              </select>
+              {isTypeLocked && (
+                <p className="text-xs text-[#f59e0b] mt-1">
+                  Tipo definido pelo atalho do menu
+                </p>
+              )}
+            </div>
+            
+            <Input
+              id="date"
+              name="date"
+              label="Data *"
+              type="date"
+              value={formData.date}
+              onChange={handleChange}
+              required
+              disabled={saving}
+            />
+          </div>
+          
+          {/* Quinta linha: Status e Tags */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
+                Status *
+              </label>
+              <select
+                id="status"
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                required
+                disabled={saving}
+              >
+                <option value="PENDING">Pendente</option>
+                <option value="COMPLETED">Concluída</option>
+                <option value="CANCELED">Cancelada</option>
+              </select>
+            </div>
+            
+            <Input
+              id="tags"
+              name="tags"
+              label="Tags (separadas por vírgula)"
+              value={formData.tags}
+              onChange={handleChange}
+              placeholder="Ex: alimentação, mercado, urgente"
+              disabled={saving}
+            />
+          </div>
           
           <div>
             <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="notes">

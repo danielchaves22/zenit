@@ -310,7 +310,8 @@ export default function TransactionsListPage() {
               className="mb-0"
             />
 
-            <div className="flex items-end gap-2">
+            {/* Botão Limpar alinhado com os campos */}
+            <div className="flex items-end">
               <Button 
                 variant="outline" 
                 onClick={() => {
@@ -325,19 +326,9 @@ export default function TransactionsListPage() {
                   });
                   setCurrentPage(1);
                 }}
-                className="flex-1"
+                className="px-6"
               >
-                Limpar
-              </Button>
-              <Button 
-                variant="accent" 
-                onClick={() => {
-                  setCurrentPage(1);
-                  fetchData();
-                }}
-                className="flex-1"
-              >
-                <Search size={16} />
+                Limpar Filtros
               </Button>
             </div>
           </div>

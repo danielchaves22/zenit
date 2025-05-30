@@ -224,12 +224,26 @@ export default function TransactionsListPage() {
             Filtros
           </Button>
           
-          <Link href="/financial/transactions/new">
-            <Button variant="accent" className="flex items-center gap-2">
-              <Plus size={16} />
-              Nova Transação
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/financial/transactions/new?type=EXPENSE&locked=true">
+              <Button variant="outline" className="flex items-center gap-2">
+                <TrendingDown size={16} />
+                Nova Despesa
+              </Button>
+            </Link>
+            <Link href="/financial/transactions/new?type=INCOME&locked=true">
+              <Button variant="outline" className="flex items-center gap-2">
+                <TrendingUp size={16} />
+                Nova Receita
+              </Button>
+            </Link>
+            <Link href="/financial/transactions/new?type=TRANSFER&locked=true">
+              <Button variant="accent" className="flex items-center gap-2">
+                <ArrowUpDown size={16} />
+                Nova Transferência
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+// frontend/lib/api.ts - VERSÃO CORRIGIDA
 import axios from 'axios'
 
 const api = axios.create({
@@ -5,7 +6,8 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('token')
+  // Usar o novo nome do token com prefixo específico
+  const token = localStorage.getItem('zenit_token')
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }

@@ -407,8 +407,8 @@ export default function TransactionForm({
       <Card>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Primeira linha: Valor (destaque) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="w-full max-w-xs">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+            <div className="w-full max-w-xs md:col-span-1">
               <CurrencyInput
                 id="amount"
                 label="Valor *"
@@ -418,6 +418,22 @@ export default function TransactionForm({
                 disabled={saving}
               />
             </div>
+            <div className="w-full max-w-xs md:col-span-4">
+            <Input
+              id="description"
+              name="description"
+              label="Descrição *"
+              value={formData.description}
+              onChange={handleChange}
+              required
+              placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
+              disabled={saving}
+            />
+          </div>
+          </div>
+
+          {/* Segunda linha: Descrição */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {(formData.type === 'EXPENSE' || formData.type === 'TRANSFER') && (
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="fromAccountId">
@@ -495,47 +511,10 @@ export default function TransactionForm({
               </div>
             )}
           </div>
-
-          {/* Segunda linha: Descrição */}
-          <div>
-            <Input
-              id="description"
-              name="description"
-              label="Descrição *"
-              value={formData.description}
-              onChange={handleChange}
-              required
-              placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
-              disabled={saving}
-            />
-          </div>
           
           
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="type">
-                Tipo *
-              </label>
-              <select
-                id="type"
-                name="type"
-                value={formData.type}
-                onChange={handleChange}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-                required
-                disabled={isTypeLocked || saving}
-              >
-                <option value="EXPENSE">Despesa</option>
-                <option value="INCOME">Receita</option>
-                <option value="TRANSFER">Transferência</option>
-              </select>
-              {isTypeLocked && (
-                <p className="text-xs text-[#f59e0b] mt-1">
-                  Tipo definido pelo atalho do menu
-                </p>
-              )}
-            </div>
-            
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">            
             <Input
               id="date"
               name="date"

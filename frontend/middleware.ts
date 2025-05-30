@@ -1,4 +1,4 @@
-// frontend/middleware.ts
+// frontend/middleware.ts - VERSÃO CORRIGIDA
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
@@ -23,8 +23,8 @@ export function middleware(request: NextRequest) {
   // Verifica se é uma rota pública
   const isPublicRoute = publicRoutes.some(route => pathname === route)
   
-  // Se cookie de token existe
-  const token = request.cookies.get('token')?.value
+  // CORREÇÃO: Buscar APENAS nosso cookie específico
+  const token = request.cookies.get('zenit_token')?.value
   
   // Rota protegida e sem autenticação
   if (!isPublicRoute && !token) {

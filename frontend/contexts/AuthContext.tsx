@@ -1,4 +1,4 @@
-// frontend/contexts/AuthContext.tsx - VERSÃO SEGURA
+// frontend/contexts/AuthContext.tsx - VERSÃO CORRIGIDA URGENTE
 import {
   createContext, useContext, useEffect, useState, ReactNode,
 } from 'react'
@@ -31,8 +31,58 @@ interface AuthContextData {
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
 
-// ⚠️ NUNCA decodifique JWTs no frontend para dados sensíveis!
-// JWTs são visíveis no browser - apenas para dados não-sensíveis
+// Função auxiliar para configurar cookies de forma segura
+function setSecureCookie(name: string, value: string, maxAge?: number) {
+  const domain = window.location.hostname;
+  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1';
+  
+  let cookieString = `${name}=${value}; path=/`;
+  
+  // Só adicionar domínio se não for localhost
+  if (!isLocalhost) {
+    cookieString += `; domain=${domain}`;
+  }
+  
+  // Adicionar configurações de segurança
+  cookieString += `; samesite=strict`;
+  
+  // Só usar secure em HTTPS
+  if (window.location.protocol === 'https:') {
+    cookieString += `; secure`;
+  }
+  
+  // Adicionar expiração se fornecida
+  if (maxAge !== undefined) {
+    cookieString += `; max-age=${maxAge}`;
+  }
+  
+  document.cookie = cookieString;
+}
+
+// Função auxiliar para remover cookies de forma segura
+function removeSecureCookie(name: string) {
+  const domain = window.location.hostname;
+  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1';
+  
+  // Tentar remover com diferentes configurações para garantir limpeza
+  const cookieConfigs = [
+    `${name}=; max-age=0; path=/`,
+    `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`,
+  ];
+  
+  // Só adicionar domínio se não for localhost
+  if (!isLocalhost) {
+    cookieConfigs.push(
+      `${name}=; max-age=0; path=/; domain=${domain}`,
+      `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${domain}`,
+      `${name}=; max-age=0; path=/; domain=.${domain}`,
+    );
+  }
+  
+  cookieConfigs.forEach(config => {
+    document.cookie = config;
+  });
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
@@ -48,11 +98,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     
     try {
-      const storedToken = localStorage.getItem('token');
+      // APENAS buscar do localStorage - não mexer com cookies de outros sites
+      const storedToken = localStorage.getItem('zenit_token'); // Prefixo específico
       
       if (storedToken) {
-        // ✅ SEGURO: Buscar dados do usuário do backend
-        // Em vez de decodificar JWT no frontend
         const response = await api.get('/auth/me', {
           headers: { Authorization: `Bearer ${storedToken}` }
         });
@@ -62,9 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('Erro ao inicializar autenticação:', error);
-      // Token inválido - limpar estado
-      localStorage.removeItem('token');
-      document.cookie = 'token=; Max-Age=0; path=/';
+      // Token inválido - limpar APENAS nossos dados
+      safeCleanup();
     } finally {
       setIsLoading(false);
     }
@@ -79,23 +127,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       const { token: newToken, user: userData, refreshToken: newRefreshToken } = res.data;
 
-      // Armazenar tokens de forma segura
-      localStorage.setItem('token', newToken);
-      localStorage.setItem('refreshToken', newRefreshToken);
+      // Armazenar tokens com prefixos específicos da aplicação
+      localStorage.setItem('zenit_token', newToken);
+      localStorage.setItem('zenit_refresh_token', newRefreshToken);
       
-      // Cookie httpOnly seria melhor, mas Next.js middleware não consegue ler
-      document.cookie = `token=${newToken}; path=/; secure; samesite=strict`;
+      // Cookie com configuração MUITO específica e segura
+      setSecureCookie('zenit_token', newToken, 60 * 60 * 24 * 7); // 7 dias
 
       setToken(newToken);
       setUser(userData);
 
-      // Log de segurança (sem dados sensíveis)
       console.log('Login successful', { userId: userData.id, timestamp: new Date().toISOString() });
       
     } catch (error: any) {
       console.error('Login error:', error.response?.data || error.message);
       
-      // Rate limiting ou outros erros específicos
       if (error.response?.status === 429) {
         throw new Error('Muitas tentativas de login. Tente novamente em alguns minutos.');
       }
@@ -110,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshToken(): Promise<boolean> {
     try {
-      const storedRefreshToken = localStorage.getItem('refreshToken');
+      const storedRefreshToken = localStorage.getItem('zenit_refresh_token');
       
       if (!storedRefreshToken) {
         return false;
@@ -122,48 +168,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { token: newToken } = response.data;
       
-      localStorage.setItem('token', newToken);
-      document.cookie = `token=${newToken}; path=/; secure; samesite=strict`;
+      localStorage.setItem('zenit_token', newToken);
+      setSecureCookie('zenit_token', newToken, 60 * 60 * 24 * 7); // 7 dias
       
       setToken(newToken);
       
       return true;
     } catch (error) {
       console.error('Token refresh failed:', error);
-      
-      // Refresh falhou - fazer logout
-      logout();
+      safeCleanup();
       return false;
     }
   }
 
-  function logout() {
-    // Limpar TODOS os vestígios
-    localStorage.removeItem('token');
-    localStorage.removeItem('refreshToken');
-    document.cookie = 'token=; Max-Age=0; path=/';
+  // Função de limpeza SEGURA - apenas nossos dados
+  function safeCleanup() {
+    // Limpar APENAS dados da nossa aplicação
+    localStorage.removeItem('zenit_token');
+    localStorage.removeItem('zenit_refresh_token');
+    
+    // Remover APENAS nosso cookie específico
+    removeSecureCookie('zenit_token');
     
     setToken(null);
     setUser(null);
+  }
+
+  function logout() {
+    safeCleanup();
     
-    // Log de segurança
     console.log('User logged out', { timestamp: new Date().toISOString() });
     
     // Redirecionar após cleanup
     window.location.href = '/login';
   }
 
-  // Auto-refresh token antes de expirar
+  // Auto-refresh com verificação menos agressiva
   useEffect(() => {
     if (!token) return;
 
-    // ✅ SEGURO: Verificar expiração via API, não decodificando JWT
     const checkTokenValidity = async () => {
       try {
         await api.get('/auth/validate');
       } catch (error: any) {
         if (error.response?.status === 401) {
-          // Token expirado - tentar refresh
           const refreshed = await refreshToken();
           if (!refreshed) {
             logout();
@@ -172,8 +220,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Verificar a cada 5 minutos
-    const interval = setInterval(checkTokenValidity, 5 * 60 * 1000);
+    // Verificar a cada 10 minutos (menos agressivo)
+    const interval = setInterval(checkTokenValidity, 10 * 60 * 1000);
     
     return () => clearInterval(interval);
   }, [token]);

@@ -99,6 +99,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     { label: 'Lista de Transações', href: '/financial/transactions' },
     { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
     { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
+    { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
   ],
 },
   {

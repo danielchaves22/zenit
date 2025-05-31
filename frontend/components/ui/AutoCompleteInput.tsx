@@ -1,4 +1,4 @@
-// frontend/components/ui/AutocompleteInput.tsx - COM CONTEXTO E MELHORIAS
+// frontend/components/ui/AutocompleteInput.tsx - CORRIGIDO PARA CLIQUE FUNCIONAR
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Clock } from 'lucide-react';
 
@@ -21,7 +21,7 @@ interface AutocompleteInputProps {
   fetchSuggestions: (query: string) => Promise<AutocompleteSuggestion[]>;
   minLength?: number;
   maxSuggestions?: number;
-  contextInfo?: string; // ✅ NOVO PARÂMETRO PARA MOSTRAR CONTEXTO
+  contextInfo?: string;
 }
 
 export function AutocompleteInput({
@@ -38,13 +38,14 @@ export function AutocompleteInput({
   fetchSuggestions,
   minLength = 3,
   maxSuggestions = 10,
-  contextInfo // ✅ NOVO PARÂMETRO
+  contextInfo
 }: AutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<AutocompleteSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [hasFocus, setHasFocus] = useState(false);
+  const [isMouseDownOnSuggestion, setIsMouseDownOnSuggestion] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
@@ -108,6 +109,38 @@ export function AutocompleteInput({
     }
   };
 
+  // Handle mouse down on suggestion (fires before onBlur)
+  const handleSuggestionMouseDown = (suggestion: AutocompleteSuggestion, e: React.MouseEvent) => {
+    // Prevent the blur event from hiding the dropdown
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Immediately update the value
+    onChange(suggestion.description);
+    
+    // Call the callback
+    if (onSuggestionSelect) {
+      onSuggestionSelect(suggestion.description);
+    }
+    
+    // Close the dropdown
+    setShowSuggestions(false);
+    setActiveSuggestionIndex(-1);
+    setIsMouseDownOnSuggestion(false);
+    
+    // Keep focus on input
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 0);
+  };
+
+  // Handle mouse up - reset the flag
+  const handleSuggestionMouseUp = () => {
+    setIsMouseDownOnSuggestion(false);
+  };
+
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showSuggestions || suggestions.length === 0) return;
@@ -151,11 +184,13 @@ export function AutocompleteInput({
 
   const handleBlur = () => {
     setHasFocus(false);
-    // Delay hiding suggestions to allow for clicks
-    setTimeout(() => {
-      setShowSuggestions(false);
-      setActiveSuggestionIndex(-1);
-    }, 150);
+    // Only hide suggestions if we're not clicking on a suggestion
+    if (!isMouseDownOnSuggestion) {
+      setTimeout(() => {
+        setShowSuggestions(false);
+        setActiveSuggestionIndex(-1);
+      }, 100);
+    }
   };
 
   // Cleanup timeout on unmount
@@ -235,7 +270,15 @@ export function AutocompleteInput({
               } ${index === 0 ? 'rounded-t-lg' : ''} ${
                 index === suggestions.length - 1 ? 'rounded-b-lg' : 'border-b border-gray-700'
               }`}
-              onClick={() => handleSuggestionSelect(suggestion)}
+              onMouseDown={(e) => {
+                setIsMouseDownOnSuggestion(true);
+                handleSuggestionMouseDown(suggestion, e);
+              }}
+              onClick={(e) => {
+                e.preventDefault();
+                handleSuggestionSelect(suggestion);
+              }}
+              onMouseUp={handleSuggestionMouseUp}
               onMouseEnter={() => setActiveSuggestionIndex(index)}
             >
               <div className="flex-1 min-w-0">
@@ -251,7 +294,7 @@ export function AutocompleteInput({
             </div>
           ))}
           
-          {/* ✅ FOOTER INFO MELHORADO */}
+          {/* Footer info */}
           <div className="px-4 py-2 border-t border-gray-700 bg-[#151921] rounded-b-lg">
             <div className="text-xs text-gray-500 flex items-center justify-between">
               <span>{suggestions.length} sugestões encontradas</span>
@@ -260,8 +303,6 @@ export function AutocompleteInput({
           </div>
         </div>
       )}
-
-      {/* Minimum length hint - removido pois agora está sempre visível na label */}
 
       {/* Error message */}
       {error && (

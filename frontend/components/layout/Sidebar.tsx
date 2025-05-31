@@ -12,8 +12,8 @@ import {
 type SubMenuItem = {
   label: string;
   href?: string;
-  isHeader?: boolean; // Para identificar itens que atuam como categorias
-  showWhenExpanded?: boolean; // Controla visibilidade no modo expandido
+  isHeader?: boolean
+  hideWhenExpanded?: boolean; // Se true, não será mostrado no modo expandido
 };
 
 // Tipo para item de menu
@@ -71,7 +71,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     icon: <Home size={20} />,
     label: 'Início',
     subItems: [
-      { label: 'Início', href: '/', showWhenExpanded: true },
+      { label: 'Início', href: '/' },
     ],
   },
   {
@@ -82,21 +82,21 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     icon: <PieChart size={20} />,
     label: 'Dashboard',
     subItems: [
-      { label: 'Dashboard Financeiro', href: '/financial/dashboard', showWhenExpanded: true },
+      { label: 'Dashboard Financeiro', href: '/financial/dashboard'},
     ],
   },
   {
     icon: <CreditCard size={20} />,
     label: 'Contas',
     subItems: [
-      { label: 'Contas', href: '/financial/accounts', showWhenExpanded: true },
+      { label: 'Contas', href: '/financial/accounts'},
     ],
   },
   {
   icon: <Receipt size={20} />,
   label: 'Transações',
   subItems: [
-    { label: 'Lista de Transações', href: '/financial/transactions' },
+    { label: 'Transações', href: '/financial/transactions/index', hideWhenExpanded: true, isHeader: true },
     { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
     { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
     { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
@@ -106,7 +106,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     icon: <Building2 size={20} />,
     label: 'Categorias',
     subItems: [
-      { label: 'Categorias', href: '/financial/categories', showWhenExpanded: true },
+      { label: 'Categorias', href: '/financial/categories' },
     ],
   },
   // {
@@ -124,6 +124,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     icon: <BarChart3 size={20} />,
     label: 'Relatórios',
     subItems: [
+      { label: 'Relatórios', hideWhenExpanded: true, isHeader: true },
       { label: 'Fluxo de Caixa', href: '/reports/cashflow' },
       { label: 'DRE', href: '/reports/income' },
       { label: 'Balancete', href: '/reports/balance' },
@@ -137,21 +138,21 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     icon: <Users size={20} />,
     label: 'Usuários',
     subItems: [
-      { label: 'Usuários', href: '/admin/users', showWhenExpanded: true },
+      { label: 'Usuários', href: '/admin/users' },
     ],
   },
   {
     icon: <Building2 size={20} />,
     label: 'Empresas',
     subItems: [
-      { label: 'Empresas', href: '/admin/companies', showWhenExpanded: true },
+      { label: 'Empresas', href: '/admin/companies' },
     ],
   },
   {
     icon: <Settings size={20} />,
     label: 'Configurações',
     subItems: [
-      { label: 'Configurações', href: '/admin/settings', showWhenExpanded: true },
+      { label: 'Configurações', href: '/admin/settings' },
     ],
   },
 ];
@@ -317,16 +318,13 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
           onMouseLeave={handleMouseLeave}
         >
           <div className="py-1">
-            {activeMenu.subItems
+            {activeMenu.subItems.filter(subItem => !subItem.hideWhenExpanded || collapsed)
               .map((subItem, index) => {
-                // Determina se deve renderizar como categoria de destaque
-                const isSingleItem = activeMenu.subItems.length === 1;
-                const renderAsCategory = !subItem.href || isSingleItem;
                 
-                return renderAsCategory ? (
+                return subItem.isHeader ? (
                   <div 
                     key={index}
-                    className="block px-4 py-2 text-gray-300 whitespace-nowrap"
+                    className="block bg-[#262b36] px-4 py-2 text-gray-300 whitespace-nowrap"
                     onClick={() => {
                       if (subItem.href) {
                         router.push(subItem.href);

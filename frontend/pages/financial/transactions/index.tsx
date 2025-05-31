@@ -1,4 +1,4 @@
-// frontend/pages/financial/transactions/index.tsx
+// frontend/pages/financial/transactions/index.tsx - COM DATAS DE VENCIMENTO E EFETIVAÇÃO
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
@@ -12,7 +12,7 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import { 
   Plus, Receipt, Edit2, Trash2, Eye, Filter, Download, 
   TrendingUp, TrendingDown, ArrowUpDown, Calendar,
-  Search, RefreshCw
+  Search, RefreshCw, Clock, CheckCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -22,6 +22,8 @@ interface Transaction {
   description: string;
   amount: string;
   date: string;
+  dueDate?: string;
+  effectiveDate?: string;
   type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   status: 'PENDING' | 'COMPLETED' | 'CANCELED';
   notes?: string;
@@ -157,6 +159,13 @@ export default function TransactionsListPage() {
     return new Date(dateString).toLocaleDateString('pt-BR');
   }
 
+  function formatDateShort(dateString: string): string {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit'
+    });
+  }
+
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'INCOME':
@@ -193,6 +202,19 @@ export default function TransactionsListPage() {
         return 'text-blue-400';
       default:
         return 'text-gray-300';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'COMPLETED':
+        return <CheckCircle size={12} className="text-green-400" />;
+      case 'PENDING':
+        return <Clock size={12} className="text-yellow-400" />;
+      case 'CANCELED':
+        return <X size={12} className="text-red-400" />;
+      default:
+        return null;
     }
   };
 
@@ -376,6 +398,7 @@ export default function TransactionsListPage() {
                     <th className="px-4 py-3 text-left">Conta</th>
                     <th className="px-4 py-3 text-left">Categoria</th>
                     <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3 text-center">Datas</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -458,10 +481,34 @@ export default function TransactionsListPage() {
                       </td>
                       
                       <td className="px-4 py-3 text-center">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(transaction.status)}`}>
-                          {transaction.status === 'COMPLETED' ? 'Concluída' :
-                           transaction.status === 'PENDING' ? 'Pendente' : 'Cancelada'}
-                        </span>
+                        <div className="flex items-center gap-1 justify-center">
+                          {getStatusIcon(transaction.status)}
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(transaction.status)}`}>
+                            {transaction.status === 'COMPLETED' ? 'Concluída' :
+                             transaction.status === 'PENDING' ? 'Pendente' : 'Cancelada'}
+                          </span>
+                        </div>
+                      </td>
+                      
+                      {/* Nova coluna para datas */}
+                      <td className="px-4 py-3">
+                        <div className="text-xs space-y-1">
+                          {transaction.dueDate && (
+                            <div className="flex items-center gap-1 text-yellow-400">
+                              <Clock size={10} />
+                              <span>Venc: {formatDateShort(transaction.dueDate)}</span>
+                            </div>
+                          )}
+                          {transaction.effectiveDate && (
+                            <div className="flex items-center gap-1 text-green-400">
+                              <CheckCircle size={10} />
+                              <span>Efet: {formatDateShort(transaction.effectiveDate)}</span>
+                            </div>
+                          )}
+                          {!transaction.dueDate && !transaction.effectiveDate && (
+                            <span className="text-gray-500">-</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

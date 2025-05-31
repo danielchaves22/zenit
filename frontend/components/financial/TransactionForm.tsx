@@ -1,4 +1,4 @@
-// frontend/components/financial/TransactionForm.tsx - COM AUTOCOMPLETE FILTRADO POR TIPO
+// frontend/components/financial/TransactionForm.tsx - COM DATAS DE VENCIMENTO E EFETIVAÇÃO
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { Card } from '@/components/ui/Card';
@@ -9,7 +9,7 @@ import { AutocompleteInput } from '@/components/ui/AutoCompleteInput'; // ✅ IM
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { ArrowLeft, Save, X, Trash2, Star, Sparkles } from 'lucide-react';
+import { ArrowLeft, Save, X, Trash2, Calendar, Clock } from 'lucide-react';
 import api from '@/lib/api';
 
 interface Account {
@@ -33,6 +33,8 @@ interface Transaction {
   description: string;
   amount: string;
   date: string;
+  dueDate?: string;
+  effectiveDate?: string;
   type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   status: 'PENDING' | 'COMPLETED' | 'CANCELED';
   notes?: string;
@@ -81,6 +83,8 @@ export default function TransactionForm({
     description: '',
     amount: '0.00',
     date: new Date().toISOString().split('T')[0],
+    dueDate: new Date().toISOString().split('T')[0],
+    effectiveDate: new Date().toISOString().split('T')[0],
     type: initialType,
     status: 'COMPLETED',
     notes: '',
@@ -153,6 +157,8 @@ export default function TransactionForm({
         description: txn.description,
         amount: txn.amount,
         date: new Date(txn.date).toISOString().split('T')[0],
+        dueDate: txn.dueDate ? new Date(txn.dueDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        effectiveDate: txn.effectiveDate ? new Date(txn.effectiveDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         type: txn.type,
         status: txn.status,
         notes: txn.notes || '',
@@ -231,6 +237,14 @@ export default function TransactionForm({
       }
     }
 
+    // Garantir que as datas estejam sempre preenchidas
+    if (!formData.dueDate) {
+      updates.dueDate = new Date().toISOString().split('T')[0];
+    }
+    if (!formData.effectiveDate) {
+      updates.effectiveDate = new Date().toISOString().split('T')[0];
+    }
+
     if (Object.keys(updates).length > 0) {
       setFormData(prev => ({ ...prev, ...updates }));
     }
@@ -297,6 +311,9 @@ export default function TransactionForm({
       const payload = {
         ...formData,
         amount: parseFloat(formData.amount),
+        date: new Date(formData.date).toISOString(),
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+        effectiveDate: formData.effectiveDate ? new Date(formData.effectiveDate).toISOString() : null,
         fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
         toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
         categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
@@ -420,8 +437,6 @@ export default function TransactionForm({
           )}
         </div>
       </div>
-
-
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -577,7 +592,50 @@ export default function TransactionForm({
             </div>
           </div>
           
-          {/* Quarta linha: Tags */}
+          {/* Quarta linha: Datas de Vencimento e Efetivação */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                  Data de Vencimento
+                </label>
+                <span className="text-xs text-gray-400">
+                  Para transações pendentes
+                </span>
+              </div>
+              <input
+                id="dueDate"
+                name="dueDate"
+                type="date"
+                value={formData.dueDate}
+                onChange={handleChange}
+                disabled={saving}
+                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+              />
+            </div>
+            
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <label className="block text-sm font-medium text-gray-300" htmlFor="effectiveDate">
+                  Data de Efetivação
+                </label>
+                <span className="text-xs text-gray-400">
+                  Quando a transação foi efetivada
+                </span>
+              </div>
+              <input
+                id="effectiveDate"
+                name="effectiveDate"
+                type="date"
+                value={formData.effectiveDate}
+                onChange={handleChange}
+                disabled={saving}
+                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+              />
+            </div>
+          </div>
+          
+          {/* Quinta linha: Tags */}
           <div>
             <Input
               id="tags"
@@ -590,7 +648,7 @@ export default function TransactionForm({
             />
           </div>
           
-          {/* Quinta linha: Observações */}
+          {/* Sexta linha: Observações */}
           <div>
             <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="notes">
               Observações

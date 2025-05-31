@@ -409,7 +409,7 @@ export default function AccountsPage() {
 
       {/* Formulário Inline */}
       {showForm && (
-        <Card className="mb-6 border-2 border-[#f59e0b]">
+        <Card className="mb-6 border-2 border-[#2563eb]">
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white">
               {editingAccount ? `Editando: ${editingAccount.name}` : 'Nova Conta Financeira'}
@@ -477,7 +477,7 @@ export default function AccountsPage() {
                 id="isActive"
                 checked={formData.isActive}
                 onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
-                className="w-4 h-4 text-[#f59e0b] bg-[#1e2126] border-gray-700 rounded focus:ring-[#f59e0b]"
+                className="w-4 h-4 text-[#2563eb] bg-[#1e2126] border-gray-700 rounded focus:ring-[#2563eb]"
                 disabled={formLoading}
               />
               <label htmlFor="isActive" className="text-sm text-gray-300">
@@ -557,7 +557,7 @@ export default function AccountsPage() {
                     key={account.id} 
                     className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
                       editingAccount?.id === account.id 
-                        ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                        ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
                         : ''
                     } ${!account.isActive ? 'opacity-60' : ''}`}
                   >
@@ -589,7 +589,7 @@ export default function AccountsPage() {
                         </button>
                         <button
                           onClick={() => openEditForm(account)}
-                          className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                          className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                           title="Editar"
                           disabled={formLoading}
                         >

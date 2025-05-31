@@ -1,4 +1,4 @@
-// frontend/components/layout/Sidebar.tsx
+// frontend/components/layout/Sidebar.tsx - COM CORES DINÂMICAS
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -63,99 +63,93 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
   }, [collapsed]);
 
   const menuItems: SidebarItem[] = [
-  {
-    title: 'Principal',
-    type: 'title'
-  },
-  {
-    icon: <Home size={20} />,
-    label: 'Início',
-    subItems: [
-      { label: 'Início', href: '/' },
-    ],
-  },
-  {
-    title: 'Financeiro',
-    type: 'title'
-  },
-  {
-    icon: <PieChart size={20} />,
-    label: 'Dashboard',
-    subItems: [
-      { label: 'Dashboard Financeiro', href: '/financial/dashboard'},
-    ],
-  },
-  {
-    icon: <CreditCard size={20} />,
-    label: 'Contas',
-    subItems: [
-      { label: 'Contas', href: '/financial/accounts'},
-    ],
-  },
-  {
-  icon: <Receipt size={20} />,
-  label: 'Transações',
-  subItems: [
-    { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
-    { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
-    { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
-    { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
-  ],
-},
-  {
-    icon: <Building2 size={20} />,
-    label: 'Categorias',
-    subItems: [
-      { label: 'Categorias', href: '/financial/categories' },
-    ],
-  },
-  // {
-  //   icon: <Calendar size={20} />,
-  //   label: 'Recorrentes',
-  //   subItems: [
-  //     { label: 'Recorrentes', href: '/financial/recurring', showWhenExpanded: true },
-  //   ],
-  // },
-  {
-    title: 'Relatórios',
-    type: 'title'
-  },
-  {
-    icon: <BarChart3 size={20} />,
-    label: 'Relatórios',
-    subItems: [
-      { label: 'Relatórios', hideWhenExpanded: true, isHeader: true },
-      { label: 'Fluxo de Caixa', href: '/reports/cashflow' },
-      { label: 'DRE', href: '/reports/income' },
-      { label: 'Balancete', href: '/reports/balance' },
-    ],
-  },
-  {
-    title: 'Administração',
-    type: 'title'
-  },
-  {
-    icon: <Users size={20} />,
-    label: 'Usuários',
-    subItems: [
-      { label: 'Usuários', href: '/admin/users' },
-    ],
-  },
-  {
-    icon: <Building2 size={20} />,
-    label: 'Empresas',
-    subItems: [
-      { label: 'Empresas', href: '/admin/companies' },
-    ],
-  },
-  {
-    icon: <Settings size={20} />,
-    label: 'Configurações',
-    subItems: [
-      { label: 'Configurações', href: '/admin/settings' },
-    ],
-  },
-];
+    {
+      title: 'Principal',
+      type: 'title'
+    },
+    {
+      icon: <Home size={20} />,
+      label: 'Início',
+      subItems: [
+        { label: 'Início', href: '/' },
+      ],
+    },
+    {
+      title: 'Financeiro',
+      type: 'title'
+    },
+    {
+      icon: <PieChart size={20} />,
+      label: 'Dashboard',
+      subItems: [
+        { label: 'Dashboard Financeiro', href: '/financial/dashboard'},
+      ],
+    },
+    {
+      icon: <CreditCard size={20} />,
+      label: 'Contas',
+      subItems: [
+        { label: 'Contas', href: '/financial/accounts'},
+      ],
+    },
+    {
+      icon: <Receipt size={20} />,
+      label: 'Transações',
+      subItems: [
+        { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
+        { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
+        { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
+        { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
+      ],
+    },
+    {
+      icon: <Building2 size={20} />,
+      label: 'Categorias',
+      subItems: [
+        { label: 'Categorias', href: '/financial/categories' },
+      ],
+    },
+    {
+      title: 'Relatórios',
+      type: 'title'
+    },
+    {
+      icon: <BarChart3 size={20} />,
+      label: 'Relatórios',
+      subItems: [
+        { label: 'Relatórios', hideWhenExpanded: true, isHeader: true },
+        { label: 'Movimentação de Contas Financeiras', href: '/financial/reports/financial-account-movement' }, // ✅ NOVO
+        { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' },
+        { label: 'DRE', href: '/financial/reports/income' },
+        { label: 'Balancete', href: '/financial/reports/balance' },
+      ],
+    },
+    {
+      title: 'Administração',
+      type: 'title'
+    },
+    {
+      icon: <Users size={20} />,
+      label: 'Usuários',
+      subItems: [
+        { label: 'Usuários', href: '/admin/users' },
+      ],
+    },
+    {
+      icon: <Building2 size={20} />,
+      label: 'Empresas',
+      subItems: [
+        { label: 'Empresas', href: '/admin/companies' },
+      ],
+    },
+    {
+      icon: <Settings size={20} />,
+      label: 'Configurações',
+      subItems: [
+        { label: 'Configurações', href: '/admin/settings' },
+      ],
+    },
+  ];
 
   const toggleSidebar = () => {
     const newCollapsedState = !collapsed;
@@ -266,8 +260,10 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
               <div key={index}>
                 {collapsed ? (
                   <div 
-                    className={`cursor-pointer px-4 py-3 ${
-                      isActive ? 'bg-[#f59e0b] text-white' : 'text-gray-300 hover:bg-[#1e2126]'
+                    className={`cursor-pointer px-4 py-3 transition-all duration-200 ${
+                      isActive 
+                        ? 'bg-accent text-white shadow-lg' // ✅ USANDO CSS VARIABLE DINÂMICA
+                        : 'text-gray-300 hover:bg-[#1e2126] hover:text-accent'
                     } flex justify-center items-center`}
                     onMouseEnter={(e) => handleMouseEnter(menuItem, e)}
                     onMouseLeave={handleMouseLeave}
@@ -283,8 +279,10 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                   <div className="flex flex-col">
                     <Link
                       href={href}
-                      className={`flex items-center justify-between px-4 py-3 ${
-                        isActive ? 'bg-[#f59e0b] text-white font-medium' : 'hover:bg-[#1e2126]'
+                      className={`flex items-center justify-between px-4 py-3 transition-all duration-200 ${
+                        isActive 
+                          ? 'bg-accent text-white font-medium shadow-lg border-r-2 border-accent-light' // ✅ USANDO CSS VARIABLES DINÂMICAS
+                          : 'hover:bg-[#1e2126] hover:text-accent hover:border-r-2 hover:border-accent/50'
                       }`}
                       onMouseEnter={(e) => handleMouseEnter(menuItem, e)}
                       onMouseLeave={handleMouseLeave}
@@ -324,7 +322,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                 return subItem.isHeader ? (
                   <div 
                     key={index}
-                    className="block bg-[#262b36] px-4 py-2 text-gray-300 whitespace-nowrap"
+                    className="block bg-[#262b36] px-4 py-2 text-gray-300 whitespace-nowrap hover:text-accent transition-colors"
                     onClick={() => {
                       if (subItem.href) {
                         router.push(subItem.href);
@@ -338,7 +336,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                   <Link
                     key={index}
                     href={subItem.href || '#'}
-                    className="block px-4 py-2 hover:bg-[#262b36] text-gray-300 text-sm whitespace-nowrap"
+                    className="block px-4 py-2 hover:bg-[#262b36] text-gray-300 text-sm whitespace-nowrap hover:text-accent transition-colors"
                   >
                     {subItem.label}
                   </Link>

@@ -1,3 +1,4 @@
+// frontend/components/financial/Dashboard.tsx - BOTÕES DE PERÍODO COM CORES DINÂMICAS
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card } from '../ui/Card';
@@ -105,25 +106,38 @@ export default function FinancialDashboard() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-heading font-bold">Dashboard Financeiro</h1>
         
+        {/* ✅ BOTÕES DE PERÍODO COM CORES DINÂMICAS */}
         <div className="flex space-x-2">
-          <Button 
-            variant={period === 'month' ? 'primary' : 'outline'} 
+          <button
             onClick={() => setPeriod('month')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              period === 'month' 
+                ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
+                : 'bg-[#1e2126] text-gray-300 hover:bg-[#262b36] hover:text-accent border border-gray-700'
+            }`}
           >
             Mês Atual
-          </Button>
-          <Button 
-            variant={period === 'quarter' ? 'primary' : 'outline'} 
+          </button>
+          <button
             onClick={() => setPeriod('quarter')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              period === 'quarter' 
+                ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
+                : 'bg-[#1e2126] text-gray-300 hover:bg-[#262b36] hover:text-accent border border-gray-700'
+            }`}
           >
             Trimestre
-          </Button>
-          <Button 
-            variant={period === 'year' ? 'primary' : 'outline'} 
+          </button>
+          <button
             onClick={() => setPeriod('year')}
+            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+              period === 'year' 
+                ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
+                : 'bg-[#1e2126] text-gray-300 hover:bg-[#262b36] hover:text-accent border border-gray-700'
+            }`}
           >
             Ano
-          </Button>
+          </button>
         </div>
       </div>
 

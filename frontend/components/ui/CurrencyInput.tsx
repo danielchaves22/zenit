@@ -301,9 +301,9 @@ export function CurrencyInput({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
-          className={`w-full pl-10 pr-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500 text-right font-mono ${
+          className={`w-full pl-10 pr-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb] text-right font-mono ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
-          } ${error ? 'border-red-500' : ''}`}
+          } ${error ? 'border-red-500' : ''}`} // ✅ ALTERADO: focus:border-blue-500 para focus:border-[#2563eb]
           autoComplete="off"
         />
       </div>

@@ -1,10 +1,11 @@
-// frontend/components/layout/DashboardLayout.tsx - SEM ÍCONE HOME
+// frontend/components/layout/DashboardLayout.tsx - COM CORES DINÂMICAS
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
+import { ThemeSelector } from '@/components/ui/ThemeSelector';
 import { User } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -75,18 +76,23 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
       <header className="fixed top-0 left-0 right-0 z-40 bg-[#151921] text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
         <div className="flex items-center space-x-4">
           <Link href="/" className="flex items-center space-x-2 hover:opacity-90">
-            <div className="text-2xl font-bold text-[#f59e0b]">₹</div>
+            {/* ✅ LOGO COM COR DINÂMICA */}
+            <div className="text-2xl font-bold text-accent transition-colors duration-200">₹</div>
             <span className="text-white text-lg font-bold font-heading">Zenit</span>
           </Link>
         </div>
 
         <div className="flex items-center space-x-3">
+          {/* ✅ SELETOR DE TEMAS */}
+          <ThemeSelector showLabel={false} size="sm" />
+          
           <div className="relative" ref={userMenuRef}>
             <button 
               onClick={toggleUserMenu}
               className="flex items-center space-x-1 focus:outline-none"
             >
-              <div className="bg-[#f59e0b] rounded-full p-1">
+              {/* ✅ AVATAR COM COR DINÂMICA */}
+              <div className="bg-accent rounded-full p-1 transition-colors duration-200">
                 <User size={18} className="text-white" />
               </div>
             </button>
@@ -96,7 +102,8 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
                 <div className="p-3 border-b border-gray-700">
                   <p className="font-medium text-white">{userName}</p>
                   <p className="text-sm text-gray-400">{companyName}</p>
-                  <p className="text-xs text-[#f59e0b]">{userRole}</p>
+                  {/* ✅ ROLE BADGE COM COR DINÂMICA */}
+                  <p className="text-xs text-accent">{userRole}</p>
                 </div>
                 <div className="p-2">
                   <button 

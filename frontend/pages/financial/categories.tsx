@@ -290,7 +290,7 @@ export default function CategoriesPage() {
 
       {/* Formulário Inline */}
       {showForm && (
-        <Card className="mb-6 border-2 border-[#f59e0b]">
+        <Card className="mb-6 border-2 border-[#2563eb]">
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white">
               {editingCategory ? `Editando: ${editingCategory.name}` : `Nova Categoria de ${activeTab === 'EXPENSE' ? 'Despesa' : 'Receita'}`}
@@ -454,7 +454,7 @@ export default function CategoriesPage() {
                     <tr 
                       className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
                         editingCategory?.id === category.id 
-                          ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                          ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
                           : ''
                       } ${category.isDefault ? 'bg-yellow-900/10' : ''}`}
                     >
@@ -478,7 +478,7 @@ export default function CategoriesPage() {
                           </button>
                           <button
                             onClick={() => openEditForm(category)}
-                            className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                            className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                             title="Editar"
                             disabled={formLoading}
                           >
@@ -538,7 +538,7 @@ export default function CategoriesPage() {
                         key={child.id}
                         className={`border-b border-gray-700 hover:bg-[#1a1f2b] bg-[#0f1419] ${
                           editingCategory?.id === child.id 
-                            ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                            ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
                             : ''
                         } ${child.isDefault ? 'bg-yellow-900/10' : ''}`}
                       >
@@ -562,7 +562,7 @@ export default function CategoriesPage() {
                             </button>
                             <button
                               onClick={() => openEditForm(child)}
-                              className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                              className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                               title="Editar"
                               disabled={formLoading}
                             >
@@ -627,7 +627,7 @@ export default function CategoriesPage() {
                       key={orphan.id}
                       className={`border-b border-gray-700 hover:bg-[#1a1f2b] bg-yellow-900/20 border-yellow-600/30 ${
                         editingCategory?.id === orphan.id 
-                          ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                          ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
                           : ''
                       }`}
                     >
@@ -651,7 +651,7 @@ export default function CategoriesPage() {
                           </button>
                           <button
                             onClick={() => openEditForm(orphan)}
-                            className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                            className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                             title="Editar"
                             disabled={formLoading}
                           >

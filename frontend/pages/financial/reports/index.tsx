@@ -52,7 +52,7 @@ export default function FinancialReportsPage() {
             <Calendar size={16} />
             Período
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-[#f59e0b] text-white rounded-lg hover:bg-[#e08c07] transition-colors">
+          <button className="flex items-center gap-2 px-4 py-2 bg-[#2563eb] text-white rounded-lg hover:bg-[#e08c07] transition-colors">
             <Download size={16} />
             Exportar Todos
           </button>
@@ -73,7 +73,7 @@ export default function FinancialReportsPage() {
                 </span>
               </div>
               
-              <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-[#f59e0b] transition-colors">
+              <h3 className="text-lg font-semibold text-white mb-2 group-hover:text-[#2563eb] transition-colors">
                 {report.title}
               </h3>
               
@@ -109,7 +109,7 @@ export default function FinancialReportsPage() {
           <div className="text-sm text-gray-400">Resultado (mês)</div>
         </Card>
         <Card className="p-4 text-center">
-          <div className="text-2xl font-bold text-[#f59e0b] mb-1">27.4%</div>
+          <div className="text-2xl font-bold text-[#2563eb] mb-1">27.4%</div>
           <div className="text-sm text-gray-400">Margem Líquida</div>
         </Card>
       </div>
@@ -117,7 +117,7 @@ export default function FinancialReportsPage() {
       {/* Informações Adicionais */}
       <Card className="p-6">
         <div className="flex items-center gap-3 mb-4">
-          <FileText size={20} className="text-[#f59e0b]" />
+          <FileText size={20} className="text-[#2563eb]" />
           <h3 className="text-lg font-medium text-white">Sobre os Relatórios</h3>
         </div>
         

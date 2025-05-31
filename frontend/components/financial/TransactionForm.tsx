@@ -419,7 +419,7 @@ export default function TransactionForm({
         
         <div className="flex items-center gap-3">
           {isTypeLocked && (
-            <div className="px-3 py-1 bg-[#f59e0b] text-white text-sm rounded-full">
+            <div className="px-3 py-1 bg-[#2563eb] text-white text-sm rounded-full">
               Tipo bloqueado
             </div>
           )}

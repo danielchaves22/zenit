@@ -1,4 +1,4 @@
-// frontend/components/ui/PageTransition.tsx
+// frontend/components/ui/PageTransition.tsx - COM COR DINÂMICA
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 
@@ -25,7 +25,8 @@ export function PageTransition() {
   
   return (
     <div className="fixed top-0 left-0 w-full z-50">
-      <div className="h-1 bg-[#f59e0b] animate-[loading_2s_ease-in-out_infinite]"></div>
+      {/* ✅ USANDO CSS VARIABLE DINÂMICA NO LUGAR DE COR FIXA */}
+      <div className="h-1 bg-accent animate-[loading_2s_ease-in-out_infinite]"></div>
     </div>
   );
 }

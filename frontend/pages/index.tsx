@@ -30,7 +30,7 @@ export default function HomePage() {
               </p>
               <p className="text-gray-300">
                 <span className="font-medium text-white">Perfil:</span> 
-                <span className="ml-2 px-2 py-1 bg-[#f59e0b] text-white text-xs rounded-full">
+                <span className="ml-2 px-2 py-1 bg-[#2563eb] text-white text-xs rounded-full">
                   {user?.role}
                 </span>
               </p>
@@ -43,7 +43,7 @@ export default function HomePage() {
           <Link href="/financial" className="block">
             <Card className="bg-[#151921] hover:bg-[#1a1f2b] transition-colors cursor-pointer">
               <div className="p-6 text-center">
-                <div className="bg-[#f59e0b] rounded-full p-3 w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+                <div className="bg-[#2563eb] rounded-full p-3 w-12 h-12 mx-auto mb-4 flex items-center justify-center">
                   <DollarSign className="text-white" size={24} />
                 </div>
                 <h3 className="text-lg font-medium text-white mb-2">Financeiro</h3>

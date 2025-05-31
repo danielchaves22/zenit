@@ -1,4 +1,4 @@
-// frontend/components/ui/AutocompleteInput.tsx - CORRIGIDO PARA CLIQUE FUNCIONAR
+// frontend/components/ui/AutocompleteInput.tsx - NOVA COR AZUL
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Clock } from 'lucide-react';
 
@@ -211,7 +211,7 @@ export function AutocompleteInput({
     
     return parts.map((part, index) => 
       regex.test(part) ? (
-        <span key={index} className="bg-[#f59e0b] text-white px-1 rounded">
+        <span key={index} className="bg-[#2563eb] text-white px-1 rounded"> {/* ✅ ALTERADO */}
           {part}
         </span>
       ) : part
@@ -240,7 +240,7 @@ export function AutocompleteInput({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
-          className={`w-full pl-3 pr-10 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500 ${
+          className={`w-full pl-3 pr-10 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb] ${ // ✅ ALTERADO
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           } ${error ? 'border-red-500' : ''}`}
           autoComplete="off"
@@ -249,7 +249,7 @@ export function AutocompleteInput({
         {/* Loading or search icon */}
         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
           {isLoading ? (
-            <div className="w-4 h-4 border-2 border-gray-400 border-t-blue-400 rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-gray-400 border-t-[#2563eb] rounded-full animate-spin" /> // ✅ ALTERADO
           ) : (
             <Search size={16} className="text-gray-400" />
           )}

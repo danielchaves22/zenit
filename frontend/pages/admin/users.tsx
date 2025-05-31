@@ -215,7 +215,7 @@ export default function UsersPage() {
 
       {/* Inline form */}
       {showForm && userRole === 'ADMIN' && (
-        <Card className="mb-6 border-2 border-[#f59e0b]">
+        <Card className="mb-6 border-2 border-[#2563eb]">
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white">
               {editingUser ? `Editando: ${editingUser.name}` : 'Novo Usuário'}
@@ -360,7 +360,7 @@ export default function UsersPage() {
                     key={user.id} 
                     className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
                       editingUser?.id === user.id 
-                        ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                        ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
                         : ''
                     }`}
                   >
@@ -368,7 +368,7 @@ export default function UsersPage() {
                       <div className="flex items-center gap-1 justify-center">
                         <button
                           onClick={() => openEditForm(user)}
-                          className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                          className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                           title="Editar"
                           disabled={formLoading}
                         >

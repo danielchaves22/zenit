@@ -1,4 +1,4 @@
-// frontend/components/ui/Button.tsx
+// frontend/components/ui/Button.tsx - COM CORES DINÂMICAS
 import React from 'react';
 
 export type ButtonVariant = 'primary' | 'accent' | 'outline' | 'danger';
@@ -14,12 +14,13 @@ export function Button({
   className = '',
   ...props
 }: ButtonProps) {
-  const base = 'px-4 py-2 rounded-lg font-semibold transition';
+  const base = 'px-4 py-2 rounded-lg font-semibold transition-all duration-200';
   const variants: Record<ButtonVariant, string> = {
     primary: `${base} bg-blue-600 text-white hover:bg-blue-700`,
-    accent:  `${base} bg-[#f59e0b] text-white hover:bg-[#e08c07]`,
-    outline: `${base} border border-gray-600 text-gray-300 hover:bg-[#1e2126]`,
-    danger:  `${base} bg-red-600 text-white hover:bg-red-700`,
+    // ✅ USANDO CSS VARIABLES DINÂMICAS
+    accent: `${base} bg-accent text-white hover:bg-accent-hover transform hover:scale-[1.02] active:scale-[0.98]`,
+    outline: `${base} border border-gray-600 text-gray-300 hover:bg-[#1e2126] hover:border-accent hover:text-accent`,
+    danger: `${base} bg-red-600 text-white hover:bg-red-700`,
   };
 
   return (

@@ -164,7 +164,7 @@ export default function CompaniesPage() {
 
       {/* Inline form */}
       {showForm && userRole === 'ADMIN' && (
-        <Card className="mb-6 border-2 border-[#f59e0b]">
+        <Card className="mb-6 border-2 border-[#2563eb]">
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white">
               {editingCompany ? `Editando: ${editingCompany.name}` : 'Nova Empresa'}
@@ -259,7 +259,7 @@ export default function CompaniesPage() {
                     key={company.id} 
                     className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
                       editingCompany?.id === company.id 
-                        ? 'bg-[#f59e0b]/10 border-[#f59e0b]/30' 
+                        ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
                         : ''
                     }`}
                   >
@@ -269,7 +269,7 @@ export default function CompaniesPage() {
                           <>
                             <button
                               onClick={() => openEditForm(company)}
-                              className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                              className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                               title="Editar"
                               disabled={formLoading}
                             >
@@ -288,7 +288,7 @@ export default function CompaniesPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-mono text-[#f59e0b] font-medium">
+                      <span className="font-mono text-[#2563eb] font-medium">
                         {company.code.toString().padStart(3, '0')}
                       </span>
                     </td>

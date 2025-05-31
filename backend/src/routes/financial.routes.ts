@@ -1,4 +1,4 @@
-// backend/src/routes/financial.routes.ts - ADICIONAR ROTA DE AUTOCOMPLETE
+// backend/src/routes/financial.routes.ts - VERSÃO CORRIGIDA COM RELATÓRIOS
 
 import { Router } from 'express';
 import { validate } from '../middlewares/validate.middleware';
@@ -17,7 +17,7 @@ import {
   updateTransactionSchema,
   listTransactionsSchema,
   updateTransactionStatusSchema,
-  autocompleteQuerySchema // ✅ NOVO IMPORT
+  autocompleteQuerySchema
 } from '../validators/financial-transaction.validator';
 
 import {
@@ -53,14 +53,16 @@ import {
   updateTransactionStatus,
   deleteTransaction,
   getFinancialSummary,
-  getTransactionAutocomplete // ✅ NOVO IMPORT
+  getTransactionAutocomplete
 } from '../controllers/financial-transaction.controller';
 
-// ✅ IMPORTAR ROTAS RECORRENTES
+// ✅ IMPORTAR ROTAS RECORRENTES E RELATÓRIOS
 import recurringRoutes from './financial-recurring.routes';
+import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 
 const router = Router();
 
+// Rotas de padrões da empresa
 router.get('/defaults', getCompanyDefaults);
 
 // Rotas de Contas Financeiras
@@ -86,7 +88,7 @@ router.delete('/categories/:id', deleteCategory);
 router.post('/categories/:id/set-default', setDefaultCategory);
 router.delete('/categories/:id/set-default', unsetDefaultCategory);
 
-// ✅ NOVA ROTA DE AUTOCOMPLETE COM VALIDAÇÃO - DEVE VIR ANTES DAS ROTAS COM :id
+// ✅ ROTA DE AUTOCOMPLETE - DEVE VIR ANTES DAS ROTAS COM :id
 router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);
 
 // Rotas de Transações Financeiras
@@ -97,7 +99,10 @@ router.put('/transactions/:id', validate(updateTransactionSchema), updateTransac
 router.patch('/transactions/:id/status', validate(updateTransactionStatusSchema), updateTransactionStatus);
 router.delete('/transactions/:id', deleteTransaction);
 
-// ✅ ADICIONAR ROTAS RECORRENTES
+// ✅ ROTAS DE RELATÓRIOS - ORDEM IMPORTA!
+router.use('/reports/financial-account-movement', financialAccountMovementRoutes);
+
+// ✅ ROTAS RECORRENTES
 router.use('/recurring', recurringRoutes);
 
 // Rotas de Relatórios/Dashboard

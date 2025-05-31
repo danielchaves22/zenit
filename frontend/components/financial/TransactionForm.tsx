@@ -1,14 +1,15 @@
-// frontend/components/financial/TransactionForm.tsx - COM CURRENCY INPUT
+// frontend/components/financial/TransactionForm.tsx - COM AUTOCOMPLETE
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { AutocompleteInput } from '@/components/ui/AutocompleteInput'; // ✅ NOVO IMPORT
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { ArrowLeft, Save, X, Trash2, Star } from 'lucide-react';
+import { ArrowLeft, Save, X, Trash2, Star, Sparkles } from 'lucide-react';
 import api from '@/lib/api';
 
 interface Account {
@@ -39,6 +40,12 @@ interface Transaction {
   toAccount?: { id: number; name: string };
   category?: { id: number; name: string; color: string };
   tags: { id: number; name: string }[];
+}
+
+// ✅ INTERFACE PARA SUGESTÕES DE AUTOCOMPLETE
+interface AutocompleteSuggestion {
+  description: string;
+  frequency: number;
 }
 
 interface TransactionFormProps {
@@ -112,6 +119,23 @@ export default function TransactionForm({
       setDefaultsLoaded(true);
     }
   }, [mode, accounts, categories, defaultsLoaded, formData.type]);
+
+  // ✅ FUNÇÃO PARA BUSCAR SUGESTÕES DE AUTOCOMPLETE
+  const fetchAutocompleteSuggestions = async (query: string): Promise<AutocompleteSuggestion[]> => {
+    if (query.length < 3) {
+      return [];
+    }
+
+    try {
+      const response = await api.get('/financial/transactions/autocomplete', {
+        params: { q: query }
+      });
+      return response.data.suggestions || [];
+    } catch (error) {
+      console.error('Error fetching autocomplete suggestions:', error);
+      return [];
+    }
+  };
 
   async function fetchTransaction() {
     if (!transactionId) return;
@@ -242,6 +266,18 @@ export default function TransactionForm({
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
+  };
+
+  // ✅ HANDLER PARA MUDANÇA NA DESCRIÇÃO (AUTOCOMPLETE)
+  const handleDescriptionChange = (value: string) => {
+    setFormData(prev => ({ ...prev, description: value }));
+  };
+
+  // ✅ HANDLER PARA SELEÇÃO DE SUGESTÃO
+  const handleSuggestionSelect = (description: string) => {
+    // Opcional: Adicionar lógica adicional quando uma sugestão é selecionada
+    // Por exemplo, analisar a descrição e sugerir categoria baseada no histórico
+    console.log('Sugestão selecionada:', description);
   };
 
   const handleAmountChange = (value: string) => {
@@ -404,6 +440,22 @@ export default function TransactionForm({
         </Card>
       )}
 
+      {/* ✅ INFO SOBRE AUTOCOMPLETE (apenas para criação) */}
+      {mode === 'create' && (
+        <Card className="mb-6 bg-purple-900/20 border-purple-600">
+          <div className="flex items-start gap-3">
+            <Sparkles size={20} className="text-purple-400 mt-0.5" />
+            <div>
+              <h3 className="font-medium text-purple-300 mb-1">Sugestões Inteligentes</h3>
+              <p className="text-sm text-purple-200">
+                Digite pelo menos 3 caracteres na descrição para ver sugestões baseadas no seu histórico. 
+                As mais utilizadas aparecem primeiro!
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card>
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Primeira linha: Valor (destaque) */}
@@ -419,20 +471,24 @@ export default function TransactionForm({
               />
             </div>
             <div className="w-full max-w-xs md:col-span-4">
-            <Input
-              id="description"
-              name="description"
-              label="Descrição *"
-              value={formData.description}
-              onChange={handleChange}
-              required
-              placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
-              disabled={saving}
-            />
-          </div>
+              {/* ✅ SUBSTITUIR Input NORMAL POR AutocompleteInput */}
+              <AutocompleteInput
+                id="description"
+                label="Descrição *"
+                value={formData.description}
+                onChange={handleDescriptionChange}
+                onSuggestionSelect={handleSuggestionSelect}
+                fetchSuggestions={fetchAutocompleteSuggestions}
+                required
+                placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
+                disabled={saving}
+                minLength={3}
+                maxSuggestions={10}
+              />
+            </div>
           </div>
 
-          {/* Segunda linha: Descrição */}
+          {/* Segunda linha: Contas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {(formData.type === 'EXPENSE' || formData.type === 'TRANSFER') && (
               <div>
@@ -512,8 +568,7 @@ export default function TransactionForm({
             )}
           </div>
           
-          
-          
+          {/* Terceira linha: Data e Status */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">            
             <Input
               id="date"
@@ -525,10 +580,7 @@ export default function TransactionForm({
               required
               disabled={saving}
             />
-          </div>
-          
-          {/* Quinta linha: Status e Tags */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
             <div>
               <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
                 Status *
@@ -547,7 +599,10 @@ export default function TransactionForm({
                 <option value="CANCELED">Cancelada</option>
               </select>
             </div>
-            
+          </div>
+          
+          {/* Quarta linha: Tags */}
+          <div>
             <Input
               id="tags"
               name="tags"
@@ -559,6 +614,7 @@ export default function TransactionForm({
             />
           </div>
           
+          {/* Quinta linha: Observações */}
           <div>
             <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="notes">
               Observações

@@ -786,4 +786,77 @@ export default class FinancialTransactionService {
     
     logger.debug('Financial caches invalidated', { companyId, accountIds });
   }
+
+  /**
+   * Busca sugestões de autocomplete para descrições de transações
+   * Retorna descrições ordenadas por frequência de uso
+   */
+  static async getDescriptionSuggestions(
+    companyId: number, 
+    query: string, 
+    limit: number = 10
+  ): Promise<Array<{ description: string; frequency: number }>> {
+    
+    // Validação de entrada
+    if (!query || query.trim().length < 3) {
+      return [];
+    }
+
+    const normalizedQuery = query.trim();
+    
+    try {
+      // Buscar descrições com frequência usando Prisma
+      const suggestions = await prisma.financialTransaction.groupBy({
+        by: ['description'],
+        where: {
+          companyId,
+          description: {
+            contains: normalizedQuery,
+            mode: 'insensitive' // Case-insensitive search
+          }
+        },
+        _count: {
+          description: true
+        },
+        orderBy: [
+          {
+            _count: {
+              description: 'desc' // Mais frequentes primeiro
+            }
+          },
+          {
+            description: 'asc' // Alfabética como critério secundário
+          }
+        ],
+        take: limit
+      });
+
+      // Mapear resultado para formato esperado
+      const formattedSuggestions = suggestions
+        .filter(item => item.description) // Garantir que descrição não é null
+        .map(item => ({
+          description: item.description!,
+          frequency: item._count.description
+        }));
+
+      logger.debug('Autocomplete suggestions generated', {
+        companyId,
+        query: normalizedQuery,
+        resultCount: formattedSuggestions.length,
+        topResult: formattedSuggestions[0]?.description
+      });
+
+      return formattedSuggestions;
+
+    } catch (error) {
+      logger.error('Error fetching description suggestions', {
+        companyId,
+        query: normalizedQuery,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      
+      // Em caso de erro, retornar array vazio em vez de lançar exceção
+      return [];
+    }
+  }
 }

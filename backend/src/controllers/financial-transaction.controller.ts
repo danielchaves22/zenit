@@ -295,3 +295,58 @@ export async function getFinancialSummary(req: Request, res: Response) {
     });
   }
 }
+
+// backend/src/controllers/financial-transaction.controller.ts - MÉTODO REFATORADO
+
+/**
+ * GET /api/financial/transactions/autocomplete
+ * Autocomplete inteligente para descrições de transações
+ */
+export async function getTransactionAutocomplete(req: Request, res: Response) {
+  try {
+    const { companyId } = getUserContext(req);
+    const { q, limit } = req.query;
+
+    // Validação de entrada
+    if (!q || typeof q !== 'string') {
+      return res.status(400).json({ 
+        error: 'Parâmetro q é obrigatório e deve ser uma string' 
+      });
+    }
+
+    if (q.length < 3) {
+      return res.status(400).json({ 
+        error: 'Query deve ter pelo menos 3 caracteres' 
+      });
+    }
+
+    // Validar limite (opcional)
+    const maxResults = limit && typeof limit === 'string' 
+      ? Math.min(parseInt(limit), 20) // Máximo 20 resultados
+      : 10; // Padrão 10
+
+    // Delegar lógica para o Service
+    const suggestions = await FinancialTransactionService.getDescriptionSuggestions(
+      companyId,
+      q,
+      maxResults
+    );
+
+    return res.status(200).json({
+      suggestions,
+      query: q,
+      total: suggestions.length
+    });
+
+  } catch (error: any) {
+    logger.error('Error in autocomplete controller', {
+      error: error.message,
+      stack: error.stack,
+      query: req.query
+    });
+    
+    return res.status(500).json({
+      error: 'Erro interno ao buscar sugestões'
+    });
+  }
+}

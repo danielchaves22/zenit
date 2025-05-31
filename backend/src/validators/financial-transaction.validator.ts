@@ -88,3 +88,17 @@ export const listTransactionsSchema = z.object({
   page: z.string().optional().transform(val => val ? Number(val) : 1),
   pageSize: z.string().optional().transform(val => val ? Number(val) : 20),
 });
+
+// ✅ NOVO: Schema para validação de autocomplete
+export const autocompleteQuerySchema = z.object({
+  q: z.string()
+    .min(3, { message: 'Query deve ter pelo menos 3 caracteres' })
+    .max(100, { message: 'Query muito longa (máximo 100 caracteres)' })
+    .trim(),
+  limit: z.string()
+    .optional()
+    .transform(val => val ? parseInt(val) : 10)
+    .refine(val => val >= 1 && val <= 20, { 
+      message: 'Limite deve ser entre 1 e 20' 
+    })
+});

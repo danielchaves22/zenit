@@ -1,4 +1,4 @@
-// backend/src/routes/financial.routes.ts - ATUALIZAÇÃO PARA INCLUIR RECORRENTES
+// backend/src/routes/financial.routes.ts - ADICIONAR ROTA DE AUTOCOMPLETE
 
 import { Router } from 'express';
 import { validate } from '../middlewares/validate.middleware';
@@ -16,7 +16,8 @@ import {
   createTransactionSchema,
   updateTransactionSchema,
   listTransactionsSchema,
-  updateTransactionStatusSchema
+  updateTransactionStatusSchema,
+  autocompleteQuerySchema // ✅ NOVO IMPORT
 } from '../validators/financial-transaction.validator';
 
 import {
@@ -51,7 +52,8 @@ import {
   updateTransaction,
   updateTransactionStatus,
   deleteTransaction,
-  getFinancialSummary
+  getFinancialSummary,
+  getTransactionAutocomplete // ✅ NOVO IMPORT
 } from '../controllers/financial-transaction.controller';
 
 // ✅ IMPORTAR ROTAS RECORRENTES
@@ -83,6 +85,9 @@ router.delete('/categories/:id', deleteCategory);
 // Gerenciar categoria padrão
 router.post('/categories/:id/set-default', setDefaultCategory);
 router.delete('/categories/:id/set-default', unsetDefaultCategory);
+
+// ✅ NOVA ROTA DE AUTOCOMPLETE COM VALIDAÇÃO - DEVE VIR ANTES DAS ROTAS COM :id
+router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);
 
 // Rotas de Transações Financeiras
 router.post('/transactions', validate(createTransactionSchema), createTransaction);

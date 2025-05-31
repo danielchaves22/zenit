@@ -1,3 +1,4 @@
+// backend/prisma/seed.js
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
 
@@ -42,7 +43,9 @@ async function main() {
     });
     console.log('✅ Empresa Equinox criada:', { id: company.id, name: company.name, code: company.code });
 
-    const { defaultAccount } = await createDefaultFinancialStructure(company.id)
+    // ✅ CRIAR ESTRUTURA FINANCEIRA PARA EQUINOX (empresa administrativa)
+    // A Equinox também recebe estrutura padrão para demonstração/testes
+    const { defaultStructure } = await createDefaultFinancialStructure(company.id);
 
     // Cria o usuário admin com role ADMIN
     const hashedPassword = await bcrypt.hash('@dmin05c10', 10);
@@ -86,51 +89,75 @@ async function main() {
   }
 }
 
-// Adicionar ao backend/prisma/seed.js após criar empresa e usuário admin
-
+/**
+ * ✅ CRIAÇÃO DE ESTRUTURA FINANCEIRA PADRÃO
+ * Usado tanto para a empresa Equinox (administrativa) quanto para novas empresas
+ * Estrutura padrão simplificada para onboarding
+ */
 async function createDefaultFinancialStructure(companyId) {
   console.log('🏦 Criando estrutura financeira padrão...');
 
-  // 1. Conta padrão "Caixa Geral"
-  const defaultAccount = await prisma.financialAccount.create({
-    data: {
-      name: 'Caixa Geral',
-      type: 'CHECKING',
-      balance: 0,
-      companyId: companyId,
-      accountNumber: null,
-      bankName: null,
-      isActive: true
-    }
-  });
+  // Verificar se já existe estrutura financeira
+  const [existingAccount, existingCategory] = await Promise.all([
+    prisma.financialAccount.findFirst({ where: { companyId } }),
+    prisma.financialCategory.findFirst({ where: { companyId } })
+  ]);
 
-  // 2. Categorias padrão simplificadas
-  const categories = [
-    { name: 'Receita Geral', type: 'INCOME', color: '#16A34A' },
-    { name: 'Vendas', type: 'INCOME', color: '#059669' },
-    { name: 'Serviços', type: 'INCOME', color: '#0D9488' },
-    
-    { name: 'Despesa Operacional', type: 'EXPENSE', color: '#DC2626' },
-    { name: 'Fornecedores', type: 'EXPENSE', color: '#B91C1C' },
-    { name: 'Impostos e Taxas', type: 'EXPENSE', color: '#991B1B' },
-    { name: 'Despesas Administrativas', type: 'EXPENSE', color: '#7F1D1D' },
-  ];
-
-  for (const category of categories) {
-    await prisma.financialCategory.create({
-      data: {
-        ...category,
-        companyId: companyId
-      }
-    });
+  if (existingAccount || existingCategory) {
+    console.log('⚠️  Estrutura financeira já existe, pulando criação');
+    return { defaultStructure: null };
   }
 
-  console.log(`✅ Estrutura padrão criada - Conta: ${defaultAccount.name}, Categorias: ${categories.length}`);
-  return { defaultAccount };
-}
+  return await prisma.$transaction(async (tx) => {
+    
+    // 1. Conta Principal (padrão)
+    const defaultAccount = await tx.financialAccount.create({
+      data: {
+        name: 'Conta Principal',
+        type: 'CHECKING',
+        balance: 0,
+        companyId: companyId,
+        isActive: true,
+        isDefault: true // ✅ Marcar como padrão
+      }
+    });
 
-// Chamar após criar empresa:
-// const { defaultAccount } = await createDefaultFinancialStructure(company.id);
+    // 2. Categoria de despesas (padrão)
+    const expenseCategory = await tx.financialCategory.create({
+      data: {
+        name: 'Despesas Gerais',
+        type: 'EXPENSE',
+        color: '#DC2626', // Vermelho
+        companyId: companyId,
+        isDefault: true // ✅ Marcar como padrão
+      }
+    });
+
+    // 3. Categoria de receitas (padrão)
+    const incomeCategory = await tx.financialCategory.create({
+      data: {
+        name: 'Outras Receitas',
+        type: 'INCOME',
+        color: '#16A34A', // Verde
+        companyId: companyId,
+        isDefault: true // ✅ Marcar como padrão
+      }
+    });
+
+    console.log(`✅ Estrutura financeira padrão criada para Equinox:`);
+    console.log(`   - Conta: ${defaultAccount.name} (padrão: ${defaultAccount.isDefault})`);
+    console.log(`   - Categoria Despesa: ${expenseCategory.name} (padrão: ${expenseCategory.isDefault})`);
+    console.log(`   - Categoria Receita: ${incomeCategory.name} (padrão: ${incomeCategory.isDefault})`);
+
+    return {
+      defaultStructure: {
+        account: defaultAccount,
+        expenseCategory,
+        incomeCategory
+      }
+    };
+  });
+}
 
 main()
   .catch((error) => {

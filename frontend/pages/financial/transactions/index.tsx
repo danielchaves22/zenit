@@ -1,4 +1,4 @@
-// frontend/pages/financial/transactions/index.tsx - COM DATAS DE VENCIMENTO E EFETIVAÇÃO
+// frontend/pages/financial/transactions/index.tsx - CORREÇÃO DE URL
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
@@ -12,7 +12,7 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import { 
   Plus, Receipt, Edit2, Trash2, Eye, Filter, Download, 
   TrendingUp, TrendingDown, ArrowUpDown, Calendar,
-  Search, RefreshCw, Clock, CheckCircle
+  Search, RefreshCw, Clock, CheckCircle, X
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -287,7 +287,7 @@ export default function TransactionsListPage() {
               <select
                 value={filters.type}
                 onChange={(e) => setFilters({...filters, type: e.target.value})}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="">Todos</option>
                 <option value="INCOME">Receita</option>
@@ -303,7 +303,7 @@ export default function TransactionsListPage() {
               <select
                 value={filters.status}
                 onChange={(e) => setFilters({...filters, status: e.target.value})}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="">Todos</option>
                 <option value="PENDING">Pendente</option>
@@ -319,7 +319,7 @@ export default function TransactionsListPage() {
               <select
                 value={filters.accountId}
                 onChange={(e) => setFilters({...filters, accountId: e.target.value})}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="">Todas</option>
                 {accounts.map(account => (
@@ -411,7 +411,7 @@ export default function TransactionsListPage() {
                         <div className="flex items-center gap-1 justify-center">
                           <Link href={`/financial/transactions/${transaction.id}`}>
                             <button
-                              className="p-1 text-gray-300 hover:text-[#f59e0b] transition-colors"
+                              className="p-1 text-gray-300 hover:text-accent transition-colors"
                               title="Editar"
                             >
                               <Edit2 size={14} />

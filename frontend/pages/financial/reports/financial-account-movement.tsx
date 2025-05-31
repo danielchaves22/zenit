@@ -1,4 +1,3 @@
-// frontend/pages/financial/reports/financial-account-movement.tsx
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
@@ -9,14 +8,20 @@ import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
 import { 
   TrendingUp, TrendingDown, Download, Printer, FileText, 
-  Calendar, Filter, RefreshCw, ChevronDown, ChevronRight
+  Calendar, Filter, ZoomIn, ZoomOut, RotateCcw
 } from 'lucide-react';
 import api from '@/lib/api';
 
+// Interfaces baseadas no retorno do backend
 interface FinancialAccount {
   id: number;
   name: string;
-  type: string;
+}
+
+interface Category {
+  id: number;
+  name: string;
+  color: string;
 }
 
 interface Transaction {
@@ -25,15 +30,8 @@ interface Transaction {
   amount: number;
   date: string;
   type: 'INCOME' | 'EXPENSE';
-  financialAccount: {
-    id: number;
-    name: string;
-  };
-  category?: {
-    id: number;
-    name: string;
-    color: string;
-  };
+  financialAccount: FinancialAccount;
+  category?: Category;
 }
 
 interface PeriodData {
@@ -52,13 +50,14 @@ interface ReportFilters {
   groupBy: 'day' | 'week' | 'month';
 }
 
-export default function FinancialAccountMovementReport() {
+export default function FinancialMovementReport() {
   const { addToast } = useToast();
   
   const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
   const [reportData, setReportData] = useState<PeriodData[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expandedPeriods, setExpandedPeriods] = useState<Set<string>>(new Set());
+  const [showFilters, setShowFilters] = useState(true);
+  const [zoomLevel, setZoomLevel] = useState(100);
   
   const [filters, setFilters] = useState<ReportFilters>({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
@@ -71,21 +70,9 @@ export default function FinancialAccountMovementReport() {
     fetchFinancialAccounts();
   }, []);
 
-  useEffect(() => {
-    if (financialAccounts.length > 0 && filters.financialAccountIds.length === 0) {
-      // Auto-selecionar todas as contas financeiras inicialmente
-      setFilters(prev => ({
-        ...prev,
-        financialAccountIds: financialAccounts.map(acc => acc.id)
-      }));
-    }
-  }, [financialAccounts]);
+  // Não auto-selecionar contas - usuário deve escolher
 
-  useEffect(() => {
-    if (filters.financialAccountIds.length > 0) {
-      generateReport();
-    }
-  }, [filters]);
+  // Não executar relatório automaticamente - apenas quando usuário solicitar
 
   async function fetchFinancialAccounts() {
     try {
@@ -121,52 +108,38 @@ export default function FinancialAccountMovementReport() {
     }
   }
 
-  function toggleFinancialAccountSelection(accountId: number) {
-    setFilters(prev => ({
-      ...prev,
-      financialAccountIds: prev.financialAccountIds.includes(accountId)
-        ? prev.financialAccountIds.filter(id => id !== accountId)
-        : [...prev.financialAccountIds, accountId]
-    }));
+  function formatCurrency(value: number): string {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL'
+    }).format(value);
   }
 
-  function toggleAllFinancialAccounts() {
-    setFilters(prev => ({
-      ...prev,
-      financialAccountIds: prev.financialAccountIds.length === financialAccounts.length ? [] : financialAccounts.map(acc => acc.id)
-    }));
+  function formatDate(dateString: string): string {
+    return new Date(dateString).toLocaleDateString('pt-BR');
   }
 
-  function togglePeriodExpansion(period: string) {
-    setExpandedPeriods(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(period)) {
-        newSet.delete(period);
-      } else {
-        newSet.add(period);
-      }
-      return newSet;
-    });
+  function increaseZoom() {
+    if (zoomLevel < 150) {
+      setZoomLevel(prev => prev + 10);
+    }
+  }
+
+  function decreaseZoom() {
+    if (zoomLevel > 50) {
+      setZoomLevel(prev => prev - 10);
+    }
+  }
+
+  function resetZoom() {
+    setZoomLevel(100);
   }
 
   async function exportToPDF() {
     try {
-      const response = await api.post('/financial/reports/financial-account-movement/pdf', {
-        ...filters,
-        data: reportData
-      }, {
-        responseType: 'blob'
-      });
-      
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `relatorio-movimentacao-contas-${filters.startDate}-${filters.endDate}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
-      
-      addToast('PDF gerado com sucesso', 'success');
+      // Usar window.print() por enquanto (mais compatível)
+      window.print();
+      addToast('Use Ctrl+P ou Cmd+P para salvar como PDF', 'success');
     } catch (error) {
       addToast('Erro ao gerar PDF', 'error');
     }
@@ -201,17 +174,6 @@ export default function FinancialAccountMovementReport() {
     window.print();
   }
 
-  function formatCurrency(value: number): string {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value);
-  }
-
-  function formatDate(dateString: string): string {
-    return new Date(dateString).toLocaleDateString('pt-BR');
-  }
-
   // Calcular totais gerais
   const totals = reportData.reduce(
     (acc, period) => ({
@@ -233,39 +195,32 @@ export default function FinancialAccountMovementReport() {
         { label: 'Movimentação de Contas Financeiras' }
       ]} />
 
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">Relatório de Movimentação de Contas Financeiras</h1>
-          <p className="text-gray-400 mt-1">Movimentação detalhada por período</p>
+      {/* Barra de Ações */}
+      <div className="flex justify-between items-center mb-4 print:hidden">
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-2"
+          >
+            <Filter size={16} />
+            {showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}
+          </Button>
         </div>
         
         <div className="flex gap-2">
-          <Button variant="outline" onClick={printReport} className="flex items-center gap-2">
-            <Printer size={16} />
+          <Button variant="outline" onClick={printReport}>
+            <Printer size={16} className="mr-2" />
             Imprimir
-          </Button>
-          <Button variant="outline" onClick={exportToPDF} className="flex items-center gap-2">
-            <FileText size={16} />
-            PDF
-          </Button>
-          <Button variant="outline" onClick={exportToExcel} className="flex items-center gap-2">
-            <Download size={16} />
-            Excel
-          </Button>
-          <Button variant="accent" onClick={generateReport} className="flex items-center gap-2">
-            <RefreshCw size={16} />
-            Atualizar
           </Button>
         </div>
       </div>
 
       {/* Filtros */}
-      <Card className="mb-6 print:hidden">
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-white">Filtros do Relatório</h3>
-          
-          {/* Período */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {showFilters && (
+        <Card className="mb-4">
+          <h3 className="text-white font-medium mb-3">Filtros do Relatório</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Input
               label="Data Inicial"
               type="date"
@@ -283,9 +238,7 @@ export default function FinancialAccountMovementReport() {
             />
             
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">
-                Agrupar por
-              </label>
+              <label className="block text-sm font-medium mb-1 text-gray-300">Agrupar por</label>
               <select
                 value={filters.groupBy}
                 onChange={(e) => setFilters(prev => ({ ...prev, groupBy: e.target.value as 'day' | 'week' | 'month' }))}
@@ -296,23 +249,19 @@ export default function FinancialAccountMovementReport() {
                 <option value="month">Por Mês</option>
               </select>
             </div>
+
+            <div className="flex items-end">
+              <Button variant="outline" onClick={generateReport} className="w-full">
+                Gerar Relatório
+              </Button>
+            </div>
           </div>
 
           {/* Seleção de Contas Financeiras */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-300">
-                Contas Financeiras Selecionadas ({filters.financialAccountIds.length} de {financialAccounts.length})
-              </label>
-              <Button 
-                variant="outline" 
-                onClick={toggleAllFinancialAccounts}
-                className="text-xs py-1 px-3"
-              >
-                {filters.financialAccountIds.length === financialAccounts.length ? 'Desmarcar Todas' : 'Marcar Todas'}
-              </Button>
-            </div>
-            
+          <div className="mt-4">
+            <label className="block text-sm font-medium mb-2 text-gray-300">
+              Contas Financeiras ({filters.financialAccountIds.length} selecionadas)
+            </label>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {financialAccounts.map(account => (
                 <label
@@ -322,7 +271,19 @@ export default function FinancialAccountMovementReport() {
                   <input
                     type="checkbox"
                     checked={filters.financialAccountIds.includes(account.id)}
-                    onChange={() => toggleFinancialAccountSelection(account.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setFilters(prev => ({
+                          ...prev,
+                          financialAccountIds: [...prev.financialAccountIds, account.id]
+                        }));
+                      } else {
+                        setFilters(prev => ({
+                          ...prev,
+                          financialAccountIds: prev.financialAccountIds.filter(id => id !== account.id)
+                        }));
+                      }
+                    }}
                     className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
                   />
                   <span className="text-sm text-white truncate">{account.name}</span>
@@ -330,184 +291,241 @@ export default function FinancialAccountMovementReport() {
               ))}
             </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+      )}
 
-      {/* Resumo Geral */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Total de Entradas</p>
-              <p className="text-xl font-bold text-green-400">{formatCurrency(totals.income)}</p>
-            </div>
-            <TrendingUp size={24} className="text-green-400" />
-          </div>
-        </Card>
-        
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Total de Saídas</p>
-              <p className="text-xl font-bold text-red-400">{formatCurrency(totals.expense)}</p>
-            </div>
-            <TrendingDown size={24} className="text-red-400" />
-          </div>
-        </Card>
-        
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Saldo do Período</p>
-              <p className={`text-xl font-bold ${totals.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                {formatCurrency(totals.balance)}
-              </p>
-            </div>
-            <div className={`text-2xl ${totals.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {totals.balance >= 0 ? '+' : '−'}
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Dados do Relatório */}
       {loading ? (
         <PageLoader message="Gerando relatório..." />
       ) : reportData.length === 0 ? (
         <Card className="p-8 text-center">
           <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-400 mb-4">Nenhuma movimentação encontrada para o período</p>
-          <Button variant="accent" onClick={generateReport}>
-            Gerar Relatório
-          </Button>
+          <p className="text-gray-400 mb-4">
+            {filters.financialAccountIds.length === 0 
+              ? 'Selecione as contas financeiras e clique em "Gerar Relatório"'
+              : 'Nenhuma movimentação encontrada para o período selecionado'
+            }
+          </p>
+          {filters.financialAccountIds.length > 0 && (
+            <Button variant="accent" onClick={generateReport}>
+              Gerar Relatório
+            </Button>
+          )}
         </Card>
-      ) : (
-        <Card>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-[#0f1419] text-gray-400 uppercase text-xs">
-                <tr>
-                  <th className="px-4 py-3 text-left">Período</th>
-                  <th className="px-4 py-3 text-right">Entradas</th>
-                  <th className="px-4 py-3 text-right">Saídas</th>
-                  <th className="px-4 py-3 text-right">Saldo</th>
-                  <th className="px-4 py-3 text-center">Transações</th>
-                  <th className="px-4 py-3 text-center print:hidden">Ações</th>
+      ) : (<Card>
+        <div className="space-y-4 p-0">
+          {/* Toolbar do Relatório */}
+          <div className="flex justify-between items-center bg-gray-100 rounded-lg p-2 print:hidden">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-700 font-medium">Pré-visualização</span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              {/* Controles de Zoom */}
+              <div className="flex items-center gap-1 border border-gray-300 rounded bg-white">
+                <button
+                  onClick={decreaseZoom}
+                  disabled={zoomLevel <= 50}
+                  className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Diminuir zoom"
+                >
+                  <ZoomOut size={14} />
+                </button>
+                <span className="px-2 text-sm font-medium text-gray-700 min-w-[50px] text-center">
+                  {zoomLevel}%
+                </span>
+                <button
+                  onClick={increaseZoom}
+                  disabled={zoomLevel >= 150}
+                  className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Aumentar zoom"
+                >
+                  <ZoomIn size={14} />
+                </button>
+                <button
+                  onClick={resetZoom}
+                  className="p-1 hover:bg-gray-100 border-l border-gray-300"
+                  title="Resetar zoom"
+                >
+                  <RotateCcw size={14} />
+                </button>
+              </div>
+
+              {/* Ações do Relatório */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={exportToPDF}
+                  className="p-2 hover:bg-gray-200 rounded transition-colors"
+                  title="Exportar PDF"
+                >
+                  <FileText size={16} className="text-gray-600" />
+                </button>
+                <button
+                  onClick={exportToExcel}
+                  className="p-2 hover:bg-gray-200 rounded transition-colors"
+                  title="Exportar Excel"
+                >
+                  <Download size={16} className="text-gray-600" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Container do Relatório com Zoom */}
+          <div 
+            className="transition-transform duration-200 origin-top"
+            style={{ transform: `scale(${zoomLevel / 100})` }}
+          >
+            {/* Relatório em formato A4 */}
+            <div className="report-container mx-auto bg-white text-black print:bg-white print:text-black shadow-lg" style={{ width: '21cm', minHeight: '29.7cm', padding: '0.8cm' }}>
+          {/* Cabeçalho do Relatório */}
+          <div className="text-center mb-4 pb-3 border-b-2 border-gray-400">
+            <h1 className="text-lg font-bold mb-2">RELATÓRIO DE MOVIMENTAÇÃO FINANCEIRA</h1>
+            <div className="text-xs">
+              <p><strong>Período:</strong> {formatDate(filters.startDate)} a {formatDate(filters.endDate)}</p>
+              <p><strong>Agrupamento:</strong> {filters.groupBy === 'day' ? 'Diário' : filters.groupBy === 'week' ? 'Semanal' : 'Mensal'}</p>
+              <p><strong>Contas:</strong> {selectedFinancialAccounts.map(acc => acc.name).join(', ')}</p>
+            </div>
+          </div>
+
+          {/* Resumo Geral */}
+          <div className="mb-4 p-3 border border-gray-300">
+            <h3 className="font-bold text-sm mb-2 text-center">RESUMO GERAL DO PERÍODO</h3>
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-400 p-1 text-left font-bold">DESCRIÇÃO</th>
+                  <th className="border border-gray-400 p-1 text-right font-bold">VALOR</th>
                 </tr>
               </thead>
               <tbody>
-                {reportData.map((period, index) => (
-                  <React.Fragment key={period.period}>
-                    <tr className="border-b border-gray-700 hover:bg-[#1a1f2b]">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-white">{period.periodLabel}</div>
-                      </td>
-                      <td className="px-4 py-3 text-right text-green-400 font-medium">
-                        {formatCurrency(period.income)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-red-400 font-medium">
-                        {formatCurrency(period.expense)}
-                      </td>
-                      <td className={`px-4 py-3 text-right font-medium ${
-                        period.balance >= 0 ? 'text-green-400' : 'text-red-400'
-                      }`}>
-                        {formatCurrency(period.balance)}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="px-2 py-1 bg-gray-700 text-gray-300 text-xs rounded-full">
-                          {period.transactions.length}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center print:hidden">
-                        <Button
-                          variant="outline"
-                          onClick={() => togglePeriodExpansion(period.period)}
-                          className="p-1"
-                        >
-                          {expandedPeriods.has(period.period) ? (
-                            <ChevronDown size={16} />
-                          ) : (
-                            <ChevronRight size={16} />
-                          )}
-                        </Button>
-                      </td>
-                    </tr>
-                    
-                    {/* Detalhes das Transações */}
-                    {expandedPeriods.has(period.period) && (
-                      <tr>
-                        <td colSpan={6} className="px-4 py-3 bg-[#0f1419]">
-                          <div className="space-y-2">
-                            {period.transactions.map(transaction => (
-                              <div key={transaction.id} className="flex items-center justify-between p-3 bg-[#1e2126] rounded-lg">
-                                <div className="flex items-center gap-3">
-                                  <div className={`p-1 rounded ${
-                                    transaction.type === 'INCOME' ? 'bg-green-900' : 'bg-red-900'
-                                  }`}>
-                                    {transaction.type === 'INCOME' ? (
-                                      <TrendingUp size={14} className="text-green-400" />
-                                    ) : (
-                                      <TrendingDown size={14} className="text-red-400" />
-                                    )}
-                                  </div>
-                                  <div>
-                                    <div className="text-white font-medium">{transaction.description}</div>
-                                    <div className="text-xs text-gray-400">
-                                      {transaction.financialAccount.name}
-                                      {transaction.category && ` • ${transaction.category.name}`}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-right">
-                                  <div className={`font-medium ${
-                                    transaction.type === 'INCOME' ? 'text-green-400' : 'text-red-400'
-                                  }`}>
-                                    {formatCurrency(transaction.amount)}
-                                  </div>
-                                  <div className="text-xs text-gray-400">
-                                    {formatDate(transaction.date)}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                ))}
-              </tbody>
-              <tfoot className="bg-[#0f1419] font-bold">
                 <tr>
-                  <td className="px-4 py-3 text-white">TOTAL GERAL</td>
-                  <td className="px-4 py-3 text-right text-green-400">{formatCurrency(totals.income)}</td>
-                  <td className="px-4 py-3 text-right text-red-400">{formatCurrency(totals.expense)}</td>
-                  <td className={`px-4 py-3 text-right ${totals.balance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <td className="border border-gray-400 p-1 font-medium">Total de Entradas</td>
+                  <td className="border border-gray-400 p-1 text-right font-medium text-green-600">
+                    {formatCurrency(totals.income)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="border border-gray-400 p-1 font-medium">Total de Saídas</td>
+                  <td className="border border-gray-400 p-1 text-right font-medium text-red-600">
+                    {formatCurrency(totals.expense)}
+                  </td>
+                </tr>
+                <tr className="bg-gray-50 font-bold">
+                  <td className="border border-gray-400 p-1">SALDO LÍQUIDO DO PERÍODO</td>
+                  <td className={`border border-gray-400 p-1 text-right ${totals.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {formatCurrency(totals.balance)}
                   </td>
-                  <td className="px-4 py-3 text-center text-gray-300">
-                    {reportData.reduce((sum, period) => sum + period.transactions.length, 0)}
-                  </td>
-                  <td className="px-4 py-3 print:hidden"></td>
                 </tr>
-              </tfoot>
+              </tbody>
             </table>
           </div>
-        </Card>
-      )}
 
-      {/* Informações do Relatório (para impressão) */}
-      <div className="hidden print:block mt-6">
-        <div className="text-sm text-gray-600">
-          <p><strong>Período:</strong> {formatDate(filters.startDate)} a {formatDate(filters.endDate)}</p>
-          <p><strong>Agrupamento:</strong> {
-            filters.groupBy === 'day' ? 'Por Dia' : 
-            filters.groupBy === 'week' ? 'Por Semana' : 'Por Mês'
-          }</p>
-          <p><strong>Contas Financeiras:</strong> {selectedFinancialAccounts.map(acc => acc.name).join(', ')}</p>
-          <p><strong>Gerado em:</strong> {new Date().toLocaleString('pt-BR')}</p>
+          {/* Detalhamento por Período */}
+          <div className="space-y-4">
+            {reportData.map((period, periodIndex) => (
+              <div key={period.period} className="border border-gray-300">
+                {/* Cabeçalho do Período */}
+                <div className="bg-gray-100 p-2 border-b border-gray-300">
+                  <h4 className="font-bold text-sm">{period.periodLabel}</h4>
+                </div>
+
+                {/* Transações do Período */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-gray-200">
+                        <th className="border border-gray-400 p-1 text-left font-bold">DATA</th>
+                        <th className="border border-gray-400 p-1 text-left font-bold">DESCRIÇÃO</th>
+                        <th className="border border-gray-400 p-1 text-left font-bold">CONTA</th>
+                        <th className="border border-gray-400 p-1 text-left font-bold">CATEGORIA</th>
+                        <th className="border border-gray-400 p-1 text-center font-bold">TIPO</th>
+                        <th className="border border-gray-400 p-1 text-right font-bold">VALOR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {period.transactions.map((transaction, index) => (
+                        <tr key={transaction.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="border border-gray-400 p-1 text-xs">
+                            {formatDate(transaction.date)}
+                          </td>
+                          <td className="border border-gray-400 p-1 text-xs">
+                            {transaction.description}
+                          </td>
+                          <td className="border border-gray-400 p-1 text-xs">
+                            {transaction.financialAccount.name}
+                          </td>
+                          <td className="border border-gray-400 p-1 text-xs">
+                            {transaction.category ? (
+                              <div className="flex items-center gap-1">
+                                <div 
+                                  className="w-2 h-2 rounded-full border border-gray-400"
+                                  style={{ backgroundColor: transaction.category.color }}
+                                />
+                                <span className="truncate">{transaction.category.name}</span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-500">-</span>
+                            )}
+                          </td>
+                          <td className="border border-gray-400 p-1 text-center">
+                            <span className={`px-1 py-0.5 rounded text-white text-xs font-medium ${
+                              transaction.type === 'INCOME' ? 'bg-green-600' : 'bg-red-600'
+                            }`}>
+                              {transaction.type === 'INCOME' ? 'ENT' : 'SAÍ'}
+                            </span>
+                          </td>
+                          <td className={`border border-gray-400 p-1 text-right text-xs font-medium ${
+                            transaction.type === 'INCOME' ? 'text-green-600' : 'text-red-600'
+                          }`}>
+                            {formatCurrency(transaction.amount)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {/* Subtotal do Período */}
+                    <tfoot>
+                      <tr className="bg-gray-100 font-bold text-xs">
+                        <td colSpan={3} className="border border-gray-400 p-1 text-left">
+                          SUBTOTAL - {period.periodLabel}
+                        </td>
+                        <td className="border border-gray-400 p-1 text-right">
+                          <div>Entradas: {formatCurrency(period.income)}</div>
+                          <div>Saídas: {formatCurrency(period.expense)}</div>
+                          <div>Transações: {period.transactions.length}</div>
+                        </td>
+                        <td className="border border-gray-400 p-1 text-center font-bold">
+                          SUBTOTAL:
+                        </td>
+                        <td className={`border border-gray-400 p-1 text-right font-bold ${
+                          period.balance >= 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {formatCurrency(period.balance)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Rodapé */}
+          <div className="mt-4 pt-3 border-t border-gray-300 text-xs text-gray-600">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p><strong>Relatório gerado em:</strong> {new Date().toLocaleString('pt-BR')}</p>
+                <p><strong>Sistema:</strong> Zenit - Gestão Financeira</p>
+              </div>
+              <div className="text-right">
+                <p><strong>Usuário:</strong> Sistema</p>
+                <p><strong>Empresa:</strong> {selectedFinancialAccounts.length > 0 ? 'Empresa Exemplo' : '-'}</p>
+              </div>
+            </div>
+          </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </Card>)}
     </DashboardLayout>
   );
 }

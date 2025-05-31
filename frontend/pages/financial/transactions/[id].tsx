@@ -1,4 +1,4 @@
-// frontend/pages/financial/transactions/edit/[id].tsx - REFATORADO
+// frontend/pages/financial/transactions/[id].tsx - LARGURA AJUSTADA
 import React from 'react';
 import { useRouter } from 'next/router';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -27,12 +27,11 @@ export default function EditTransactionPage() {
         { label: 'Editar Transação' }
       ]} />
 
-      <div className="max-w-4xl mx-auto">
-        <TransactionForm
-          mode="edit"
-          transactionId={id as string}
-        />
-      </div>
+      {/* ✅ Sem limitação de largura para ocupar o espaço total igual ao card da listagem */}
+      <TransactionForm
+        mode="edit"
+        transactionId={id as string}
+      />
     </DashboardLayout>
   );
 }

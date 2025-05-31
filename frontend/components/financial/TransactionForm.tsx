@@ -1,11 +1,11 @@
-// frontend/components/financial/TransactionForm.tsx - COM AUTOCOMPLETE
+// frontend/components/financial/TransactionForm.tsx - COM AUTOCOMPLETE FILTRADO POR TIPO
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
-import { AutocompleteInput } from '@/components/ui/AutocompleteInput'; // ✅ NOVO IMPORT
+import { AutocompleteInput } from '@/components/ui/AutoCompleteInput'; // ✅ IMPORT DO AUTOCOMPLETE
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
@@ -120,15 +120,19 @@ export default function TransactionForm({
     }
   }, [mode, accounts, categories, defaultsLoaded, formData.type]);
 
-  // ✅ FUNÇÃO PARA BUSCAR SUGESTÕES DE AUTOCOMPLETE
+  // ✅ FUNÇÃO PARA BUSCAR SUGESTÕES DE AUTOCOMPLETE FILTRADA POR TIPO
   const fetchAutocompleteSuggestions = async (query: string): Promise<AutocompleteSuggestion[]> => {
     if (query.length < 3) {
       return [];
     }
 
     try {
+      // ✅ INCLUIR O TIPO DE TRANSAÇÃO NA REQUISIÇÃO
       const response = await api.get('/financial/transactions/autocomplete', {
-        params: { q: query }
+        params: { 
+          q: query,
+          type: formData.type // ✅ PASSAR O TIPO ATUAL DO FORMULÁRIO
+        }
       });
       return response.data.suggestions || [];
     } catch (error) {
@@ -417,50 +421,13 @@ export default function TransactionForm({
         </div>
       </div>
 
-      {/* Informações sobre valores padrão (apenas para criação) */}
-      {mode === 'create' && (defaultAccount || defaultCategory) && (
-        <Card className="mb-6 bg-blue-900/20 border-blue-600">
-          <div className="flex items-start gap-3">
-            <Star size={20} className="text-blue-400 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-blue-300 mb-1">Valores Padrão Aplicados</h3>
-              <div className="text-sm text-blue-200 space-y-1">
-                {defaultAccount && (
-                  <p>• Conta: {defaultAccount.name}</p>
-                )}
-                {defaultCategory && (
-                  <p>• Categoria: {defaultCategory.name}</p>
-                )}
-                <p className="text-xs text-blue-300 mt-2">
-                  Estes valores foram selecionados automaticamente com base nas suas configurações padrão.
-                </p>
-              </div>
-            </div>
-          </div>
-        </Card>
-      )}
 
-      {/* ✅ INFO SOBRE AUTOCOMPLETE (apenas para criação) */}
-      {mode === 'create' && (
-        <Card className="mb-6 bg-purple-900/20 border-purple-600">
-          <div className="flex items-start gap-3">
-            <Sparkles size={20} className="text-purple-400 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-purple-300 mb-1">Sugestões Inteligentes</h3>
-              <p className="text-sm text-purple-200">
-                Digite pelo menos 3 caracteres na descrição para ver sugestões baseadas no seu histórico. 
-                As mais utilizadas aparecem primeiro!
-              </p>
-            </div>
-          </div>
-        </Card>
-      )}
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Primeira linha: Valor (destaque) */}
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-            <div className="w-full max-w-xs md:col-span-1">
+          {/* Primeira linha: Valor e Descrição (expandida) */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+            <div className="md:col-span-3">
               <CurrencyInput
                 id="amount"
                 label="Valor *"
@@ -470,21 +437,30 @@ export default function TransactionForm({
                 disabled={saving}
               />
             </div>
-            <div className="w-full max-w-xs md:col-span-4">
-              {/* ✅ SUBSTITUIR Input NORMAL POR AutocompleteInput */}
-              <AutocompleteInput
-                id="description"
-                label="Descrição *"
-                value={formData.description}
-                onChange={handleDescriptionChange}
-                onSuggestionSelect={handleSuggestionSelect}
-                fetchSuggestions={fetchAutocompleteSuggestions}
-                required
-                placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
-                disabled={saving}
-                minLength={3}
-                maxSuggestions={10}
-              />
+            <div className="md:col-span-9">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="description">
+                    Descrição *
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    Digite pelo menos 3 caracteres para ver sugestões baseadas no seu histórico
+                  </span>
+                </div>
+                <AutocompleteInput
+                  id="description"
+                  value={formData.description}
+                  onChange={handleDescriptionChange}
+                  onSuggestionSelect={handleSuggestionSelect}
+                  fetchSuggestions={fetchAutocompleteSuggestions}
+                  required
+                  placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
+                  disabled={saving}
+                  minLength={3}
+                  maxSuggestions={10}
+                  className="mb-0"
+                />
+              </div>
             </div>
           </div>
 

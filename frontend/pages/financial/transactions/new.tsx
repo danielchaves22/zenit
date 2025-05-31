@@ -1,4 +1,4 @@
-// frontend/pages/financial/transactions/new.tsx - REFATORADO
+// frontend/pages/financial/transactions/new.tsx - LARGURA AJUSTADA
 import React from 'react';
 import { useRouter } from 'next/router';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -35,13 +35,12 @@ export default function NewTransactionPage() {
         { label: getPageTitle() }
       ]} />
 
-      <div className="max-w-4xl mx-auto">
-        <TransactionForm
-          mode="create"
-          initialType={initialType}
-          isTypeLocked={isTypeLocked}
-        />
-      </div>
+      {/* ✅ Sem limitação de largura para ocupar o espaço total igual ao card da listagem */}
+      <TransactionForm
+        mode="create"
+        initialType={initialType}
+        isTypeLocked={isTypeLocked}
+      />
     </DashboardLayout>
   );
 }

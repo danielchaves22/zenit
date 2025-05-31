@@ -789,11 +789,12 @@ export default class FinancialTransactionService {
 
   /**
    * Busca sugestões de autocomplete para descrições de transações
-   * Retorna descrições ordenadas por frequência de uso
+   * Filtrado por tipo de transação para melhor relevância e performance
    */
   static async getDescriptionSuggestions(
     companyId: number, 
     query: string, 
+    transactionType: TransactionType, // ✅ NOVO PARÂMETRO
     limit: number = 10
   ): Promise<Array<{ description: string; frequency: number }>> {
     
@@ -805,11 +806,12 @@ export default class FinancialTransactionService {
     const normalizedQuery = query.trim();
     
     try {
-      // Buscar descrições com frequência usando Prisma
+      // ✅ BUSCAR DESCRIÇÕES FILTRADAS POR TIPO E FREQUÊNCIA
       const suggestions = await prisma.financialTransaction.groupBy({
         by: ['description'],
         where: {
           companyId,
+          type: transactionType, // ✅ FILTRO POR TIPO DE TRANSAÇÃO
           description: {
             contains: normalizedQuery,
             mode: 'insensitive' // Case-insensitive search
@@ -839,9 +841,10 @@ export default class FinancialTransactionService {
           frequency: item._count.description
         }));
 
-      logger.debug('Autocomplete suggestions generated', {
+      logger.debug('Autocomplete suggestions generated with type filter', {
         companyId,
         query: normalizedQuery,
+        transactionType, // ✅ LOG DO TIPO
         resultCount: formattedSuggestions.length,
         topResult: formattedSuggestions[0]?.description
       });
@@ -852,6 +855,7 @@ export default class FinancialTransactionService {
       logger.error('Error fetching description suggestions', {
         companyId,
         query: normalizedQuery,
+        transactionType, // ✅ LOG DO TIPO NO ERRO
         error: error instanceof Error ? error.message : String(error)
       });
       

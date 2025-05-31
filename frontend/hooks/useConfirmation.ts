@@ -1,7 +1,7 @@
 // frontend/hooks/useConfirmation.ts
 import { useState, useCallback } from 'react';
 
-interface ConfirmationOptions {
+export interface ConfirmationOptions {
   title: string;
   message: string;
   confirmText?: string;
@@ -11,50 +11,58 @@ interface ConfirmationOptions {
 
 export function useConfirmation() {
   const [isOpen, setIsOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [options, setOptions] = useState<ConfirmationOptions>({
     title: '',
-    message: ''
+    message: '',
+    confirmText: 'Confirmar',
+    cancelText: 'Cancelar',
+    type: 'danger'
   });
-  const [loading, setLoading] = useState(false);
-  const [onConfirmCallback, setOnConfirmCallback] = useState<(() => void | Promise<void>) | null>(null);
+  const [resolveCallback, setResolveCallback] = useState<(() => void) | null>(null);
 
   const confirm = useCallback((
     confirmOptions: ConfirmationOptions,
     onConfirm: () => void | Promise<void>
   ) => {
-    setOptions(confirmOptions);
-    setOnConfirmCallback(() => onConfirm);
+    setOptions({
+      ...confirmOptions,
+      confirmText: confirmOptions.confirmText || 'Confirmar',
+      cancelText: confirmOptions.cancelText || 'Cancelar',
+      type: confirmOptions.type || 'danger'
+    });
+    setResolveCallback(() => onConfirm);
     setIsOpen(true);
   }, []);
 
   const handleConfirm = useCallback(async () => {
-    if (onConfirmCallback) {
-      setLoading(true);
-      try {
-        await onConfirmCallback();
-        setIsOpen(false);
-        setOnConfirmCallback(null);
-      } catch (error) {
-        // Let the calling component handle the error
-        console.error('Confirmation action failed:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-  }, [onConfirmCallback]);
+    if (!resolveCallback) return;
 
-  const handleClose = useCallback(() => {
-    if (!loading) {
+    setLoading(true);
+    try {
+      await resolveCallback();
       setIsOpen(false);
-      setOnConfirmCallback(null);
+      setResolveCallback(null);
+    } catch (error) {
+      // Error handling is done by the caller
+      console.error('Confirmation action failed:', error);
+    } finally {
       setLoading(false);
     }
+  }, [resolveCallback]);
+
+  const handleClose = useCallback(() => {
+    if (loading) return; // Prevent closing while loading
+    
+    setIsOpen(false);
+    setResolveCallback(null);
+    setLoading(false);
   }, [loading]);
 
   return {
     isOpen,
-    options,
     loading,
+    options,
     confirm,
     handleConfirm,
     handleClose

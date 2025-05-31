@@ -146,9 +146,18 @@ model FinancialTransaction {
   id              Int                  @id @default(autoincrement())
   description     String
   amount          Decimal              @db.Decimal(15, 2)
-  date            DateTime
+  
+  // ✅ DATAS MÚLTIPLAS
+  date            DateTime             // Data principal (competência/referência)
+  dueDate         DateTime?            // Data de vencimento (para PENDING)
+  effectiveDate   DateTime?            // Data de efetivação (para COMPLETED)
+  
+  // ✅ VALORES MÚLTIPLOS (preparação para futuro)
+  originalAmount  Decimal?             @db.Decimal(15, 2) // Valor original
+  paidAmount      Decimal?             @db.Decimal(15, 2) // Valor pago (com juros/desconto)
+  
   type            TransactionType
-  status          TransactionStatus    @default(PENDING)
+  status          TransactionStatus    @default(COMPLETED) // ✅ MUDANÇA: padrão COMPLETED
   notes           String?
   fromAccountId   Int?
   fromAccount     FinancialAccount?    @relation("FromAccount", fields: [fromAccountId], references: [id])
@@ -167,11 +176,17 @@ model FinancialTransaction {
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
+  // ✅ ÍNDICES EXISTENTES
   @@index([companyId])
   @@index([fromAccountId])
   @@index([toAccountId])
   @@index([categoryId])
   @@index([date])
+  
+  // ✅ NOVOS ÍNDICES PARA PERFORMANCE
+  @@index([dueDate, status])                              // Relatórios de inadimplência
+  @@index([effectiveDate])                               // Conciliação bancária
+  @@index([companyId, effectiveDate, status])           // Relatórios financeiros
 }
 
 model RecurringTransaction {

@@ -1,104 +1,203 @@
+// backend/src/validators/financial-transaction.validator.ts - CORRIGIDO COM ZOD
 import { z } from 'zod';
 
-// Schema para criar transação
-export const createTransactionSchema = z.object({
-  description: z.string().min(3, { message: 'Descrição deve ter pelo menos 3 caracteres' }),
-  amount: z.string().or(z.number())
-    .refine(val => {
-      const num = typeof val === 'string' ? Number(val.replace(/[^\d.-]/g, '')) : val;
-      return !isNaN(num) && num > 0;
-    }, { message: 'Valor deve ser um número positivo' }),
-  date: z.string().or(z.date()).transform(val => new Date(val)),
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], { 
-    errorMap: () => ({ message: 'Tipo deve ser INCOME, EXPENSE ou TRANSFER' }) 
+// ✅ SCHEMA PARA AUTOCOMPLETE COM TIPO OBRIGATÓRIO (ZOD)
+export const autocompleteQuerySchema = z.object({
+  q: z.string()
+    .min(3, 'Query deve ter pelo menos 3 caracteres')
+    .max(100, 'Query deve ter no máximo 100 caracteres'),
+  
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
+    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
   }),
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED']).optional().default('PENDING'),
-  notes: z.string().optional(),
-  fromAccountId: z.number().optional().nullable(),
-  toAccountId: z.number().optional().nullable(),
-  categoryId: z.number().optional().nullable(),
-  tags: z.array(z.string()).optional(),
-}).refine(data => {
-  // Regra: Se for INCOME, precisa de toAccountId
-  if (data.type === 'INCOME' && !data.toAccountId) return false;
-  // Regra: Se for EXPENSE, precisa de fromAccountId
-  if (data.type === 'EXPENSE' && !data.fromAccountId) return false;
-  // Regra: Se for TRANSFER, precisa de ambos
-  if (data.type === 'TRANSFER' && (!data.fromAccountId || !data.toAccountId)) return false;
-  return true;
-}, {
-  message: 'Contas inconsistentes para o tipo de transação',
-  path: ['type'] // Campo ao qual o erro está associado
+  
+  limit: z.coerce.number()
+    .int('Limite deve ser um número inteiro')
+    .min(1, 'Limite deve ser pelo menos 1')
+    .max(20, 'Limite deve ser no máximo 20')
+    .optional()
 });
 
-// Schema para atualização de transação
-export const updateTransactionSchema = z.object({
-  description: z.string().min(3, { message: 'Descrição deve ter pelo menos 3 caracteres' }).optional(),
-  amount: z.string().or(z.number()).optional()
-    .refine(val => {
-      if (val === undefined) return true;
-      const num = typeof val === 'string' ? Number(val.replace(/[^\d.-]/g, '')) : val;
-      return !isNaN(num) && num > 0;
-    }, { message: 'Valor deve ser um número positivo' }),
-  date: z.string().or(z.date()).transform(val => new Date(val)).optional(),
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional(),
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED']).optional(),
-  notes: z.string().optional().nullable(),
-  fromAccountId: z.number().optional().nullable(),
-  toAccountId: z.number().optional().nullable(),
-  categoryId: z.number().optional().nullable(),
-  tags: z.array(z.string()).optional(),
-}).refine(data => {
-  // Se não estiver alterando o tipo, não valida as contas
-  if (!data.type) return true;
-
-  // Se alterar o tipo para INCOME, precisa ter toAccountId ou não alterá-lo
-  if (data.type === 'INCOME' && data.toAccountId === null) return false;
+export const createTransactionSchema = z.object({
+  description: z.string()
+    .min(1, 'Descrição é obrigatória')
+    .max(255, 'Descrição deve ter no máximo 255 caracteres'),
   
-  // Se alterar o tipo para EXPENSE, precisa ter fromAccountId ou não alterá-lo
-  if (data.type === 'EXPENSE' && data.fromAccountId === null) return false;
+  amount: z.number()
+    .positive('Valor deve ser positivo'),
   
-  // Se alterar o tipo para TRANSFER, precisa ter ambos ou não alterá-los
+  date: z.coerce.date({
+    errorMap: () => ({ message: 'Data deve ser válida' })
+  }),
+  
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
+    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
+  }),
+  
+  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
+    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
+  }).default('COMPLETED'),
+  
+  notes: z.string()
+    .max(1000, 'Observações devem ter no máximo 1000 caracteres')
+    .optional(),
+  
+  fromAccountId: z.number()
+    .int('ID da conta de origem deve ser um número inteiro')
+    .positive('ID da conta de origem deve ser positivo')
+    .optional()
+    .nullable(),
+  
+  toAccountId: z.number()
+    .int('ID da conta de destino deve ser um número inteiro')
+    .positive('ID da conta de destino deve ser positivo')
+    .optional()
+    .nullable(),
+  
+  categoryId: z.number()
+    .int('ID da categoria deve ser um número inteiro')
+    .positive('ID da categoria deve ser positivo')
+    .optional()
+    .nullable(),
+  
+  tags: z.array(
+    z.string().max(50, 'Cada tag deve ter no máximo 50 caracteres')
+  ).max(10, 'Máximo 10 tags permitidas').optional()
+}).refine((data) => {
+  // Validação customizada baseada no tipo
+  if (data.type === 'INCOME' && !data.toAccountId) {
+    return false;
+  }
+  
+  if (data.type === 'EXPENSE' && !data.fromAccountId) {
+    return false;
+  }
+  
   if (data.type === 'TRANSFER') {
-    if (data.fromAccountId === null || data.toAccountId === null) return false;
+    if (!data.fromAccountId || !data.toAccountId) {
+      return false;
+    }
+    if (data.fromAccountId === data.toAccountId) {
+      return false;
+    }
   }
   
   return true;
 }, {
-  message: 'Contas inconsistentes para o tipo de transação',
-  path: ['type']
+  message: 'Configuração de contas inválida para o tipo de transação',
+  path: ['type'] // Associa o erro ao campo type
 });
 
-// Schema para atualização de status de transação
+export const updateTransactionSchema = z.object({
+  description: z.string()
+    .min(1, 'Descrição não pode estar vazia')
+    .max(255, 'Descrição deve ter no máximo 255 caracteres')
+    .optional(),
+  
+  amount: z.number()
+    .positive('Valor deve ser positivo')
+    .optional(),
+  
+  date: z.coerce.date({
+    errorMap: () => ({ message: 'Data deve ser válida' })
+  }).optional(),
+  
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
+    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
+  }).optional(),
+  
+  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
+    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
+  }).optional(),
+  
+  notes: z.string()
+    .max(1000, 'Observações devem ter no máximo 1000 caracteres')
+    .optional(),
+  
+  fromAccountId: z.number()
+    .int('ID da conta de origem deve ser um número inteiro')
+    .positive('ID da conta de origem deve ser positivo')
+    .optional()
+    .nullable(),
+  
+  toAccountId: z.number()
+    .int('ID da conta de destino deve ser um número inteiro')
+    .positive('ID da conta de destino deve ser positivo')
+    .optional()
+    .nullable(),
+  
+  categoryId: z.number()
+    .int('ID da categoria deve ser um número inteiro')
+    .positive('ID da categoria deve ser positivo')
+    .optional()
+    .nullable(),
+  
+  tags: z.array(
+    z.string().max(50, 'Cada tag deve ter no máximo 50 caracteres')
+  ).max(10, 'Máximo 10 tags permitidas').optional()
+});
+
+export const listTransactionsSchema = z.object({
+  startDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data inicial deve ser válida' })
+  }).optional(),
+  
+  endDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data final deve ser válida' })
+  }).optional(),
+  
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
+    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
+  }).optional(),
+  
+  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
+    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
+  }).optional(),
+  
+  accountId: z.coerce.number()
+    .int('ID da conta deve ser um número inteiro')
+    .positive('ID da conta deve ser positivo')
+    .optional(),
+  
+  categoryId: z.coerce.number()
+    .int('ID da categoria deve ser um número inteiro')
+    .positive('ID da categoria deve ser positivo')
+    .optional(),
+  
+  search: z.string()
+    .max(100, 'Termo de busca deve ter no máximo 100 caracteres')
+    .optional(),
+  
+  page: z.coerce.number()
+    .int('Página deve ser um número inteiro')
+    .min(1, 'Página deve ser pelo menos 1')
+    .default(1),
+  
+  pageSize: z.coerce.number()
+    .int('Tamanho da página deve ser um número inteiro')
+    .min(1, 'Tamanho da página deve ser pelo menos 1')
+    .max(100, 'Tamanho da página deve ser no máximo 100')
+    .default(20)
+}).refine((data) => {
+  // Validação para garantir que endDate >= startDate
+  if (data.startDate && data.endDate) {
+    return data.endDate >= data.startDate;
+  }
+  return true;
+}, {
+  message: 'Data final deve ser posterior à data inicial',
+  path: ['endDate']
+});
+
 export const updateTransactionStatusSchema = z.object({
   status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
-    errorMap: () => ({ message: 'Status deve ser PENDING, COMPLETED ou CANCELED' })
+    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
   })
 });
 
-// Schema para listagem de transações com filtros
-export const listTransactionsSchema = z.object({
-  startDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
-  endDate: z.string().optional().transform(val => val ? new Date(val) : undefined),
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional(),
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED']).optional(),
-  accountId: z.string().optional().transform(val => val ? Number(val) : undefined),
-  categoryId: z.string().optional().transform(val => val ? Number(val) : undefined),
-  search: z.string().optional(),
-  page: z.string().optional().transform(val => val ? Number(val) : 1),
-  pageSize: z.string().optional().transform(val => val ? Number(val) : 20),
-});
-
-// ✅ NOVO: Schema para validação de autocomplete
-export const autocompleteQuerySchema = z.object({
-  q: z.string()
-    .min(3, { message: 'Query deve ter pelo menos 3 caracteres' })
-    .max(100, { message: 'Query muito longa (máximo 100 caracteres)' })
-    .trim(),
-  limit: z.string()
-    .optional()
-    .transform(val => val ? parseInt(val) : 10)
-    .refine(val => val >= 1 && val <= 20, { 
-      message: 'Limite deve ser entre 1 e 20' 
-    })
-});
+// Tipos TypeScript derivados dos schemas (para usar nos controllers)
+export type AutocompleteQuery = z.infer<typeof autocompleteQuerySchema>;
+export type CreateTransactionData = z.infer<typeof createTransactionSchema>;
+export type UpdateTransactionData = z.infer<typeof updateTransactionSchema>;
+export type ListTransactionsQuery = z.infer<typeof listTransactionsSchema>;
+export type UpdateTransactionStatus = z.infer<typeof updateTransactionStatusSchema>;

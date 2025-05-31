@@ -1,4 +1,4 @@
-// frontend/components/ui/AutocompleteInput.tsx
+// frontend/components/ui/AutocompleteInput.tsx - COM CONTEXTO E MELHORIAS
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Clock } from 'lucide-react';
 
@@ -21,6 +21,7 @@ interface AutocompleteInputProps {
   fetchSuggestions: (query: string) => Promise<AutocompleteSuggestion[]>;
   minLength?: number;
   maxSuggestions?: number;
+  contextInfo?: string; // ✅ NOVO PARÂMETRO PARA MOSTRAR CONTEXTO
 }
 
 export function AutocompleteInput({
@@ -36,7 +37,8 @@ export function AutocompleteInput({
   error,
   fetchSuggestions,
   minLength = 3,
-  maxSuggestions = 10
+  maxSuggestions = 10,
+  contextInfo // ✅ NOVO PARÂMETRO
 }: AutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<AutocompleteSuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -249,7 +251,7 @@ export function AutocompleteInput({
             </div>
           ))}
           
-          {/* Footer info */}
+          {/* ✅ FOOTER INFO MELHORADO */}
           <div className="px-4 py-2 border-t border-gray-700 bg-[#151921] rounded-b-lg">
             <div className="text-xs text-gray-500 flex items-center justify-between">
               <span>{suggestions.length} sugestões encontradas</span>
@@ -259,12 +261,7 @@ export function AutocompleteInput({
         </div>
       )}
 
-      {/* Minimum length hint */}
-      {value.length > 0 && value.length < minLength && (
-        <div className="mt-1 text-xs text-gray-500">
-          Digite pelo menos {minLength} caracteres para ver sugestões
-        </div>
-      )}
+      {/* Minimum length hint - removido pois agora está sempre visível na label */}
 
       {/* Error message */}
       {error && (

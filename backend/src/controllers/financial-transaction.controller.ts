@@ -296,16 +296,14 @@ export async function getFinancialSummary(req: Request, res: Response) {
   }
 }
 
-// backend/src/controllers/financial-transaction.controller.ts - MÉTODO REFATORADO
-
 /**
- * GET /api/financial/transactions/autocomplete
- * Autocomplete inteligente para descrições de transações
+ * ✅ GET /api/financial/transactions/autocomplete
+ * Autocomplete inteligente para descrições de transações filtrado por tipo
  */
 export async function getTransactionAutocomplete(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { q, limit } = req.query;
+    const { q, type, limit } = req.query; // ✅ ADICIONAR PARÂMETRO TYPE
 
     // Validação de entrada
     if (!q || typeof q !== 'string') {
@@ -320,21 +318,39 @@ export async function getTransactionAutocomplete(req: Request, res: Response) {
       });
     }
 
+    // ✅ VALIDAR TIPO DE TRANSAÇÃO
+    if (!type || typeof type !== 'string') {
+      return res.status(400).json({ 
+        error: 'Parâmetro type é obrigatório (INCOME, EXPENSE, TRANSFER)' 
+      });
+    }
+
+    const validTypes = ['INCOME', 'EXPENSE', 'TRANSFER'];
+    if (!validTypes.includes(type.toUpperCase())) {
+      return res.status(400).json({ 
+        error: 'Tipo de transação inválido. Use: INCOME, EXPENSE ou TRANSFER' 
+      });
+    }
+
+    const transactionType = type.toUpperCase() as 'INCOME' | 'EXPENSE' | 'TRANSFER';
+
     // Validar limite (opcional)
     const maxResults = limit && typeof limit === 'string' 
       ? Math.min(parseInt(limit), 20) // Máximo 20 resultados
       : 10; // Padrão 10
 
-    // Delegar lógica para o Service
+    // ✅ DELEGAR LÓGICA PARA O SERVICE COM FILTRO POR TIPO
     const suggestions = await FinancialTransactionService.getDescriptionSuggestions(
       companyId,
       q,
+      transactionType, // ✅ PASSAR O TIPO
       maxResults
     );
 
     return res.status(200).json({
       suggestions,
       query: q,
+      type: transactionType, // ✅ RETORNAR O TIPO USADO
       total: suggestions.length
     });
 

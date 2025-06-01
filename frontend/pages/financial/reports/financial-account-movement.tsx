@@ -7,10 +7,19 @@ import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
 import { 
-  TrendingUp, TrendingDown, Download, Printer, FileText, 
+  TrendingUp, TrendingDown, Download, Printer, FileText, FileSpreadsheet,
   Calendar, Filter, ZoomIn, ZoomOut, RotateCcw
 } from 'lucide-react';
 import api from '@/lib/api';
+import { Roboto_Condensed } from 'next/font/google';
+
+// Configurar a fonte Roboto Condensed
+const robotoCondensed = Roboto_Condensed({
+  subsets: ['latin'],
+  weight: ['300', '400', '700'],
+  display: 'swap',
+  variable: '--font-roboto-condensed'
+});
 
 // Interfaces baseadas no retorno do backend
 interface FinancialAccount {
@@ -57,7 +66,7 @@ export default function FinancialMovementReport() {
   const [reportData, setReportData] = useState<PeriodData[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
-  const [zoomLevel, setZoomLevel] = useState(100);
+  const [zoomLevel, setZoomLevel] = useState(150);
   
   const [filters, setFilters] = useState<ReportFilters>({
     startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
@@ -69,10 +78,6 @@ export default function FinancialMovementReport() {
   useEffect(() => {
     fetchFinancialAccounts();
   }, []);
-
-  // Não auto-selecionar contas - usuário deve escolher
-
-  // Não executar relatório automaticamente - apenas quando usuário solicitar
 
   async function fetchFinancialAccounts() {
     try {
@@ -110,8 +115,9 @@ export default function FinancialMovementReport() {
 
   function formatCurrency(value: number): string {
     return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
+      style: 'decimal',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
     }).format(value);
   }
 
@@ -137,9 +143,178 @@ export default function FinancialMovementReport() {
 
   async function exportToPDF() {
     try {
-      // Usar window.print() por enquanto (mais compatível)
-      window.print();
-      addToast('Use Ctrl+P ou Cmd+P para salvar como PDF', 'success');
+      // Capturar apenas o container do relatório
+      const reportElement = document.querySelector('.report-container');
+      if (!reportElement) {
+        addToast('Relatório não encontrado', 'error');
+        return;
+      }
+
+      // Criar uma nova janela apenas com o relatório
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        addToast('Erro ao abrir janela de impressão', 'error');
+        return;
+      }
+
+      // HTML completo para a nova janela
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Relatório de Movimentação Financeira</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: var(--font-roboto-condensed), 'Arial Narrow', 'Liberation Sans Narrow', 'Helvetica Condensed', sans-serif; 
+              background: white; 
+              color: black;
+              font-size: 10px;
+              line-height: 1.3;
+              font-weight: 400;
+            }
+            @page { 
+              size: A4; 
+              margin: 1cm; 
+            }
+            table { 
+              border-collapse: collapse; 
+              width: 100%; 
+              font-size: 9px;
+              font-family: var(--font-roboto-condensed), 'Arial Narrow', 'Liberation Sans Narrow', monospace;
+              table-layout: fixed;
+            }
+            th, td { 
+              border: 1px solid #000; 
+              padding: 2px 3px; 
+              font-size: 9px;
+              font-family: var(--font-roboto-condensed), 'Arial Narrow', 'Liberation Sans Narrow', monospace;
+              font-weight: 400;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+            th { 
+              background: #f0f0f0; 
+              font-weight: 700; 
+            }
+            
+            /* Larguras fixas para colunas do relatório principal */
+            .data-table {
+              table-layout: fixed;
+            }
+            .data-table .col-date { width: 9%; }
+            .data-table .col-description { width: auto; }
+            .data-table .col-account { width: 18%; }
+            .data-table .col-category { width: 18%; }
+            .data-table .col-type { width: 8%; }
+            .data-table .col-value { width: 13%; }
+            
+            .text-green-600 { color: #059669; }
+            .text-red-600 { color: #dc2626; }
+            .bg-gray-50 { background: #f9fafb; }
+            .bg-gray-100 { background: #f3f4f6; }
+            .bg-gray-200 { background: #e5e7eb; }
+            .font-bold { font-weight: 700; }
+            .text-center { text-align: center; }
+            .text-left { text-align: left; }
+            .text-right { text-align: right; }
+            .truncate { 
+              overflow: hidden; 
+              text-overflow: ellipsis; 
+              white-space: nowrap; 
+            }
+            .rounded { border-radius: 2px; }
+            .border-b-2 { border-bottom: 2px solid #000; }
+            .border-t { border-top: 1px solid #000; }
+            .mb-2 { margin-bottom: 9px; }
+            .mb-4 { margin-bottom: 18px; }
+            .p-1 { padding: 3px; }
+            .p-2 { padding: 8px; }
+            .p-3 { padding: 9px; }
+            .pb-3 { padding-bottom: 9px; }
+            .pt-3 { padding-top: 9px; }
+            .space-y-4 > * + * { margin-top: 18px; }
+            .grid { display: grid; }
+            .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .gap-4 { gap: 18px; }
+            .w-2 { width: 8px; }
+            .h-2 { height: 8px; }
+            .rounded-full { border-radius: 50%; }
+            .flex { display: flex; }
+            .items-center { align-items: center; }
+            .gap-1 { gap: 3px; }
+            .px-1 { padding-left: 3px; padding-right: 3px; }
+            .py-0\\.5 { padding-top: 1px; padding-bottom: 1px; }
+            .bg-green-600 { background-color: #059669; }
+            .bg-red-600 { background-color: #dc2626; }
+            .text-white { color: white; }
+            .text-gray-500 { color: #6b7280; }
+            .text-gray-600 { color: #4b5563; }
+            
+            /* Styling para o subtotal com múltiplas linhas */
+            tfoot tr td[rowspan] {
+              vertical-align: middle;
+            }
+            
+            /* Estilos específicos para dados condensados */
+            .data-cell {
+              font-family: var(--font-roboto-condensed), 'Arial Narrow', 'Liberation Sans Narrow', monospace;
+              font-size: 10px;
+              font-weight: 400;
+              letter-spacing: -0.2px;
+            }
+            
+            .data-header {
+              font-family: var(--font-roboto-condensed), 'Arial Narrow', 'Liberation Sans Narrow', sans-serif;
+              font-size: 9px;
+              font-weight: 700;
+              letter-spacing: 0px;
+            }
+            
+            .currency-cell {
+              font-family: var(--font-roboto-condensed), 'Liberation Sans Narrow', monospace;
+              font-weight: 500;
+              letter-spacing: -0.3px;
+            }
+            
+            h1 { 
+              font-family: var(--font-roboto-condensed), sans-serif; 
+              font-weight: 700; 
+            }
+            
+            h3, h4 { 
+              font-family: var(--font-roboto-condensed), sans-serif; 
+              font-weight: 700; 
+            }
+          </style>
+        </head>
+        <body class="${robotoCondensed.variable}">
+          <style>
+            .data-table colgroup col:nth-child(1) { width: 9%; }
+            .data-table colgroup col:nth-child(2) { width: auto; }
+            .data-table colgroup col:nth-child(3) { width: 18%; }
+            .data-table colgroup col:nth-child(4) { width: 18%; }
+            .data-table colgroup col:nth-child(5) { width: 8%; }
+            .data-table colgroup col:nth-child(6) { width: 13%; }
+          </style>
+          ${reportElement.outerHTML}
+        </body>
+        </html>
+      `;
+
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      
+      // Aguardar o carregamento e imprimir
+      printWindow.onload = () => {
+        setTimeout(() => {
+          printWindow.print();
+          printWindow.close();
+        }, 250);
+      };
+      
+      addToast('Janela de impressão aberta', 'success');
     } catch (error) {
       addToast('Erro ao gerar PDF', 'error');
     }
@@ -187,7 +362,8 @@ export default function FinancialMovementReport() {
   const selectedFinancialAccounts = financialAccounts.filter(acc => filters.financialAccountIds.includes(acc.id));
 
   return (
-    <DashboardLayout title="Relatório de Movimentação">
+    <div className={robotoCondensed.variable}>
+      <DashboardLayout title="Relatório de Movimentação">
       <Breadcrumb items={[
         { label: 'Dashboard', href: '/' },
         { label: 'Financeiro' },
@@ -250,7 +426,7 @@ export default function FinancialMovementReport() {
               </select>
             </div>
 
-            <div className="flex items-end">
+            <div className="flex items-end" style={{ alignItems: 'anchor-center' }}>
               <Button variant="outline" onClick={generateReport} className="w-full">
                 Gerar Relatório
               </Button>
@@ -311,221 +487,299 @@ export default function FinancialMovementReport() {
             </Button>
           )}
         </Card>
-      ) : (<Card>
-        <div className="space-y-4 p-0">
-          {/* Toolbar do Relatório */}
-          <div className="flex justify-between items-center bg-gray-100 rounded-lg p-2 print:hidden">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-700 font-medium">Pré-visualização</span>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              {/* Controles de Zoom */}
-              <div className="flex items-center gap-1 border border-gray-300 rounded bg-white">
-                <button
-                  onClick={decreaseZoom}
-                  disabled={zoomLevel <= 50}
-                  className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Diminuir zoom"
-                >
-                  <ZoomOut size={14} />
-                </button>
-                <span className="px-2 text-sm font-medium text-gray-700 min-w-[50px] text-center">
-                  {zoomLevel}%
-                </span>
-                <button
-                  onClick={increaseZoom}
-                  disabled={zoomLevel >= 150}
-                  className="p-1 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Aumentar zoom"
-                >
-                  <ZoomIn size={14} />
-                </button>
-                <button
-                  onClick={resetZoom}
-                  className="p-1 hover:bg-gray-100 border-l border-gray-300"
-                  title="Resetar zoom"
-                >
-                  <RotateCcw size={14} />
-                </button>
+      ) : (
+        <Card className="overflow-hidden p-0">
+          <div className="space-y-0">
+            {/* Toolbar do Relatório */}
+            <div className="flex justify-between items-center bg-[#1e2126] border-b border-gray-700 p-3 print:hidden">
+              <div className="flex items-center gap-2">
+                {/* Controles de Zoom */}
+                <div className="flex items-center gap-1 border border-gray-600 rounded bg-[#151921]">
+                  <button
+                    onClick={decreaseZoom}
+                    disabled={zoomLevel <= 50}
+                    className="p-1 hover:bg-[#262b36] disabled:opacity-50 disabled:cursor-not-allowed text-gray-300"
+                    title="Diminuir zoom"
+                  >
+                    <ZoomOut size={14} />
+                  </button>
+                  <span className="px-2 text-sm font-medium text-gray-300 min-w-[50px] text-center">
+                    {zoomLevel}%
+                  </span>
+                  <button
+                    onClick={increaseZoom}
+                    disabled={zoomLevel >= 150}
+                    className="p-1 hover:bg-[#262b36] disabled:opacity-50 disabled:cursor-not-allowed text-gray-300"
+                    title="Aumentar zoom"
+                  >
+                    <ZoomIn size={14} />
+                  </button>
+                  <button
+                    onClick={resetZoom}
+                    className="p-1 hover:bg-[#262b36] border-l border-gray-600 text-gray-300"
+                    title="Resetar zoom"
+                  >
+                    <RotateCcw size={14} />
+                  </button>
+                </div>
               </div>
-
-              {/* Ações do Relatório */}
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={exportToPDF}
-                  className="p-2 hover:bg-gray-200 rounded transition-colors"
-                  title="Exportar PDF"
-                >
-                  <FileText size={16} className="text-gray-600" />
-                </button>
-                <button
-                  onClick={exportToExcel}
-                  className="p-2 hover:bg-gray-200 rounded transition-colors"
-                  title="Exportar Excel"
-                >
-                  <Download size={16} className="text-gray-600" />
-                </button>
+              
+              <div className="flex items-center gap-2">
+                {/* Ações do Relatório */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={exportToPDF}
+                    className="p-2 hover:bg-[#262b36] rounded transition-colors text-gray-300 hover:text-red-400"
+                    title="Exportar PDF"
+                  >
+                    <FileText size={16} />
+                  </button>
+                  <button
+                    onClick={exportToExcel}
+                    className="p-2 hover:bg-[#262b36] rounded transition-colors text-gray-300 hover:text-green-400"
+                    title="Exportar Excel"
+                  >
+                    <FileSpreadsheet size={16} />
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Container do Relatório com Zoom */}
-          <div 
-            className="transition-transform duration-200 origin-top"
-            style={{ transform: `scale(${zoomLevel / 100})` }}
-          >
-            {/* Relatório em formato A4 */}
-            <div className="report-container mx-auto bg-white text-black print:bg-white print:text-black shadow-lg" style={{ width: '21cm', minHeight: '29.7cm', padding: '0.8cm' }}>
-          {/* Cabeçalho do Relatório */}
-          <div className="text-center mb-4 pb-3 border-b-2 border-gray-400">
-            <h1 className="text-lg font-bold mb-2">RELATÓRIO DE MOVIMENTAÇÃO FINANCEIRA</h1>
-            <div className="text-xs">
-              <p><strong>Período:</strong> {formatDate(filters.startDate)} a {formatDate(filters.endDate)}</p>
-              <p><strong>Agrupamento:</strong> {filters.groupBy === 'day' ? 'Diário' : filters.groupBy === 'week' ? 'Semanal' : 'Mensal'}</p>
-              <p><strong>Contas:</strong> {selectedFinancialAccounts.map(acc => acc.name).join(', ')}</p>
-            </div>
-          </div>
-
-          {/* Resumo Geral */}
-          <div className="mb-4 p-3 border border-gray-300">
-            <h3 className="font-bold text-sm mb-2 text-center">RESUMO GERAL DO PERÍODO</h3>
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="border border-gray-400 p-1 text-left font-bold">DESCRIÇÃO</th>
-                  <th className="border border-gray-400 p-1 text-right font-bold">VALOR</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="border border-gray-400 p-1 font-medium">Total de Entradas</td>
-                  <td className="border border-gray-400 p-1 text-right font-medium text-green-600">
-                    {formatCurrency(totals.income)}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="border border-gray-400 p-1 font-medium">Total de Saídas</td>
-                  <td className="border border-gray-400 p-1 text-right font-medium text-red-600">
-                    {formatCurrency(totals.expense)}
-                  </td>
-                </tr>
-                <tr className="bg-gray-50 font-bold">
-                  <td className="border border-gray-400 p-1">SALDO LÍQUIDO DO PERÍODO</td>
-                  <td className={`border border-gray-400 p-1 text-right ${totals.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(totals.balance)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          {/* Detalhamento por Período */}
-          <div className="space-y-4">
-            {reportData.map((period, periodIndex) => (
-              <div key={period.period} className="border border-gray-300">
-                {/* Cabeçalho do Período */}
-                <div className="bg-gray-100 p-2 border-b border-gray-300">
-                  <h4 className="font-bold text-sm">{period.periodLabel}</h4>
+            {/* Container do Relatório com Zoom */}
+            <div 
+              className="transition-transform duration-200 origin-top p-4"
+              style={{ transform: `scale(${zoomLevel / 100})` }}
+            >
+              {/* Relatório em formato A4 */}
+              <div 
+                className={`report-container mx-auto bg-white text-black print:bg-white print:text-black shadow-lg ${robotoCondensed.className}`}
+                style={{ 
+                  width: '21cm', 
+                  minHeight: '29.7cm', 
+                  padding: '0.8cm', 
+                  fontSize: '10px'
+                }}
+              >
+                {/* Cabeçalho do Relatório */}
+                <div className="text-center mb-4 pb-3 border-b-2 border-gray-400">
+                  <h1 className="text-lg font-bold mb-2">
+                    RELATÓRIO DE MOVIMENTAÇÃO FINANCEIRA
+                  </h1>
+                  <div style={{ fontSize: '9px' }}>
+                    <p><strong>Período:</strong> {formatDate(filters.startDate)} a {formatDate(filters.endDate)}</p>
+                    <p><strong>Agrupamento:</strong> {filters.groupBy === 'day' ? 'Diário' : filters.groupBy === 'week' ? 'Semanal' : 'Mensal'}</p>
+                    <p><strong>Contas:</strong> {selectedFinancialAccounts.map(acc => acc.name).join(', ')}</p>
+                  </div>
                 </div>
 
-                {/* Transações do Período */}
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-xs">
+                {/* Resumo Geral */}
+                <div className="mb-4 p-3 border border-gray-300">
+                  <h3 className="font-bold text-sm mb-2 text-center">
+                    RESUMO GERAL DO PERÍODO
+                  </h3>
+                  <table 
+                    className="w-full border-collapse" 
+                    style={{ fontSize: '9px' }}
+                  >
                     <thead>
-                      <tr className="bg-gray-200">
-                        <th className="border border-gray-400 p-1 text-left font-bold">DATA</th>
-                        <th className="border border-gray-400 p-1 text-left font-bold">DESCRIÇÃO</th>
-                        <th className="border border-gray-400 p-1 text-left font-bold">CONTA</th>
-                        <th className="border border-gray-400 p-1 text-left font-bold">CATEGORIA</th>
-                        <th className="border border-gray-400 p-1 text-center font-bold">TIPO</th>
-                        <th className="border border-gray-400 p-1 text-right font-bold">VALOR</th>
+                      <tr className="bg-gray-100">
+                        <th className="border border-gray-400 p-1 text-left font-bold" style={{ fontWeight: 700 }}>DESCRIÇÃO</th>
+                        <th className="border border-gray-400 p-1 text-right font-bold" style={{ fontWeight: 700 }}>VALOR (R$)</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {period.transactions.map((transaction, index) => (
-                        <tr key={transaction.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                          <td className="border border-gray-400 p-1 text-xs">
-                            {formatDate(transaction.date)}
-                          </td>
-                          <td className="border border-gray-400 p-1 text-xs">
-                            {transaction.description}
-                          </td>
-                          <td className="border border-gray-400 p-1 text-xs">
-                            {transaction.financialAccount.name}
-                          </td>
-                          <td className="border border-gray-400 p-1 text-xs">
-                            {transaction.category ? (
-                              <div className="flex items-center gap-1">
-                                <div 
-                                  className="w-2 h-2 rounded-full border border-gray-400"
-                                  style={{ backgroundColor: transaction.category.color }}
-                                />
-                                <span className="truncate">{transaction.category.name}</span>
-                              </div>
-                            ) : (
-                              <span className="text-gray-500">-</span>
-                            )}
-                          </td>
-                          <td className="border border-gray-400 p-1 text-center">
-                            <span className={`px-1 py-0.5 rounded text-white text-xs font-medium ${
-                              transaction.type === 'INCOME' ? 'bg-green-600' : 'bg-red-600'
-                            }`}>
-                              {transaction.type === 'INCOME' ? 'ENT' : 'SAÍ'}
-                            </span>
-                          </td>
-                          <td className={`border border-gray-400 p-1 text-right text-xs font-medium ${
-                            transaction.type === 'INCOME' ? 'text-green-600' : 'text-red-600'
-                          }`}>
-                            {formatCurrency(transaction.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    {/* Subtotal do Período */}
-                    <tfoot>
-                      <tr className="bg-gray-100 font-bold text-xs">
-                        <td colSpan={3} className="border border-gray-400 p-1 text-left">
-                          SUBTOTAL - {period.periodLabel}
-                        </td>
-                        <td className="border border-gray-400 p-1 text-right">
-                          <div>Entradas: {formatCurrency(period.income)}</div>
-                          <div>Saídas: {formatCurrency(period.expense)}</div>
-                          <div>Transações: {period.transactions.length}</div>
-                        </td>
-                        <td className="border border-gray-400 p-1 text-center font-bold">
-                          SUBTOTAL:
-                        </td>
-                        <td className={`border border-gray-400 p-1 text-right font-bold ${
-                          period.balance >= 0 ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {formatCurrency(period.balance)}
+                    <tbody style={{ fontWeight: 400 }}>
+                      <tr>
+                        <td className="border border-gray-400 p-1 font-medium">Total de Entradas</td>
+                        <td className="border border-gray-400 p-1 text-right font-medium text-green-600">
+                          {formatCurrency(totals.income)}
                         </td>
                       </tr>
-                    </tfoot>
+                      <tr>
+                        <td className="border border-gray-400 p-1 font-medium">Total de Saídas</td>
+                        <td className="border border-gray-400 p-1 text-right font-medium text-red-600">
+                          {formatCurrency(totals.expense)}
+                        </td>
+                      </tr>
+                      <tr className="bg-gray-50 font-bold">
+                        <td className="border border-gray-400 p-1" style={{ fontWeight: 700 }}>SALDO LÍQUIDO DO PERÍODO</td>
+                        <td className={`border border-gray-400 p-1 text-right ${totals.balance >= 0 ? 'text-green-600' : 'text-red-600'}`} style={{ fontWeight: 700 }}>
+                          {formatCurrency(totals.balance)}
+                        </td>
+                      </tr>
+                    </tbody>
                   </table>
                 </div>
-              </div>
-            ))}
-          </div>
 
-          {/* Rodapé */}
-          <div className="mt-4 pt-3 border-t border-gray-300 text-xs text-gray-600">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p><strong>Relatório gerado em:</strong> {new Date().toLocaleString('pt-BR')}</p>
-                <p><strong>Sistema:</strong> Zenit - Gestão Financeira</p>
-              </div>
-              <div className="text-right">
-                <p><strong>Usuário:</strong> Sistema</p>
-                <p><strong>Empresa:</strong> {selectedFinancialAccounts.length > 0 ? 'Empresa Exemplo' : '-'}</p>
+                {/* Detalhamento por Período */}
+                <div className="space-y-4">
+                  {reportData.map((period, periodIndex) => (
+                    <div key={period.period} className="border border-gray-300">
+                      {/* Cabeçalho do Período */}
+                      <div className="bg-gray-100 p-2 border-b border-gray-300">
+                        <h4 className="font-bold" style={{ fontSize: '10px', fontWeight: 700 }}>
+                          {period.periodLabel}
+                        </h4>
+                      </div>
+
+                      {/* Transações do Período */}
+                      <div className="overflow-x-auto">
+                        <table 
+                          className="w-full border-collapse" 
+                          style={{ 
+                            fontSize: '10px',
+                            letterSpacing: '-0.2px',
+                            tableLayout: 'fixed'
+                          }}
+                        >
+                          <colgroup>
+                            <col style={{ width: '9%' }} />
+                            <col />
+                            <col style={{ width: '18%' }} />
+                            <col style={{ width: '18%' }} />
+                            <col style={{ width: '8%' }} />
+                            <col style={{ width: '13%' }} />
+                          </colgroup>
+                          <thead>
+                            <tr className="bg-gray-200">
+                              <th className="border border-gray-400 p-1 text-left font-bold" style={{ fontWeight: 700, fontSize: '9px' }}>DATA</th>
+                              <th className="border border-gray-400 p-1 text-left font-bold" style={{ fontWeight: 700, fontSize: '9px' }}>DESCRIÇÃO</th>
+                              <th className="border border-gray-400 p-1 text-left font-bold" style={{ fontWeight: 700, fontSize: '9px' }}>CONTA</th>
+                              <th className="border border-gray-400 p-1 text-left font-bold" style={{ fontWeight: 700, fontSize: '9px' }}>CATEGORIA</th>
+                              <th className="border border-gray-400 p-1 text-center font-bold" style={{ fontWeight: 700, fontSize: '9px' }}>TIPO</th>
+                              <th className="border border-gray-400 p-1 text-right font-bold" style={{ fontWeight: 700, fontSize: '9px' }}>VALOR (R$)</th>
+                            </tr>
+                          </thead>
+                          <tbody style={{ fontWeight: 400 }}>
+                            {period.transactions.map((transaction, index) => (
+                              <tr key={transaction.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                <td className="border border-gray-400 p-1" style={{ padding: '2px 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {formatDate(transaction.date)}
+                                </td>
+                                <td className="border border-gray-400 p-1" style={{ padding: '2px 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {transaction.description}
+                                </td>
+                                <td className="border border-gray-400 p-1" style={{ padding: '2px 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {transaction.financialAccount.name}
+                                </td>
+                                <td className="border border-gray-400 p-1" style={{ padding: '2px 3px' }}>
+                                  {transaction.category ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                      <div 
+                                        style={{ 
+                                          backgroundColor: transaction.category.color,
+                                          width: '8px',
+                                          height: '8px',
+                                          borderRadius: '50%',
+                                          border: '1px solid #9ca3af',
+                                          flexShrink: 0
+                                        }}
+                                      />
+                                      <span 
+                                        style={{ 
+                                          overflow: 'hidden', 
+                                          textOverflow: 'ellipsis', 
+                                          whiteSpace: 'nowrap',
+                                          flex: 1
+                                        }}
+                                      >
+                                        {transaction.category.name}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-500">-</span>
+                                  )}
+                                </td>
+                                <td className="border border-gray-400 p-1 text-center" style={{ padding: '2px 3px' }}>
+                                  <span 
+                                    className={`px-1 py-0.5 rounded text-white font-medium ${
+                                      transaction.type === 'INCOME' ? 'bg-green-600' : 'bg-red-600'
+                                    }`} 
+                                    style={{ 
+                                      fontSize: '8px', 
+                                      padding: '1px 2px',
+                                      borderRadius: '2px',
+                                      fontWeight: 500
+                                    }}
+                                  >
+                                    {transaction.type === 'INCOME' ? 'ENT' : 'SAÍ'}
+                                  </span>
+                                </td>
+                                <td 
+                                  className={`border border-gray-400 p-1 text-right font-medium ${
+                                    transaction.type === 'INCOME' ? 'text-green-600' : 'text-red-600'
+                                  }`}
+                                  style={{ 
+                                    padding: '2px 3px',
+                                    fontWeight: 500,
+                                    letterSpacing: '-0.3px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  {formatCurrency(transaction.amount)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          {/* Subtotal do Período */}
+                          <tfoot>
+                            <tr className="bg-gray-100 font-bold" style={{ fontSize: '10px', fontWeight: 700 }}>
+                              <td colSpan={4} rowSpan={3} className="border border-gray-400 p-1 text-right" style={{ padding: '2px 3px', verticalAlign: 'middle' }}>
+                                SUBTOTAIS - {period.periodLabel}
+                              </td>
+                              <td className="border border-gray-400 p-1 text-right" style={{ padding: '2px 3px', fontSize: '10px' }}>
+                                Entradas:
+                              </td>
+                              <td className="border border-gray-400 p-1 text-right" style={{ padding: '2px 3px', fontSize: '10px' }}>
+                                <span className='text-green-600'>{formatCurrency(period.income)}</span>
+                              </td>
+                            </tr>
+                            <tr className="bg-gray-100 font-bold" style={{ fontSize: '10px', fontWeight: 700 }}>
+                              <td className="border border-gray-400 p-1 text-right" style={{ padding: '2px 3px', fontSize: '10px' }}>
+                                Saídas:
+                              </td>
+                              <td className="border border-gray-400 p-1 text-right" style={{ padding: '2px 3px', fontSize: '10px' }}>
+                                <span className='text-red-600'>{formatCurrency(period.expense)}</span>
+                              </td>
+                            </tr>
+                            <tr className="bg-gray-100 font-bold" style={{ fontSize: '10px', fontWeight: 700 }}>
+                              <td className="border border-gray-400 p-1 text-right" style={{ padding: '2px 3px', fontSize: '10px' }}>
+                                Líquido:
+                              </td>
+                              <td className="border border-gray-400 p-1 text-right" style={{ padding: '2px 3px', fontSize: '10px' }}>
+                                <span className={`${period.balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(period.balance)}</span>                               
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Rodapé */}
+                <div 
+                  className="mt-4 pt-3 border-t border-gray-300 text-gray-600" 
+                  style={{ fontSize: '9px' }}
+                >
+                  <div className="grid grid-cols-2 gap-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '18px' }}>
+                    <div>
+                      <p><strong>Relatório gerado em:</strong> {new Date().toLocaleString('pt-BR')}</p>
+                      <p><strong>Sistema:</strong> Zenit - Gestão Financeira</p>
+                    </div>
+                    <div className="text-right" style={{ textAlign: 'right' }}>
+                      <p><strong>Usuário:</strong> Sistema</p>
+                      <p><strong>Empresa:</strong> {selectedFinancialAccounts.length > 0 ? 'Empresa Exemplo' : '-'}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-            </div>
-          </div>
-        </div>
-      </Card>)}
+        </Card>
+      )}
     </DashboardLayout>
+    </div>
   );
 }

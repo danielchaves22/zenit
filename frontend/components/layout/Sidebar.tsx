@@ -1,12 +1,17 @@
-// frontend/components/layout/Sidebar.tsx - COM CORES DINÂMICAS
+// frontend/components/layout/Sidebar.tsx - COM REGRAS DE VISIBILIDADE POR ROLE
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
-  PieChart, DollarSign, CreditCard, Building2, Receipt, Home,
-  Users, Settings, ChevronLeft, ChevronRight, User, 
-  TrendingDown, TrendingUp, BarChart3, FileText, Calendar
+  PieChart, CreditCard, Building2, Receipt, Home,
+  Users, Settings, ChevronLeft, ChevronRight, Shield, BarChart3
 } from 'lucide-react';
+import { usePermissions } from '@/hooks/usePermissions';
+import { useConfirmation } from '@/hooks/useConfirmation';
+import { AccessGuard } from '@/components/ui/AccessGuard';
+import { SmartNavigation } from '@/components/ui/SmartNavigation';
+import { SmartBreadcrumb } from '@/components/ui/SmartBreadcrumb';
 
 // Tipo para submenu - href é opcional para itens não clicáveis
 type SubMenuItem = {
@@ -21,12 +26,15 @@ type MenuItem = {
   icon: React.ReactNode;
   label: string;
   subItems: SubMenuItem[]; // Todos terão pelo menos um subitem
+  requiredRole?: 'ADMIN' | 'SUPERUSER' | 'USER'; // ✅ NOVO: Role mínimo necessário
+  allowedRoles?: ('ADMIN' | 'SUPERUSER' | 'USER')[]; // ✅ NOVO: Roles específicos permitidos
 };
 
 // Tipo para título de seção
 type SectionTitle = {
   title: string;
   type: 'title';
+  requiredRole?: 'ADMIN' | 'SUPERUSER' | 'USER'; // ✅ NOVO: Role mínimo para mostrar a seção
 };
 
 type SidebarItem = MenuItem | SectionTitle;
@@ -37,6 +45,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
+  const { userRole } = useAuth(); // ✅ OBTER O ROLE DO USUÁRIO
+  
   // Obtém o estado salvo no localStorage ou usa o padrão
   const getSavedCollapsedState = () => {
     if (typeof window !== 'undefined') {
@@ -61,6 +71,49 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
   }, [collapsed]);
+
+  // ✅ FUNÇÃO PARA VERIFICAR SE UM ITEM DEVE SER VISÍVEL
+  const isItemVisible = (item: MenuItem | SectionTitle): boolean => {
+    if (!userRole) return false;
+    
+    // Para títulos de seção
+    if ('type' in item && item.type === 'title') {
+      if (!item.requiredRole) return true;
+      return hasPermission(item.requiredRole);
+    }
+    
+    // Para itens de menu
+    const menuItem = item as MenuItem;
+    
+    // Se tem roles específicos permitidos, verificar se o usuário está na lista
+    if (menuItem.allowedRoles) {
+      return menuItem.allowedRoles.includes(userRole as any);
+    }
+    
+    // Se tem role mínimo necessário, verificar hierarquia
+    if (menuItem.requiredRole) {
+      return hasPermission(menuItem.requiredRole);
+    }
+    
+    // Se não tem restrições, é visível para todos
+    return true;
+  };
+
+  // ✅ FUNÇÃO PARA VERIFICAR PERMISSÕES HIERÁRQUICAS
+  const hasPermission = (requiredRole: 'ADMIN' | 'SUPERUSER' | 'USER'): boolean => {
+    if (!userRole) return false;
+    
+    const roleHierarchy = {
+      'ADMIN': 3,
+      'SUPERUSER': 2,
+      'USER': 1
+    };
+    
+    const userLevel = roleHierarchy[userRole as keyof typeof roleHierarchy] || 0;
+    const requiredLevel = roleHierarchy[requiredRole] || 0;
+    
+    return userLevel >= requiredLevel;
+  };
 
   const menuItems: SidebarItem[] = [
     {
@@ -118,15 +171,24 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       label: 'Relatórios',
       subItems: [
         { label: 'Relatórios', hideWhenExpanded: true, isHeader: true },
-        { label: 'Movimentação de Contas Financeiras', href: '/financial/reports/financial-account-movement' }, // ✅ NOVO
+        { label: 'Movimentação de Contas Financeiras', href: '/financial/reports/financial-account-movement' },
         { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' },
         { label: 'DRE', href: '/financial/reports/income' },
         { label: 'Balancete', href: '/financial/reports/balance' },
       ],
     },
     {
+      icon: <Shield size={20} />,
+      label: 'Exemplo RBAC',
+      subItems: [
+        { label: 'Demonstração Completa', href: '/example-integration' },
+      ],
+      requiredRole: 'USER' // Todos podem ver o exemplo
+    },
+    {
       title: 'Administração',
-      type: 'title'
+      type: 'title',
+      requiredRole: 'SUPERUSER' // ✅ Seção só aparece para SUPERUSER ou ADMIN
     },
     {
       icon: <Users size={20} />,
@@ -134,6 +196,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       subItems: [
         { label: 'Usuários', href: '/admin/users' },
       ],
+      requiredRole: 'SUPERUSER' // ✅ Apenas SUPERUSER e ADMIN podem ver
     },
     {
       icon: <Building2 size={20} />,
@@ -141,6 +204,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       subItems: [
         { label: 'Empresas', href: '/admin/companies' },
       ],
+      allowedRoles: ['ADMIN'] // ✅ Apenas ADMIN pode ver
     },
     {
       icon: <Settings size={20} />,
@@ -148,6 +212,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       subItems: [
         { label: 'Configurações', href: '/admin/settings' },
       ],
+      requiredRole: 'SUPERUSER' // ✅ Apenas SUPERUSER e ADMIN podem ver
     },
   ];
 
@@ -209,6 +274,27 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
 
   const activeMenu = getActiveMenuItem();
 
+  // ✅ FILTRAR ITENS VISÍVEIS BASEADO NO ROLE
+  const visibleMenuItems = menuItems.filter(isItemVisible);
+
+  // ✅ VERIFICAR SE A SEÇÃO DE ADMINISTRAÇÃO TEM ITENS VISÍVEIS
+  const hasAdminItems = menuItems.some(item => {
+    if ('type' in item && item.type === 'title' && item.title === 'Administração') {
+      return false; // Pular o título da seção
+    }
+    
+    // Verificar se há pelo menos um item de administração visível
+    if (!('type' in item)) {
+      const menuItem = item as MenuItem;
+      return (
+        (menuItem.requiredRole === 'SUPERUSER' || menuItem.requiredRole === 'ADMIN' || 
+         menuItem.allowedRoles?.includes('ADMIN') || menuItem.allowedRoles?.includes('SUPERUSER')) &&
+        isItemVisible(menuItem)
+      );
+    }
+    return false;
+  });
+
   return (
     <>
       <div
@@ -231,7 +317,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         </button>
 
         <div className="flex-1 overflow-y-auto">
-          {menuItems.map((item, index) => {
+          {visibleMenuItems.map((item, index) => {
             if ('type' in item && item.type === 'title') {
               // Separadores de seção - apenas no modo expandido
               if (!collapsed) {

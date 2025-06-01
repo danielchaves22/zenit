@@ -1,4 +1,4 @@
-// frontend/pages/users.tsx - VERSÃO COMPLETA E FUNCIONAL
+// frontend/pages/admin/users.tsx - COM PROTEÇÃO DE ACESSO
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
@@ -7,7 +7,9 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/ui/Breadcrumb'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { AccessGuard } from '@/components/ui/AccessGuard' // ✅ NOVO IMPORT
 import { useToast } from '@/components/ui/ToastContext'
+import { usePermissions } from '@/hooks/usePermissions' // ✅ NOVO IMPORT
 import { Plus, Users, Edit2, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
@@ -35,6 +37,7 @@ interface Company {
 export default function UsersPage() {
   const confirmation = useConfirmation();
   const { userRole } = useAuth();
+  const { canManageUsers, isAdmin } = usePermissions(); // ✅ USAR HOOK DE PERMISSÕES
   const { addToast } = useToast();
 
   const [users, setUsers] = useState<User[]>([]);
@@ -56,8 +59,8 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
-    if (userRole === 'ADMIN') fetchCompanies();
-  }, [userRole]);
+    fetchCompanies();
+  }, []);
 
   async function fetchUsers() {
     setLoading(true);
@@ -198,9 +201,10 @@ export default function UsersPage() {
         { label: 'Usuários' }
       ]} />
 
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-white">Usuários</h1>
-        {userRole === 'ADMIN' && (
+      {/* ✅ PROTEÇÃO DE ACESSO - APENAS SUPERUSER E ADMIN */}
+      <AccessGuard requiredRole="SUPERUSER">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-semibold text-white">Usuários</h1>
           <Button 
             variant="accent" 
             onClick={() => showForm ? closeForm() : openNewForm()}
@@ -210,128 +214,127 @@ export default function UsersPage() {
             <Plus size={16} />
             {showForm ? 'Cancelar' : 'Novo Usuário'}
           </Button>
-        )}
-      </div>
+        </div>
 
-      {/* Inline form */}
-      {showForm && userRole === 'ADMIN' && (
-        <Card className="mb-6 border-2 border-[#2563eb]">
-          <div className="space-y-4">
-            <h3 className="text-lg font-medium text-white">
-              {editingUser ? `Editando: ${editingUser.name}` : 'Novo Usuário'}
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="Nome"
-                value={formData.name}
-                onChange={(e) => setFormData({...formData, name: e.target.value})}
-                required
-                disabled={formLoading}
-              />
+        {/* Inline form */}
+        {showForm && (
+          <Card className="mb-6 border-2 border-[#2563eb]">
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-white">
+                {editingUser ? `Editando: ${editingUser.name}` : 'Novo Usuário'}
+              </h3>
               
-              <Input
-                label="Email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                required
-                disabled={formLoading}
-              />
-            </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label="Nome"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  required
+                  disabled={formLoading}
+                />
+                
+                <Input
+                  label="Email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  required
+                  disabled={formLoading}
+                />
+              </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label={editingUser ? "Nova Senha (deixe em branco para manter)" : "Senha"}
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-                required={!editingUser}
-                disabled={formLoading}
-                placeholder={editingUser ? "Deixe em branco para não alterar" : ""}
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input
+                  label={editingUser ? "Nova Senha (deixe em branco para manter)" : "Senha"}
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  required={!editingUser}
+                  disabled={formLoading}
+                  placeholder={editingUser ? "Deixe em branco para não alterar" : ""}
+                />
+
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-300">
+                    Perfil
+                  </label>
+                  <select
+                    value={formData.newRole}
+                    onChange={(e) => setFormData({...formData, newRole: e.target.value})}
+                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    disabled={formLoading}
+                  >
+                    <option value="USER">Usuário</option>
+                    <option value="SUPERUSER">Superusuário</option>
+                    {/* ✅ APENAS ADMIN PODE CRIAR OUTROS ADMINS */}
+                    {isAdmin() && <option value="ADMIN">Administrador</option>}
+                  </select>
+                </div>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-300">
-                  Perfil
+                  Empresa
                 </label>
                 <select
-                  value={formData.newRole}
-                  onChange={(e) => setFormData({...formData, newRole: e.target.value})}
+                  value={formData.companyId}
+                  onChange={(e) => setFormData({...formData, companyId: e.target.value})}
                   className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                  required
                   disabled={formLoading}
                 >
-                  <option value="USER">Usuário</option>
-                  <option value="SUPERUSER">Superusuário</option>
-                  <option value="ADMIN">Administrador</option>
+                  <option value="">-- Selecione uma empresa --</option>
+                  {companies.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
+                    </option>
+                  ))}
                 </select>
               </div>
-            </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">
-                Empresa
-              </label>
-              <select
-                value={formData.companyId}
-                onChange={(e) => setFormData({...formData, companyId: e.target.value})}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-                required
-                disabled={formLoading}
-              >
-                <option value="">-- Selecione uma empresa --</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex gap-3">
+                <Button 
+                  variant="accent" 
+                  onClick={handleSubmit}
+                  disabled={formLoading}
+                >
+                  {formLoading 
+                    ? 'Salvando...' 
+                    : editingUser 
+                      ? 'Salvar Alterações' 
+                      : 'Criar Usuário'
+                  }
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={closeForm}
+                  disabled={formLoading}
+                >
+                  Cancelar
+                </Button>
+              </div>
             </div>
+          </Card>
+        )}
 
-            <div className="flex gap-3">
-              <Button 
-                variant="accent" 
-                onClick={handleSubmit}
-                disabled={formLoading}
-              >
-                {formLoading 
-                  ? 'Salvando...' 
-                  : editingUser 
-                    ? 'Salvar Alterações' 
-                    : 'Criar Usuário'
-                }
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={closeForm}
-                disabled={formLoading}
-              >
-                Cancelar
+        <Card>
+          {loading ? (
+            <div className="space-y-3">
+              {[...Array(5)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full rounded bg-[#1e2126]" />
+              ))}
+            </div>
+          ) : error ? (
+            <div className="text-center py-10">
+              <div className="text-red-400 mb-4">{error}</div>
+              <Button variant="outline" onClick={fetchUsers}>
+                Tentar Novamente
               </Button>
             </div>
-          </div>
-        </Card>
-      )}
-
-      <Card>
-        {loading ? (
-          <div className="space-y-3">
-            {[...Array(5)].map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full rounded bg-[#1e2126]" />
-            ))}
-          </div>
-        ) : error ? (
-          <div className="text-center py-10">
-            <div className="text-red-400 mb-4">{error}</div>
-            <Button variant="outline" onClick={fetchUsers}>
-              Tentar Novamente
-            </Button>
-          </div>
-        ) : users.length === 0 ? (
-          <div className="text-center py-10">
-            <Users size={48} className="mx-auto text-gray-400 mb-4" />
-            <p className="text-gray-400 mb-4">Nenhum usuário encontrado</p>
-            {userRole === 'ADMIN' && (
+          ) : users.length === 0 ? (
+            <div className="text-center py-10">
+              <Users size={48} className="mx-auto text-gray-400 mb-4" />
+              <p className="text-gray-400 mb-4">Nenhum usuário encontrado</p>
               <Button 
                 variant="accent" 
                 onClick={openNewForm}
@@ -340,81 +343,87 @@ export default function UsersPage() {
                 <Plus size={16} />
                 Criar Primeiro Usuário
               </Button>
-            )}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
-                <tr>
-                  <th className="px-4 py-3 text-center w-24">Ações</th>
-                  <th className="px-4 py-3 text-left">Nome</th>
-                  <th className="px-4 py-3 text-left">Email</th>
-                  <th className="px-4 py-3 text-left">Perfil</th>
-                  <th className="px-4 py-3 text-left">Empresa</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((user) => (
-                  <tr 
-                    key={user.id} 
-                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
-                      editingUser?.id === user.id 
-                        ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
-                        : ''
-                    }`}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-center">
-                        <button
-                          onClick={() => openEditForm(user)}
-                          className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
-                          title="Editar"
-                          disabled={formLoading}
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        {userRole === 'ADMIN' && (
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
+                  <tr>
+                    <th className="px-4 py-3 text-center w-24">Ações</th>
+                    <th className="px-4 py-3 text-left">Nome</th>
+                    <th className="px-4 py-3 text-left">Email</th>
+                    <th className="px-4 py-3 text-left">Perfil</th>
+                    <th className="px-4 py-3 text-left">Empresa</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <tr 
+                      key={user.id} 
+                      className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                        editingUser?.id === user.id 
+                          ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
+                          : ''
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 justify-center">
                           <button
-                            onClick={() => handleDelete(user)}
-                            className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                            title="Excluir"
+                            onClick={() => openEditForm(user)}
+                            className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
+                            title="Editar"
                             disabled={formLoading}
                           >
-                            <Trash2 size={16} />
+                            <Edit2 size={16} />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-white font-medium">{user.name}</td>
-                    <td className="px-4 py-3 text-gray-300">{user.email}</td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full">
-                        {user.role}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">
-                      {user.companies.map(uc => uc.company.name).join(', ')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                          {/* ✅ APENAS ADMIN PODE EXCLUIR USUÁRIOS */}
+                          {isAdmin() && (
+                            <button
+                              onClick={() => handleDelete(user)}
+                              className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                              title="Excluir"
+                              disabled={formLoading}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-white font-medium">{user.name}</td>
+                      <td className="px-4 py-3 text-gray-300">{user.email}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 text-xs rounded-full ${
+                          user.role === 'ADMIN' ? 'bg-red-600 text-white' :
+                          user.role === 'SUPERUSER' ? 'bg-blue-600 text-white' :
+                          'bg-gray-600 text-white'
+                        }`}>
+                          {user.role === 'ADMIN' ? 'Administrador' :
+                           user.role === 'SUPERUSER' ? 'Superusuário' : 'Usuário'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">
+                        {user.companies.map(uc => uc.company.name).join(', ')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
 
-      <ConfirmationModal
-        isOpen={confirmation.isOpen}
-        onClose={confirmation.handleClose}
-        onConfirm={confirmation.handleConfirm}
-        title={confirmation.options.title}
-        message={confirmation.options.message}
-        confirmText={confirmation.options.confirmText}
-        cancelText={confirmation.options.cancelText}
-        type={confirmation.options.type}
-        loading={confirmation.loading}
-      />
+        <ConfirmationModal
+          isOpen={confirmation.isOpen}
+          onClose={confirmation.handleClose}
+          onConfirm={confirmation.handleConfirm}
+          title={confirmation.options.title}
+          message={confirmation.options.message}
+          confirmText={confirmation.options.confirmText}
+          cancelText={confirmation.options.cancelText}
+          type={confirmation.options.type}
+          loading={confirmation.loading}
+        />
+      </AccessGuard>
     </DashboardLayout>
   );
 }

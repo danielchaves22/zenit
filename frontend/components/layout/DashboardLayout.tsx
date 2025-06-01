@@ -7,6 +7,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
 import { ThemeSelector } from '@/components/ui/ThemeSelector';
 import { User } from 'lucide-react';
+import { RoleBasedItem } from '@/components/navigation/RoleBasedNavigation';
+import { 
+  Building2, 
+  Users, 
+  DollarSign, 
+  BarChart3, 
+  Settings,
+  Home
+} from 'lucide-react';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;

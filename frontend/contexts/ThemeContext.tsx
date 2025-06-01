@@ -1,34 +1,39 @@
-// frontend/contexts/ThemeContext.tsx - VERSÃO EXPANDIDA
-
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-
-export type ThemeColor = 
-  | 'amber' | 'blue' | 'purple' | 'green' | 'red' | 'indigo' | 'pink'
-  | 'orange' | 'teal' | 'cyan' | 'emerald' | 'violet' | 'slate' | 'lime'
-  | 'rose' | 'sky' | 'yellow' | 'fuchsia' | 'neutral';
+// frontend/contexts/ThemeContext.tsx - SISTEMA DE TEMAS DINÂMICOS COMPLETO
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 export interface ThemeColors {
   primary: string;
   primaryHover: string;
   primaryLight: string;
   primaryDark: string;
-  gradient?: string; // ✅ NOVO: Para gradientes
-  shadow?: string;   // ✅ NOVO: Para sombras coloridas
+  gradient: string;
+  shadow: string;
 }
 
-export interface ThemeInfo {
-  key: ThemeColor;
+export interface Theme {
+  key: string;
   label: string;
+  category: 'standard' | 'vibrant' | 'professional' | 'seasonal';
+  accessibility: 'high' | 'medium' | 'low';
   colors: ThemeColors;
-  category: 'standard' | 'vibrant' | 'professional' | 'seasonal'; // ✅ NOVO: Categorias
-  accessibility: 'high' | 'medium' | 'low'; // ✅ NOVO: Nível de acessibilidade
 }
 
-// ✅ CONFIGURAÇÃO EXPANDIDA COM CATEGORIAS
-const themeConfig: Record<ThemeColor, Omit<ThemeInfo, 'key'>> = {
-  // === TEMAS PADRÃO ===
-  amber: {
-    label: 'Âmbar',
+interface ThemeContextData {
+  currentTheme: string;
+  availableThemes: Theme[];
+  themesByCategory: Record<string, Theme[]>;
+  changeTheme: (themeKey: string) => void;
+  getThemeInfo: (themeKey: string) => Theme;
+}
+
+const ThemeContext = createContext<ThemeContextData>({} as ThemeContextData);
+
+// ✅ DEFINIÇÃO DE TODOS OS TEMAS DISPONÍVEIS
+const themes: Theme[] = [
+  // STANDARD THEMES
+  {
+    key: 'amber',
+    label: 'Âmbar Clássico',
     category: 'standard',
     accessibility: 'high',
     colors: {
@@ -40,39 +45,24 @@ const themeConfig: Record<ThemeColor, Omit<ThemeInfo, 'key'>> = {
       shadow: '0 10px 25px rgba(245, 158, 11, 0.3)'
     }
   },
-  
-  blue: {
-    label: 'Azul',
-    category: 'professional',
+  {
+    key: 'blue',
+    label: 'Azul Corporativo',
+    category: 'standard',
     accessibility: 'high',
     colors: {
-      primary: '#015dff',
-      primaryHover: '#0147cc',
-      primaryLight: '#3b82f6',
-      primaryDark: '#1e40af',
-      gradient: 'linear-gradient(135deg, #015dff 0%, #1e40af 100%)',
-      shadow: '0 10px 25px rgba(1, 93, 255, 0.3)'
+      primary: '#3b82f6',
+      primaryHover: '#2563eb',
+      primaryLight: '#60a5fa',
+      primaryDark: '#1d4ed8',
+      gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+      shadow: '0 10px 25px rgba(59, 130, 246, 0.3)'
     }
   },
-  
-  // === TEMAS VIBRANTES ===
-  purple: {
-    label: 'Roxo',
-    category: 'vibrant',
-    accessibility: 'high',
-    colors: {
-      primary: '#8b5cf6',
-      primaryHover: '#7c3aed',
-      primaryLight: '#a78bfa',
-      primaryDark: '#6d28d9',
-      gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
-      shadow: '0 10px 25px rgba(139, 92, 246, 0.3)'
-    }
-  },
-  
-  green: {
-    label: 'Verde',
-    category: 'vibrant',
+  {
+    key: 'green',
+    label: 'Verde Natureza',
+    category: 'standard',
     accessibility: 'high',
     colors: {
       primary: '#10b981',
@@ -83,124 +73,25 @@ const themeConfig: Record<ThemeColor, Omit<ThemeInfo, 'key'>> = {
       shadow: '0 10px 25px rgba(16, 185, 129, 0.3)'
     }
   },
-  
-  // === NOVOS TEMAS ===
-  orange: {
-    label: 'Laranja',
-    category: 'vibrant',
-    accessibility: 'high',
-    colors: {
-      primary: '#f97316',
-      primaryHover: '#ea580c',
-      primaryLight: '#fb923c',
-      primaryDark: '#c2410c',
-      gradient: 'linear-gradient(135deg, #f97316 0%, #c2410c 100%)',
-      shadow: '0 10px 25px rgba(249, 115, 22, 0.3)'
-    }
-  },
-  
-  teal: {
-    label: 'Azul Petróleo',
-    category: 'professional',
-    accessibility: 'high',
-    colors: {
-      primary: '#14b8a6',
-      primaryHover: '#0f766e',
-      primaryLight: '#5eead4',
-      primaryDark: '#134e4a',
-      gradient: 'linear-gradient(135deg, #14b8a6 0%, #134e4a 100%)',
-      shadow: '0 10px 25px rgba(20, 184, 166, 0.3)'
-    }
-  },
-  
-  cyan: {
-    label: 'Ciano',
+
+  // VIBRANT THEMES
+  {
+    key: 'purple',
+    label: 'Roxo Vibrante',
     category: 'vibrant',
     accessibility: 'medium',
     colors: {
-      primary: '#06b6d4',
-      primaryHover: '#0891b2',
-      primaryLight: '#67e8f9',
-      primaryDark: '#164e63',
-      gradient: 'linear-gradient(135deg, #06b6d4 0%, #164e63 100%)',
-      shadow: '0 10px 25px rgba(6, 182, 212, 0.3)'
+      primary: '#8b5cf6',
+      primaryHover: '#7c3aed',
+      primaryLight: '#a78bfa',
+      primaryDark: '#6d28d9',
+      gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)',
+      shadow: '0 10px 25px rgba(139, 92, 246, 0.3)'
     }
   },
-  
-  rose: {
-    label: 'Rosa',
-    category: 'vibrant',
-    accessibility: 'high',
-    colors: {
-      primary: '#f43f5e',
-      primaryHover: '#e11d48',
-      primaryLight: '#fb7185',
-      primaryDark: '#be123c',
-      gradient: 'linear-gradient(135deg, #f43f5e 0%, #be123c 100%)',
-      shadow: '0 10px 25px rgba(244, 63, 94, 0.3)'
-    }
-  },
-  
-  // === TEMAS PROFISSIONAIS ===
-  slate: {
-    label: 'Ardósia',
-    category: 'professional',
-    accessibility: 'high',
-    colors: {
-      primary: '#64748b',
-      primaryHover: '#475569',
-      primaryLight: '#94a3b8',
-      primaryDark: '#334155',
-      gradient: 'linear-gradient(135deg, #64748b 0%, #334155 100%)',
-      shadow: '0 10px 25px rgba(100, 116, 139, 0.3)'
-    }
-  },
-  
-  neutral: {
-    label: 'Neutro',
-    category: 'professional',
-    accessibility: 'high',
-    colors: {
-      primary: '#6b7280',
-      primaryHover: '#4b5563',
-      primaryLight: '#9ca3af',
-      primaryDark: '#374151',
-      gradient: 'linear-gradient(135deg, #6b7280 0%, #374151 100%)',
-      shadow: '0 10px 25px rgba(107, 114, 128, 0.3)'
-    }
-  },
-  
-  // === OUTROS TEMAS ===
-  red: {
-    label: 'Vermelho',
-    category: 'vibrant',
-    accessibility: 'high',
-    colors: {
-      primary: '#ef4444',
-      primaryHover: '#dc2626',
-      primaryLight: '#f87171',
-      primaryDark: '#b91c1c',
-      gradient: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
-      shadow: '0 10px 25px rgba(239, 68, 68, 0.3)'
-    }
-  },
-  
-  indigo: {
-    label: 'Índigo',
-    category: 'professional',
-    accessibility: 'high',
-    colors: {
-      primary: '#6366f1',
-      primaryHover: '#4f46e5',
-      primaryLight: '#818cf8',
-      primaryDark: '#3730a3',
-      gradient: 'linear-gradient(135deg, #6366f1 0%, #3730a3 100%)',
-      shadow: '0 10px 25px rgba(99, 102, 241, 0.3)'
-    }
-  },
-  
-  pink: {
-    label: 'Rosa',
+  {
+    key: 'pink',
+    label: 'Rosa Moderno',
     category: 'vibrant',
     accessibility: 'medium',
     colors: {
@@ -212,67 +103,99 @@ const themeConfig: Record<ThemeColor, Omit<ThemeInfo, 'key'>> = {
       shadow: '0 10px 25px rgba(236, 72, 153, 0.3)'
     }
   },
-  
-  emerald: {
-    label: 'Esmeralda',
+  {
+    key: 'orange',
+    label: 'Laranja Energético',
     category: 'vibrant',
+    accessibility: 'medium',
+    colors: {
+      primary: '#f97316',
+      primaryHover: '#ea580c',
+      primaryLight: '#fb923c',
+      primaryDark: '#c2410c',
+      gradient: 'linear-gradient(135deg, #f97316 0%, #c2410c 100%)',
+      shadow: '0 10px 25px rgba(249, 115, 22, 0.3)'
+    }
+  },
+
+  // PROFESSIONAL THEMES
+  {
+    key: 'slate',
+    label: 'Cinza Profissional',
+    category: 'professional',
+    accessibility: 'high',
+    colors: {
+      primary: '#475569',
+      primaryHover: '#334155',
+      primaryLight: '#64748b',
+      primaryDark: '#1e293b',
+      gradient: 'linear-gradient(135deg, #475569 0%, #1e293b 100%)',
+      shadow: '0 10px 25px rgba(71, 85, 105, 0.3)'
+    }
+  },
+  {
+    key: 'indigo',
+    label: 'Índigo Executivo',
+    category: 'professional',
+    accessibility: 'high',
+    colors: {
+      primary: '#6366f1',
+      primaryHover: '#4f46e5',
+      primaryLight: '#818cf8',
+      primaryDark: '#3730a3',
+      gradient: 'linear-gradient(135deg, #6366f1 0%, #3730a3 100%)',
+      shadow: '0 10px 25px rgba(99, 102, 241, 0.3)'
+    }
+  },
+  {
+    key: 'teal',
+    label: 'Turquesa Elegante',
+    category: 'professional',
+    accessibility: 'high',
+    colors: {
+      primary: '#14b8a6',
+      primaryHover: '#0d9488',
+      primaryLight: '#2dd4bf',
+      primaryDark: '#0f766e',
+      gradient: 'linear-gradient(135deg, #14b8a6 0%, #0f766e 100%)',
+      shadow: '0 10px 25px rgba(20, 184, 166, 0.3)'
+    }
+  },
+
+  // SEASONAL THEMES
+  {
+    key: 'red',
+    label: 'Vermelho Festivo',
+    category: 'seasonal',
+    accessibility: 'medium',
+    colors: {
+      primary: '#ef4444',
+      primaryHover: '#dc2626',
+      primaryLight: '#f87171',
+      primaryDark: '#b91c1c',
+      gradient: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)',
+      shadow: '0 10px 25px rgba(239, 68, 68, 0.3)'
+    }
+  },
+  {
+    key: 'emerald',
+    label: 'Esmeralda Primavera',
+    category: 'seasonal',
     accessibility: 'high',
     colors: {
       primary: '#059669',
       primaryHover: '#047857',
-      primaryLight: '#6ee7b7',
-      primaryDark: '#064e3b',
-      gradient: 'linear-gradient(135deg, #059669 0%, #064e3b 100%)',
+      primaryLight: '#10b981',
+      primaryDark: '#065f46',
+      gradient: 'linear-gradient(135deg, #059669 0%, #065f46 100%)',
       shadow: '0 10px 25px rgba(5, 150, 105, 0.3)'
     }
   },
-  
-  violet: {
-    label: 'Violeta',
-    category: 'vibrant',
-    accessibility: 'high',
-    colors: {
-      primary: '#7c3aed',
-      primaryHover: '#6d28d9',
-      primaryLight: '#a78bfa',
-      primaryDark: '#4c1d95',
-      gradient: 'linear-gradient(135deg, #7c3aed 0%, #4c1d95 100%)',
-      shadow: '0 10px 25px rgba(124, 58, 237, 0.3)'
-    }
-  },
-  
-  lime: {
-    label: 'Lima',
-    category: 'vibrant',
-    accessibility: 'medium',
-    colors: {
-      primary: '#65a30d',
-      primaryHover: '#4d7c0f',
-      primaryLight: '#a3e635',
-      primaryDark: '#365314',
-      gradient: 'linear-gradient(135deg, #65a30d 0%, #365314 100%)',
-      shadow: '0 10px 25px rgba(101, 163, 13, 0.3)'
-    }
-  },
-  
-  sky: {
-    label: 'Céu',
-    category: 'professional',
-    accessibility: 'medium',
-    colors: {
-      primary: '#0ea5e9',
-      primaryHover: '#0284c7',
-      primaryLight: '#38bdf8',
-      primaryDark: '#075985',
-      gradient: 'linear-gradient(135deg, #0ea5e9 0%, #075985 100%)',
-      shadow: '0 10px 25px rgba(14, 165, 233, 0.3)'
-    }
-  },
-  
-  yellow: {
-    label: 'Amarelo',
-    category: 'vibrant',
-    accessibility: 'low', // ⚠️ Amarelo tem baixo contraste
+  {
+    key: 'yellow',
+    label: 'Amarelo Verão',
+    category: 'seasonal',
+    accessibility: 'low',
     colors: {
       primary: '#eab308',
       primaryHover: '#ca8a04',
@@ -281,125 +204,87 @@ const themeConfig: Record<ThemeColor, Omit<ThemeInfo, 'key'>> = {
       gradient: 'linear-gradient(135deg, #eab308 0%, #a16207 100%)',
       shadow: '0 10px 25px rgba(234, 179, 8, 0.3)'
     }
-  },
-  
-  fuchsia: {
-    label: 'Fúcsia',
-    category: 'vibrant',
-    accessibility: 'high',
-    colors: {
-      primary: '#d946ef',
-      primaryHover: '#c026d3',
-      primaryLight: '#e879f9',
-      primaryDark: '#a21caf',
-      gradient: 'linear-gradient(135deg, #d946ef 0%, #a21caf 100%)',
-      shadow: '0 10px 25px rgba(217, 70, 239, 0.3)'
-    }
   }
-};
+];
 
-interface ThemeContextData {
-  currentTheme: ThemeColor;
-  colors: ThemeColors;
-  changeTheme: (theme: ThemeColor) => void;
-  availableThemes: ThemeInfo[];
-  themesByCategory: Record<string, ThemeInfo[]>; // ✅ NOVO: Temas agrupados por categoria
-  getCSSVariable: (property: keyof ThemeColors) => string;
-  getThemeInfo: (theme: ThemeColor) => ThemeInfo; // ✅ NOVO: Obter info completa do tema
-}
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [currentTheme, setCurrentTheme] = useState<string>('amber');
 
-const ThemeContext = createContext<ThemeContextData>({} as ThemeContextData);
-
-interface ThemeProviderProps {
-  children: ReactNode;
-}
-
-export function ThemeProvider({ children }: ThemeProviderProps) {
-  const [currentTheme, setCurrentTheme] = useState<ThemeColor>('amber');
-
-  // Carregar tema salvo no localStorage
+  // ✅ CARREGAR TEMA SALVO AO INICIALIZAR
   useEffect(() => {
-    const savedTheme = localStorage.getItem('zenit_theme') as ThemeColor;
-    if (savedTheme && themeConfig[savedTheme]) {
+    const savedTheme = localStorage.getItem('zenit_theme');
+    if (savedTheme && themes.find(t => t.key === savedTheme)) {
       setCurrentTheme(savedTheme);
+      applyTheme(savedTheme);
+    } else {
+      // Aplicar tema padrão
+      applyTheme('amber');
     }
   }, []);
 
-  // Atualizar CSS variables quando o tema mudar
-  useEffect(() => {
-    const colors = themeConfig[currentTheme].colors;
+  // ✅ FUNÇÃO PARA APLICAR TEMA NO CSS
+  const applyTheme = (themeKey: string) => {
+    const theme = themes.find(t => t.key === themeKey);
+    if (!theme) return;
+
     const root = document.documentElement;
     
-    // CSS Variables básicas
-    root.style.setProperty('--color-primary', colors.primary);
-    root.style.setProperty('--color-primary-hover', colors.primaryHover);
-    root.style.setProperty('--color-primary-light', colors.primaryLight);
-    root.style.setProperty('--color-primary-dark', colors.primaryDark);
-    
-    // ✅ NOVAS CSS Variables
-    if (colors.gradient) {
-      root.style.setProperty('--color-primary-gradient', colors.gradient);
-    }
-    if (colors.shadow) {
-      root.style.setProperty('--color-primary-shadow', colors.shadow);
-    }
+    // Aplicar variáveis CSS
+    root.style.setProperty('--color-primary', theme.colors.primary);
+    root.style.setProperty('--color-primary-hover', theme.colors.primaryHover);
+    root.style.setProperty('--color-primary-light', theme.colors.primaryLight);
+    root.style.setProperty('--color-primary-dark', theme.colors.primaryDark);
+    root.style.setProperty('--color-primary-gradient', theme.colors.gradient);
+    root.style.setProperty('--color-primary-shadow', theme.colors.shadow);
+  };
+
+  // ✅ FUNÇÃO PARA MUDAR TEMA
+  const changeTheme = (themeKey: string) => {
+    const theme = themes.find(t => t.key === themeKey);
+    if (!theme) return;
+
+    setCurrentTheme(themeKey);
+    applyTheme(themeKey);
     
     // Salvar no localStorage
-    localStorage.setItem('zenit_theme', currentTheme);
-  }, [currentTheme]);
-
-  const changeTheme = (theme: ThemeColor) => {
-    setCurrentTheme(theme);
+    localStorage.setItem('zenit_theme', themeKey);
   };
 
-  const getCSSVariable = (property: keyof ThemeColors) => {
-    return `var(--color-${property.replace(/([A-Z])/g, '-$1').toLowerCase()})`;
+  // ✅ FUNÇÃO PARA OBTER INFORMAÇÕES DO TEMA
+  const getThemeInfo = (themeKey: string): Theme => {
+    return themes.find(t => t.key === themeKey) || themes[0];
   };
-
-  const getThemeInfo = (theme: ThemeColor): ThemeInfo => {
-    return {
-      key: theme,
-      ...themeConfig[theme]
-    };
-  };
-
-  // ✅ GERAR LISTA DE TEMAS DISPONÍVEIS
-  const availableThemes: ThemeInfo[] = Object.entries(themeConfig).map(([key, config]) => ({
-    key: key as ThemeColor,
-    ...config
-  }));
 
   // ✅ AGRUPAR TEMAS POR CATEGORIA
-  const themesByCategory = availableThemes.reduce((acc, theme) => {
+  const themesByCategory = themes.reduce((acc, theme) => {
     if (!acc[theme.category]) {
       acc[theme.category] = [];
     }
     acc[theme.category].push(theme);
     return acc;
-  }, {} as Record<string, ThemeInfo[]>);
+  }, {} as Record<string, Theme[]>);
 
-  const contextValue: ThemeContextData = {
+  const value: ThemeContextData = {
     currentTheme,
-    colors: themeConfig[currentTheme].colors,
-    changeTheme,
-    availableThemes,
+    availableThemes: themes,
     themesByCategory,
-    getCSSVariable,
+    changeTheme,
     getThemeInfo
   };
 
   return (
-    <ThemeContext.Provider value={contextValue}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
 }
 
+// ✅ HOOK PARA USAR O TEMA
 export function useTheme() {
   const context = useContext(ThemeContext);
   
   if (!context) {
-    throw new Error('useTheme deve ser usado dentro de um ThemeProvider');
+    throw new Error('useTheme must be used within a ThemeProvider');
   }
   
   return context;

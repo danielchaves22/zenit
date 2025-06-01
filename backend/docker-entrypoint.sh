@@ -62,35 +62,31 @@ log_success "Environment validation passed"
 log_info "Checking database connection..."
 
 # Extract database host and port from DATABASE_URL
-DBURL=${DATABASE_URL}
-DBHOST= ${DB_HOST} # $(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
-DBPORT= ${DB_PORT} # $(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
-log_info "Database URL: ${DBURL}"
-log_info "Database Host: ${DBHOST}"
-log_info "Database Port: ${DBPORT:-5432}"
+DB_HOST=$(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
+DB_PORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
 
-# if [ -z "$DBPORT" ]; then
-#     DBPORT=5432
-# fi
+if [ -z "$DB_PORT" ]; then
+    DB_PORT=5432
+fi
 
-log_info "Waiting for database at $DBHOST:$DBPORT..."
+log_info "Waiting for database at $DB_HOST:$DB_PORT..."
 
 # Wait up to 60 seconds for database
-timeout=60
-while [ $timeout -gt 0 ]; do
-    if nc -z "$DBHOST" "$DBPORT" 2>/dev/null; then
-        log_success "Database is ready"
-        break
-    fi
+# timeout=60
+# while [ $timeout -gt 0 ]; do
+#     if nc -z "$DB_HOST" "$DB_PORT" 2>/dev/null; then
+#         log_success "Database is ready"
+#         break
+#     fi
     
-    timeout=$((timeout - 1))
-    if [ $timeout -eq 0 ]; then
-        log_error "Database connection timeout after 60 seconds"
-        exit 1
-    fi
+#     timeout=$((timeout - 1))
+#     if [ $timeout -eq 0 ]; then
+#         log_error "Database connection timeout after 60 seconds"
+#         exit 1
+#     fi
     
-    sleep 1
-done
+#     sleep 1
+# done
 
 # ============================================
 # DATABASE MIGRATIONS

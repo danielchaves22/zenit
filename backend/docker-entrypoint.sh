@@ -62,9 +62,10 @@ log_success "Environment validation passed"
 log_info "Checking database connection..."
 
 # Extract database host and port from DATABASE_URL
+DBURL=${DATABASE_URL}
 DBHOST= $DB_HOST # $(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
 DBPORT= $DB_PORT # $(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
-echo -e "Database URL: ${DATABASE_URL}"
+echo -e "Database URL: ${DBURL}"
 echo -e "Database Host: ${DBHOST}"
 echo -e "Database Port: ${DBPORT:-5432}"
 

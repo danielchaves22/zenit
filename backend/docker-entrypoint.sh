@@ -64,6 +64,8 @@ log_info "Checking database connection..."
 # Extract database host and port from DATABASE_URL
 DB_HOST=$(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
 DB_PORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
+echo -e "Database Host: $DB_HOST"
+echo -e "Database Port: ${DB_PORT:-5432}"
 
 if [ -z "$DB_PORT" ]; then
     DB_PORT=5432

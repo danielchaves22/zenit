@@ -62,21 +62,22 @@ log_success "Environment validation passed"
 log_info "Checking database connection..."
 
 # Extract database host and port from DATABASE_URL
-DB_HOST=$(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
-DB_PORT=$(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
-echo -e "Database Host: $DB_HOST"
-echo -e "Database Port: ${DB_PORT:-5432}"
+DBHOST= $DB_HOST # $(echo $DATABASE_URL | sed -n 's/.*@\([^:]*\):.*/\1/p')
+DBPORT= $DB_PORT # $(echo $DATABASE_URL | sed -n 's/.*:\([0-9]*\)\/.*/\1/p')
+echo -e "Database URL: ${DATABASE_URL}"
+echo -e "Database Host: ${DBHOST}"
+echo -e "Database Port: ${DBPORT:-5432}"
 
-if [ -z "$DB_PORT" ]; then
-    DB_PORT=5432
-fi
+# if [ -z "$DBPORT" ]; then
+#     DBPORT=5432
+# fi
 
-log_info "Waiting for database at $DB_HOST:$DB_PORT..."
+log_info "Waiting for database at $DBHOST:$DBPORT..."
 
 # Wait up to 60 seconds for database
 timeout=60
 while [ $timeout -gt 0 ]; do
-    if nc -z "$DB_HOST" "$DB_PORT" 2>/dev/null; then
+    if nc -z "$DBHOST" "$DBPORT" 2>/dev/null; then
         log_success "Database is ready"
         break
     fi

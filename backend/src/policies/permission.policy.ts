@@ -18,7 +18,7 @@ export const permissionPolicy: PermissionPolicy = {
   },
   SUPERUSER: {
     user:    ['create:own','read:own','update:own','delete:own'],
-    company: []
+    company: ['read:own']
   },
   USER: {
     user:    ['read:own','update:own'],

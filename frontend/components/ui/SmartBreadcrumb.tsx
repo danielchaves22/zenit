@@ -223,7 +223,9 @@ export function SmartBreadcrumb({
             
             {/* ✅ INDICADOR DE PERMISSÃO NEGADA */}
             {showPermissionWarnings && item.href && !checkLinkPermission(item.href) && (
-              <Lock size={12} className="ml-1 text-red-400" title="Acesso restrito" />
+              <span className="ml-1 text-red-400" title="Acesso restrito">
+                <Lock size={12} />
+              </span>
             )}
           </li>
         ))}

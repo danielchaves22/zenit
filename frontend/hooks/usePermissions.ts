@@ -1,4 +1,4 @@
-// frontend/hooks/usePermissions.ts - HOOK PARA VERIFICAÇÃO DE PERMISSÕES
+// frontend/hooks/usePermissions.ts - VERSÃO ATUALIZADA
 import { useAuth } from '@/contexts/AuthContext';
 
 export type UserRole = 'ADMIN' | 'SUPERUSER' | 'USER';

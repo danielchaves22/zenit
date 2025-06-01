@@ -1,4 +1,4 @@
-// backend/src/services/company.service.ts
+// backend/src/services/company.service.ts - COM MÉTODO PARA LISTAR EMPRESAS DO USUÁRIO
 import { PrismaClient, Company, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 import FinancialStructureService from './financial-structure.service';
@@ -97,8 +97,31 @@ export default class CompanyService {
     return await FinancialStructureService.ensureFinancialStructure(companyId);
   }
 
+  /**
+   * Lista todas as empresas (para ADMIN)
+   */
   static async listCompanies(): Promise<Company[]> {
-    return prisma.company.findMany({ orderBy: { code: 'asc' } });
+    return prisma.company.findMany({ 
+      orderBy: { code: 'asc' } 
+    });
+  }
+
+  /**
+   * ✅ NOVO: Lista apenas as empresas às quais o usuário tem acesso (para SUPERUSER)
+   */
+  static async listUserCompanies(userId: number): Promise<Company[]> {
+    const userCompanies = await prisma.company.findMany({
+      where: {
+        users: {
+          some: {
+            userId: userId
+          }
+        }
+      },
+      orderBy: { code: 'asc' }
+    });
+
+    return userCompanies;
   }
 
   static async updateCompany(

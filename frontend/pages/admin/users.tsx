@@ -1,4 +1,4 @@
-// frontend/pages/admin/users.tsx - COM PROTEÇÃO DE ACESSO
+// frontend/pages/admin/users.tsx - VERSÃO FINAL SEM ERRO 403
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
@@ -7,10 +7,10 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/ui/Breadcrumb'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { AccessGuard } from '@/components/ui/AccessGuard' // ✅ NOVO IMPORT
+import { AccessGuard } from '@/components/ui/AccessGuard'
 import { useToast } from '@/components/ui/ToastContext'
-import { usePermissions } from '@/hooks/usePermissions' // ✅ NOVO IMPORT
-import { Plus, Users, Edit2, Trash2 } from 'lucide-react'
+import { usePermissions } from '@/hooks/usePermissions'
+import { Plus, Users, Edit2, Trash2, AlertCircle, Building2 } from 'lucide-react'
 import api from '@/lib/api'
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
@@ -37,13 +37,14 @@ interface Company {
 export default function UsersPage() {
   const confirmation = useConfirmation();
   const { userRole } = useAuth();
-  const { canManageUsers, isAdmin } = usePermissions(); // ✅ USAR HOOK DE PERMISSÕES
+  const { canManageUsers, isAdmin } = usePermissions();
   const { addToast } = useToast();
 
   const [users, setUsers] = useState<User[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [companiesError, setCompaniesError] = useState<string | null>(null);
 
   // Form states
   const [showForm, setShowForm] = useState(false);
@@ -59,7 +60,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
-    fetchCompanies();
+    fetchCompanies(); // ✅ AGORA SUPERUSER PODE FAZER ESTA REQUISIÇÃO
   }, []);
 
   async function fetchUsers() {
@@ -81,12 +82,29 @@ export default function UsersPage() {
     try {
       const response = await api.get('/companies');
       setCompanies(response.data);
-    } catch (err) {
-      console.error('Erro ao carregar empresas:', err);
+      setCompaniesError(null);
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        setCompaniesError('Sem permissão para listar empresas.');
+        console.warn('Usuário sem permissão para acessar empresas');
+      } else {
+        console.error('Erro ao carregar empresas:', err);
+        setCompaniesError('Erro ao carregar lista de empresas');
+      }
     }
   }
 
   function openNewForm() {
+    if (companies.length === 0 && !companiesError) {
+      addToast('Carregando lista de empresas...', 'error');
+      return;
+    }
+    
+    if (companiesError) {
+      addToast('Não é possível criar usuários sem acesso à lista de empresas', 'error');
+      return;
+    }
+
     setEditingUser(null);
     setFormData({
       name: '',
@@ -103,7 +121,7 @@ export default function UsersPage() {
     setFormData({
       name: user.name,
       email: user.email,
-      password: '', // Always empty for editing
+      password: '',
       newRole: user.role,
       companyId: user.companies[0]?.company.id.toString() || ''
     });
@@ -123,30 +141,40 @@ export default function UsersPage() {
   }
 
   async function handleSubmit() {
-    if (!formData.name.trim() || !formData.email.trim() || !formData.companyId) {
-      addToast('Preencha todos os campos obrigatórios', 'error');
+    if (!formData.name.trim() || !formData.email.trim()) {
+      addToast('Nome e email são obrigatórios', 'error');
       return;
     }
 
-    if (!editingUser && !formData.password) {
-      addToast('Senha é obrigatória para novos usuários', 'error');
-      return;
+    if (!editingUser) {
+      if (!formData.password) {
+        addToast('Senha é obrigatória para novos usuários', 'error');
+        return;
+      }
+      
+      if (!formData.companyId && companies.length > 0) {
+        addToast('Selecione uma empresa para o usuário', 'error');
+        return;
+      }
+      
+      if (companies.length === 0) {
+        addToast('Não é possível criar usuários sem empresas disponíveis', 'error');
+        return;
+      }
     }
 
     setFormLoading(true);
 
     try {
       if (editingUser) {
-        // Editing existing user
         const { password, ...updateDataWithoutPassword } = formData;
         const updateData = formData.password 
-          ? { ...formData, companyId: Number(formData.companyId) }
-          : { ...updateDataWithoutPassword, companyId: Number(formData.companyId) };
+          ? { ...formData, companyId: formData.companyId ? Number(formData.companyId) : null }
+          : { ...updateDataWithoutPassword, companyId: formData.companyId ? Number(formData.companyId) : null };
 
         await api.put(`/users/${editingUser.id}`, updateData);
         addToast('Usuário atualizado com sucesso', 'success');
       } else {
-        // Creating new user
         await api.post('/users', {
           name: formData.name,
           email: formData.email,
@@ -180,7 +208,6 @@ export default function UsersPage() {
           await api.delete(`/users/${user.id}`);
           addToast('Usuário excluído com sucesso', 'success');
           
-          // If we were editing this user, close the form
           if (editingUser?.id === user.id) {
             closeForm();
           }
@@ -188,7 +215,7 @@ export default function UsersPage() {
           fetchUsers();
         } catch (err: any) {
           addToast(err.response?.data?.error || 'Erro ao excluir usuário', 'error');
-          throw err; // Re-throw to keep modal open on error
+          throw err;
         }
       }
     );
@@ -201,7 +228,6 @@ export default function UsersPage() {
         { label: 'Usuários' }
       ]} />
 
-      {/* ✅ PROTEÇÃO DE ACESSO - APENAS SUPERUSER E ADMIN */}
       <AccessGuard requiredRole="SUPERUSER">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-semibold text-white">Usuários</h1>
@@ -216,7 +242,53 @@ export default function UsersPage() {
           </Button>
         </div>
 
-        {/* Inline form */}
+        {/* ✅ INFO SOBRE ACESSO LIMITADO PARA SUPERUSER */}
+        {userRole === 'SUPERUSER' && (
+          <Card className="mb-6 border-blue-600/30 bg-blue-900/10">
+            <div className="flex items-start gap-3">
+              <Building2 size={20} className="text-blue-400 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-blue-300 mb-1">Acesso como Superusuário</h3>
+                <p className="text-sm text-blue-200">
+                  Você pode gerenciar usuários das empresas às quais tem acesso. 
+                  Para gerenciar todas as empresas, é necessário perfil de Administrador.
+                </p>
+                {companies.length > 0 && (
+                  <div className="mt-3">
+                    <span className="text-xs text-blue-300 font-medium">Empresas acessíveis:</span>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {companies.map(company => (
+                        <span key={company.id} className="px-2 py-1 bg-blue-700 text-blue-100 text-xs rounded-full">
+                          {company.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Aviso se houver erro ao carregar empresas */}
+        {companiesError && (
+          <Card className="mb-6 border-yellow-600 bg-yellow-900/20">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={20} className="text-yellow-400 mt-0.5" />
+              <div>
+                <h3 className="font-medium text-yellow-300 mb-1">Acesso Limitado</h3>
+                <p className="text-sm text-yellow-200">
+                  {companiesError}
+                </p>
+                <p className="text-xs text-yellow-300 mt-2">
+                  Você pode editar usuários existentes, mas não criar novos usuários.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Formulário Inline */}
         {showForm && (
           <Card className="mb-6 border-2 border-[#2563eb]">
             <div className="space-y-4">
@@ -266,37 +338,43 @@ export default function UsersPage() {
                   >
                     <option value="USER">Usuário</option>
                     <option value="SUPERUSER">Superusuário</option>
-                    {/* ✅ APENAS ADMIN PODE CRIAR OUTROS ADMINS */}
                     {isAdmin() && <option value="ADMIN">Administrador</option>}
                   </select>
                 </div>
               </div>
 
+              {/* Campo de Empresa */}
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-300">
-                  Empresa
+                  Empresa {!editingUser && '*'}
                 </label>
-                <select
-                  value={formData.companyId}
-                  onChange={(e) => setFormData({...formData, companyId: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-                  required
-                  disabled={formLoading}
-                >
-                  <option value="">-- Selecione uma empresa --</option>
-                  {companies.map((company) => (
-                    <option key={company.id} value={company.id}>
-                      {company.name}
-                    </option>
-                  ))}
-                </select>
+                {companies.length > 0 ? (
+                  <select
+                    value={formData.companyId}
+                    onChange={(e) => setFormData({...formData, companyId: e.target.value})}
+                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    required={!editingUser}
+                    disabled={formLoading}
+                  >
+                    <option value="">-- Selecione uma empresa --</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-400 rounded-lg">
+                    {companiesError || 'Nenhuma empresa disponível'}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3">
                 <Button 
                   variant="accent" 
                   onClick={handleSubmit}
-                  disabled={formLoading}
+                  disabled={formLoading || (!editingUser && companies.length === 0)}
                 >
                   {formLoading 
                     ? 'Salvando...' 
@@ -335,14 +413,16 @@ export default function UsersPage() {
             <div className="text-center py-10">
               <Users size={48} className="mx-auto text-gray-400 mb-4" />
               <p className="text-gray-400 mb-4">Nenhum usuário encontrado</p>
-              <Button 
-                variant="accent" 
-                onClick={openNewForm}
-                className="inline-flex items-center gap-2"
-              >
-                <Plus size={16} />
-                Criar Primeiro Usuário
-              </Button>
+              {!companiesError && (
+                <Button 
+                  variant="accent" 
+                  onClick={openNewForm}
+                  className="inline-flex items-center gap-2"
+                >
+                  <Plus size={16} />
+                  Criar Primeiro Usuário
+                </Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -376,7 +456,6 @@ export default function UsersPage() {
                           >
                             <Edit2 size={16} />
                           </button>
-                          {/* ✅ APENAS ADMIN PODE EXCLUIR USUÁRIOS */}
                           {isAdmin() && (
                             <button
                               onClick={() => handleDelete(user)}

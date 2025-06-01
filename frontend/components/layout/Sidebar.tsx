@@ -178,14 +178,6 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       ],
     },
     {
-      icon: <Shield size={20} />,
-      label: 'Exemplo RBAC',
-      subItems: [
-        { label: 'Demonstração Completa', href: '/example-integration' },
-      ],
-      requiredRole: 'USER' // Todos podem ver o exemplo
-    },
-    {
       title: 'Administração',
       type: 'title',
       requiredRole: 'SUPERUSER' // ✅ Seção só aparece para SUPERUSER ou ADMIN

@@ -24,6 +24,7 @@ networks:
   #     timeout: 5s
   #     retries: 3
 
+services: 
   # === Backend (APENAS DEPENDE DO BANCO AGORA) ===
   backend:
     build:

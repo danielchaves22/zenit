@@ -1,6 +1,10 @@
 # docker-compose.yml - REDIS DESABILITADO
 version: '3.8'
 
+networks:
+  monitoring:
+    driver: bridge
+
 services:
   # === Banco de Dados Postgres (DEVE SUBIR PRIMEIRO) ===
   db:

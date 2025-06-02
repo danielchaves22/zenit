@@ -119,7 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function login(email: string, password: string) {
+    console.log('🔐 [AUTH] Starting login process...');
+    console.log('🔐 [AUTH] Email:', email);
+    
     try {
+      console.log('🔐 [AUTH] Making API call to /auth/login');
       const res = await api.post('/auth/login', { 
         email: email.toLowerCase().trim(), 
         password 
@@ -140,7 +144,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log('Login successful', { userId: userData.id, timestamp: new Date().toISOString() });
       
     } catch (error: any) {
-      console.error('Login error:', error.response?.data || error.message);
+      console.error('🔐 [AUTH] Login failed:', error);
+      console.error('🔐 [AUTH] Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method
+      });
       
       if (error.response?.status === 429) {
         throw new Error('Muitas tentativas de login. Tente novamente em alguns minutos.');

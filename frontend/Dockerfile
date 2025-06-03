@@ -4,6 +4,11 @@ FROM node:20-alpine
 # 2. Define a working directory
 WORKDIR /app
 
+ARG NEXT_PUBLIC_API_URL
+ARG NODE_ENV=production
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NODE_ENV=$NODE_ENV
+
 # 3. Copia package.json e lockfile 
 COPY package*.json ./
 

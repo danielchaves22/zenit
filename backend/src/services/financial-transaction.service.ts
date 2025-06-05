@@ -235,11 +235,27 @@ export default class FinancialTransactionService {
       const currentBalance = parseDecimal(fromAccount.balance);
       const transactionAmount = parseDecimal(amount);
       
-      // ✅ CRITICAL: Strict balance validation
-      if (currentBalance.lt(transactionAmount)) {
-        throw new Error(
-          `Insufficient balance. Available: ${currentBalance.toFixed(2)}, Required: ${transactionAmount.toFixed(2)}`
-        );
+      // ✅ VERIFICAR SE PERMITE SALDO NEGATIVO
+      if (!fromAccount.allowNegativeBalance) {
+        // ✅ VALIDAÇÃO TRADICIONAL - não permite negativo
+        if (currentBalance.lt(transactionAmount)) {
+          throw new Error(
+            `Insufficient balance. Available: ${currentBalance.toFixed(2)}, Required: ${transactionAmount.toFixed(2)}`
+          );
+        }
+      } else {
+        // ✅ PERMITE NEGATIVO - mas ainda logamos para auditoria
+        const newBalance = currentBalance.minus(transactionAmount);
+        if (newBalance.lt(0)) {
+          logger.warn('Transaction creating negative balance', {
+            accountId: fromAccount.id,
+            accountName: fromAccount.name,
+            currentBalance: currentBalance.toFixed(2),
+            transactionAmount: transactionAmount.toFixed(2),
+            newBalance: newBalance.toFixed(2),
+            allowNegativeBalance: fromAccount.allowNegativeBalance
+          });
+        }
       }
     }
     
@@ -252,10 +268,26 @@ export default class FinancialTransactionService {
       const currentBalance = parseDecimal(fromAccount.balance);
       const transferAmount = parseDecimal(amount);
       
-      if (currentBalance.lt(transferAmount)) {
-        throw new Error(
-          `Insufficient balance for transfer. Available: ${currentBalance.toFixed(2)}, Required: ${transferAmount.toFixed(2)}`
-        );
+      // ✅ VERIFICAR SE PERMITE SALDO NEGATIVO PARA TRANSFERÊNCIAS
+      if (!fromAccount.allowNegativeBalance) {
+        if (currentBalance.lt(transferAmount)) {
+          throw new Error(
+            `Insufficient balance for transfer. Available: ${currentBalance.toFixed(2)}, Required: ${transferAmount.toFixed(2)}`
+          );
+        }
+      } else {
+        // ✅ PERMITE NEGATIVO - mas ainda logamos para auditoria
+        const newBalance = currentBalance.minus(transferAmount);
+        if (newBalance.lt(0)) {
+          logger.warn('Transfer creating negative balance', {
+            accountId: fromAccount.id,
+            accountName: fromAccount.name,
+            currentBalance: currentBalance.toFixed(2),
+            transferAmount: transferAmount.toFixed(2),
+            newBalance: newBalance.toFixed(2),
+            allowNegativeBalance: fromAccount.allowNegativeBalance
+          });
+        }
       }
     }
   }
@@ -319,23 +351,34 @@ export default class FinancialTransactionService {
     
     for (const accountId of accountIds) {
       const result = await tx.$queryRaw`
-        SELECT balance FROM "FinancialAccount" WHERE id = ${accountId}
+        SELECT balance, "allowNegativeBalance", type, name 
+        FROM "FinancialAccount" 
+        WHERE id = ${accountId}
       ` as any[];
       
       if (!result || result.length === 0) {
         throw new Error(`Balance verification failed: Account ${accountId} not found`);
       }
       
-      const balance = parseDecimal(result[0].balance);
+      const account = result[0];
+      const balance = parseDecimal(account.balance);
       
-      // ✅ CRITICAL: Detect impossible negative balances for checking accounts
-      // (Credit cards can be negative, but checking/savings cannot)
-      const accountType = await tx.$queryRaw`
-        SELECT type FROM "FinancialAccount" WHERE id = ${accountId}
-      ` as any[];
+      // ✅ SÓ VERIFICAR NEGATIVOS SE A CONTA NÃO PERMITE
+      if (!account.allowNegativeBalance && balance.lt(0)) {
+        throw new Error(
+          `CRITICAL: Account ${accountId} (${account.name}) has negative balance: ${balance.toFixed(2)} but allowNegativeBalance is false`
+        );
+      }
       
-      if (accountType[0]?.type === 'CHECKING' && balance.lt(0)) {
-        throw new Error(`CRITICAL: Checking account ${accountId} has negative balance: ${balance.toFixed(2)}`);
+      // ✅ LOG PARA AUDITORIA DE SALDOS NEGATIVOS PERMITIDOS
+      if (account.allowNegativeBalance && balance.lt(0)) {
+        logger.info('Account with authorized negative balance', {
+          accountId,
+          accountName: account.name,
+          accountType: account.type,
+          balance: balance.toFixed(2),
+          allowNegativeBalance: account.allowNegativeBalance
+        });
       }
     }
   }
@@ -589,6 +632,7 @@ export default class FinancialTransactionService {
     search?: string;
     page?: number;
     pageSize?: number;
+    accessFilter?: any; // ✅ NOVO PARÂMETRO
   }): Promise<{ data: FinancialTransaction[]; total: number; pages: number }> {
     const {
       companyId,
@@ -600,7 +644,8 @@ export default class FinancialTransactionService {
       categoryId,
       search,
       page = 1,
-      pageSize = 20
+      pageSize = 20,
+      accessFilter // ✅ NOVO PARÂMETRO
     } = params;
 
     const where: Prisma.FinancialTransactionWhereInput = {
@@ -621,7 +666,9 @@ export default class FinancialTransactionService {
           { description: { contains: search, mode: 'insensitive' } },
           { notes: { contains: search, mode: 'insensitive' } }
         ]
-      })
+      }),
+      // ✅ APLICAR FILTRO DE PERMISSÕES SE FORNECIDO
+      ...(accessFilter && { AND: [accessFilter] })
     };
 
     const [data, total] = await Promise.all([
@@ -661,7 +708,8 @@ export default class FinancialTransactionService {
   static async getFinancialSummary(
     companyId: number,
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    accessibleAccountIds?: number[] // ✅ NOVO PARÂMETRO OPCIONAL
   ): Promise<{
     income: number;
     expense: number;
@@ -669,48 +717,70 @@ export default class FinancialTransactionService {
     accounts: { id: number; name: string; balance: any; type: string }[];
     topCategories: { id: number; name: string; amount: number; color: string }[];
   }> {
-    // CACHE: Try to get from cache first
-    const cacheKey = cacheService.getDashboardKey(
-      companyId,
-      startDate.toISOString(),
-      endDate.toISOString()
-    );
-    
-    const cached = await cacheService.get<{
-      income: number;
-      expense: number;
-      balance: number;
-      accounts: { id: number; name: string; balance: any; type: string }[];
-      topCategories: { id: number; name: string; amount: number; color: string }[];
-    }>(cacheKey);
+    // CACHE: Try to get from cache first (se não houver filtro de contas específicas)
+    let cacheKey: string | null = null;
+    if (!accessibleAccountIds || accessibleAccountIds.length === 0) {
+      cacheKey = cacheService.getDashboardKey(
+        companyId,
+        startDate.toISOString(),
+        endDate.toISOString()
+      );
+      
+      const cached = await cacheService.get<{
+        income: number;
+        expense: number;
+        balance: number;
+        accounts: { id: number; name: string; balance: any; type: string }[];
+        topCategories: { id: number; name: string; amount: number; color: string }[];
+      }>(cacheKey);
 
-    if (cached) {
-      logger.debug('Financial summary served from cache', { companyId, cacheKey });
-      return cached;
+      if (cached) {
+        logger.debug('Financial summary served from cache', { companyId, cacheKey });
+        return cached;
+      }
     }
 
-    // ORIGINAL LOGIC (unchanged)
+    // ✅ FILTRAR CONTAS POR PERMISSÕES
+    const accountWhere: any = { 
+      companyId, 
+      isActive: true 
+    };
+    
+    if (accessibleAccountIds && accessibleAccountIds.length > 0) {
+      accountWhere.id = { in: accessibleAccountIds };
+    }
+
     const accounts = await prisma.financialAccount.findMany({
-      where: { companyId, isActive: true },
+      where: accountWhere,
       select: { id: true, name: true, balance: true, type: true }
     });
 
+    // ✅ FILTRAR TRANSAÇÕES POR CONTAS ACESSÍVEIS
+    const transactionWhere: any = {
+      companyId,
+      status: 'COMPLETED',
+      date: { gte: startDate, lte: endDate }
+    };
+
+    if (accessibleAccountIds && accessibleAccountIds.length > 0) {
+      transactionWhere.OR = [
+        { fromAccountId: { in: accessibleAccountIds } },
+        { toAccountId: { in: accessibleAccountIds } }
+      ];
+    }
+
     const incomeAggregate = await prisma.financialTransaction.aggregate({
       where: {
-        companyId,
-        type: 'INCOME',
-        status: 'COMPLETED',
-        date: { gte: startDate, lte: endDate }
+        ...transactionWhere,
+        type: 'INCOME'
       },
       _sum: { amount: true }
     });
 
     const expenseAggregate = await prisma.financialTransaction.aggregate({
       where: {
-        companyId,
-        type: 'EXPENSE',
-        status: 'COMPLETED',
-        date: { gte: startDate, lte: endDate }
+        ...transactionWhere,
+        type: 'EXPENSE'
       },
       _sum: { amount: true }
     });
@@ -718,10 +788,8 @@ export default class FinancialTransactionService {
     const topExpenseCategories = await prisma.financialTransaction.groupBy({
       by: ['categoryId'],
       where: {
-        companyId,
+        ...transactionWhere,
         type: 'EXPENSE',
-        status: 'COMPLETED',
-        date: { gte: startDate, lte: endDate },
         categoryId: { not: null }
       },
       _sum: { amount: true },
@@ -762,10 +830,12 @@ export default class FinancialTransactionService {
       topCategories
     };
 
-    // CACHE: Store for 10 minutes
-    await cacheService.set(cacheKey, result, 600);
+    // CACHE: Store for 10 minutes (apenas se não houver filtro específico)
+    if (cacheKey) {
+      await cacheService.set(cacheKey, result, 600);
+      logger.info('Financial summary cached', { companyId, cacheKey });
+    }
     
-    logger.info('Financial summary cached', { companyId, cacheKey });
     return result;
   }
 

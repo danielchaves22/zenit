@@ -1,4 +1,4 @@
-// frontend/pages/admin/users.tsx - VERSÃO FINAL SEM ERRO 403
+// frontend/pages/admin/users.tsx - VERSÃO COM PERMISSÕES DE CONTAS
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
@@ -8,12 +8,13 @@ import { Button } from '@/components/ui/Button'
 import { Breadcrumb } from '@/components/ui/Breadcrumb'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { AccessGuard } from '@/components/ui/AccessGuard'
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal'
+import { useConfirmation } from '@/hooks/useConfirmation'
 import { useToast } from '@/components/ui/ToastContext'
 import { usePermissions } from '@/hooks/usePermissions'
-import { Plus, Users, Edit2, Trash2, AlertCircle, Building2 } from 'lucide-react'
+import AccountPermissionsManager from '@/components/admin/AccountPermissionsManager'
+import { Plus, Users, Edit2, Trash2, AlertCircle, Building2, Shield } from 'lucide-react'
 import api from '@/lib/api'
-import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { useConfirmation } from '@/hooks/useConfirmation';
 
 interface User {
   id: number
@@ -58,9 +59,13 @@ export default function UsersPage() {
     companyId: ''
   });
 
+  // ✅ ESTADOS PARA PERMISSÕES DE CONTAS
+  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
+  const [grantAllAccess, setGrantAllAccess] = useState(false);
+
   useEffect(() => {
     fetchUsers();
-    fetchCompanies(); // ✅ AGORA SUPERUSER PODE FAZER ESTA REQUISIÇÃO
+    fetchCompanies();
   }, []);
 
   async function fetchUsers() {
@@ -113,6 +118,9 @@ export default function UsersPage() {
       newRole: 'USER',
       companyId: companies.length > 0 ? companies[0].id.toString() : ''
     });
+    // ✅ RESETAR PERMISSÕES
+    setSelectedAccountIds([]);
+    setGrantAllAccess(false);
     setShowForm(true);
   }
 
@@ -125,6 +133,9 @@ export default function UsersPage() {
       newRole: user.role,
       companyId: user.companies[0]?.company.id.toString() || ''
     });
+    // ✅ PERMISSÕES SERÃO CARREGADAS PELO COMPONENTE AccountPermissionsManager
+    setSelectedAccountIds([]);
+    setGrantAllAccess(false);
     setShowForm(true);
   }
 
@@ -138,7 +149,33 @@ export default function UsersPage() {
       newRole: 'USER',
       companyId: ''
     });
+    // ✅ LIMPAR PERMISSÕES
+    setSelectedAccountIds([]);
+    setGrantAllAccess(false);
   }
+
+  // ✅ HANDLER PARA MUDANÇAS NAS PERMISSÕES
+  const handlePermissionsChange = (accountIds: number[], grantAll: boolean) => {
+    setSelectedAccountIds(accountIds);
+    setGrantAllAccess(grantAll);
+  };
+
+  // ✅ FUNÇÃO PARA CONFIRMAR SALVAMENTO SEM PERMISSÕES
+  const confirmSaveWithoutPermissions = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      confirmation.confirm(
+        {
+          title: 'Usuário sem Permissões de Acesso',
+          message: `O usuário "${formData.name}" será criado sem acesso a nenhuma conta financeira. Ele não conseguirá visualizar dashboard, transações ou relatórios até que permissões sejam concedidas. Deseja continuar?`,
+          confirmText: 'Criar Mesmo Assim',
+          cancelText: 'Voltar e Configurar',
+          type: 'warning'
+        },
+        () => resolve(true),
+        () => resolve(false)
+      );
+    });
+  };
 
   async function handleSubmit() {
     if (!formData.name.trim() || !formData.email.trim()) {
@@ -161,27 +198,57 @@ export default function UsersPage() {
         addToast('Não é possível criar usuários sem empresas disponíveis', 'error');
         return;
       }
+
+      // ✅ CONFIRMAR SE É USER SEM PERMISSÕES
+      if (formData.newRole === 'USER' && selectedAccountIds.length === 0) {
+        const shouldContinue = await confirmSaveWithoutPermissions();
+        if (!shouldContinue) return;
+      }
     }
 
     setFormLoading(true);
 
     try {
       if (editingUser) {
+        // ✅ EDIÇÃO - apenas dados básicos, permissões são gerenciadas separadamente
         const { password, ...updateDataWithoutPassword } = formData;
         const updateData = formData.password 
           ? { ...formData, companyId: formData.companyId ? Number(formData.companyId) : null }
           : { ...updateDataWithoutPassword, companyId: formData.companyId ? Number(formData.companyId) : null };
 
         await api.put(`/users/${editingUser.id}`, updateData);
+        
+        // ✅ ATUALIZAR PERMISSÕES SE FOR USER
+        if (formData.newRole === 'USER') {
+          if (grantAllAccess) {
+            await api.post(`/users/${editingUser.id}/account-access/grant-all`);
+          } else {
+            await api.post(`/users/${editingUser.id}/account-access/bulk-update`, {
+              accountIds: selectedAccountIds
+            });
+          }
+        }
+        
         addToast('Usuário atualizado com sucesso', 'success');
       } else {
-        await api.post('/users', {
+        // ✅ CRIAÇÃO COM PERMISSÕES
+        const payload: any = {
           name: formData.name,
           email: formData.email,
           password: formData.password,
           newRole: formData.newRole,
           companyId: Number(formData.companyId),
-        });
+        };
+
+        // ✅ ADICIONAR PERMISSÕES APENAS PARA USER
+        if (formData.newRole === 'USER') {
+          payload.accountPermissions = {
+            grantAllAccess,
+            specificAccountIds: grantAllAccess ? [] : selectedAccountIds
+          };
+        }
+
+        await api.post('/users', payload);
         addToast('Usuário criado com sucesso', 'success');
       }
 
@@ -221,6 +288,11 @@ export default function UsersPage() {
     );
   }
 
+  // ✅ VERIFICAR SE DEVE MOSTRAR SEÇÃO DE PERMISSÕES
+  const shouldShowPermissions = () => {
+    return formData.newRole === 'USER';
+  };
+
   return (
     <DashboardLayout>
       <Breadcrumb items={[
@@ -242,7 +314,7 @@ export default function UsersPage() {
           </Button>
         </div>
 
-        {/* ✅ INFO SOBRE ACESSO LIMITADO PARA SUPERUSER */}
+        {/* Info sobre acesso limitado para SUPERUSER */}
         {userRole === 'SUPERUSER' && (
           <Card className="mb-6 border-blue-600/30 bg-blue-900/10">
             <div className="flex items-start gap-3">
@@ -288,14 +360,15 @@ export default function UsersPage() {
           </Card>
         )}
 
-        {/* Formulário Inline */}
+        {/* ✅ FORMULÁRIO EXPANDIDO COM PERMISSÕES */}
         {showForm && (
-          <Card className="mb-6 border-2 border-[#2563eb]">
-            <div className="space-y-4">
+          <Card className="mb-6 border-2 border-accent">
+            <div className="space-y-6">
               <h3 className="text-lg font-medium text-white">
                 {editingUser ? `Editando: ${editingUser.name}` : 'Novo Usuário'}
               </h3>
               
+              {/* Dados Básicos */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
                   label="Nome"
@@ -333,7 +406,7 @@ export default function UsersPage() {
                   <select
                     value={formData.newRole}
                     onChange={(e) => setFormData({...formData, newRole: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
                     disabled={formLoading}
                   >
                     <option value="USER">Usuário</option>
@@ -352,7 +425,7 @@ export default function UsersPage() {
                   <select
                     value={formData.companyId}
                     onChange={(e) => setFormData({...formData, companyId: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
                     required={!editingUser}
                     disabled={formLoading}
                   >
@@ -370,7 +443,25 @@ export default function UsersPage() {
                 )}
               </div>
 
-              <div className="flex gap-3">
+              {/* ✅ SEÇÃO DE PERMISSÕES DE CONTAS (apenas para USER) */}
+              {shouldShowPermissions() && (
+                <div className="border-t border-gray-700 pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Shield size={18} className="text-accent" />
+                    <h4 className="text-md font-medium text-white">Permissões de Acesso Financeiro</h4>
+                  </div>
+                  
+                  <AccountPermissionsManager
+                    userId={editingUser?.id || null}
+                    selectedAccountIds={selectedAccountIds}
+                    onPermissionsChange={handlePermissionsChange}
+                    disabled={formLoading}
+                    showCurrentPermissions={!!editingUser}
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4 border-t border-gray-700">
                 <Button 
                   variant="accent" 
                   onClick={handleSubmit}
@@ -395,6 +486,7 @@ export default function UsersPage() {
           </Card>
         )}
 
+        {/* Lista de Usuários - mantida igual */}
         <Card>
           {loading ? (
             <div className="space-y-3">
@@ -442,7 +534,7 @@ export default function UsersPage() {
                       key={user.id} 
                       className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
                         editingUser?.id === user.id 
-                          ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
+                          ? 'bg-accent/10 border-accent/30' 
                           : ''
                       }`}
                     >
@@ -450,7 +542,7 @@ export default function UsersPage() {
                         <div className="flex items-center gap-1 justify-center">
                           <button
                             onClick={() => openEditForm(user)}
-                            className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
+                            className="p-1 text-gray-300 hover:text-accent transition-colors"
                             title="Editar"
                             disabled={formLoading}
                           >

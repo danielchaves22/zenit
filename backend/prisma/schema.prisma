@@ -52,7 +52,9 @@ model User {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   financialTransactions FinancialTransaction[]
-  recurringTransactions RecurringTransaction[] // ✅ ADICIONADO - Relação inversa
+  recurringTransactions RecurringTransaction[]
+  financialAccountAccess UserFinancialAccountAccess[]
+  grantedPermissions     UserFinancialAccountAccess[] @relation("GrantedPermissions")
 }
 
 model Company {
@@ -69,6 +71,7 @@ model Company {
   financialTransactions FinancialTransaction[]
   financialTags       FinancialTag[]
   recurringTransactions RecurringTransaction[]
+  userFinancialAccountAccess UserFinancialAccountAccess[]
 }
 
 model CompanyGroup {
@@ -99,6 +102,7 @@ model FinancialAccount {
   bankName          String?
   isActive          Boolean            @default(true)
   isDefault         Boolean            @default(false)
+  allowNegativeBalance Boolean         @default(false)
   companyId         Int
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   recurringOutgoing RecurringTransaction[] @relation("RecurringFromAccount")
@@ -109,6 +113,7 @@ model FinancialAccount {
   // Relações
   outgoingTransactions FinancialTransaction[] @relation("FromAccount")
   incomingTransactions FinancialTransaction[] @relation("ToAccount")
+  userAccess            UserFinancialAccountAccess[]
 
   @@unique([name, companyId])
   @@unique([companyId, isDefault], name: "unique_default_account_per_company") // ✅ CONSTRAINT
@@ -233,4 +238,28 @@ model FinancialTag {
 
   @@unique([name, companyId])
   @@index([companyId])
+}
+
+model UserFinancialAccountAccess {
+  id                   Int              @id @default(autoincrement())
+  userId               Int
+  financialAccountId   Int
+  companyId            Int              // Garantir que só pode dar acesso a contas da mesma empresa
+  grantedBy            Int              // Quem concedeu a permissão
+  grantedAt            DateTime         @default(now())
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  
+  // Relações
+  user                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  financialAccount     FinancialAccount @relation(fields: [financialAccountId], references: [id], onDelete: Cascade)
+  company              Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  grantedByUser        User             @relation("GrantedPermissions", fields: [grantedBy], references: [id])
+
+  // Constraints
+  @@unique([userId, financialAccountId], name: "unique_user_account_access")
+  @@index([userId])
+  @@index([financialAccountId])
+  @@index([companyId])
+  @@index([grantedBy])
 }

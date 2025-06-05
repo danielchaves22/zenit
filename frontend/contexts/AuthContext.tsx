@@ -138,10 +138,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Cookie com configuração MUITO específica e segura
       setSecureCookie('zenit_token', newToken, 60 * 60 * 24 * 7); // 7 dias
 
+      console.log(userData);
+
       setToken(newToken);
       setUser(userData);
-
-      console.log('Login successful', { userId: userData.id, timestamp: new Date().toISOString() });
       
     } catch (error: any) {
       console.error('🔐 [AUTH] Login failed:', error);

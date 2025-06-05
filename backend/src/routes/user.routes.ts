@@ -14,12 +14,16 @@ import {
   createUserSchema,
   updateUserSchema
 } from '../validators/user.validator';
+import { userCreationWithPermissionsSchema } from '../validators/user-account-access.validator';
+
+// ✅ IMPORTAR ROTAS DE PERMISSÃO
+import userAccountAccessRoutes from './user-account-access.routes';
 
 const router = Router();
 
 router.post(
   '/',
-  validate(createUserSchema),
+  validate(userCreationWithPermissionsSchema), // ✅ NOVO VALIDATOR COM PERMISSÕES
   authorize('create', 'user'),
   createUser
 );
@@ -32,5 +36,8 @@ router.put(
   updateUser
 );
 router.delete('/:id', authorize('delete', 'user'), deleteUser);
+
+// ✅ ADICIONAR ROTAS DE PERMISSÃO DE CONTA
+router.use('/', userAccountAccessRoutes);
 
 export default router;

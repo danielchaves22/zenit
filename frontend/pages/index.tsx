@@ -12,20 +12,6 @@ export default function HomePage() {
   const { user } = useAuth();
   const { getRoleLabel, currentRole, canManageUsers, canManageCompanies } = usePermissions();
 
-  // ✅ DADOS DINÂMICOS BASEADOS NO ROLE
-  const getWelcomeMessage = () => {
-    switch (currentRole) {
-      case 'ADMIN':
-        return 'Tenha controle total do sistema e gerencie todos os aspectos da plataforma.';
-      case 'SUPERUSER':
-        return 'Gerencie usuários e configure o sistema para sua empresa.';
-      case 'USER':
-        return 'Acesse todas as funcionalidades financeiras para gerenciar suas finanças.';
-      default:
-        return 'Bem-vindo ao sistema de gestão financeira.';
-    }
-  };
-
   const getQuickStats = () => {
     const stats = [
       {
@@ -67,7 +53,7 @@ export default function HomePage() {
 
   return (
     <DashboardLayout title="Dashboard">
-      <Breadcrumb items={[{ label: 'Dashboard' }]} />
+      <Breadcrumb items={[{ label: 'Início' }]} />
 
       <div className="space-y-8">
         {/* ✅ CARD DE BOAS-VINDAS PERSONALIZADO */}
@@ -87,73 +73,18 @@ export default function HomePage() {
                     <p className="text-accent font-medium">{getRoleLabel()}</p>
                   </div>
                 </div>
-                
-                <p className="text-gray-300 mb-4 max-w-2xl">
-                  {getWelcomeMessage()}
-                </p>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {getQuickStats().map((stat, index) => (
-                    <div key={index} className={`p-3 rounded-lg ${stat.bgColor}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className={stat.color}>
-                          {stat.icon}
-                        </div>
-                        <span className="text-sm text-gray-400">{stat.label}</span>
-                      </div>
-                      <div className="text-xl font-bold text-white">{stat.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="hidden lg:block">
-                <div className="p-4 bg-[#1e2126] rounded-lg border border-gray-700">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Shield size={16} className="text-accent" />
-                    <span className="text-sm font-medium text-white">Informações da Conta</span>
+
+                {/* ✅ ACESSO RÁPIDO */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-white">Acesso Rápido</h3>
                   </div>
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <span className="text-gray-400">Email:</span>
-                      <div className="text-white font-medium">{user?.email}</div>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Empresa:</span>
-                      <div className="text-white font-medium">{user?.company?.name}</div>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Perfil:</span>
-                      <div className="text-accent font-medium">{getRoleLabel()}</div>
-                    </div>
-                  </div>
+                  <QuickNavigation category="financeiro" />
                 </div>
               </div>
             </div>
           </div>
         </Card>
-
-        {/* ✅ ACESSO RÁPIDO */}
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white">Acesso Rápido</h3>
-            <span className="text-sm text-gray-400">
-              Funcionalidades mais utilizadas
-            </span>
-          </div>
-          <QuickNavigation category="financeiro" />
-        </div>
-
-        {/* ✅ NAVEGAÇÃO PRINCIPAL COMPLETA */}
-        <div>
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-semibold text-white">Todas as Funcionalidades</h3>
-            <span className="text-sm text-gray-400">
-              Organizadas por categoria
-            </span>
-          </div>
-          <MainNavigation />
-        </div>
 
         {/* ✅ CARD DE AJUDA CONTEXTUAL */}
         <Card className="border-blue-600/30 bg-blue-900/10">

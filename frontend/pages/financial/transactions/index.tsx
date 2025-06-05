@@ -229,7 +229,7 @@ export default function TransactionsListPage() {
   return (
     <DashboardLayout title="Transações">
       <Breadcrumb items={[
-        { label: 'Dashboard', href: '/' },
+        { label: 'Início', href: '/' },
         { label: 'Financeiro' },
         { label: 'Transações' }
       ]} />

@@ -1,5 +1,4 @@
-// backend/src/routes/financial.routes.ts - VERSÃO CORRIGIDA COM RELATÓRIOS
-
+import { requireAccountAccess, requireTransactionAccountAccess } from '../middlewares/financial-access.middleware';
 import { Router } from 'express';
 import { validate } from '../middlewares/validate.middleware';
 import {
@@ -68,14 +67,14 @@ router.get('/defaults', getCompanyDefaults);
 // Rotas de Contas Financeiras
 router.post('/accounts', validate(createAccountSchema), createAccount);
 router.get('/accounts', validate(listAccountsSchema), getAccounts);
-router.get('/accounts/:id', getAccountById);
-router.put('/accounts/:id', validate(updateAccountSchema), updateAccount);
-router.delete('/accounts/:id', deleteAccount);
-router.post('/accounts/:id/adjust-balance', adjustBalance);
+router.get('/accounts/:id', requireAccountAccess(), getAccountById); // ✅ MIDDLEWARE
+router.put('/accounts/:id', requireAccountAccess(), validate(updateAccountSchema), updateAccount); // ✅ MIDDLEWARE
+router.delete('/accounts/:id', requireAccountAccess(), deleteAccount); // ✅ MIDDLEWARE
+router.post('/accounts/:id/adjust-balance', requireAccountAccess(), adjustBalance); // ✅ MIDDLEWARE
 
 // Gerenciar conta padrão
-router.post('/accounts/:id/set-default', setDefaultAccount);
-router.delete('/accounts/:id/set-default', unsetDefaultAccount);
+router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccount); // ✅ MIDDLEWARE
+router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount); // ✅ MIDDLEWARE
 
 // Rotas de Categorias Financeiras
 router.post('/categories', validate(createCategorySchema), createCategory);
@@ -92,10 +91,10 @@ router.delete('/categories/:id/set-default', unsetDefaultCategory);
 router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);
 
 // Rotas de Transações Financeiras
-router.post('/transactions', validate(createTransactionSchema), createTransaction);
+router.post('/transactions', requireTransactionAccountAccess(), validate(createTransactionSchema), createTransaction); // ✅ MIDDLEWARE
 router.get('/transactions', validate(listTransactionsSchema), getTransactions);
 router.get('/transactions/:id', getTransactionById);
-router.put('/transactions/:id', validate(updateTransactionSchema), updateTransaction);
+router.put('/transactions/:id', requireTransactionAccountAccess(), validate(updateTransactionSchema), updateTransaction); // ✅ MIDDLEWARE
 router.patch('/transactions/:id/status', validate(updateTransactionStatusSchema), updateTransactionStatus);
 router.delete('/transactions/:id', deleteTransaction);
 

@@ -19,6 +19,45 @@ interface NavigationItem {
   category?: string;
 }
 
+const quickNavigationItems: NavigationItem[] = [
+  {
+    label: 'Nova Despesa',
+    href: '/financial/transactions/new?type=EXPENSE&locked=true',
+    icon: <TrendingDown size={16} />,
+    description: 'Registrar nova despesa',
+    category: 'financeiro'
+  },
+  {
+    label: 'Nova Receita',
+    href: '/financial/transactions/new?type=INCOME&locked=true',
+    icon: <TrendingUp size={16} />,
+    description: 'Registrar nova receita',
+    category: 'financeiro'
+  },
+  {
+    label: 'Nova Transferência',
+    href: '/financial/transactions/new?type=TRANSFER&locked=true',
+    icon: <ArrowUpDown size={16} />,
+    description: 'Transferir entre contas',
+    category: 'financeiro'
+  },
+  
+  {
+    label: 'Transações',
+    href: '/financial/transactions',
+    icon: <Receipt size={20} />,
+    description: 'Lançamentos financeiros',
+    category: 'financeiro'
+  },
+  {
+    label: 'Dashboard Financeiro',
+    href: '/financial/dashboard',
+    icon: <DollarSign size={20} />,
+    description: 'Resumos e indicadores financeiros',
+    category: 'financeiro'
+  }
+];
+
 // ✅ DEFINIR TODAS AS ROTAS COM SUAS PERMISSÕES
 const navigationItems: NavigationItem[] = [
   // Dashboard Principal
@@ -36,20 +75,6 @@ const navigationItems: NavigationItem[] = [
     href: '/financial/dashboard',
     icon: <DollarSign size={20} />,
     description: 'Resumos e indicadores financeiros',
-    category: 'financeiro'
-  },
-  {
-    label: 'Contas Financeiras',
-    href: '/financial/accounts',
-    icon: <CreditCard size={20} />,
-    description: 'Gerenciar contas bancárias e cartões',
-    category: 'financeiro'
-  },
-  {
-    label: 'Transações',
-    href: '/financial/transactions',
-    icon: <Receipt size={20} />,
-    description: 'Lançamentos financeiros',
     category: 'financeiro'
   },
   {
@@ -71,6 +96,22 @@ const navigationItems: NavigationItem[] = [
     href: '/financial/transactions/new?type=TRANSFER&locked=true',
     icon: <ArrowUpDown size={16} />,
     description: 'Transferir entre contas',
+    category: 'financeiro'
+  },
+  
+  {
+    label: 'Transações',
+    href: '/financial/transactions',
+    icon: <Receipt size={20} />,
+    description: 'Lançamentos financeiros',
+    category: 'financeiro'
+  },
+  
+  {
+    label: 'Contas Financeiras',
+    href: '/financial/accounts',
+    icon: <CreditCard size={20} />,
+    description: 'Gerenciar contas bancárias e cartões',
     category: 'financeiro'
   },
   {
@@ -125,6 +166,7 @@ const navigationItems: NavigationItem[] = [
 ];
 
 interface SmartNavigationProps {
+  quickNavigation?: boolean; // Se for true, usa quickNavigationItems
   showCategories?: boolean;
   showDescriptions?: boolean;
   maxItems?: number;
@@ -134,6 +176,7 @@ interface SmartNavigationProps {
 }
 
 export function SmartNavigation({
+  quickNavigation = false,
   showCategories = true,
   showDescriptions = true,
   maxItems = 20,
@@ -143,9 +186,10 @@ export function SmartNavigation({
 }: SmartNavigationProps) {
   const router = useRouter();
   const { hasPermission, currentRole } = usePermissions();
+  const itemsToUse = quickNavigation ? quickNavigationItems : navigationItems;
 
   // ✅ FILTRAR ITENS BASEADO NAS PERMISSÕES
-  const allowedItems = navigationItems.filter(item => {
+  const allowedItems = itemsToUse.filter(item => {
     // Filtrar por categoria se especificada
     if (category && item.category !== category) {
       return false;
@@ -262,13 +306,6 @@ export function SmartNavigation({
           {allowedItems.map((item, index) => renderNavigationItem(item, index))}
         </div>
       )}
-      
-      {/* ✅ INFORMAÇÕES DE DEBUG EM DESENVOLVIMENTO */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="mt-8 p-4 bg-gray-800 rounded-lg text-xs text-gray-400">
-          <strong>Debug Info:</strong> {allowedItems.length} itens permitidos para role "{currentRole}"
-        </div>
-      )}
     </div>
   );
 }
@@ -277,6 +314,7 @@ export function SmartNavigation({
 export function QuickNavigation({ category }: { category?: string }) {
   return (
     <SmartNavigation
+      quickNavigation={true}
       category={category}
       layout="compact"
       showCategories={false}

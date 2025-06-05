@@ -14,9 +14,18 @@ export default class FinancialAccountService {
     initialBalance?: string | number;
     accountNumber?: string;
     bankName?: string;
+    allowNegativeBalance?: boolean; // ✅ NOVO CAMPO
     companyId: number;
   }): Promise<FinancialAccount> {
-    const { name, type, initialBalance = 0, accountNumber, bankName, companyId } = data;
+    const { 
+      name, 
+      type, 
+      initialBalance = 0, 
+      accountNumber, 
+      bankName, 
+      allowNegativeBalance = false, // ✅ PADRÃO FALSE
+      companyId 
+    } = data;
 
     // Verifica se já existe conta com mesmo nome na empresa
     const existingAccount = await prisma.financialAccount.findUnique({
@@ -32,6 +41,16 @@ export default class FinancialAccountService {
       throw new Error(`Já existe uma conta com o nome "${name}" nesta empresa`);
     }
 
+    // ✅ REGRA DE NEGÓCIO: Cartão de crédito deve permitir negativo por padrão
+    let finalAllowNegative = allowNegativeBalance;
+    if (type === 'CREDIT_CARD') {
+      finalAllowNegative = true;
+      logger.info('Credit card account automatically set to allow negative balance', {
+        accountName: name,
+        companyId
+      });
+    }
+
     return prisma.financialAccount.create({
       data: {
         name,
@@ -39,6 +58,7 @@ export default class FinancialAccountService {
         balance: initialBalance,
         accountNumber,
         bankName,
+        allowNegativeBalance: finalAllowNegative, // ✅ NOVO CAMPO
         company: {
           connect: { id: companyId }
         }
@@ -57,10 +77,17 @@ export default class FinancialAccountService {
       accountNumber?: string;
       bankName?: string;
       isActive: boolean;
+      allowNegativeBalance: boolean; // ✅ NOVO CAMPO
     }>
   ): Promise<FinancialAccount> {
-    // Não permitimos atualização direta do saldo para manter integridade
-    const { name, type, accountNumber, bankName, isActive } = data;
+    const { 
+      name, 
+      type, 
+      accountNumber, 
+      bankName, 
+      isActive, 
+      allowNegativeBalance // ✅ NOVO CAMPO
+    } = data;
 
     // Verificamos se a conta existe
     const account = await prisma.financialAccount.findUnique({
@@ -69,6 +96,21 @@ export default class FinancialAccountService {
 
     if (!account) {
       throw new Error(`Conta financeira ID ${id} não encontrada`);
+    }
+
+    // ✅ REGRA DE NEGÓCIO: Cartão de crédito não pode desabilitar saldo negativo
+    if (type === 'CREDIT_CARD' && allowNegativeBalance === false) {
+      throw new Error('Cartões de crédito devem permitir saldo negativo');
+    }
+
+    // ✅ VERIFICAÇÃO DE SEGURANÇA: Se desabilitando saldo negativo, verificar saldo atual
+    if (allowNegativeBalance === false && account.allowNegativeBalance === true) {
+      const currentBalance = parseDecimal(account.balance);
+      if (currentBalance.lt(0)) {
+        throw new Error(
+          `Não é possível desabilitar saldo negativo. Saldo atual: ${currentBalance.toFixed(2)}. Regularize o saldo primeiro.`
+        );
+      }
     }
 
     // Verificamos unicidade do nome se estiver sendo alterado
@@ -87,17 +129,32 @@ export default class FinancialAccountService {
       }
     }
 
-    return prisma.financialAccount.update({
+    const updatedAccount = await prisma.financialAccount.update({
       where: { id },
       data: {
         name,
         type,
         accountNumber,
         bankName,
-        isActive
+        isActive,
+        allowNegativeBalance // ✅ NOVO CAMPO
       }
     });
+
+    // ✅ LOG PARA AUDITORIA DE MUDANÇAS NA POLÍTICA DE SALDO
+    if (allowNegativeBalance !== undefined && allowNegativeBalance !== account.allowNegativeBalance) {
+      logger.info('Account negative balance policy changed', {
+        accountId: id,
+        accountName: account.name,
+        previousPolicy: account.allowNegativeBalance,
+        newPolicy: allowNegativeBalance,
+        currentBalance: account.balance.toString()
+      });
+    }
+
+    return updatedAccount;
   }
+
 
   /**
    * Lista contas financeiras de uma empresa com filtros opcionais
@@ -106,9 +163,18 @@ export default class FinancialAccountService {
     companyId: number;
     type?: AccountType;
     isActive?: boolean;
+    allowNegativeBalance?: boolean; // ✅ NOVO FILTRO
     search?: string;
+    accountIds?: number[];
   }): Promise<FinancialAccount[]> {
-    const { companyId, type, isActive, search } = params;
+    const { 
+      companyId, 
+      type, 
+      isActive, 
+      allowNegativeBalance, // ✅ NOVO FILTRO
+      search, 
+      accountIds 
+    } = params;
 
     const where: Prisma.FinancialAccountWhereInput = {
       companyId,
@@ -119,7 +185,8 @@ export default class FinancialAccountService {
           { name: { contains: search, mode: 'insensitive' } },
           { bankName: { contains: search, mode: 'insensitive' } }
         ]
-      })
+      }),
+      ...(accountIds && accountIds.length > 0 && { id: { in: accountIds } })
     };
 
     return prisma.financialAccount.findMany({
@@ -228,6 +295,55 @@ export default class FinancialAccountService {
       const updatedAccount = await tx.financialAccount.update({
         where: { id: accountId },
         data: { balance: targetBalance }
+      });
+
+      return updatedAccount;
+    });
+  }
+
+    static async toggleNegativeBalance(
+    accountId: number,
+    allowNegativeBalance: boolean,
+    companyId: number
+  ): Promise<FinancialAccount> {
+    return await prisma.$transaction(async (tx) => {
+      // Verificar se conta existe e pertence à empresa
+      const account = await tx.financialAccount.findFirst({
+        where: { id: accountId, companyId }
+      });
+
+      if (!account) {
+        throw new Error('Conta não encontrada ou não pertence à empresa');
+      }
+
+      // ✅ REGRA DE NEGÓCIO: Cartão de crédito não pode desabilitar saldo negativo
+      if (account.type === 'CREDIT_CARD' && allowNegativeBalance === false) {
+        throw new Error('Cartões de crédito devem permitir saldo negativo');
+      }
+
+      // ✅ VERIFICAÇÃO DE SEGURANÇA: Se desabilitando saldo negativo, verificar saldo atual
+      if (allowNegativeBalance === false && account.allowNegativeBalance === true) {
+        const currentBalance = parseDecimal(account.balance);
+        if (currentBalance.lt(0)) {
+          throw new Error(
+            `Não é possível desabilitar saldo negativo. Saldo atual: ${currentBalance.toFixed(2)}. Regularize o saldo primeiro.`
+          );
+        }
+      }
+
+      const updatedAccount = await tx.financialAccount.update({
+        where: { id: accountId },
+        data: { allowNegativeBalance }
+      });
+
+      // ✅ LOG PARA AUDITORIA
+      logger.info('Account negative balance policy toggled', {
+        accountId,
+        accountName: account.name,
+        previousPolicy: account.allowNegativeBalance,
+        newPolicy: allowNegativeBalance,
+        currentBalance: account.balance.toString(),
+        companyId
       });
 
       return updatedAccount;

@@ -133,6 +133,9 @@ const rateLimiters = {
 
 export function createRateLimitMiddleware(type: keyof typeof rateLimiters) {
   return async (req: Request, res: Response, next: NextFunction) => {
+    //DESATIVADO temporariamente
+    return next();
+
     // ✅ PULAR RATE LIMITING EM DESENVOLVIMENTO
     if (process.env.NODE_ENV === 'development') {
       return next();

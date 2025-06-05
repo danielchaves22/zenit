@@ -1,4 +1,4 @@
-// frontend/hooks/useConfirmation.ts - HOOK PARA MODAIS DE CONFIRMAÇÃO
+// frontend/hooks/useConfirmation.ts - VERSÃO ATUALIZADA COM CALLBACK DE CANCELAMENTO
 import { useState, useCallback } from 'react';
 
 export interface ConfirmationOptions {
@@ -13,7 +13,11 @@ interface UseConfirmationReturn {
   isOpen: boolean;
   loading: boolean;
   options: ConfirmationOptions;
-  confirm: (options: ConfirmationOptions, onConfirm: () => Promise<void> | void) => void;
+  confirm: (
+    options: ConfirmationOptions, 
+    onConfirm: () => Promise<void> | void,
+    onCancel?: () => void
+  ) => void;
   handleConfirm: () => void;
   handleClose: () => void;
 }
@@ -29,11 +33,13 @@ export function useConfirmation(): UseConfirmationReturn {
     type: 'info'
   });
   const [onConfirmCallback, setOnConfirmCallback] = useState<(() => Promise<void> | void) | null>(null);
+  const [onCancelCallback, setOnCancelCallback] = useState<(() => void) | null>(null);
 
-  // ✅ FUNÇÃO PARA ABRIR O MODAL DE CONFIRMAÇÃO
+  // ✅ FUNÇÃO PARA ABRIR O MODAL DE CONFIRMAÇÃO COM CALLBACK DE CANCELAMENTO
   const confirm = useCallback((
     confirmationOptions: ConfirmationOptions, 
-    onConfirm: () => Promise<void> | void
+    onConfirm: () => Promise<void> | void,
+    onCancel?: () => void
   ) => {
     setOptions({
       confirmText: 'Confirmar',
@@ -42,6 +48,7 @@ export function useConfirmation(): UseConfirmationReturn {
       ...confirmationOptions
     });
     setOnConfirmCallback(() => onConfirm);
+    setOnCancelCallback(onCancel ? () => onCancel : null);
     setIsOpen(true);
     setLoading(false);
   }, []);
@@ -56,6 +63,7 @@ export function useConfirmation(): UseConfirmationReturn {
       await onConfirmCallback();
       setIsOpen(false);
       setOnConfirmCallback(null);
+      setOnCancelCallback(null);
     } catch (error) {
       // O erro é re-lançado para que o componente pai possa tratá-lo
       // O modal permanece aberto em caso de erro
@@ -65,14 +73,20 @@ export function useConfirmation(): UseConfirmationReturn {
     }
   }, [onConfirmCallback]);
 
-  // ✅ FUNÇÃO PARA FECHAR O MODAL
+  // ✅ FUNÇÃO PARA FECHAR O MODAL COM CALLBACK DE CANCELAMENTO
   const handleClose = useCallback(() => {
     if (loading) return; // Não permitir fechar durante operação
     
+    // ✅ EXECUTAR CALLBACK DE CANCELAMENTO SE EXISTIR
+    if (onCancelCallback) {
+      onCancelCallback();
+    }
+    
     setIsOpen(false);
     setOnConfirmCallback(null);
+    setOnCancelCallback(null);
     setLoading(false);
-  }, [loading]);
+  }, [loading, onCancelCallback]);
 
   return {
     isOpen,

@@ -1,4 +1,4 @@
-// frontend/pages/financial/accounts.tsx - PADRONIZADA
+// frontend/pages/financial/accounts.tsx - COM CAMPO allowNegativeBalance
 import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
@@ -12,7 +12,7 @@ import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { 
   Plus, CreditCard, Edit2, Trash2, Settings,
-  Star, StarOff, AlertTriangle
+  Star, StarOff, AlertTriangle, MinusCircle, HelpCircle
 } from 'lucide-react';
 import api from '@/lib/api';
 
@@ -25,6 +25,7 @@ interface Account {
   bankName?: string;
   isActive: boolean;
   isDefault: boolean;
+  allowNegativeBalance: boolean; // ✅ NOVO CAMPO
   createdAt: string;
   updatedAt: string;
 }
@@ -49,7 +50,8 @@ export default function AccountsPage() {
     initialBalance: '0.00',
     accountNumber: '',
     bankName: '',
-    isActive: true
+    isActive: true,
+    allowNegativeBalance: false // ✅ NOVO CAMPO NO FORM
   });
 
   // Balance adjustment modal
@@ -63,6 +65,13 @@ export default function AccountsPage() {
   useEffect(() => {
     fetchAccounts();
   }, [filterType, filterStatus]);
+
+  // ✅ ATUALIZAR allowNegativeBalance QUANDO TIPO MUDA
+  useEffect(() => {
+    if (formData.type === 'CREDIT_CARD') {
+      setFormData(prev => ({ ...prev, allowNegativeBalance: true }));
+    }
+  }, [formData.type]);
 
   async function fetchAccounts() {
     setLoading(true);
@@ -142,7 +151,8 @@ export default function AccountsPage() {
       initialBalance: '0.00',
       accountNumber: '',
       bankName: '',
-      isActive: true
+      isActive: true,
+      allowNegativeBalance: false // ✅ PADRÃO FALSE
     });
     setShowForm(true);
   }
@@ -155,7 +165,8 @@ export default function AccountsPage() {
       initialBalance: account.balance,
       accountNumber: account.accountNumber || '',
       bankName: account.bankName || '',
-      isActive: account.isActive
+      isActive: account.isActive,
+      allowNegativeBalance: account.allowNegativeBalance // ✅ CARREGAR VALOR ATUAL
     });
     setShowForm(true);
   }
@@ -169,7 +180,8 @@ export default function AccountsPage() {
       initialBalance: '0.00',
       accountNumber: '',
       bankName: '',
-      isActive: true
+      isActive: true,
+      allowNegativeBalance: false
     });
   }
 
@@ -197,6 +209,12 @@ export default function AccountsPage() {
       return;
     }
 
+    // ✅ VALIDAÇÃO: Cartão de crédito deve permitir negativo
+    if (formData.type === 'CREDIT_CARD' && !formData.allowNegativeBalance) {
+      addToast('Cartões de crédito devem permitir saldo negativo', 'error');
+      return;
+    }
+
     setFormLoading(true);
 
     try {
@@ -206,6 +224,7 @@ export default function AccountsPage() {
         accountNumber: formData.accountNumber || null,
         bankName: formData.bankName || null,
         isActive: formData.isActive,
+        allowNegativeBalance: formData.allowNegativeBalance, // ✅ INCLUIR NO PAYLOAD
         ...(editingAccount ? {} : { initialBalance: formData.initialBalance })
       };
 
@@ -220,7 +239,15 @@ export default function AccountsPage() {
       closeForm();
       fetchAccounts();
     } catch (err: any) {
-      addToast(err.response?.data?.error || 'Erro ao salvar conta', 'error');
+      // ✅ TRATAMENTO DE ERROS ESPECÍFICOS
+      const errorMsg = err.response?.data?.error;
+      if (errorMsg?.includes('saldo negativo')) {
+        addToast('Não é possível desabilitar saldo negativo. Esta conta tem saldo negativo.', 'error');
+      } else if (errorMsg?.includes('Cartões de crédito')) {
+        addToast('Cartões de crédito devem sempre permitir saldo negativo', 'error');
+      } else {
+        addToast(errorMsg || 'Erro ao salvar conta', 'error');
+      }
     } finally {
       setFormLoading(false);
     }
@@ -283,6 +310,28 @@ export default function AccountsPage() {
       style: 'currency',
       currency: 'BRL'
     }).format(num);
+  }
+
+  // ✅ FORMATAÇÃO DE SALDO COM INDICAÇÃO DE AUTORIZAÇÃO
+  function formatBalance(balance: string, allowNegativeBalance: boolean): React.ReactNode {
+    const num = parseFloat(balance);
+    const isNegative = num < 0;
+    
+    let className = 'font-medium';
+    if (isNegative) {
+      className += allowNegativeBalance ? ' text-orange-400' : ' text-red-400';
+    } else {
+      className += ' text-green-400';
+    }
+    
+    return (
+      <span className={className}>
+        {formatCurrency(num)}
+        {isNegative && allowNegativeBalance && (
+          <span className="text-xs ml-1 text-orange-300">(autorizado)</span>
+        )}
+      </span>
+    );
   }
 
   function getAccountTypeLabel(type: string): string {
@@ -407,9 +456,9 @@ export default function AccountsPage() {
         </Card>
       )}
 
-      {/* Formulário Inline */}
+      {/* ✅ FORMULÁRIO COM CAMPO allowNegativeBalance */}
       {showForm && (
-        <Card className="mb-6 border-2 border-[#2563eb]">
+        <Card className="mb-6 border-2 border-accent">
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white">
               {editingAccount ? `Editando: ${editingAccount.name}` : 'Nova Conta Financeira'}
@@ -471,18 +520,47 @@ export default function AccountsPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="isActive"
-                checked={formData.isActive}
-                onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
-                className="w-4 h-4 text-[#2563eb] bg-[#1e2126] border-gray-700 rounded focus:ring-[#2563eb]"
-                disabled={formLoading}
-              />
-              <label htmlFor="isActive" className="text-sm text-gray-300">
-                Conta ativa
-              </label>
+            {/* ✅ SEÇÃO DE CONFIGURAÇÕES */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="isActive"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({...formData, isActive: e.target.checked})}
+                  className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                  disabled={formLoading}
+                />
+                <label htmlFor="isActive" className="text-sm text-gray-300">
+                  Conta ativa
+                </label>
+              </div>
+
+              {/* ✅ NOVO CAMPO: Permitir Saldo Negativo */}
+              <div className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id="allowNegativeBalance"
+                  checked={formData.allowNegativeBalance}
+                  onChange={(e) => setFormData({...formData, allowNegativeBalance: e.target.checked})}
+                  className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent mt-0.5"
+                  disabled={formLoading || formData.type === 'CREDIT_CARD'}
+                />
+                <div className="flex-1">
+                  <label htmlFor="allowNegativeBalance" className="text-sm text-gray-300 cursor-pointer">
+                    Permitir saldo negativo
+                  </label>
+                  <div className="flex items-center gap-1 mt-1">
+                    <HelpCircle size={12} className="text-gray-400" />
+                    <span className="text-xs text-gray-400">
+                      {formData.type === 'CREDIT_CARD' 
+                        ? 'Cartões de crédito sempre permitem saldo negativo'
+                        : 'Permite que a conta fique com saldo negativo (ex: cheque especial)'
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-3">
@@ -548,6 +626,7 @@ export default function AccountsPage() {
                   <th className="px-4 py-3 text-left">Tipo</th>
                   <th className="px-4 py-3 text-left">Banco/Número</th>
                   <th className="px-4 py-3 text-right">Saldo</th>
+                  <th className="px-4 py-3 text-center">Configurações</th>
                   <th className="px-4 py-3 text-center">Status</th>
                 </tr>
               </thead>
@@ -557,7 +636,7 @@ export default function AccountsPage() {
                     key={account.id} 
                     className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
                       editingAccount?.id === account.id 
-                        ? 'bg-[#2563eb]/10 border-[#2563eb]/30' 
+                        ? 'bg-accent/10 border-accent/30' 
                         : ''
                     } ${!account.isActive ? 'opacity-60' : ''}`}
                   >
@@ -589,7 +668,7 @@ export default function AccountsPage() {
                         </button>
                         <button
                           onClick={() => openEditForm(account)}
-                          className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
+                          className="p-1 text-gray-300 hover:text-accent transition-colors"
                           title="Editar"
                           disabled={formLoading}
                         >
@@ -635,11 +714,33 @@ export default function AccountsPage() {
                     </td>
                     
                     <td className="px-4 py-3 text-right">
-                      <span className={`font-medium ${
-                        parseFloat(account.balance) >= 0 ? 'text-green-400' : 'text-red-400'
-                      }`}>
-                        {formatCurrency(account.balance)}
-                      </span>
+                      {formatBalance(account.balance, account.allowNegativeBalance)}
+                    </td>
+                    
+                    {/* ✅ NOVA COLUNA: Configurações */}
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        {account.allowNegativeBalance && (
+                          <div 
+                            className="flex items-center gap-1 px-2 py-1 bg-blue-900/30 border border-blue-600 rounded text-blue-300"
+                            title="Permite saldo negativo"
+                          >
+                            <MinusCircle size={12} />
+                            <span className="text-xs">Negativo OK</span>
+                          </div>
+                        )}
+                        
+                        {/* ✅ AVISO: Saldo negativo não autorizado */}
+                        {parseFloat(account.balance) < 0 && !account.allowNegativeBalance && (
+                          <div 
+                            className="flex items-center gap-1 px-2 py-1 bg-red-900/30 border border-red-600 rounded text-red-300"
+                            title="Saldo negativo não autorizado"
+                          >
+                            <AlertTriangle size={12} />
+                            <span className="text-xs">Problema</span>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     
                     <td className="px-4 py-3 text-center">
@@ -659,7 +760,7 @@ export default function AccountsPage() {
         )}
       </Card>
 
-      {/* Modal de Ajuste de Saldo */}
+      {/* Modal de Ajuste de Saldo - mantido igual */}
       {showBalanceModal && adjustingAccount && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[#151921] rounded-lg max-w-md w-full border border-gray-700">
@@ -701,7 +802,7 @@ export default function AccountsPage() {
                   disabled={formLoading}
                 />
               </div>
-              
+
               <div className="bg-yellow-900/20 border border-yellow-600 rounded p-3">
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={16} className="text-yellow-400 mt-0.5" />
@@ -712,7 +813,7 @@ export default function AccountsPage() {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex gap-3 p-6 border-t border-gray-700">
               <Button 
                 variant="outline" 

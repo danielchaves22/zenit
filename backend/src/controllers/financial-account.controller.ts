@@ -23,7 +23,14 @@ function getUserContext(req: Request): { companyId: number; userId: number } {
 export async function createAccount(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { name, type, initialBalance, accountNumber, bankName } = req.body;
+    const {
+      name,
+      type,
+      initialBalance,
+      accountNumber,
+      bankName,
+      allowNegativeBalance
+    } = req.body;
 
     const account = await FinancialAccountService.createAccount({
       name,
@@ -31,6 +38,7 @@ export async function createAccount(req: Request, res: Response) {
       initialBalance,
       accountNumber,
       bankName,
+      allowNegativeBalance,
       companyId
     });
 
@@ -50,12 +58,16 @@ export async function createAccount(req: Request, res: Response) {
 export async function getAccounts(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { type, isActive, search } = req.query;
+    const { type, isActive, search, allowNegativeBalance } = req.query;
 
     const accounts = await FinancialAccountService.listAccounts({
       companyId,
       type: type as any,
       isActive: typeof isActive === 'string' ? isActive === 'true' : undefined,
+      allowNegativeBalance:
+        typeof allowNegativeBalance === 'string'
+          ? allowNegativeBalance === 'true'
+          : undefined,
       search: search as string
     });
 
@@ -121,13 +133,21 @@ export async function updateAccount(req: Request, res: Response) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    const { name, type, accountNumber, bankName, isActive } = req.body;
+    const {
+      name,
+      type,
+      accountNumber,
+      bankName,
+      isActive,
+      allowNegativeBalance
+    } = req.body;
     const updatedAccount = await FinancialAccountService.updateAccount(id, {
       name,
       type,
       accountNumber,
       bankName,
-      isActive
+      isActive,
+      allowNegativeBalance
     });
 
     return res.status(200).json(updatedAccount);

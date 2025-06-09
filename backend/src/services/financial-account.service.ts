@@ -42,6 +42,15 @@ export default class FinancialAccountService {
       throw new Error(`Já existe uma conta com o nome "${name}" nesta empresa`);
     }
 
+    // Garante que apenas uma conta ativa exista por empresa
+    const activeExists = await prisma.financialAccount.findFirst({
+      where: { companyId, isActive: true }
+    });
+
+    if (activeExists) {
+      throw new Error('Já existe uma conta ativa para esta empresa');
+    }
+
     // ✅ REGRA DE NEGÓCIO: Cartão de crédito deve permitir negativo por padrão
     let finalAllowNegative = allowNegativeBalance;
     if (type === 'CREDIT_CARD') {
@@ -127,6 +136,21 @@ export default class FinancialAccountService {
 
       if (existingAccount) {
         throw new Error(`Já existe uma conta com o nome "${name}" nesta empresa`);
+      }
+    }
+
+    // Se ativando esta conta, verificar se já existe outra ativa
+    if (isActive === true && account.isActive === false) {
+      const activeExists = await prisma.financialAccount.findFirst({
+        where: {
+          companyId: account.companyId,
+          isActive: true,
+          id: { not: id }
+        }
+      });
+
+      if (activeExists) {
+        throw new Error('Já existe uma conta ativa para esta empresa');
       }
     }
 

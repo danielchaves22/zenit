@@ -181,6 +181,7 @@ export default class FinancialAccountService {
       companyId,
       ...(type && { type }),
       ...(isActive !== undefined && { isActive }),
+      ...(allowNegativeBalance !== undefined && { allowNegativeBalance }),
       ...(search && {
         OR: [
           { name: { contains: search, mode: 'insensitive' } },

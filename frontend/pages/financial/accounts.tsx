@@ -152,7 +152,7 @@ export default function AccountsPage() {
       accountNumber: '',
       bankName: '',
       isActive: true,
-      allowNegativeBalance: false // ✅ PADRÃO FALSE
+      allowNegativeBalance: true // ✅ PADRÃO TRUE
     });
     setShowForm(true);
   }

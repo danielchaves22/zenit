@@ -1,6 +1,7 @@
 import { PrismaClient, FinancialAccount, Prisma, AccountType } from '@prisma/client';
 import { logger } from '../utils/logger';
 import cacheService from './cache.service';
+import { parseDecimal } from '../utils/money';
 
 const prisma = new PrismaClient();
 

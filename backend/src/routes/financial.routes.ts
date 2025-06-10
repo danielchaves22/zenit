@@ -67,8 +67,8 @@ router.get('/defaults', getCompanyDefaults);
 
 // Rotas de Contas Financeiras
 router.post('/accounts', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(createAccountSchema), createAccount);
-router.get('/accounts', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(listAccountsSchema), getAccounts);
-router.get('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), getAccountById); // ✅ MIDDLEWARE
+router.get('/accounts', validate(listAccountsSchema), getAccounts);
+router.get('/accounts/:id', requireAccountAccess(), getAccountById); // ✅ MIDDLEWARE
 router.put('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), validate(updateAccountSchema), updateAccount); // ✅ MIDDLEWARE
 router.delete('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), deleteAccount); // ✅ MIDDLEWARE
 router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), adjustBalance); // ✅ MIDDLEWARE
@@ -79,8 +79,8 @@ router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultA
 
 // Rotas de Categorias Financeiras
 router.post('/categories', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(createCategorySchema), createCategory);
-router.get('/categories', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(listCategoriesSchema), getCategories);
-router.get('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'), getCategoryById);
+router.get('/categories', validate(listCategoriesSchema), getCategories);
+router.get('/categories/:id', getCategoryById);
 router.put('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(updateCategorySchema), updateCategory);
 router.delete('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'), deleteCategory);
 

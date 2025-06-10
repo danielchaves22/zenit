@@ -94,15 +94,18 @@ export default class UserService {
    */
   static async listUsers<T extends Prisma.UserFindManyArgs>(
     args: T,
-    companyId: number
+    companyId?: number
   ): Promise<Prisma.UserGetPayload<T>[]> {
-    // Adicionar filtro de empresa ao args.where existente
-    const whereWithCompany = {
-      ...args.where,
-      companies: {
-        some: { companyId }
-      }
-    };
+    let whereWithCompany = args.where || {};
+
+    if (companyId !== undefined) {
+      whereWithCompany = {
+        ...whereWithCompany,
+        companies: {
+          some: { companyId }
+        }
+      };
+    }
 
     const updatedArgs = {
       ...args,

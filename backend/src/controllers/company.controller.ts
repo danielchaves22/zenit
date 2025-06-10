@@ -11,10 +11,10 @@ const prisma = new PrismaClient();
  */
 function getUserContext(req: Request): { role: string; companyId: number; userId: number } {
   // @ts-ignore — preenchido pelo authMiddleware
-  return { 
+  return {
     role: req.user.role as string,
     companyId: req.user.companyId as number,
-    userId: req.user.id as number
+    userId: req.user.userId as number
   };
 }
 

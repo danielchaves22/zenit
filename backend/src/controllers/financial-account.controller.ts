@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import FinancialAccountService from '../services/financial-account.service';
+import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -58,7 +59,16 @@ export async function createAccount(req: Request, res: Response) {
 export async function getAccounts(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
+    // @ts-ignore - auth middleware adiciona
+    const { userId, role } = req.user;
     const { type, isActive, search, allowNegativeBalance } = req.query;
+
+    const accessibleAccountIds =
+      await UserFinancialAccountAccessService.getUserAccessibleAccounts(
+        userId,
+        role,
+        companyId
+      );
 
     const accounts = await FinancialAccountService.listAccounts({
       companyId,
@@ -68,7 +78,8 @@ export async function getAccounts(req: Request, res: Response) {
         typeof allowNegativeBalance === 'string'
           ? allowNegativeBalance === 'true'
           : undefined,
-      search: search as string
+      search: search as string,
+      accountIds: accessibleAccountIds
     });
 
     return res.status(200).json(accounts);

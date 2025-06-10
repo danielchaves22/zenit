@@ -1,10 +1,20 @@
-import { User } from "@prisma/client";
+import { User, Role } from "@prisma/client";
 
 declare global {
   namespace Express {
     interface Request {
-      user: User & { 
-        companyId?: number  // Substituímos companyIds[] por um único companyId
+      user: (Partial<User> & {
+        companyId: number;
+      }) & {
+        /**
+         * When authenticated via JWT the middleware attaches the
+         * decoded payload to `req.user`. The payload uses `userId`
+         * instead of the Prisma `id` field, so we mirror that here
+         * to keep TypeScript happy in controllers using
+         * `req.user.userId`.
+         */
+        userId: number;
+        role: Role;
       };
     }
   }

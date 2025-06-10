@@ -119,8 +119,8 @@ export default class FinancialTransactionService {
       for (const accountId of accountsToLock) {
         try {
           const result = await tx.$queryRaw`
-            SELECT id, name, balance, "isActive", "companyId"
-            FROM "FinancialAccount" 
+            SELECT id, name, balance, "isActive", "companyId", "allowNegativeBalance"
+            FROM "FinancialAccount"
             WHERE id = ${accountId}
             FOR UPDATE NOWAIT
           `;

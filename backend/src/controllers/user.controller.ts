@@ -90,6 +90,16 @@ export const createUser = async (req: Request, res: Response) => {
 export const getUsers = async (req: Request, res: Response) => {
   const { role, companyId, userId: me } = getUserContext(req);
 
+  let filterCompanyId: number | undefined = undefined;
+
+  if (role === 'ADMIN' && req.query.companyId !== undefined) {
+    const parsed = Number(req.query.companyId);
+    if (isNaN(parsed)) {
+      return res.status(400).json({ error: 'companyId inválido.' });
+    }
+    filterCompanyId = parsed;
+  }
+
   try {
     let users;
     
@@ -110,9 +120,9 @@ export const getUsers = async (req: Request, res: Response) => {
       }
     };
 
-    // ADMIN pode ver todos os usuários
+    // ADMIN pode ver todos os usuários (com filtro opcional por empresa)
     if (role === 'ADMIN') {
-      users = await UserService.listUsers(baseSelect, companyId);
+      users = await UserService.listUsers(baseSelect, filterCompanyId);
     }
     // SUPERUSER vê usuários da mesma empresa
     else if (role === 'SUPERUSER') {

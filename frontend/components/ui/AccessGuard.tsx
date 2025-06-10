@@ -22,6 +22,7 @@ export function AccessGuard({
   requiredRole,
   allowedRoles,
   deniedRoles,
+  requiredPermission,
   fallback,
   redirectTo = '/',
   showFallback = true

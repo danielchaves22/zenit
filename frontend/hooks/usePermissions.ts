@@ -10,7 +10,7 @@ interface PermissionConfig {
 }
 
 export function usePermissions() {
-  const { userRole } = useAuth();
+  const { userRole, manageFinancialAccounts, manageFinancialCategories } = useAuth();
 
   // ✅ HIERARQUIA DE ROLES
   const roleHierarchy: Record<UserRole, number> = {
@@ -54,6 +54,13 @@ export function usePermissions() {
     return true;
   };
 
+  const hasAppPermission = (perm: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES'): boolean => {
+    if (hasRole('ADMIN') || hasRole('SUPERUSER')) return true;
+    if (perm === 'FINANCIAL_ACCOUNTS') return manageFinancialAccounts || false;
+    if (perm === 'FINANCIAL_CATEGORIES') return manageFinancialCategories || false;
+    return false;
+  };
+
   // ✅ VERIFICAÇÕES ESPECÍFICAS PARA FUNCIONALIDADES DO SISTEMA
   const canManageCompanies = (): boolean => {
     return hasRole('ADMIN');
@@ -76,11 +83,13 @@ export function usePermissions() {
   };
 
   const canManageFinancialAccounts = (): boolean => {
-    return hasRole('USER'); // Todos podem gerenciar contas financeiras
+    if (hasRole('ADMIN') || hasRole('SUPERUSER')) return true;
+    return manageFinancialAccounts || false;
   };
 
   const canManageCategories = (): boolean => {
-    return hasRole('USER'); // Todos podem gerenciar categorias
+    if (hasRole('ADMIN') || hasRole('SUPERUSER')) return true;
+    return manageFinancialCategories || false;
   };
 
   // ✅ VERIFICAR SE É ADMIN
@@ -127,6 +136,7 @@ export function usePermissions() {
     canCreateTransactions,
     canManageFinancialAccounts,
     canManageCategories,
+    hasAppPermission,
     
     // Verificações de tipo de usuário
     isAdmin,

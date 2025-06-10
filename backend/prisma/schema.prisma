@@ -48,6 +48,8 @@ model User {
   password            String
   name                String
   role                Role                  @default(USER)
+  manageFinancialAccounts   Boolean              @default(false)
+  manageFinancialCategories Boolean              @default(false)
   companies           UserCompany[]
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt

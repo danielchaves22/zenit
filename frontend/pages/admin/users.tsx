@@ -21,6 +21,8 @@ interface User {
   name: string
   email: string
   role: string
+  manageFinancialAccounts?: boolean
+  manageFinancialCategories?: boolean
   companies: {
     company: {
       id: number
@@ -56,7 +58,9 @@ export default function UsersPage() {
     email: '',
     password: '',
     newRole: 'USER',
-    companyId: ''
+    companyId: '',
+    manageFinancialAccounts: false,
+    manageFinancialCategories: false
   });
 
   // ✅ ESTADOS PARA PERMISSÕES DE CONTAS
@@ -116,7 +120,9 @@ export default function UsersPage() {
       email: '',
       password: '',
       newRole: 'USER',
-      companyId: companies.length > 0 ? companies[0].id.toString() : ''
+      companyId: companies.length > 0 ? companies[0].id.toString() : '',
+      manageFinancialAccounts: false,
+      manageFinancialCategories: false
     });
     // ✅ RESETAR PERMISSÕES
     setSelectedAccountIds([]);
@@ -131,7 +137,9 @@ export default function UsersPage() {
       email: user.email,
       password: '',
       newRole: user.role,
-      companyId: user.companies[0]?.company.id.toString() || ''
+      companyId: user.companies[0]?.company.id.toString() || '',
+      manageFinancialAccounts: user.manageFinancialAccounts || false,
+      manageFinancialCategories: user.manageFinancialCategories || false
     });
     // ✅ PERMISSÕES SERÃO CARREGADAS PELO COMPONENTE AccountPermissionsManager
     setSelectedAccountIds([]);
@@ -147,7 +155,9 @@ export default function UsersPage() {
       email: '',
       password: '',
       newRole: 'USER',
-      companyId: ''
+      companyId: '',
+      manageFinancialAccounts: false,
+      manageFinancialCategories: false
     });
     // ✅ LIMPAR PERMISSÕES
     setSelectedAccountIds([]);
@@ -212,9 +222,12 @@ export default function UsersPage() {
       if (editingUser) {
         // ✅ EDIÇÃO - apenas dados básicos, permissões são gerenciadas separadamente
         const { password, ...updateDataWithoutPassword } = formData;
-        const updateData = formData.password 
+        const updateData = formData.password
           ? { ...formData, companyId: formData.companyId ? Number(formData.companyId) : null }
           : { ...updateDataWithoutPassword, companyId: formData.companyId ? Number(formData.companyId) : null };
+
+        updateData.manageFinancialAccounts = formData.manageFinancialAccounts;
+        updateData.manageFinancialCategories = formData.manageFinancialCategories;
 
         await api.put(`/users/${editingUser.id}`, updateData);
         
@@ -238,6 +251,8 @@ export default function UsersPage() {
           password: formData.password,
           newRole: formData.newRole,
           companyId: Number(formData.companyId),
+          manageFinancialAccounts: formData.manageFinancialAccounts,
+          manageFinancialCategories: formData.manageFinancialCategories,
         };
 
         // ✅ ADICIONAR PERMISSÕES APENAS PARA USER
@@ -441,6 +456,28 @@ export default function UsersPage() {
                     {companiesError || 'Nenhuma empresa disponível'}
                   </div>
                 )}
+              </div>
+
+              {/* Permissões de Funcionalidades */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={formData.manageFinancialAccounts}
+                    onChange={(e) => setFormData({...formData, manageFinancialAccounts: e.target.checked})}
+                  />
+                  Gerenciar Contas Financeiras
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-300">
+                  <input
+                    type="checkbox"
+                    className="mr-2"
+                    checked={formData.manageFinancialCategories}
+                    onChange={(e) => setFormData({...formData, manageFinancialCategories: e.target.checked})}
+                  />
+                  Gerenciar Categorias Financeiras
+                </label>
               </div>
 
               {/* ✅ SEÇÃO DE PERMISSÕES DE CONTAS (apenas para USER) */}

@@ -1,4 +1,5 @@
 import { requireAccountAccess, requireTransactionAccountAccess } from '../middlewares/financial-access.middleware';
+import { requireFeaturePermission } from '../middlewares/feature-permission.middleware';
 import { Router } from 'express';
 import { validate } from '../middlewares/validate.middleware';
 import {
@@ -65,27 +66,27 @@ const router = Router();
 router.get('/defaults', getCompanyDefaults);
 
 // Rotas de Contas Financeiras
-router.post('/accounts', validate(createAccountSchema), createAccount);
+router.post('/accounts', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(createAccountSchema), createAccount);
 router.get('/accounts', validate(listAccountsSchema), getAccounts);
 router.get('/accounts/:id', requireAccountAccess(), getAccountById); // ✅ MIDDLEWARE
-router.put('/accounts/:id', requireAccountAccess(), validate(updateAccountSchema), updateAccount); // ✅ MIDDLEWARE
-router.delete('/accounts/:id', requireAccountAccess(), deleteAccount); // ✅ MIDDLEWARE
-router.post('/accounts/:id/adjust-balance', requireAccountAccess(), adjustBalance); // ✅ MIDDLEWARE
+router.put('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), validate(updateAccountSchema), updateAccount); // ✅ MIDDLEWARE
+router.delete('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), deleteAccount); // ✅ MIDDLEWARE
+router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), adjustBalance); // ✅ MIDDLEWARE
 
 // Gerenciar conta padrão
 router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccount); // ✅ MIDDLEWARE
 router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount); // ✅ MIDDLEWARE
 
 // Rotas de Categorias Financeiras
-router.post('/categories', validate(createCategorySchema), createCategory);
+router.post('/categories', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(createCategorySchema), createCategory);
 router.get('/categories', validate(listCategoriesSchema), getCategories);
 router.get('/categories/:id', getCategoryById);
-router.put('/categories/:id', validate(updateCategorySchema), updateCategory);
-router.delete('/categories/:id', deleteCategory);
+router.put('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(updateCategorySchema), updateCategory);
+router.delete('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'), deleteCategory);
 
 // Gerenciar categoria padrão
-router.post('/categories/:id/set-default', setDefaultCategory);
-router.delete('/categories/:id/set-default', unsetDefaultCategory);
+router.post('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), setDefaultCategory);
+router.delete('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), unsetDefaultCategory);
 
 // ✅ ROTA DE AUTOCOMPLETE - DEVE VIR ANTES DAS ROTAS COM :id
 router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);

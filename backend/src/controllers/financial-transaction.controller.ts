@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import FinancialTransactionService from '../services/financial-transaction.service';
+import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -68,6 +69,8 @@ export async function createTransaction(req: Request, res: Response) {
 export async function getTransactions(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
+    // @ts-ignore - auth middleware adiciona
+    const { userId, role } = req.user;
     
     const {
       startDate,
@@ -81,6 +84,13 @@ export async function getTransactions(req: Request, res: Response) {
       pageSize
     } = req.query;
 
+    const accessFilter =
+      await UserFinancialAccountAccessService.getAccessibleTransactionFilter(
+        userId,
+        role,
+        companyId
+      );
+
     const result = await FinancialTransactionService.listTransactions({
       companyId,
       startDate: startDate ? new Date(startDate as string) : undefined,
@@ -91,7 +101,8 @@ export async function getTransactions(req: Request, res: Response) {
       categoryId: categoryId ? Number(categoryId) : undefined,
       search: search as string,
       page: page ? Number(page) : 1,
-      pageSize: pageSize ? Number(pageSize) : 20
+      pageSize: pageSize ? Number(pageSize) : 20,
+      accessFilter
     });
 
     return res.status(200).json(result);

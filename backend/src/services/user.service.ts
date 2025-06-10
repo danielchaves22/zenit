@@ -12,6 +12,8 @@ export interface CreateUserParams {
   name: string;
   role: Role;
   companyId: number;
+  manageFinancialAccounts?: boolean;
+  manageFinancialCategories?: boolean;
 }
 
 export default class UserService {
@@ -27,7 +29,7 @@ export default class UserService {
    * Versão simplificada: um usuário pertence a apenas uma empresa.
    */
   static async createUser(params: CreateUserParams): Promise<Omit<User, 'password'>> {
-    const { email, password, name, role, companyId } = params;
+    const { email, password, name, role, companyId, manageFinancialAccounts = false, manageFinancialCategories = false } = params;
     const hashed = await this.hashPassword(password);
 
     // Verificar se o usuário já tem alguma associação com empresa
@@ -48,10 +50,10 @@ export default class UserService {
       const user = existingUser 
         ? await tx.user.update({
             where: { id: existingUser.id },
-            data: { name, role, password: hashed }
+            data: { name, role, password: hashed, manageFinancialAccounts, manageFinancialCategories }
           })
         : await tx.user.create({
-            data: { email, password: hashed, name, role }
+            data: { email, password: hashed, name, role, manageFinancialAccounts, manageFinancialCategories }
           });
 
       // Criar a associação com a empresa (única)

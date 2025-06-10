@@ -11,6 +11,7 @@ interface AccessGuardProps {
   requiredRole?: UserRole;
   allowedRoles?: UserRole[];
   deniedRoles?: UserRole[];
+  requiredPermission?: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES';
   fallback?: React.ReactNode;
   redirectTo?: string;
   showFallback?: boolean;
@@ -25,7 +26,7 @@ export function AccessGuard({
   redirectTo = '/',
   showFallback = true
 }: AccessGuardProps) {
-  const { hasPermission, getRoleLabel, currentRole } = usePermissions();
+  const { hasPermission, getRoleLabel, hasAppPermission, currentRole } = usePermissions();
   const router = useRouter();
 
   const hasAccess = hasPermission({
@@ -34,8 +35,10 @@ export function AccessGuard({
     deniedRoles
   });
 
+  const permissionOk = requiredPermission ? hasAppPermission(requiredPermission) : true;
+
   // Se tem acesso, renderizar normalmente
-  if (hasAccess) {
+  if (hasAccess && permissionOk) {
     return <>{children}</>;
   }
 
@@ -146,18 +149,21 @@ export function AccessGuard({
 export function useAccessGuard(
   requiredRole?: UserRole,
   allowedRoles?: UserRole[],
-  deniedRoles?: UserRole[]
+  deniedRoles?: UserRole[],
+  requiredPermission?: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES'
 ) {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, hasAppPermission } = usePermissions();
   
   const hasAccess = hasPermission({
     requiredRole,
     allowedRoles,
     deniedRoles
   });
+
+  const permissionOk = requiredPermission ? hasAppPermission(requiredPermission) : true;
   
   return {
-    hasAccess,
+    hasAccess: hasAccess && permissionOk,
     AccessDenied: () => (
       <AccessGuard
         requiredRole={requiredRole}
@@ -175,32 +181,35 @@ interface PageGuardProps {
   children: React.ReactNode;
   requiredRole?: UserRole;
   allowedRoles?: UserRole[];
+  requiredPermission?: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES';
   redirectTo?: string;
 }
 
-export function PageGuard({ 
-  children, 
-  requiredRole, 
-  allowedRoles, 
-  redirectTo = '/' 
+export function PageGuard({
+  children,
+  requiredRole,
+  allowedRoles,
+  requiredPermission,
+  redirectTo = '/'
 }: PageGuardProps) {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, hasAppPermission } = usePermissions();
   const router = useRouter();
   
   const hasAccess = hasPermission({
     requiredRole,
     allowedRoles
   });
+  const permissionOk = requiredPermission ? hasAppPermission(requiredPermission) : true;
   
   // Se não tem acesso, redirecionar imediatamente
   React.useEffect(() => {
-    if (!hasAccess) {
+    if (!(hasAccess && permissionOk)) {
       router.replace(redirectTo);
     }
   }, [hasAccess, router, redirectTo]);
   
   // Se não tem acesso, não renderizar nada (evita flash de conteúdo)
-  if (!hasAccess) {
+  if (!(hasAccess && permissionOk)) {
     return null;
   }
   

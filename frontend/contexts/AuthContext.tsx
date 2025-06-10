@@ -9,6 +9,8 @@ interface User {
   name: string;
   email: string;
   role: string;
+  manageFinancialAccounts?: boolean;
+  manageFinancialCategories?: boolean;
   company?: {
     id: number;
     name: string;
@@ -26,6 +28,8 @@ interface AuthContextData {
   companyId: number | null;
   userName: string | null;
   companyName: string | null;
+  manageFinancialAccounts: boolean;
+  manageFinancialCategories: boolean;
   refreshToken: () => Promise<boolean>;
 }
 
@@ -239,18 +243,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ 
-        token, 
-        user, 
-        login, 
-        logout, 
+      value={{
+        token,
+        user,
+        login,
+        logout,
         refreshToken,
         isLoading,
         userRole: user?.role || null,
         userId: user?.id || null,
         companyId: user?.company?.id || null,
         userName: user?.name || null,
-        companyName: user?.company?.name || null
+        companyName: user?.company?.name || null,
+        manageFinancialAccounts: user?.manageFinancialAccounts || false,
+        manageFinancialCategories: user?.manageFinancialCategories || false
       }}
     >
       {children}

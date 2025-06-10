@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
+import { PageGuard } from '@/components/ui/AccessGuard';
 import { 
   Plus, CreditCard, Edit2, Trash2, Settings,
   Star, StarOff, AlertTriangle, MinusCircle, HelpCircle
@@ -30,7 +31,7 @@ interface Account {
   updatedAt: string;
 }
 
-export default function AccountsPage() {
+function AccountsPageInner() {
   const confirmation = useConfirmation();
   const { addToast } = useToast();
 
@@ -848,5 +849,13 @@ export default function AccountsPage() {
         loading={confirmation.loading}
       />
     </DashboardLayout>
+  );
+}
+
+export default function AccountsPage() {
+  return (
+    <PageGuard requiredRole="USER" requiredPermission="FINANCIAL_ACCOUNTS">
+      <AccountsPageInner />
+    </PageGuard>
   );
 }

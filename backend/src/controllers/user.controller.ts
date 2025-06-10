@@ -26,7 +26,7 @@ function getUserContext(req: Request): { userId: number; role: Role; companyId: 
  */
 export const createUser = async (req: Request, res: Response) => {
   const { role, companyId } = getUserContext(req);
-  const { email, password, name, newRole, companyId: targetCompanyId } = req.body;
+  const { email, password, name, newRole, companyId: targetCompanyId, manageFinancialAccounts = false, manageFinancialCategories = false } = req.body;
 
   // Validações de campos obrigatórios
   if (!email || !password || !name || targetCompanyId === undefined) {
@@ -68,7 +68,9 @@ export const createUser = async (req: Request, res: Response) => {
       password,
       name,
       role: roleToAssign,
-      companyId: Number(targetCompanyId)
+      companyId: Number(targetCompanyId),
+      manageFinancialAccounts,
+      manageFinancialCategories
     });
     return res.status(201).json(created);
   } catch (error: any) {
@@ -110,6 +112,8 @@ export const getUsers = async (req: Request, res: Response) => {
         email: true,
         name: true,
         role: true,
+        manageFinancialAccounts: true,
+        manageFinancialCategories: true,
         createdAt: true,
         updatedAt: true,
         companies: {
@@ -171,7 +175,13 @@ export const getUserById = async (req: Request, res: Response) => {
 
     const user = await UserService.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        manageFinancialAccounts: true,
+        manageFinancialCategories: true,
         companies: {
           include: {
             company: { select: { id: true, name: true, code: true } }
@@ -198,7 +208,7 @@ export const getUserById = async (req: Request, res: Response) => {
 export const updateUser = async (req: Request, res: Response) => {
   const { role, companyId, userId: me } = getUserContext(req);
   const id = Number(req.params.id);
-  const { email, password, name, newRole } = req.body;
+  const { email, password, name, newRole, manageFinancialAccounts, manageFinancialCategories } = req.body;
 
   if (isNaN(id)) {
     return res.status(400).json({ error: 'ID inválido.' });
@@ -240,6 +250,8 @@ export const updateUser = async (req: Request, res: Response) => {
     if (newRole && (role === 'ADMIN' || (role === 'SUPERUSER' && newRole !== 'ADMIN'))) {
       updateData.role = newRole;
     }
+    if (manageFinancialAccounts !== undefined) updateData.manageFinancialAccounts = manageFinancialAccounts;
+    if (manageFinancialCategories !== undefined) updateData.manageFinancialCategories = manageFinancialCategories;
 
     // Realizar a atualização
     const updated = await UserService.updateUser(id, updateData);

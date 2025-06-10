@@ -208,10 +208,15 @@ export const loginRateLimiter = {
  * Middleware específico para proteção de login
  */
 export async function loginRateLimitMiddleware(
-  req: Request, 
-  res: Response, 
+  req: Request,
+  res: Response,
   next: NextFunction
 ) {
+  // Skip login rate limiting entirely in development
+  if (process.env.NODE_ENV === 'development') {
+    return next();
+  }
+
   const email = req.body.email?.toLowerCase?.();
   const ip = getClientIP(req);
   

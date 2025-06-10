@@ -135,6 +135,8 @@ export async function login(req: Request, res: Response) {
         name: user.name,
         email: user.email,
         role: user.role,
+        manageFinancialAccounts: user.manageFinancialAccounts,
+        manageFinancialCategories: user.manageFinancialCategories,
         company: {
           id: companyId,
           name: companyName
@@ -228,6 +230,8 @@ export async function getCurrentUser(req: Request, res: Response) {
         name: true,
         email: true,
         role: true,
+        manageFinancialAccounts: true,
+        manageFinancialCategories: true,
         companies: {
           take: 1,
           select: {
@@ -254,6 +258,8 @@ export async function getCurrentUser(req: Request, res: Response) {
         name: user.name,
         email: user.email,
         role: user.role,
+        manageFinancialAccounts: user.manageFinancialAccounts,
+        manageFinancialCategories: user.manageFinancialCategories,
         company: company ? {
           id: company.id,
           name: company.name

@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
+import { PageGuard } from '@/components/ui/AccessGuard';
 import { Plus, Tag, Edit2, Trash2, TrendingUp, TrendingDown, Star, StarOff } from 'lucide-react';
 import api from '@/lib/api';
 
@@ -26,7 +27,7 @@ interface Category {
   _count?: { children: number };
 }
 
-export default function CategoriesPage() {
+function CategoriesPageInner() {
   const confirmation = useConfirmation();
   const { addToast } = useToast();
 
@@ -728,5 +729,13 @@ export default function CategoriesPage() {
         loading={confirmation.loading}
       />
     </DashboardLayout>
+  );
+}
+
+export default function CategoriesPage() {
+  return (
+    <PageGuard requiredRole="USER" requiredPermission="FINANCIAL_CATEGORIES">
+      <CategoriesPageInner />
+    </PageGuard>
   );
 }

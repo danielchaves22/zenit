@@ -28,6 +28,7 @@ type MenuItem = {
   subItems: SubMenuItem[]; // Todos terão pelo menos um subitem
   requiredRole?: 'ADMIN' | 'SUPERUSER' | 'USER'; // ✅ NOVO: Role mínimo necessário
   allowedRoles?: ('ADMIN' | 'SUPERUSER' | 'USER')[]; // ✅ NOVO: Roles específicos permitidos
+  requiredPermission?: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES';
 };
 
 // Tipo para título de seção
@@ -46,6 +47,7 @@ interface SidebarProps {
 
 export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
   const { userRole } = useAuth(); // ✅ OBTER O ROLE DO USUÁRIO
+  const { hasAppPermission } = usePermissions();
   
   // Obtém o estado salvo no localStorage ou usa o padrão
   const getSavedCollapsedState = () => {
@@ -84,6 +86,10 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     
     // Para itens de menu
     const menuItem = item as MenuItem;
+
+    if (menuItem.requiredPermission && !hasAppPermission(menuItem.requiredPermission)) {
+      return false;
+    }
     
     // Se tem roles específicos permitidos, verificar se o usuário está na lista
     if (menuItem.allowedRoles) {
@@ -144,6 +150,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       subItems: [
         { label: 'Contas', href: '/financial/accounts'},
       ],
+      requiredPermission: 'FINANCIAL_ACCOUNTS'
     },
     {
       icon: <Receipt size={20} />,
@@ -161,6 +168,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       subItems: [
         { label: 'Categorias', href: '/financial/categories' },
       ],
+      requiredPermission: 'FINANCIAL_CATEGORIES'
     },
     {
       title: 'Relatórios',

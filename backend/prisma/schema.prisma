@@ -116,7 +116,8 @@ model FinancialAccount {
   userAccess            UserFinancialAccountAccess[]
 
   @@unique([name, companyId])
-  @@unique([companyId, isDefault], name: "unique_default_account_per_company") // ✅ CONSTRAINT
+  // Permite apenas uma conta ativa por empresa
+  @@unique([companyId], name: "unique_active_account_per_company", map: "FinancialAccount_companyId_active_true_key", where: "\"isActive\" = true")
   @@index([companyId])
   @@index([companyId, isDefault]) // ✅ ÍNDICE OTIMIZADO
 }

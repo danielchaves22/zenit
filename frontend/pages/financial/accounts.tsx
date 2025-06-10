@@ -457,8 +457,8 @@ export default function AccountsPage() {
       )}
 
       {/* ✅ FORMULÁRIO COM CAMPO allowNegativeBalance */}
-      {showForm && (
-        <Card className="mb-6 border-2 border-accent">
+        {showForm && (
+          <Card className="mb-6 border-2 border-[#2563eb]">
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white">
               {editingAccount ? `Editando: ${editingAccount.name}` : 'Nova Conta Financeira'}
@@ -634,11 +634,11 @@ export default function AccountsPage() {
                 {filteredAccounts.map((account) => (
                   <tr 
                     key={account.id} 
-                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
-                      editingAccount?.id === account.id 
-                        ? 'bg-accent/10 border-accent/30' 
-                        : ''
-                    } ${!account.isActive ? 'opacity-60' : ''}`}
+                      className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                        editingAccount?.id === account.id
+                          ? 'bg-[#2563eb]/10 border-[#2563eb]/30'
+                          : ''
+                      } ${!account.isActive ? 'opacity-60' : ''}`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 justify-center">
@@ -668,7 +668,7 @@ export default function AccountsPage() {
                         </button>
                         <button
                           onClick={() => openEditForm(account)}
-                          className="p-1 text-gray-300 hover:text-accent transition-colors"
+                          className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                           title="Editar"
                           disabled={formLoading}
                         >

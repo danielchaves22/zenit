@@ -362,7 +362,7 @@ export default function UsersPage() {
 
         {/* ✅ FORMULÁRIO EXPANDIDO COM PERMISSÕES */}
         {showForm && (
-          <Card className="mb-6 border-2 border-accent">
+          <Card className="mb-6 border-2 border-[#2563eb]">
             <div className="space-y-6">
               <h3 className="text-lg font-medium text-white">
                 {editingUser ? `Editando: ${editingUser.name}` : 'Novo Usuário'}
@@ -406,7 +406,7 @@ export default function UsersPage() {
                   <select
                     value={formData.newRole}
                     onChange={(e) => setFormData({...formData, newRole: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
+                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb]"
                     disabled={formLoading}
                   >
                     <option value="USER">Usuário</option>
@@ -425,7 +425,7 @@ export default function UsersPage() {
                   <select
                     value={formData.companyId}
                     onChange={(e) => setFormData({...formData, companyId: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
+                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb]"
                     required={!editingUser}
                     disabled={formLoading}
                   >
@@ -533,8 +533,8 @@ export default function UsersPage() {
                     <tr 
                       key={user.id} 
                       className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
-                        editingUser?.id === user.id 
-                          ? 'bg-accent/10 border-accent/30' 
+                        editingUser?.id === user.id
+                          ? 'bg-[#2563eb]/10 border-[#2563eb]/30'
                           : ''
                       }`}
                     >
@@ -542,7 +542,7 @@ export default function UsersPage() {
                         <div className="flex items-center gap-1 justify-center">
                           <button
                             onClick={() => openEditForm(user)}
-                            className="p-1 text-gray-300 hover:text-accent transition-colors"
+                            className="p-1 text-gray-300 hover:text-[#2563eb] transition-colors"
                             title="Editar"
                             disabled={formLoading}
                           >

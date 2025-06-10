@@ -246,12 +246,13 @@ export default function CategoriesPage() {
 
       {/* Abas de Tipo */}
       {!showForm && (
-        <div className="flex space-x-1 mb-6">
+        <Card className="mb-6">
+          <div className="flex space-x-1">
           <button
             onClick={() => setActiveTab('EXPENSE')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-              activeTab === 'EXPENSE' 
-                ? 'bg-red-600 text-white' 
+              activeTab === 'EXPENSE'
+                ? 'bg-red-600 text-white'
                 : 'bg-[#1e2126] text-gray-400 hover:text-white'
             }`}
           >
@@ -261,15 +262,16 @@ export default function CategoriesPage() {
           <button
             onClick={() => setActiveTab('INCOME')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-              activeTab === 'INCOME' 
-                ? 'bg-green-600 text-white' 
+              activeTab === 'INCOME'
+                ? 'bg-green-600 text-white'
                 : 'bg-[#1e2126] text-gray-400 hover:text-white'
             }`}
           >
             <TrendingUp size={16} />
             Receitas
           </button>
-        </div>
+          </div>
+        </Card>
       )}
 
       {/* Info sobre categoria padrão */}

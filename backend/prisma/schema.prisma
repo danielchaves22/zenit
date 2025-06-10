@@ -116,7 +116,6 @@ model FinancialAccount {
   userAccess            UserFinancialAccountAccess[]
 
   @@unique([name, companyId])
-  @@unique([companyId, isDefault], name: "unique_default_account_per_company") // ✅ CONSTRAINT
   @@index([companyId])
   @@index([companyId, isDefault]) // ✅ ÍNDICE OTIMIZADO
 }

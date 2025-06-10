@@ -115,6 +115,26 @@ describe('Módulo Financeiro', () => {
       expect(res.body).toHaveLength(2);
       expect(res.body.map((a: any) => a.name).sort()).toEqual(['Conta Corrente', 'Poupança'].sort());
     });
+
+    it('Impede ter mais de uma conta padrão', async () => {
+      await prisma.financialAccount.update({
+        where: { id: checkingAccountId },
+        data: { isDefault: true }
+      });
+
+      await expect(
+        prisma.financialAccount.update({
+          where: { id: savingsAccountId },
+          data: { isDefault: true }
+        })
+      ).rejects.toThrow();
+
+      const count = await prisma.financialAccount.count({
+        where: { companyId, isDefault: true }
+      });
+
+      expect(count).toBe(1);
+    });
   });
 
   describe('Categorias Financeiras', () => {

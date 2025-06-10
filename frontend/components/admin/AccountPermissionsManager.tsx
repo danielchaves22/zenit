@@ -80,10 +80,14 @@ export default function AccountPermissionsManager({
 
   async function fetchCurrentAccess() {
     if (!userId) return;
-    
+
     const permissions = await fetchUserPermissions(userId);
     if (permissions) {
       setCurrentAccess(permissions);
+      const accessibleIds = permissions.accounts
+        .filter(acc => acc.hasAccess)
+        .map(acc => acc.id);
+      onPermissionsChange(accessibleIds, permissions.hasFullAccess);
     }
   }
 

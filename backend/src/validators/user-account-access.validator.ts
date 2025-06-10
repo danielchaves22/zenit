@@ -44,6 +44,8 @@ export const userCreationWithPermissionsSchema = z.object({
   name: z.string().min(1, { message: 'Nome é obrigatório.' }),
   companyId: z.number({ invalid_type_error: 'companyId deve ser um número.' }),
   newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional(),
+  manageFinancialAccounts: z.boolean().optional(),
+  manageFinancialCategories: z.boolean().optional(),
   
   // Novos campos para permissões (opcionais)
   accountPermissions: z.object({

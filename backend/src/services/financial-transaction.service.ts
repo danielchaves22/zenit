@@ -785,6 +785,30 @@ export default class FinancialTransactionService {
       _sum: { amount: true }
     });
 
+    // Inclui transferências na soma quando filtrando por contas específicas
+    let incomingTransferAggregate = { _sum: { amount: 0 } } as { _sum: { amount: number | null } };
+    let outgoingTransferAggregate = { _sum: { amount: 0 } } as { _sum: { amount: number | null } };
+
+    if (accessibleAccountIds && accessibleAccountIds.length > 0) {
+      incomingTransferAggregate = await prisma.financialTransaction.aggregate({
+        where: {
+          ...transactionWhere,
+          type: 'TRANSFER',
+          toAccountId: { in: accessibleAccountIds }
+        },
+        _sum: { amount: true }
+      });
+
+      outgoingTransferAggregate = await prisma.financialTransaction.aggregate({
+        where: {
+          ...transactionWhere,
+          type: 'TRANSFER',
+          fromAccountId: { in: accessibleAccountIds }
+        },
+        _sum: { amount: true }
+      });
+    }
+
     const topExpenseCategories = await prisma.financialTransaction.groupBy({
       by: ['categoryId'],
       where: {
@@ -818,8 +842,14 @@ export default class FinancialTransactionService {
         };
       });
 
-    const income = Number(incomeAggregate._sum.amount || 0);
-    const expense = Number(expenseAggregate._sum.amount || 0);
+    const income =
+      Number(incomeAggregate._sum.amount || 0) +
+      Number(incomingTransferAggregate._sum.amount || 0);
+
+    const expense =
+      Number(expenseAggregate._sum.amount || 0) +
+      Number(outgoingTransferAggregate._sum.amount || 0);
+
     const balance = income - expense;
 
     const result = {

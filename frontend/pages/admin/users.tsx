@@ -329,51 +329,7 @@ export default function UsersPage() {
           </Button>
         </div>
 
-        {/* Info sobre acesso limitado para SUPERUSER */}
-        {userRole === 'SUPERUSER' && (
-          <Card className="mb-6 border-blue-600/30 bg-blue-900/10">
-            <div className="flex items-start gap-3">
-              <Building2 size={20} className="text-blue-400 mt-0.5" />
-              <div>
-                <h3 className="font-medium text-blue-300 mb-1">Acesso como Superusuário</h3>
-                <p className="text-sm text-blue-200">
-                  Você pode gerenciar usuários das empresas às quais tem acesso. 
-                  Para gerenciar todas as empresas, é necessário perfil de Administrador.
-                </p>
-                {companies.length > 0 && (
-                  <div className="mt-3">
-                    <span className="text-xs text-blue-300 font-medium">Empresas acessíveis:</span>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {companies.map(company => (
-                        <span key={company.id} className="px-2 py-1 bg-blue-700 text-blue-100 text-xs rounded-full">
-                          {company.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </Card>
-        )}
 
-        {/* Aviso se houver erro ao carregar empresas */}
-        {companiesError && (
-          <Card className="mb-6 border-yellow-600 bg-yellow-900/20">
-            <div className="flex items-start gap-3">
-              <AlertCircle size={20} className="text-yellow-400 mt-0.5" />
-              <div>
-                <h3 className="font-medium text-yellow-300 mb-1">Acesso Limitado</h3>
-                <p className="text-sm text-yellow-200">
-                  {companiesError}
-                </p>
-                <p className="text-xs text-yellow-300 mt-2">
-                  Você pode editar usuários existentes, mas não criar novos usuários.
-                </p>
-              </div>
-            </div>
-          </Card>
-        )}
 
         {/* ✅ FORMULÁRIO EXPANDIDO COM PERMISSÕES */}
         {showForm && (

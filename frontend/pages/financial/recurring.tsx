@@ -645,25 +645,25 @@ export default function FinancialRecurringPage() {
                 ></textarea>
               </div>
               
-              <div className="flex gap-3 mt-6">
-                <Button 
-                  type="button" 
-                  variant="outline" 
+              <div className="flex justify-end gap-4 mt-6 pt-6 border-t border-gray-700">
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={resetForm}
-                  className="flex-1"
+                  className="flex-1 flex items-center gap-2"
                 >
                   Cancelar
                 </Button>
-                <Button 
-                  type="submit" 
+                <Button
+                  type="submit"
                   variant="accent"
                   disabled={formLoading}
-                  className="flex-1"
+                  className="flex-1 flex items-center gap-2"
                 >
-                  {formLoading 
-                    ? 'Salvando...' 
-                    : editingId 
-                      ? 'Atualizar' 
+                  {formLoading
+                    ? 'Salvando...'
+                    : editingId
+                      ? 'Atualizar'
                       : 'Criar'
                   }
                 </Button>

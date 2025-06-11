@@ -6,10 +6,11 @@ import { Input } from '@/components/ui/Input';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
-import { 
-  TrendingUp, TrendingDown, Download, Printer, FileText, FileSpreadsheet,
+import {
+  TrendingUp, TrendingDown, Download, Printer,
   Calendar, Filter, ZoomIn, ZoomOut, RotateCcw
 } from 'lucide-react';
+import { FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import api from '@/lib/api';
 import { Roboto_Condensed } from 'next/font/google';
 
@@ -524,14 +525,14 @@ export default function FinancialMovementReport() {
                     className="p-2 hover:bg-[#262b36] rounded transition-colors text-gray-300 hover:text-red-400"
                     title="Exportar PDF"
                   >
-                    <FileText size={16} />
+                    <FaFilePdf size={16} />
                   </button>
                   <button
                     onClick={exportToExcel}
                     className="p-2 hover:bg-[#262b36] rounded transition-colors text-gray-300 hover:text-green-400"
                     title="Exportar Excel"
                   >
-                    <FileSpreadsheet size={16} />
+                    <FaFileExcel size={16} />
                   </button>
                 </div>
               </div>

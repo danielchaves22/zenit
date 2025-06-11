@@ -10,7 +10,7 @@ import { AccessGuard } from '@/components/ui/AccessGuard'; // ✅ NOVO IMPORT
 import { useToast } from '@/components/ui/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions'; // ✅ NOVO IMPORT
-import { Plus, Building2, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Building2, Edit2, Trash2, Save, X } from 'lucide-react';
 import api from '@/lib/api';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
@@ -154,15 +154,43 @@ export default function CompaniesPage() {
       <AccessGuard allowedRoles={['ADMIN']}>
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-semibold text-white">Empresas</h1>
-          <Button 
-            variant="accent" 
-            onClick={() => showForm ? closeForm() : openNewForm()}
-            className="flex items-center gap-2"
-            disabled={formLoading}
-          >
-            <Plus size={16} />
-            {showForm ? 'Cancelar' : 'Nova Empresa'}
-          </Button>
+          {showForm ? (
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeForm}
+                disabled={formLoading}
+                className="flex items-center gap-2"
+              >
+                <X size={16} />
+                Cancelar
+              </Button>
+              <Button
+                variant="accent"
+                onClick={handleSubmit}
+                disabled={formLoading}
+                className="flex items-center gap-2"
+              >
+                <Save size={16} />
+                {formLoading
+                  ? 'Salvando...'
+                  : editingCompany
+                    ? 'Salvar Alterações'
+                    : 'Criar Empresa'}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="accent"
+              onClick={openNewForm}
+              className="flex items-center gap-2"
+              disabled={formLoading}
+            >
+              <Plus size={16} />
+              Nova Empresa
+            </Button>
+          )}
         </div>
 
         {/* Inline form */}

@@ -11,9 +11,10 @@ import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { PageGuard } from '@/components/ui/AccessGuard';
-import { 
+import {
   Plus, CreditCard, Edit2, Trash2, Settings,
-  Star, StarOff, AlertTriangle, MinusCircle, HelpCircle
+  Star, StarOff, AlertTriangle, MinusCircle, HelpCircle,
+  Save, X
 } from 'lucide-react';
 import api from '@/lib/api';
 
@@ -389,15 +390,43 @@ function AccountsPageInner() {
 
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-semibold text-white">Contas Financeiras</h1>
-        <Button 
-          variant="accent" 
-          onClick={() => showForm ? closeForm() : openNewForm()}
-          className="flex items-center gap-2"
-          disabled={formLoading}
-        >
-          <Plus size={16} />
-          {showForm ? 'Cancelar' : 'Nova Conta'}
-        </Button>
+        {showForm ? (
+          <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeForm}
+              disabled={formLoading}
+              className="flex items-center gap-2"
+            >
+              <X size={16} />
+              Cancelar
+            </Button>
+            <Button
+              variant="accent"
+              onClick={handleSubmit}
+              disabled={formLoading}
+              className="flex items-center gap-2"
+            >
+              <Save size={16} />
+              {formLoading
+                ? 'Salvando...'
+                : editingAccount
+                  ? 'Salvar Alterações'
+                  : 'Criar Conta'}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="accent"
+            onClick={openNewForm}
+            className="flex items-center gap-2"
+            disabled={formLoading}
+          >
+            <Plus size={16} />
+            Nova Conta
+          </Button>
+        )}
       </div>
 
       {/* Filtros */}

@@ -440,7 +440,7 @@ function AccountsPageInner() {
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
-                className="px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                className="px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               >
                 <option value="">Todos os tipos</option>
                 <option value="CHECKING">Conta Corrente</option>
@@ -458,7 +458,7 @@ function AccountsPageInner() {
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                className="px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               >
                 <option value="">Todos</option>
                 <option value="true">Ativas</option>
@@ -511,7 +511,7 @@ function AccountsPageInner() {
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData({...formData, type: e.target.value as Account['type']})}
-                  className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   disabled={formLoading}
                 >
                   <option value="CHECKING">Conta Corrente</option>
@@ -829,7 +829,7 @@ function AccountsPageInner() {
                   value={balanceData.reason}
                   onChange={(e) => setBalanceData({...balanceData, reason: e.target.value})}
                   rows={3}
-                  className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   placeholder="Ex: Conciliação bancária, correção de lançamento..."
                   required
                   disabled={formLoading}

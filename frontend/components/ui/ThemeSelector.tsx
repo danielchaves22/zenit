@@ -96,7 +96,7 @@ export function ThemeSelector({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`${currentSize.button} bg-[#1e2126] border border-gray-700 rounded-lg hover:bg-[#262b36] transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50 hover-lift`}
+        className={`${currentSize.button} bg-[#1e2126] border border-gray-700 rounded hover:bg-[#262b36] transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50 hover-lift`}
         style={{ 
           borderColor: isOpen ? currentThemeInfo.colors.primary : undefined,
           boxShadow: isOpen ? `0 0 0 1px ${currentThemeInfo.colors.primary}` : undefined
@@ -116,7 +116,7 @@ export function ThemeSelector({
       </button>
 
       {isOpen && (
-        <div className={`absolute right-0 mt-2 ${currentSize.dropdown} bg-[#1e2126] border border-gray-700 rounded-lg shadow-2xl z-50 animate-fadeIn max-h-96 overflow-y-auto`}>
+        <div className={`absolute right-0 mt-2 ${currentSize.dropdown} bg-[#1e2126] border border-gray-700 rounded shadow-2xl z-50 animate-fadeIn max-h-96 overflow-y-auto`}>
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-700">
             <h3 className={`${currentSize.text} font-medium text-white`}>Escolher Tema</h3>

@@ -14,7 +14,7 @@ export function Button({
   className = '',
   ...props
 }: ButtonProps) {
-  const base = 'px-4 py-2 rounded-lg font-semibold transition-all duration-200';
+  const base = 'px-3 py-1.5 rounded font-semibold transition-all duration-200';
   const variants: Record<ButtonVariant, string> = {
     primary: `${base} bg-blue-600 text-white hover:bg-blue-700`,
     // ✅ USANDO CSS VARIABLES DINÂMICAS

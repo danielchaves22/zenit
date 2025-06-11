@@ -113,7 +113,7 @@ export default function ProfileForm({ user }: Props) {
             name="newRole"
             value={formData.newRole}
             onChange={handleChange}
-            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:border-primary"
+            className="w-full px-2 py-1.5 border rounded focus:outline-none focus:ring focus:border-primary"
           >
             <option value="USER">Usuário</option>
             <option value="SUPERUSER">Superusuário</option>
@@ -129,7 +129,7 @@ export default function ProfileForm({ user }: Props) {
             name="companyId"
             value={formData.companyId}
             onChange={handleChange}
-            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring focus:border-primary"
+            className="w-full px-2 py-1.5 border rounded focus:outline-none focus:ring focus:border-primary"
           >
             {user.companies.map(c => (
               <option key={c.company.id} value={c.company.id}>

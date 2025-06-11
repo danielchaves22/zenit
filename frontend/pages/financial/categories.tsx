@@ -279,7 +279,7 @@ function CategoriesPageInner() {
           <div className="flex space-x-1">
           <button
             onClick={() => setActiveTab('EXPENSE')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center gap-2 ${
               activeTab === 'EXPENSE'
                 ? 'bg-red-600 text-white'
                 : 'bg-[#1e2126] text-gray-400 hover:text-white'
@@ -290,7 +290,7 @@ function CategoriesPageInner() {
           </button>
           <button
             onClick={() => setActiveTab('INCOME')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+            className={`px-3 py-1.5 rounded font-medium transition-colors flex items-center gap-2 ${
               activeTab === 'INCOME'
                 ? 'bg-green-600 text-white'
                 : 'bg-[#1e2126] text-gray-400 hover:text-white'
@@ -344,7 +344,7 @@ function CategoriesPageInner() {
                 <select
                   value={formData.type}
                   onChange={(e) => setFormData({...formData, type: e.target.value as 'INCOME' | 'EXPENSE'})}
-                  className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   disabled={formLoading}
                 >
                   <option value="EXPENSE">Despesa</option>
@@ -383,7 +383,7 @@ function CategoriesPageInner() {
                 <select
                   value={formData.parentId}
                   onChange={(e) => setFormData({...formData, parentId: e.target.value})}
-                  className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   disabled={formLoading}
                 >
                   <option value="">Nenhuma (categoria principal)</option>

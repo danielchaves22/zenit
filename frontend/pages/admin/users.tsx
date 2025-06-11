@@ -405,7 +405,7 @@ export default function UsersPage() {
                   <select
                     value={formData.newRole}
                     onChange={(e) => setFormData({...formData, newRole: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb]"
+                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb]"
                     disabled={formLoading}
                   >
                     <option value="USER">Usuário</option>
@@ -421,14 +421,14 @@ export default function UsersPage() {
                   Empresa {!editingUser && '*'}
                 </label>
                 {editingUser || !isAdmin() ? (
-                  <div className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-300 rounded-lg">
+                  <div className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 text-gray-300 rounded">
                     {editingUser ? editingUser.companies[0]?.company.name : companyName}
                   </div>
                 ) : companies.length > 0 ? (
                   <select
                     value={formData.companyId}
                     onChange={(e) => setFormData({ ...formData, companyId: e.target.value })}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb]"
+                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb]"
                     required={!editingUser}
                     disabled={formLoading}
                   >

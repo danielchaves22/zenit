@@ -16,7 +16,7 @@ export function Input({ label, error, className = '', ...props }: InputProps) {
       )}
       <input
         id={props.id}
-        className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb]" // ✅ ALTERADO
+        className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb]"
         {...props}
       />
       {error && (

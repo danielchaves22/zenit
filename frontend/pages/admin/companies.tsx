@@ -190,25 +190,28 @@ export default function CompaniesPage() {
                 disabled={formLoading}
               />
 
-              <div className="flex gap-3">
-                <Button 
-                  variant="accent" 
-                  onClick={handleSubmit}
-                  disabled={formLoading}
-                >
-                  {formLoading 
-                    ? 'Salvando...' 
-                    : editingCompany 
-                      ? 'Salvar Alterações' 
-                      : 'Criar Empresa'
-                  }
-                </Button>
-                <Button 
-                  variant="outline" 
+              <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={closeForm}
                   disabled={formLoading}
+                  className="flex items-center gap-2"
                 >
                   Cancelar
+                </Button>
+                <Button
+                  variant="accent"
+                  onClick={handleSubmit}
+                  disabled={formLoading}
+                  className="flex items-center gap-2"
+                >
+                  {formLoading
+                    ? 'Salvando...'
+                    : editingCompany
+                      ? 'Salvar Alterações'
+                      : 'Criar Empresa'
+                  }
                 </Button>
               </div>
             </div>

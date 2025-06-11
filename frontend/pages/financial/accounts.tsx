@@ -564,25 +564,28 @@ function AccountsPageInner() {
               </div>
             </div>
 
-            <div className="flex gap-3">
-              <Button 
-                variant="accent" 
-                onClick={handleSubmit}
-                disabled={formLoading}
-              >
-                {formLoading 
-                  ? 'Salvando...' 
-                  : editingAccount 
-                    ? 'Salvar Alterações' 
-                    : 'Criar Conta'
-                }
-              </Button>
-              <Button 
-                variant="outline" 
+            <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
+              <Button
+                type="button"
+                variant="outline"
                 onClick={closeForm}
                 disabled={formLoading}
+                className="flex items-center gap-2"
               >
                 Cancelar
+              </Button>
+              <Button
+                variant="accent"
+                onClick={handleSubmit}
+                disabled={formLoading}
+                className="flex items-center gap-2"
+              >
+                {formLoading
+                  ? 'Salvando...'
+                  : editingAccount
+                    ? 'Salvar Alterações'
+                    : 'Criar Conta'
+                }
               </Button>
             </div>
           </div>
@@ -815,19 +818,20 @@ function AccountsPageInner() {
               </div>
             </div>
 
-            <div className="flex gap-3 p-6 border-t border-gray-700">
-              <Button 
-                variant="outline" 
+            <div className="flex justify-end gap-4 p-6 border-t border-gray-700">
+              <Button
+                type="button"
+                variant="outline"
                 onClick={closeBalanceModal}
-                className="flex-1"
+                className="flex-1 flex items-center gap-2"
                 disabled={formLoading}
               >
                 Cancelar
               </Button>
-              <Button 
+              <Button
                 variant="accent"
                 onClick={handleBalanceAdjust}
-                className="flex-1"
+                className="flex-1 flex items-center gap-2"
                 disabled={formLoading}
               >
                 {formLoading ? 'Ajustando...' : 'Ajustar Saldo'}

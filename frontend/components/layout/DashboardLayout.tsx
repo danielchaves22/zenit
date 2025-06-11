@@ -82,7 +82,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
   return (
     <div className="flex flex-col h-screen bg-[#1e2126]">
       {/* Top Navigation com uma borda sutil */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-[#151921] text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-[#151921] text-white py-3 pr-6 pl-2 flex justify-between items-center h-20 border-b border-gray-700">
         <div className="flex items-center space-x-4">
           <Link href="/" className="flex items-center hover:opacity-90">
             <Image
@@ -91,7 +91,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
               width={2000}
               height={1000}
               priority
-              className="h-8 w-auto"
+              className="h-20 w-auto"
             />
           </Link>
           <span className="text-white text-lg font-bold font-heading">

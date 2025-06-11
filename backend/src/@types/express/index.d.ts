@@ -4,7 +4,7 @@ declare global {
   namespace Express {
     interface Request {
       user: (Partial<User> & {
-        companyId: number;
+        companyId?: number;
       }) & {
         /**
          * When authenticated via JWT the middleware attaches the

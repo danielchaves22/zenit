@@ -96,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [companyId, setCompanyId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState<boolean>(false);
 
@@ -123,6 +124,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setToken(storedToken);
         setUser({ ...response.data.user, mustChangePassword: storedMustChange === 'true' });
+
+        const storedCompanyId = localStorage.getItem('zenit_company_id');
+        const initialCompanyId = storedCompanyId
+          ? Number(storedCompanyId)
+          : response.data.user.company?.id || null;
+        setCompanyId(initialCompanyId);
+        if (!storedCompanyId && initialCompanyId !== null) {
+          localStorage.setItem('zenit_company_id', String(initialCompanyId));
+        }
       }
     } catch (error) {
       console.error('Erro ao inicializar autenticação:', error);
@@ -160,6 +170,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setToken(newToken);
       setUser(userData);
+      if (userData.company?.id) {
+        setCompanyId(userData.company.id);
+        localStorage.setItem('zenit_company_id', userData.company.id.toString());
+      }
 
       return userData;
       
@@ -218,12 +232,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('zenit_token');
     localStorage.removeItem('zenit_refresh_token');
     localStorage.removeItem('zenit_must_change_password');
+    localStorage.removeItem('zenit_company_id');
     
     // Remover APENAS nosso cookie específico
     removeSecureCookie('zenit_token');
     
     setToken(null);
     setUser(null);
+    setCompanyId(null);
   }
 
   function logout() {
@@ -283,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         userRole: user?.role || null,
         userId: user?.id || null,
-        companyId: user?.company?.id || null,
+        companyId,
         userName: user?.name || null,
         companyName: user?.company?.name || null,
         manageFinancialAccounts: user?.manageFinancialAccounts || false,

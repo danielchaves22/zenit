@@ -95,6 +95,7 @@ describe('Módulo Financeiro', () => {
       const res = await request(app)
         .post('/api/financial/accounts')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           name: 'Conta Corrente',
           type: 'CHECKING',
@@ -114,6 +115,7 @@ describe('Módulo Financeiro', () => {
       const res = await request(app)
         .post('/api/financial/accounts')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           name: 'Poupança',
           type: 'SAVINGS',
@@ -132,7 +134,8 @@ describe('Módulo Financeiro', () => {
     it('Deve listar as contas criadas', async () => {
       const res = await request(app)
         .get('/api/financial/accounts')
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString());
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -175,6 +178,7 @@ describe('Módulo Financeiro', () => {
       const res = await request(app)
         .post('/api/financial/categories')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           name: 'Alimentação',
           type: 'EXPENSE',
@@ -193,6 +197,7 @@ describe('Módulo Financeiro', () => {
       const res = await request(app)
         .post('/api/financial/categories')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           name: 'Salário',
           type: 'INCOME',
@@ -210,7 +215,8 @@ describe('Módulo Financeiro', () => {
     it('Deve listar as categorias criadas', async () => {
       const res = await request(app)
         .get('/api/financial/categories')
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString());
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
@@ -223,6 +229,7 @@ describe('Módulo Financeiro', () => {
       const res = await request(app)
         .post('/api/financial/transactions')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           description: 'Compra Supermercado',
           amount: 150.75,
@@ -254,6 +261,7 @@ describe('Módulo Financeiro', () => {
       const res = await request(app)
         .post('/api/financial/transactions')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           description: 'Salário Mensal',
           amount: 3000,
@@ -286,6 +294,7 @@ describe('Módulo Financeiro', () => {
       const res = await request(app)
         .post('/api/financial/transactions')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           description: 'Transferência para Poupança',
           amount: 500,
@@ -328,6 +337,7 @@ describe('Módulo Financeiro', () => {
       const createRes = await request(app)
         .post('/api/financial/transactions')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           description: 'Compra para Cancelar',
           amount: 200,
@@ -353,6 +363,7 @@ describe('Módulo Financeiro', () => {
       const updateRes = await request(app)
         .patch(`/api/financial/transactions/${transactionId}/status`)
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
         .send({
           status: 'CANCELED'
         });
@@ -372,7 +383,8 @@ describe('Módulo Financeiro', () => {
     it('Deve obter um resumo financeiro', async () => {
       const res = await request(app)
         .get('/api/financial/summary')
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString());
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty('income');
@@ -390,7 +402,8 @@ describe('Módulo Financeiro', () => {
     it('Usuário comum vê apenas contas permitidas no resumo', async () => {
       const res = await request(app)
         .get('/api/financial/summary')
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', companyId.toString());
 
       expect(res.status).toBe(200);
       expect(Array.isArray(res.body.accounts)).toBe(true);

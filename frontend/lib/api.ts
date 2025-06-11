@@ -24,6 +24,10 @@ api.interceptors.request.use(config => {
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  const companyId = localStorage.getItem('zenit_company_id')
+  if (companyId && config.headers) {
+    config.headers['X-Company-Id'] = companyId
+  }
   return config
 });
 
@@ -46,3 +50,4 @@ api.interceptors.response.use(
 );
 
 export default api
+

@@ -96,6 +96,10 @@ export default function TransactionForm({
     tags: ''
   });
 
+  // Verificar se o formulário deve estar somente leitura
+  const isReadOnly = mode === 'edit' && transaction?.status === 'COMPLETED';
+  const isPending = formData.status === 'PENDING';
+
   useEffect(() => {
     fetchAccounts();
     fetchCategories();
@@ -284,7 +288,19 @@ export default function TransactionForm({
         }
       }
     } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
+      setFormData(prev => {
+        const updated: any = { ...prev, [name]: value };
+
+        if (name === 'status') {
+          if (value === 'PENDING') {
+            updated.effectiveDate = '';
+          } else if (!prev.effectiveDate) {
+            updated.effectiveDate = new Date().toISOString().split('T')[0];
+          }
+        }
+
+        return updated;
+      });
     }
   };
 
@@ -438,37 +454,41 @@ export default function TransactionForm({
             </div>
           )}
 
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleCancel}
-            disabled={saving}
-            className="flex items-center gap-2"
-          >
-            <X size={16} />
-            Cancelar
-          </Button>
-          <Button
-            type="button"
-            variant="accent"
-            onClick={handleTopSave}
-            disabled={saving}
-            className="flex items-center gap-2"
-          >
-            <Save size={16} />
-            {saveButtonLabel}
-          </Button>
+          {!isReadOnly && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={saving || isReadOnly}
+                className="flex items-center gap-2"
+              >
+                <X size={16} />
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="accent"
+                onClick={handleTopSave}
+                disabled={saving || isReadOnly}
+                className="flex items-center gap-2"
+              >
+                <Save size={16} />
+                {saveButtonLabel}
+              </Button>
 
-          {mode === 'edit' && (
-            <Button
-              variant="danger"
-              onClick={handleDelete}
-              className="flex items-center gap-2"
-              disabled={saving}
-            >
-              <Trash2 size={16} />
-              Excluir
-            </Button>
+              {mode === 'edit' && (
+                <Button
+                  variant="danger"
+                  onClick={handleDelete}
+                  className="flex items-center gap-2"
+                  disabled={saving || isReadOnly}
+                >
+                  <Trash2 size={16} />
+                  Excluir
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -489,7 +509,7 @@ export default function TransactionForm({
                 value={formData.amount}
                 onChange={handleAmountChange}
                 required
-                disabled={saving}
+                disabled={saving || isReadOnly}
               />
             </div>
             <div className="md:col-span-9">
@@ -510,7 +530,7 @@ export default function TransactionForm({
                   fetchSuggestions={fetchAutocompleteSuggestions}
                   required
                   placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
-                  disabled={saving}
+                  disabled={saving || isReadOnly}
                   minLength={3}
                   maxSuggestions={10}
                   className="mb-0"
@@ -533,7 +553,7 @@ export default function TransactionForm({
                   onChange={handleChange}
                   className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
                   required
-                  disabled={saving}
+                  disabled={saving || isReadOnly}
                 >
                   <option value="">Selecione uma conta</option>
                   {accounts.map(account => (
@@ -558,7 +578,7 @@ export default function TransactionForm({
                   onChange={handleChange}
                   className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
                   required
-                  disabled={saving}
+                  disabled={saving || isReadOnly}
                 >
                   <option value="">Selecione uma conta</option>
                   {accounts.map(account => (
@@ -582,7 +602,7 @@ export default function TransactionForm({
                   value={formData.categoryId}
                   onChange={handleChange}
                   className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
-                  disabled={saving}
+                  disabled={saving || isReadOnly}
                 >
                   <option value="">Sem categoria</option>
                   {categories
@@ -600,17 +620,8 @@ export default function TransactionForm({
           </div>
           
           {/* Terceira linha: Data e Status */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">            
-            <Input
-              id="date"
-              name="date"
-              label="Data *"
-              type="date"
-              value={formData.date}
-              onChange={handleChange}
-              required
-              disabled={saving}
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <input type="hidden" name="date" value={formData.date} readOnly />
             
             <div>
               <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
@@ -623,7 +634,7 @@ export default function TransactionForm({
                 onChange={handleChange}
                 className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
                 required
-                disabled={saving}
+                disabled={saving || isReadOnly}
               >
                 <option value="PENDING">Pendente</option>
                 <option value="COMPLETED">Concluída</option>
@@ -649,7 +660,7 @@ export default function TransactionForm({
                 type="date"
                 value={formData.dueDate}
                 onChange={handleChange}
-                disabled={saving}
+                disabled={saving || isReadOnly}
                 className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
               />
             </div>
@@ -669,7 +680,7 @@ export default function TransactionForm({
                 type="date"
                 value={formData.effectiveDate}
                 onChange={handleChange}
-                disabled={saving}
+                disabled={saving || isPending || isReadOnly}
                 className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
               />
             </div>
@@ -684,7 +695,7 @@ export default function TransactionForm({
               value={formData.tags}
               onChange={handleChange}
               placeholder="Ex: alimentação, mercado, urgente"
-              disabled={saving}
+              disabled={saving || isReadOnly}
             />
           </div>
           
@@ -701,36 +712,38 @@ export default function TransactionForm({
               rows={4}
               className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
               placeholder="Informações adicionais sobre a transação..."
-              disabled={saving}
+              disabled={saving || isReadOnly}
             />
           </div>
           
-          <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleCancel}
-              disabled={saving}
-              className="flex items-center gap-2"
-            >
-              <X size={16} />
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              variant="accent"
-              disabled={saving}
-              className="flex items-center gap-2"
-            >
-              <Save size={16} />
-              {saving 
-                ? 'Salvando...' 
-                : mode === 'create' 
-                  ? 'Criar Transação' 
-                  : 'Salvar Alterações'
-              }
-            </Button>
-          </div>
+          {!isReadOnly && (
+            <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={saving || isReadOnly}
+                className="flex items-center gap-2"
+              >
+                <X size={16} />
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="accent"
+                disabled={saving || isReadOnly}
+                className="flex items-center gap-2"
+              >
+                <Save size={16} />
+                {saving
+                  ? 'Salvando...'
+                  : mode === 'create'
+                    ? 'Criar Transação'
+                    : 'Salvar Alterações'
+                }
+              </Button>
+            </div>
+          )}
         </form>
       </Card>
 

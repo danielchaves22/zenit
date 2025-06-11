@@ -417,13 +417,15 @@ export default function TransactionsListPage() {
                               <Edit2 size={14} />
                             </button>
                           </Link>
-                          <button
-                            onClick={() => handleDelete(transaction)}
-                            className="p-1 text-gray-300 hover:text-red-400 transition-colors"
-                            title="Excluir"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {transaction.status !== 'COMPLETED' && (
+                            <button
+                              onClick={() => handleDelete(transaction)}
+                              className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </td>
                       

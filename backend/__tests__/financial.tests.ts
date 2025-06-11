@@ -7,11 +7,14 @@ const prisma = new PrismaClient();
 
 describe('Módulo Financeiro', () => {
   let adminToken: string;
+  let adminId: number;
   let companyId: number;
   let checkingAccountId: number;
   let savingsAccountId: number;
   let expenseCategoryId: number;
   let incomeCategoryId: number;
+  let userToken: string;
+  let userId: number;
 
   beforeAll(async () => {
     // Limpeza das tabelas financeiras
@@ -34,25 +37,45 @@ describe('Módulo Financeiro', () => {
     // Criação de usuário admin para testes
     const hash = await bcrypt.hash('senha123', 10);
     const admin = await prisma.user.create({
-      data: { 
-        email: 'admin@teste.com', 
-        password: hash, 
-        name: 'Admin Teste', 
-        role: 'ADMIN' 
+      data: {
+        email: 'admin@teste.com',
+        password: hash,
+        name: 'Admin Teste',
+        role: 'ADMIN'
       }
     });
+    adminId = admin.id;
+
+    // Criação de usuário comum
+    const user = await prisma.user.create({
+      data: {
+        email: 'user@teste.com',
+        password: hash,
+        name: 'User Teste',
+        role: 'USER'
+      }
+    });
+    userId = user.id;
 
     // Associação usuário-empresa
     await prisma.userCompany.create({
       data: { userId: admin.id, companyId, isDefault: true }
+    });
+    await prisma.userCompany.create({
+      data: { userId: userId, companyId, isDefault: false }
     });
 
     // Login para obter token
     const res = await request(app)
       .post('/api/auth/login')
       .send({ email: 'admin@teste.com', password: 'senha123' });
-    
+
     adminToken = res.body.token;
+
+    const resUser = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'user@teste.com', password: 'senha123' });
+    userToken = resUser.body.token;
   });
 
   afterAll(async () => {
@@ -114,6 +137,16 @@ describe('Módulo Financeiro', () => {
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(2);
       expect(res.body.map((a: any) => a.name).sort()).toEqual(['Conta Corrente', 'Poupança'].sort());
+
+      // Concede acesso da conta corrente ao usuário comum
+      await prisma.userFinancialAccountAccess.create({
+        data: {
+          userId,
+          financialAccountId: checkingAccountId,
+          companyId,
+          grantedBy: adminId
+        }
+      });
     });
 
     it('Impede ter mais de uma conta padrão', async () => {
@@ -352,6 +385,17 @@ describe('Módulo Financeiro', () => {
       expect(typeof res.body.expense).toBe('number');
       expect(typeof res.body.balance).toBe('number');
       expect(Array.isArray(res.body.accounts)).toBe(true);
+    });
+
+    it('Usuário comum vê apenas contas permitidas no resumo', async () => {
+      const res = await request(app)
+        .get('/api/financial/summary')
+        .set('Authorization', `Bearer ${userToken}`);
+
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body.accounts)).toBe(true);
+      expect(res.body.accounts).toHaveLength(1);
+      expect(res.body.accounts[0].id).toBe(checkingAccountId);
     });
   });
 });

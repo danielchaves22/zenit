@@ -266,6 +266,8 @@ export async function deleteTransaction(req: Request, res: Response) {
 export async function getFinancialSummary(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
+    // @ts-ignore - auth middleware adiciona
+    const { userId, role } = req.user;
     
     // Parâmetros de período (padrão: mês atual)
     const { 
@@ -286,10 +288,18 @@ export async function getFinancialSummary(req: Request, res: Response) {
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Último dia do mês
     }
 
+    const accessibleAccountIds =
+      await UserFinancialAccountAccessService.getUserAccessibleAccounts(
+        userId,
+        role,
+        companyId
+      );
+
     const summary = await FinancialTransactionService.getFinancialSummary(
       companyId,
       startDate,
-      endDate
+      endDate,
+      accessibleAccountIds
     );
 
     return res.status(200).json({

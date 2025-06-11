@@ -68,4 +68,21 @@ declare module 'recharts' {
   export const Legend: ComponentType<{
     [key: string]: any;
   }>;
+
+  export const Pie: ComponentType<{
+    dataKey: string;
+    nameKey?: string;
+    cx?: number | string;
+    cy?: number | string;
+    innerRadius?: number | string;
+    outerRadius?: number | string;
+    paddingAngle?: number;
+    label?: boolean | ((props: any) => ReactNode);
+    [key: string]: any;
+  }>;
+
+  export const Cell: ComponentType<{
+    fill?: string;
+    [key: string]: any;
+  }>;
 }

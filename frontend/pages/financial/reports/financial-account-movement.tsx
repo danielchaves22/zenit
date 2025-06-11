@@ -412,7 +412,7 @@ export default function FinancialMovementReport() {
               <select
                 value={filters.groupBy}
                 onChange={(e) => setFilters(prev => ({ ...prev, groupBy: e.target.value as 'day' | 'week' | 'month' }))}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
+                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="day">Por Dia</option>
                 <option value="week">Por Semana</option>

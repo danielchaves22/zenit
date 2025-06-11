@@ -15,7 +15,7 @@ export function Select({ label, options, className = '', ...props }: SelectProps
         </label>
       )}
       <select
-        className="bg-[#1e2126] border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:ring focus:border-[#2563eb]" // ✅ ALTERADO
+        className="bg-[#1e2126] border border-gray-700 text-white rounded px-2 py-1.5 focus:outline-none focus:ring focus:border-[#2563eb]"
         {...props}
       >
         {options.map((option) => (

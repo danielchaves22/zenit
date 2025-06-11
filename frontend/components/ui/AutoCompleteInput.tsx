@@ -240,7 +240,7 @@ export function AutocompleteInput({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
-          className={`w-full pl-3 pr-10 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb] ${ // ✅ ALTERADO
+          className={`w-full pl-3 pr-10 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           } ${error ? 'border-red-500' : ''}`}
           autoComplete="off"
@@ -249,7 +249,7 @@ export function AutocompleteInput({
         {/* Loading or search icon */}
         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
           {isLoading ? (
-            <div className="w-4 h-4 border-2 border-gray-400 border-t-[#2563eb] rounded-full animate-spin" /> // ✅ ALTERADO
+            <div className="w-4 h-4 border-2 border-gray-400 border-t-[#2563eb] rounded-full animate-spin" />
           ) : (
             <Search size={16} className="text-gray-400" />
           )}
@@ -260,7 +260,7 @@ export function AutocompleteInput({
       {showSuggestions && suggestions.length > 0 && hasFocus && (
         <div 
           ref={suggestionsRef}
-          className="absolute z-50 w-full mt-1 bg-[#1e2126] border border-gray-700 rounded-lg shadow-lg max-h-60 overflow-y-auto"
+          className="absolute z-50 w-full mt-1 bg-[#1e2126] border border-gray-700 rounded shadow-lg max-h-60 overflow-y-auto"
         >
           {suggestions.map((suggestion, index) => (
             <div

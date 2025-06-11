@@ -264,9 +264,9 @@ export default function FinancialRecurringPage() {
       <div className="flex space-x-1 mb-6">
         <button
           onClick={() => setActiveTab('EXPENSE')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === 'EXPENSE' 
-              ? 'bg-red-600 text-white' 
+          className={`px-3 py-1.5 rounded font-medium transition-colors ${
+            activeTab === 'EXPENSE'
+              ? 'bg-red-600 text-white'
               : 'bg-[#1e2126] text-gray-400 hover:text-white'
           }`}
         >
@@ -275,9 +275,9 @@ export default function FinancialRecurringPage() {
         </button>
         <button
           onClick={() => setActiveTab('INCOME')}
-          className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === 'INCOME' 
-              ? 'bg-green-600 text-white' 
+          className={`px-3 py-1.5 rounded font-medium transition-colors ${
+            activeTab === 'INCOME'
+              ? 'bg-green-600 text-white'
               : 'bg-[#1e2126] text-gray-400 hover:text-white'
           }`}
         >
@@ -510,7 +510,7 @@ export default function FinancialRecurringPage() {
                   <select
                     value={formData.type}
                     onChange={(e) => setFormData({...formData, type: e.target.value as 'EXPENSE' | 'INCOME'})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                     required
                   >
                     <option value="EXPENSE">Despesa</option>
@@ -535,7 +535,7 @@ export default function FinancialRecurringPage() {
                   <select
                     value={formData.frequency}
                     onChange={(e) => setFormData({...formData, frequency: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                     required
                   >
                     <option value="DAILY">Diário</option>
@@ -556,7 +556,7 @@ export default function FinancialRecurringPage() {
                   <select
                     value={formData.dayOfMonth}
                     onChange={(e) => setFormData({...formData, dayOfMonth: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   >
                     {Array.from({length: 31}, (_, i) => i + 1).map(day => (
                       <option key={day} value={day}>Dia {day}</option>
@@ -573,7 +573,7 @@ export default function FinancialRecurringPage() {
                   <select
                     value={formData.dayOfWeek}
                     onChange={(e) => setFormData({...formData, dayOfWeek: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   >
                     {Object.entries(dayOfWeekLabels).map(([value, label]) => (
                       <option key={value} value={value}>{label}</option>
@@ -591,7 +591,7 @@ export default function FinancialRecurringPage() {
                     <select
                       value={formData.fromAccountId}
                       onChange={(e) => setFormData({...formData, fromAccountId: e.target.value})}
-                      className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                      className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                       required
                     >
                       <option value="">Selecione uma conta</option>
@@ -612,7 +612,7 @@ export default function FinancialRecurringPage() {
                     <select
                       value={formData.toAccountId}
                       onChange={(e) => setFormData({...formData, toAccountId: e.target.value})}
-                      className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                      className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                       required
                     >
                       <option value="">Selecione uma conta</option>
@@ -632,7 +632,7 @@ export default function FinancialRecurringPage() {
                   <select
                     value={formData.categoryId}
                     onChange={(e) => setFormData({...formData, categoryId: e.target.value})}
-                    className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   >
                     <option value="">Sem categoria</option>
                     {categories
@@ -662,7 +662,7 @@ export default function FinancialRecurringPage() {
                   value={formData.notes}
                   onChange={(e) => setFormData({...formData, notes: e.target.value})}
                   rows={3}
-                  className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   placeholder="Observações adicionais..."
                 ></textarea>
               </div>

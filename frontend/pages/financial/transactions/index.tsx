@@ -287,7 +287,7 @@ export default function TransactionsListPage() {
               <select
                 value={filters.type}
                 onChange={(e) => setFilters({...filters, type: e.target.value})}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
+                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="">Todos</option>
                 <option value="INCOME">Receita</option>
@@ -303,7 +303,7 @@ export default function TransactionsListPage() {
               <select
                 value={filters.status}
                 onChange={(e) => setFilters({...filters, status: e.target.value})}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
+                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="">Todos</option>
                 <option value="PENDING">Pendente</option>
@@ -319,7 +319,7 @@ export default function TransactionsListPage() {
               <select
                 value={filters.accountId}
                 onChange={(e) => setFilters({...filters, accountId: e.target.value})}
-                className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-accent"
+                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="">Todas</option>
                 {accounts.map(account => (

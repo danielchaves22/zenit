@@ -68,7 +68,7 @@ export default function HomePage() {
                   </div>
                   <div>
                     <h2 className="text-2xl font-semibold text-white">
-                      Bem-vindo, {user?.name}! 👋
+                      Bem-vindo, {user?.name}
                     </h2>
                     <p className="text-accent font-medium">{getRoleLabel()}</p>
                   </div>

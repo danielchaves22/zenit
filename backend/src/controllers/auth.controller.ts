@@ -108,10 +108,9 @@ export async function login(req: Request, res: Response) {
     const companyName = userCompany.company.name;
 
     // Gerar tokens
-    const tokenPayload = { 
-      userId: user.id, 
-      companyId, 
-      role: user.role 
+    const tokenPayload = {
+      userId: user.id,
+      role: user.role
     };
     
     const token = generateToken(tokenPayload);
@@ -193,10 +192,9 @@ export async function refreshToken(req: Request, res: Response) {
     }
 
     // Gerar novo access token
-    const newToken = generateToken({ 
-      userId: user.id, 
-      companyId: decoded.companyId, 
-      role: user.role 
+    const newToken = generateToken({
+      userId: user.id,
+      role: user.role
     });
     
     logger.info('Token refreshed successfully', {

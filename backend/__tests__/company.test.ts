@@ -56,6 +56,7 @@ describe('Company routes (RBAC)', () => {
       const res = await request(app)
         .post('/api/companies')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString())
         .send({ name: 'Nova', address: 'Rua X' });
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('id');
@@ -65,6 +66,7 @@ describe('Company routes (RBAC)', () => {
       const res = await request(app)
         .post('/api/companies')
         .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({ name: 'Err', address: 'Rua Y' });
       expect(res.status).toBe(403);
     });
@@ -74,7 +76,8 @@ describe('Company routes (RBAC)', () => {
     it('ADMIN vê todas as empresas', async () => {
       const res = await request(app)
         .get('/api/companies')
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString());
       expect(res.status).toBe(200);
       // Existem pelo menos Equinox e Outra
       expect(res.body.length).toBeGreaterThanOrEqual(2);
@@ -83,14 +86,16 @@ describe('Company routes (RBAC)', () => {
     it('SUPERUSER não pode listar', async () => {
       const res = await request(app)
         .get('/api/companies')
-        .set('Authorization', `Bearer ${superToken}`);
+        .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(403);
     });
 
     it('USER não pode listar', async () => {
       const res = await request(app)
         .get('/api/companies')
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(403);
     });
   });
@@ -100,6 +105,7 @@ describe('Company routes (RBAC)', () => {
       const res = await request(app)
         .put(`/api/companies/${equinoxId}`)
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString())
         .send({ name: 'EquinoxX' });
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('EquinoxX');
@@ -109,6 +115,7 @@ describe('Company routes (RBAC)', () => {
       const res = await request(app)
         .put(`/api/companies/${otherCompanyId}`)
         .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({ name: 'Teste' });
       expect(res.status).toBe(403);
     });
@@ -119,14 +126,16 @@ describe('Company routes (RBAC)', () => {
       const nova = await prisma.company.create({ data: { name: 'Temp', code: 99 } });
       const res = await request(app)
         .delete(`/api/companies/${nova.id}`)
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString());
       expect(res.status).toBe(204);
     });
 
     it('USER não pode excluir', async () => {
       const res = await request(app)
         .delete(`/api/companies/${equinoxId}`)
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(403);
     });
   });

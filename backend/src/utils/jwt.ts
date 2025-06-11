@@ -7,7 +7,6 @@ import { JWT_SECRET } from '../config';
  */
 export function generateToken(payload: {
   userId: number;
-  companyId: number;  // Agora apenas um ID de empresa, não um array
   role: string;
 }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
@@ -18,7 +17,6 @@ export function generateToken(payload: {
  */
 export function generateRefreshToken(payload: {
   userId: number;
-  companyId: number;
   role: string;
 }): string {
   const { password, ...payloadWithoutSensitiveData } = payload as any;

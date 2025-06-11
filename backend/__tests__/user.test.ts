@@ -77,7 +77,8 @@ describe('User routes (CRUD & RBAC)', () => {
     it('ADMIN vê todos os usuários', async () => {
       const res = await request(app)
         .get('/api/users')
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString());
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(3);
     });
@@ -85,7 +86,8 @@ describe('User routes (CRUD & RBAC)', () => {
     it('SUPERUSER vê só usuários da sua empresa', async () => {
       const res = await request(app)
         .get('/api/users')
-        .set('Authorization', `Bearer ${superToken}`);
+        .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(200);
       expect(res.body.map((u: any) => u.email).sort()).toEqual(
         ['super@outra.com', 'user@outra.com'].sort()
@@ -95,7 +97,8 @@ describe('User routes (CRUD & RBAC)', () => {
     it('USER vê apenas seu próprio registro', async () => {
       const res = await request(app)
         .get('/api/users')
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].email).toBe('user@outra.com');
@@ -107,6 +110,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const res = await request(app)
         .post('/api/users')
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString())
         .send({
           email: 'novo@outra.com',
           password: '1234',
@@ -122,6 +126,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const res = await request(app)
         .post('/api/users')
         .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({
           email: 'x@equinox.com',
           password: '1234',
@@ -136,6 +141,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const res = await request(app)
         .post('/api/users')
         .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({
           email: 'y@outra.com',
           password: '1234',
@@ -151,7 +157,8 @@ describe('User routes (CRUD & RBAC)', () => {
     it('ADMIN pode ver qualquer usuário pelo ID', async () => {
       const res = await request(app)
         .get(`/api/users/${userId}`)
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString());
       expect(res.status).toBe(200);
       expect(res.body.email).toBe('user@outra.com');
     });
@@ -159,26 +166,30 @@ describe('User routes (CRUD & RBAC)', () => {
     it('SUPERUSER pode ver usuários da sua empresa', async () => {
       const res = await request(app)
         .get(`/api/users/${userId}`)
-        .set('Authorization', `Bearer ${superToken}`);
+        .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(200);
     });
 
     it('SUPERUSER não pode ver usuários de outra empresa', async () => {
       const res = await request(app)
         .get(`/api/users/${adminId}`)
-        .set('Authorization', `Bearer ${superToken}`);
+        .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(403);
     });
 
     it('USER só pode ver seu próprio perfil', async () => {
       const resOk = await request(app)
         .get(`/api/users/${userId}`)
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(resOk.status).toBe(200);
 
       const resNo = await request(app)
         .get(`/api/users/${superId}`)
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(resNo.status).toBe(403);
     });
   });
@@ -188,6 +199,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const res = await request(app)
         .put(`/api/users/${userId}`)
         .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString())
         .send({ name: 'User Edited By Admin' });
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('User Edited By Admin');
@@ -197,6 +209,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const res = await request(app)
         .put(`/api/users/${superId}`)
         .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({ name: 'Super Edited' });
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('Super Edited');
@@ -206,6 +219,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const res = await request(app)
         .put(`/api/users/${adminId}`)
         .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({ name: 'Should Fail' });
       expect(res.status).toBe(403);
     });
@@ -214,6 +228,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const resOk = await request(app)
         .put(`/api/users/${userId}`)
         .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({ name: 'User Self-Edited' });
       expect(resOk.status).toBe(200);
       expect(resOk.body.name).toBe('User Self-Edited');
@@ -221,6 +236,7 @@ describe('User routes (CRUD & RBAC)', () => {
       const resNo = await request(app)
         .put(`/api/users/${superId}`)
         .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
         .send({ name: 'Attempt Fail' });
       expect(resNo.status).toBe(403);
     });
@@ -236,7 +252,8 @@ describe('User routes (CRUD & RBAC)', () => {
       });
       const res = await request(app)
         .delete(`/api/users/${temp.id}`)
-        .set('Authorization', `Bearer ${adminToken}`);
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString());
       expect(res.status).toBe(204);
     });
 
@@ -249,21 +266,24 @@ describe('User routes (CRUD & RBAC)', () => {
       });
       const res = await request(app)
         .delete(`/api/users/${temp2.id}`)
-        .set('Authorization', `Bearer ${superToken}`);
+        .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(204);
     });
 
     it('SUPERUSER não pode excluir usuário de outra empresa', async () => {
       const res = await request(app)
         .delete(`/api/users/${adminId}`)
-        .set('Authorization', `Bearer ${superToken}`);
+        .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(403);
     });
 
     it('USER não pode excluir usuários', async () => {
       const res = await request(app)
         .delete(`/api/users/${superId}`)
-        .set('Authorization', `Bearer ${userToken}`);
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', otherCompanyId.toString());
       expect(res.status).toBe(403);
     });
   });

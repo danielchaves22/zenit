@@ -201,7 +201,15 @@ export default function FinancialDashboard() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Tooltip
+                    formatter={(value) => formatCurrency(Number(value))}
+                    contentStyle={{
+                      backgroundColor: '#1e2126',
+                      borderColor: '#374151',
+                      color: '#fff',
+                    }}
+                    cursor={{ fill: '#262b36' }}
+                  />
                   <Legend />
                   <Bar dataKey="Receitas" fill="#16A34A" />
                   <Bar dataKey="Despesas" fill="#DC2626" />
@@ -215,8 +223,8 @@ export default function FinancialDashboard() {
             <h3 className="text-lg font-medium text-gray-600 mb-4">Contas Financeiras</h3>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead>
-                  <tr className="bg-neutral">
+                <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
+                  <tr>
                     <th className="text-left p-2">Conta</th>
                     <th className="text-left p-2">Tipo</th>
                     <th className="text-right p-2">Saldo</th>

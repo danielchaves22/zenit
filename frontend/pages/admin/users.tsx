@@ -487,28 +487,30 @@ export default function UsersPage() {
               )}
 
               <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={closeForm}
-                  disabled={formLoading}
-                  className="flex items-center gap-2"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  variant="accent"
-                  onClick={handleSubmit}
-                  disabled={formLoading || (!editingUser && companies.length === 0)}
-                  className="flex items-center gap-2"
-                >
-                  {formLoading
-                    ? 'Salvando...'
-                    : editingUser
-                      ? 'Salvar Alterações'
-                      : 'Criar Usuário'
-                  }
-                </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeForm}
+                disabled={formLoading}
+                className="flex items-center gap-2"
+              >
+                <X size={16} />
+                Cancelar
+              </Button>
+              <Button
+                variant="accent"
+                onClick={handleSubmit}
+                disabled={formLoading || (!editingUser && companies.length === 0)}
+                className="flex items-center gap-2"
+              >
+                <Save size={16} />
+                {formLoading
+                  ? 'Salvando...'
+                  : editingUser
+                    ? 'Salvar Alterações'
+                    : 'Criar Usuário'
+                }
+              </Button>
               </div>
             </div>
           </Card>

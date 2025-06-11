@@ -419,6 +419,7 @@ function CategoriesPageInner() {
                 disabled={formLoading}
                 className="flex items-center gap-2"
               >
+                <X size={16} />
                 Cancelar
               </Button>
               <Button
@@ -427,6 +428,7 @@ function CategoriesPageInner() {
                 disabled={formLoading}
                 className="flex items-center gap-2"
               >
+                <Save size={16} />
                 {formLoading
                   ? 'Salvando...'
                   : editingCategory

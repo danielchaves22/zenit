@@ -5,7 +5,19 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Skeleton } from '../ui/Skeleton';
 import api from '../../lib/api';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
 
 // Tipos para o resumo financeiro
 interface FinancialSummary {
@@ -259,23 +271,49 @@ export default function FinancialDashboard() {
             </div>
           </Card>
 
-          {/* Top Categorias */}
+          {/* Despesas por Categoria */}
           {summary.topCategories && summary.topCategories.length > 0 && (
             <Card className="p-6">
-              <h3 className="text-lg font-medium text-gray-600 mb-4">Principais Categorias de Despesa</h3>
-              <div className="space-y-3">
-                {summary.topCategories.map((category) => (
-                  <div key={category.id} className="flex items-center">
-                    <div 
-                      className="w-4 h-4 rounded-full mr-2" 
-                      style={{ backgroundColor: category.color }} 
-                    />
-                    <span className="flex-1">{category.name}</span>
-                    <span className="font-medium text-danger">
-                      {formatCurrency(category.amount)}
-                    </span>
-                  </div>
-                ))}
+              <h3 className="text-lg font-medium text-gray-600 mb-4">Despesas por Categoria</h3>
+              <div className="flex flex-col md:flex-row md:items-start md:space-x-6">
+                <div className="md:w-1/2 h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={summary.topCategories}
+                        dataKey="amount"
+                        nameKey="name"
+                        outerRadius={80}
+                      >
+                        {summary.topCategories.map((category) => (
+                          <Cell key={category.id} fill={category.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value) => formatCurrency(Number(value))}
+                        contentStyle={{
+                          backgroundColor: '#1e2126',
+                          borderColor: '#374151',
+                          color: '#fff',
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="md:w-1/2 space-y-3 mt-4 md:mt-0">
+                  {summary.topCategories.map((category) => (
+                    <div key={category.id} className="flex items-center">
+                      <div
+                        className="w-4 h-4 rounded-full mr-2"
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <span className="flex-1">{category.name}</span>
+                      <span className="font-medium text-danger">
+                        {formatCurrency(category.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </Card>
           )}

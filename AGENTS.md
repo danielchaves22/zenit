@@ -1,5 +1,12 @@
 Zenit Core Financial Management System
 
+## 🚧 Instruções para o Agente
+Estas diretrizes orientam como proceder com novas contribuições.
+
+- Rode sempre `npm run build` para verificar possíveis falhas no código gerado, e já corrigir.
+- Gere mensagens de commit, comentários e PRs todos em português.
+
+
 ## 📋 Visão Geral
 
 O **Zenit Core** é um sistema backend enterprise de gestão financeira multi-tenant, desenvolvido para oferecer controle granular sobre operações financeiras com foco em segurança, integridade de dados e escalabilidade. O sistema foi projetado seguindo padrões enterprise e melhores práticas de desenvolvimento para aplicações financeiras críticas.

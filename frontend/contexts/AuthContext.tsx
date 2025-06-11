@@ -2,6 +2,7 @@
 import {
   createContext, useContext, useEffect, useState, ReactNode,
 } from 'react'
+import { useRouter } from 'next/router'
 import api from '@/lib/api'
 
 interface User {
@@ -15,12 +16,13 @@ interface User {
     id: number;
     name: string;
   };
+  mustChangePassword?: boolean;
 }
 
 interface AuthContextData {
   token: string | null;
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
   logout: () => void;
   isLoading: boolean;
   userRole: string | null;
@@ -31,6 +33,8 @@ interface AuthContextData {
   manageFinancialAccounts: boolean;
   manageFinancialCategories: boolean;
   refreshToken: () => Promise<boolean>;
+  mustChangePassword: boolean;
+  updateMustChangePassword: (value: boolean) => void;
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
@@ -89,9 +93,11 @@ function removeSecureCookie(name: string) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mustChangePassword, setMustChangePassword] = useState<boolean>(false);
 
   // Carregar estado inicial
   useEffect(() => {
@@ -104,14 +110,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // APENAS buscar do localStorage - não mexer com cookies de outros sites
       const storedToken = localStorage.getItem('zenit_token'); // Prefixo específico
-      
+      const storedMustChange = localStorage.getItem('zenit_must_change_password');
+
+      if (storedMustChange) {
+        setMustChangePassword(storedMustChange === 'true');
+      }
+
       if (storedToken) {
         const response = await api.get('/auth/me', {
           headers: { Authorization: `Bearer ${storedToken}` }
         });
-        
+
         setToken(storedToken);
-        setUser(response.data.user);
+        setUser({ ...response.data.user, mustChangePassword: storedMustChange === 'true' });
       }
     } catch (error) {
       console.error('Erro ao inicializar autenticação:', error);
@@ -122,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function login(email: string, password: string) {
+  async function login(email: string, password: string): Promise<User> {
     console.log('🔐 [AUTH] Starting login process...');
     console.log('🔐 [AUTH] Email:', email);
     
@@ -144,8 +155,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       console.log(userData);
 
+      localStorage.setItem('zenit_must_change_password', String(userData.mustChangePassword));
+      setMustChangePassword(userData.mustChangePassword);
+
       setToken(newToken);
       setUser(userData);
+
+      return userData;
       
     } catch (error: any) {
       console.error('🔐 [AUTH] Login failed:', error);
@@ -201,6 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Limpar APENAS dados da nossa aplicação
     localStorage.removeItem('zenit_token');
     localStorage.removeItem('zenit_refresh_token');
+    localStorage.removeItem('zenit_must_change_password');
     
     // Remover APENAS nosso cookie específico
     removeSecureCookie('zenit_token');
@@ -216,6 +233,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     // Redirecionar após cleanup
     window.location.href = '/login';
+  }
+
+  useEffect(() => {
+    if (!isLoading && user?.mustChangePassword && router.pathname !== '/first-access') {
+      router.replace('/first-access');
+    }
+  }, [isLoading, user, router.pathname]);
+
+  function updateMustChangePassword(value: boolean) {
+    setMustChangePassword(value);
+    localStorage.setItem('zenit_must_change_password', String(value));
+    if (user) {
+      setUser({ ...user, mustChangePassword: value });
+    }
   }
 
   // Auto-refresh com verificação menos agressiva
@@ -256,7 +287,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userName: user?.name || null,
         companyName: user?.company?.name || null,
         manageFinancialAccounts: user?.manageFinancialAccounts || false,
-        manageFinancialCategories: user?.manageFinancialCategories || false
+        manageFinancialCategories: user?.manageFinancialCategories || false,
+        mustChangePassword,
+        updateMustChangePassword
       }}
     >
       {children}

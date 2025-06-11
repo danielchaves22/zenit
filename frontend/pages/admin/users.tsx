@@ -39,7 +39,7 @@ interface Company {
 
 export default function UsersPage() {
   const confirmation = useConfirmation();
-  const { userRole } = useAuth();
+  const { userRole, companyId, companyName } = useAuth();
   const { canManageUsers, isAdmin } = usePermissions();
   const { addToast } = useToast();
 
@@ -120,7 +120,7 @@ export default function UsersPage() {
       email: '',
       password: '',
       newRole: 'USER',
-      companyId: companies.length > 0 ? companies[0].id.toString() : '',
+      companyId: isAdmin() ? (companies.length > 0 ? companies[0].id.toString() : '') : companyId?.toString() || '',
       manageFinancialAccounts: false,
       manageFinancialCategories: false
     });
@@ -220,11 +220,11 @@ export default function UsersPage() {
 
     try {
       if (editingUser) {
-        // ✅ EDIÇÃO - apenas dados básicos, permissões são gerenciadas separadamente
-        const { password, ...updateDataWithoutPassword } = formData;
+        // ✅ EDIÇÃO - empresa não pode ser alterada
+        const { password, companyId: _ignored, ...updateDataWithoutCompany } = formData;
         const updateData = formData.password
-          ? { ...formData, companyId: formData.companyId ? Number(formData.companyId) : null }
-          : { ...updateDataWithoutPassword, companyId: formData.companyId ? Number(formData.companyId) : null };
+          ? { ...updateDataWithoutCompany, password: formData.password }
+          : { ...updateDataWithoutCompany };
 
         updateData.manageFinancialAccounts = formData.manageFinancialAccounts;
         updateData.manageFinancialCategories = formData.manageFinancialCategories;
@@ -392,10 +392,14 @@ export default function UsersPage() {
                 <label className="block text-sm font-medium mb-1 text-gray-300">
                   Empresa {!editingUser && '*'}
                 </label>
-                {companies.length > 0 ? (
+                {editingUser || !isAdmin() ? (
+                  <div className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-300 rounded-lg">
+                    {editingUser ? editingUser.companies[0]?.company.name : companyName}
+                  </div>
+                ) : companies.length > 0 ? (
                   <select
                     value={formData.companyId}
-                    onChange={(e) => setFormData({...formData, companyId: e.target.value})}
+                    onChange={(e) => setFormData({ ...formData, companyId: e.target.value })}
                     className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb]"
                     required={!editingUser}
                     disabled={formLoading}

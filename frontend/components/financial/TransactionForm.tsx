@@ -1,5 +1,5 @@
 // frontend/components/financial/TransactionForm.tsx - COM DATAS DE VENCIMENTO E EFETIVAÇÃO
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -78,6 +78,8 @@ export default function TransactionForm({
   const [saving, setSaving] = useState(false);
   const [defaultsLoaded, setDefaultsLoaded] = useState(false);
   const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
+
+  const formRef = useRef<HTMLFormElement>(null);
   
   const [formData, setFormData] = useState({
     description: '',
@@ -383,6 +385,12 @@ export default function TransactionForm({
     }
   };
 
+  const handleTopSave = () => {
+    if (formRef.current) {
+      formRef.current.requestSubmit();
+    }
+  };
+
   const getTypeLabel = () => {
     const baseLabel = mode === 'create' ? 'Nova' : 'Editar';
     switch (formData.type) {
@@ -400,6 +408,12 @@ export default function TransactionForm({
   // Encontrar categorias e contas padrão para exibir informação visual
   const defaultAccount = accounts.find(acc => acc.isDefault);
   const defaultCategory = categories.find(cat => cat.isDefault && cat.type === formData.type);
+
+  const saveButtonLabel = saving
+    ? 'Salvando...'
+    : mode === 'create'
+      ? 'Criar Transação'
+      : 'Salvar Alterações';
 
   return (
     <>
@@ -423,7 +437,28 @@ export default function TransactionForm({
               Tipo bloqueado
             </div>
           )}
-          
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCancel}
+            disabled={saving}
+            className="flex items-center gap-2"
+          >
+            <X size={16} />
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            variant="accent"
+            onClick={handleTopSave}
+            disabled={saving}
+            className="flex items-center gap-2"
+          >
+            <Save size={16} />
+            {saveButtonLabel}
+          </Button>
+
           {mode === 'edit' && (
             <Button
               variant="danger"
@@ -439,7 +474,12 @@ export default function TransactionForm({
       </div>
 
       <Card>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form
+          ref={formRef}
+          id="transaction-form"
+          onSubmit={handleSubmit}
+          className="space-y-6"
+        >
           {/* Primeira linha: Valor e Descrição (expandida) */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
             <div className="md:col-span-3">

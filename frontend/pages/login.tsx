@@ -22,9 +22,13 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
-      const target = redirect && redirect !== '/' ? redirect : '/';
-      router.replace(target);
+      const userData = await login(email, password);
+      if (userData.mustChangePassword) {
+        router.replace('/first-access');
+      } else {
+        const target = redirect && redirect !== '/' ? redirect : '/';
+        router.replace(target);
+      }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erro ao fazer login');
     } finally {

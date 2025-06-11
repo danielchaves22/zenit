@@ -10,6 +10,7 @@ interface CurrencyInputProps {
   required?: boolean;
   disabled?: boolean;
   className?: string;
+  inputClassName?: string;
   error?: string;
 }
 
@@ -22,6 +23,7 @@ export function CurrencyInput({
   required = false,
   disabled = false,
   className = '',
+  inputClassName = '',
   error
 }: CurrencyInputProps) {
   const [displayValue, setDisplayValue] = useState('0,00');
@@ -303,7 +305,7 @@ export function CurrencyInput({
           disabled={disabled}
           className={`w-full pl-10 pr-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-[#2563eb] text-right font-mono ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
-          } ${error ? 'border-red-500' : ''}`} // ✅ ALTERADO: focus:border-blue-500 para focus:border-[#2563eb]
+          } ${error ? 'border-red-500' : ''} ${inputClassName}`}
           autoComplete="off"
         />
       </div>

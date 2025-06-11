@@ -576,7 +576,7 @@ export default function UsersPage() {
                           >
                             <Edit2 size={16} />
                           </button>
-                          {isAdmin() && (
+                          {canManageUsers() && (
                             <button
                               onClick={() => handleDelete(user)}
                               className="p-1 text-gray-300 hover:text-red-400 transition-colors"

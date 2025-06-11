@@ -7,7 +7,7 @@ import { Input } from '../../components/ui/Input';
 import { Breadcrumb } from '../../components/ui/Breadcrumb';
 import { PageLoader } from '../../components/ui/PageLoader';
 import { useToast } from '../../components/ui/ToastContext';
-import { Plus, Edit2, Trash2, Calendar, DollarSign, Play, Pause, MoreVertical, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calendar, DollarSign, Play, Pause, MoreVertical, TrendingUp, TrendingDown, Save, X } from 'lucide-react';
 import api from '../../lib/api';
 
 interface RecurringTransaction {
@@ -465,13 +465,35 @@ export default function FinancialRecurringPage() {
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-[#151921] rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-700">
-            <div className="p-6 border-b border-gray-700">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
               <h3 className="text-xl font-semibold text-white">
                 {editingId ? 'Editar' : 'Nova'} {formData.type === 'EXPENSE' ? 'Despesa' : 'Receita'} Recorrente
               </h3>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetForm}
+                  disabled={formLoading}
+                  className="flex items-center gap-2"
+                >
+                  <X size={16} />
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  form="recurring-form"
+                  variant="accent"
+                  disabled={formLoading}
+                  className="flex items-center gap-2"
+                >
+                  <Save size={16} />
+                  {formLoading ? 'Salvando...' : editingId ? 'Atualizar' : 'Criar'}
+                </Button>
+              </div>
             </div>
-            
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+
+            <form id="recurring-form" onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
                   label="Descrição"

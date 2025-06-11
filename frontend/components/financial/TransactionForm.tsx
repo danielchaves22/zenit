@@ -500,46 +500,45 @@ export default function TransactionForm({
           onSubmit={handleSubmit}
           className="space-y-6"
         >
-          {/* Primeira linha: Valor e Descrição (expandida) */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-            <div className="md:col-span-3">
-              <CurrencyInput
-                id="amount"
-                label="Valor *"
-                value={formData.amount}
-                onChange={handleAmountChange}
-                required
-                disabled={saving || isReadOnly}
-              />
-            </div>
-            <div className="md:col-span-9">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="description">
-                    Descrição *
-                  </label>
-                  <span className="text-xs text-gray-400">
-                    Digite pelo menos 3 caracteres para ver sugestões baseadas no seu histórico
-                  </span>
-                </div>
-                <AutocompleteInput
-                  id="description"
-                  value={formData.description}
-                  onChange={handleDescriptionChange}
-                  onSuggestionSelect={handleSuggestionSelect}
-                  fetchSuggestions={fetchAutocompleteSuggestions}
-                  required
-                  placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
-                  disabled={saving || isReadOnly}
-                  minLength={3}
-                  maxSuggestions={10}
-                  className="mb-0"
-                />
-              </div>
-            </div>
+          {/* Primeira linha: Valor destacado */}
+          <div>
+            <CurrencyInput
+              id="amount"
+              label="Valor *"
+              value={formData.amount}
+              onChange={handleAmountChange}
+              required
+              disabled={saving || isReadOnly}
+              inputClassName="py-4 text-2xl"
+            />
           </div>
 
-          {/* Segunda linha: Contas */}
+          {/* Segunda linha: Descrição */}
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="description">
+                Descrição *
+              </label>
+              <span className="text-xs text-gray-400">
+                Digite pelo menos 3 caracteres para ver sugestões baseadas no seu histórico
+              </span>
+            </div>
+            <AutocompleteInput
+              id="description"
+              value={formData.description}
+              onChange={handleDescriptionChange}
+              onSuggestionSelect={handleSuggestionSelect}
+              fetchSuggestions={fetchAutocompleteSuggestions}
+              required
+              placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
+              disabled={saving || isReadOnly}
+              minLength={3}
+              maxSuggestions={10}
+              className="mb-0"
+            />
+          </div>
+
+          {/* Terceira linha: Contas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {(formData.type === 'EXPENSE' || formData.type === 'TRANSFER') && (
               <div>
@@ -619,10 +618,10 @@ export default function TransactionForm({
             )}
           </div>
           
-          {/* Terceira linha: Data e Status */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Quarta linha: Status e Datas */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <input type="hidden" name="date" value={formData.date} readOnly />
-            
+
             <div>
               <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
                 Status *
@@ -641,10 +640,6 @@ export default function TransactionForm({
                 <option value="CANCELED">Cancelada</option>
               </select>
             </div>
-          </div>
-          
-          {/* Quarta linha: Datas de Vencimento e Efetivação */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
@@ -664,7 +659,6 @@ export default function TransactionForm({
                 className="w-full px-3 py-2 bg-[#1e2126] border border-gray-700 text-white rounded-lg focus:outline-none focus:ring focus:border-blue-500"
               />
             </div>
-            
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <label className="block text-sm font-medium text-gray-300" htmlFor="effectiveDate">

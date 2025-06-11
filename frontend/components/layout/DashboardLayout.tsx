@@ -84,16 +84,27 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
       {/* Top Navigation com uma borda sutil */}
       <header className="fixed top-0 left-0 right-0 z-40 bg-[#151921] text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
         <div className="flex items-center space-x-4">
-          <Link href="/" className="flex items-center space-x-2 hover:opacity-90">
-            {/* ✅ LOGO COM COR DINÂMICA */}
-            <div className="text-2xl font-bold text-accent transition-colors duration-200">₹</div>
-            <span className="text-white text-lg font-bold font-heading">Zenit</span>
+          <Link href="/" className="flex items-center hover:opacity-90">
+            <Image
+              src="/assets/images/logo.png"
+              alt="ZENIT"
+              width={2000}
+              height={1000}
+              priority
+              className="h-8 w-auto"
+            />
           </Link>
+          <span className="text-white text-lg font-bold font-heading">
+            {companyName}
+          </span>
         </div>
 
         <div className="flex items-center space-x-3">
-          {/* ✅ SELETOR DE TEMAS */}
-          <ThemeSelector showLabel={false} size="sm" />
+          {/* ✅ SELETOR DE TEMAS (oculto) */}
+          <div className="hidden">
+            <ThemeSelector showLabel={false} size="sm" />
+          </div>
+          <span className="text-sm text-gray-300">{userName}</span>
           
           <div className="relative" ref={userMenuRef}>
             <button 

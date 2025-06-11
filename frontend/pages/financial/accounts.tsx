@@ -601,6 +601,7 @@ function AccountsPageInner() {
                 disabled={formLoading}
                 className="flex items-center gap-2"
               >
+                <X size={16} />
                 Cancelar
               </Button>
               <Button
@@ -609,6 +610,7 @@ function AccountsPageInner() {
                 disabled={formLoading}
                 className="flex items-center gap-2"
               >
+                <Save size={16} />
                 {formLoading
                   ? 'Salvando...'
                   : editingAccount
@@ -855,6 +857,7 @@ function AccountsPageInner() {
                 className="flex-1 flex items-center gap-2"
                 disabled={formLoading}
               >
+                <X size={16} />
                 Cancelar
               </Button>
               <Button
@@ -863,6 +866,7 @@ function AccountsPageInner() {
                 className="flex-1 flex items-center gap-2"
                 disabled={formLoading}
               >
+                <Save size={16} />
                 {formLoading ? 'Ajustando...' : 'Ajustar Saldo'}
               </Button>
             </div>

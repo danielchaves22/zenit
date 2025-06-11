@@ -501,7 +501,7 @@ export default function TransactionForm({
           className="space-y-6"
         >
           {/* Primeira linha: Valor destacado */}
-          <div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <CurrencyInput
               id="amount"
               label="Valor *"

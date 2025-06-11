@@ -137,6 +137,7 @@ export async function login(req: Request, res: Response) {
         role: user.role,
         manageFinancialAccounts: user.manageFinancialAccounts,
         manageFinancialCategories: user.manageFinancialCategories,
+        mustChangePassword: user.mustChangePassword,
         company: {
           id: companyId,
           name: companyName

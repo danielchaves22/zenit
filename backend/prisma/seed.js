@@ -56,7 +56,8 @@ async function main() {
         email: 'admin@equinox.com.br',
         password: hashedPassword,
         name: 'Admin',
-        role: 'ADMIN'
+        role: 'ADMIN',
+        mustChangePassword: false
       }
     });
     console.log('✅ Usuário admin criado:', { id: adminUser.id, email: adminUser.email, role: adminUser.role });

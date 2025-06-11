@@ -47,13 +47,28 @@ export default class UserService {
     // Realizar toda a operação em uma transação para garantir consistência
     return prisma.$transaction(async (tx) => {
       // Criar ou atualizar o usuário
-      const user = existingUser 
+      const user = existingUser
         ? await tx.user.update({
             where: { id: existingUser.id },
-            data: { name, role, password: hashed, manageFinancialAccounts, manageFinancialCategories }
+            data: {
+              name,
+              role,
+              password: hashed,
+              manageFinancialAccounts,
+              manageFinancialCategories,
+              mustChangePassword: true
+            }
           })
         : await tx.user.create({
-            data: { email, password: hashed, name, role, manageFinancialAccounts, manageFinancialCategories }
+            data: {
+              email,
+              password: hashed,
+              name,
+              role,
+              manageFinancialAccounts,
+              manageFinancialCategories,
+              mustChangePassword: true
+            }
           });
 
       // Criar a associação com a empresa (única)

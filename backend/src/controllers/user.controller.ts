@@ -246,7 +246,10 @@ export const updateUser = async (req: Request, res: Response) => {
     const updateData: any = {};
     if (email) updateData.email = email;
     if (name) updateData.name = name;
-    if (password) updateData.password = password;
+    if (password) {
+      updateData.password = password;
+      updateData.mustChangePassword = id === me ? false : true;
+    }
     if (newRole && (role === 'ADMIN' || (role === 'SUPERUSER' && newRole !== 'ADMIN'))) {
       updateData.role = newRole;
     }

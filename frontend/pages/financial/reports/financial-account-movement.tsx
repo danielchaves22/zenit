@@ -383,13 +383,6 @@ export default function FinancialMovementReport() {
             {showFilters ? 'Ocultar Filtros' : 'Mostrar Filtros'}
           </Button>
         </div>
-        
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={printReport}>
-            <Printer size={16} className="mr-2" />
-            Imprimir
-          </Button>
-        </div>
       </div>
 
       {/* Filtros */}
@@ -424,12 +417,6 @@ export default function FinancialMovementReport() {
                 <option value="week">Por Semana</option>
                 <option value="month">Por Mês</option>
               </select>
-            </div>
-
-            <div className="flex items-end" style={{ alignItems: 'anchor-center' }}>
-              <Button variant="outline" onClick={generateReport} className="w-full">
-                Gerar Relatório
-              </Button>
             </div>
           </div>
 
@@ -466,6 +453,11 @@ export default function FinancialMovementReport() {
                 </label>
               ))}
             </div>
+          </div>
+          <div className="flex items-end" style={{ marginTop: '1rem' }}>
+            <Button variant="accent" onClick={generateReport} >
+              Gerar Relatório
+            </Button>
           </div>
         </Card>
       )}

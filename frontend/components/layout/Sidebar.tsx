@@ -138,6 +138,16 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       type: 'title'
     },
     {
+      icon: <Receipt size={20} />,
+      label: 'Transações',
+      subItems: [
+        { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
+        { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
+        { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
+        { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
+      ],
+    },
+    {
       icon: <PieChart size={20} />,
       label: 'Dashboard',
       subItems: [
@@ -151,16 +161,6 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         { label: 'Contas', href: '/financial/accounts'},
       ],
       requiredPermission: 'FINANCIAL_ACCOUNTS'
-    },
-    {
-      icon: <Receipt size={20} />,
-      label: 'Transações',
-      subItems: [
-        { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
-        { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
-        { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
-        { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
-      ],
     },
     {
       icon: <Building2 size={20} />,
@@ -180,9 +180,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       subItems: [
         { label: 'Relatórios', hideWhenExpanded: true, isHeader: true },
         { label: 'Movimentação de Contas Financeiras', href: '/financial/reports/financial-account-movement' },
-        { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' },
-        { label: 'DRE', href: '/financial/reports/income' },
-        { label: 'Balancete', href: '/financial/reports/balance' },
+        { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' }
       ],
     },
     {

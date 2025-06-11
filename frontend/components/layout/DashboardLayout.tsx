@@ -86,12 +86,12 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
         <div className="flex items-center space-x-4">
           <Link href="/" className="flex items-center hover:opacity-90">
             <Image
-              src="/assets/images/logo.png"
+              src="/assets/images/logo_principal.png"
               alt="ZENIT"
               width={2000}
               height={1000}
               priority
-              className="h-8 w-auto"
+              className="h-10 w-auto"
             />
           </Link>
           <span className="text-white text-lg font-bold font-heading">

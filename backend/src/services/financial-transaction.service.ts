@@ -786,8 +786,8 @@ export default class FinancialTransactionService {
     });
 
     // Inclui transferências na soma quando filtrando por contas específicas
-    let incomingTransferAggregate = { _sum: { amount: 0 } } as { _sum: { amount: number | null } };
-    let outgoingTransferAggregate = { _sum: { amount: 0 } } as { _sum: { amount: number | null } };
+    let incomingTransferAggregate = { _sum: { amount: new Prisma.Decimal(0) } } as { _sum: { amount: Prisma.Decimal | null } };
+    let outgoingTransferAggregate = { _sum: { amount: new Prisma.Decimal(0) } } as { _sum: { amount: Prisma.Decimal | null } };
 
     if (accessibleAccountIds && accessibleAccountIds.length > 0) {
       incomingTransferAggregate = await prisma.financialTransaction.aggregate({

@@ -42,7 +42,11 @@ export const userCreationWithPermissionsSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),
   password: z.string().nonempty({ message: 'Password é obrigatório.' }),
   name: z.string().min(1, { message: 'Nome é obrigatório.' }),
-  companyId: z.number({ invalid_type_error: 'companyId deve ser um número.' }),
+  companyId: z.number({ invalid_type_error: 'companyId deve ser um número.' }).optional(),
+  companies: z.array(z.object({
+    companyId: z.number(),
+    role: z.enum(['ADMIN','SUPERUSER','USER'])
+  })).optional(),
   newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional(),
   manageFinancialAccounts: z.boolean().optional(),
   manageFinancialCategories: z.boolean().optional(),
@@ -55,6 +59,9 @@ export const userCreationWithPermissionsSchema = z.object({
     ).optional()
   }).optional()
 }).refine((data) => {
+  if (!data.companyId && (!data.companies || data.companies.length === 0)) {
+    return false;
+  }
   // Se especificou permissões, deve escolher uma das opções
   if (data.accountPermissions) {
     const { grantAllAccess, specificAccountIds } = data.accountPermissions;
@@ -74,6 +81,9 @@ export const userCreationWithPermissionsSchema = z.object({
 }, {
   message: 'Configure permissões: ou acesso total ou contas específicas, não ambos',
   path: ['accountPermissions']
+}).refine((data) => !!data.companyId || (data.companies && data.companies.length > 0), {
+  message: 'Informe companyId ou companies',
+  path: ['companyId']
 });
 
 // Tipos TypeScript derivados

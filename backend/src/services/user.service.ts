@@ -6,12 +6,17 @@ const prisma = new PrismaClient();
 /**
  * Parâmetros para criação de usuário.
  */
+export interface CompanyRoleInput {
+  companyId: number;
+  role: Role;
+  isDefault?: boolean;
+}
+
 export interface CreateUserParams {
   email: string;
   password: string;
   name: string;
-  role: Role;
-  companyId: number;
+  companies: CompanyRoleInput[];
   manageFinancialAccounts?: boolean;
   manageFinancialCategories?: boolean;
 }
@@ -29,7 +34,10 @@ export default class UserService {
    * Versão simplificada: um usuário pertence a apenas uma empresa.
    */
   static async createUser(params: CreateUserParams): Promise<Omit<User, 'password'>> {
-    const { email, password, name, role, companyId, manageFinancialAccounts = false, manageFinancialCategories = false } = params;
+    const { email, password, name, companies, manageFinancialAccounts = false, manageFinancialCategories = false } = params;
+    if (!companies || companies.length === 0) {
+      throw new Error('É necessário vincular o usuário a pelo menos uma empresa');
+    }
     const hashed = await this.hashPassword(password);
 
     // Verificar se o usuário já tem alguma associação com empresa
@@ -69,15 +77,18 @@ export default class UserService {
             }
           });
 
-      // Criar a associação com a empresa (única)
-      await tx.userCompany.create({
-        data: {
-          userId: user.id,
-          companyId,
-          isDefault: true, // Sempre true, pois só há uma empresa por usuário
-          role
-        }
-      });
+      // Criar associações com as empresas fornecidas
+      for (let i = 0; i < companies.length; i++) {
+        const c = companies[i];
+        await tx.userCompany.create({
+          data: {
+            userId: user.id,
+            companyId: c.companyId,
+            role: c.role,
+            isDefault: c.isDefault ?? i === 0
+          }
+        });
+      }
 
       const { password: _, ...rest } = user;
       return rest;
@@ -139,7 +150,7 @@ export default class UserService {
   static async updateUser(
     id: number,
     data: Partial<Prisma.UserUpdateInput>,
-    companyId?: number
+    companyContext?: number | CompanyRoleInput[]
   ): Promise<Omit<User, 'password'>> {
     let newRole: Role | undefined = undefined;
     if (data.password) {
@@ -154,10 +165,23 @@ export default class UserService {
       data
     });
 
-    if (newRole && companyId) {
+    if (Array.isArray(companyContext)) {
+      await prisma.userCompany.deleteMany({ where: { userId: id } });
+      for (let i = 0; i < companyContext.length; i++) {
+        const c = companyContext[i];
+        await prisma.userCompany.create({
+          data: {
+            userId: id,
+            companyId: c.companyId,
+            role: c.role,
+            isDefault: c.isDefault ?? i === 0
+          }
+        });
+      }
+    } else if (newRole && companyContext) {
       await prisma.userCompany.update({
         where: {
-          userId_companyId: { userId: id, companyId }
+          userId_companyId: { userId: id, companyId: companyContext }
         },
         data: { role: newRole }
       });

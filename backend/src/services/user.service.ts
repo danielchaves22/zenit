@@ -39,7 +39,6 @@ export default class UserService {
       throw new Error('É necessário vincular o usuário a pelo menos uma empresa');
     }
     const hashed = await this.hashPassword(password);
-    const hashed = await this.hashPassword(password);
 
     // Verificar se o usuário já tem alguma associação com empresa
     const existingUser = await prisma.user.findUnique({

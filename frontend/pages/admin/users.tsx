@@ -20,7 +20,6 @@ interface User {
   id: number
   name: string
   email: string
-  role: string
   manageFinancialAccounts?: boolean
   manageFinancialCategories?: boolean
   companies: {
@@ -29,6 +28,7 @@ interface User {
       name: string
       code: number
     }
+    role: string
   }[]
 }
 
@@ -58,10 +58,11 @@ export default function UsersPage() {
     email: '',
     password: '',
     newRole: 'USER',
-    companyId: '',
     manageFinancialAccounts: false,
     manageFinancialCategories: false
   });
+
+  const [companyRoles, setCompanyRoles] = useState<{ companyId: number; role: string }[]>([]);
 
   // ✅ ESTADOS PARA PERMISSÕES DE CONTAS
   const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
@@ -120,10 +121,10 @@ export default function UsersPage() {
       email: '',
       password: '',
       newRole: 'USER',
-      companyId: isAdmin() ? (companies.length > 0 ? companies[0].id.toString() : '') : companyId?.toString() || '',
       manageFinancialAccounts: false,
       manageFinancialCategories: false
     });
+    setCompanyRoles([]);
     // ✅ RESETAR PERMISSÕES
     setSelectedAccountIds([]);
     setGrantAllAccess(false);
@@ -137,10 +138,10 @@ export default function UsersPage() {
       email: user.email,
       password: '',
       newRole: user.companies[0]?.role || 'USER',
-      companyId: user.companies[0]?.company.id.toString() || '',
       manageFinancialAccounts: user.manageFinancialAccounts || false,
       manageFinancialCategories: user.manageFinancialCategories || false
     });
+    setCompanyRoles(user.companies.map(c => ({ companyId: c.company.id, role: c.role }))); 
     // ✅ PERMISSÕES SERÃO CARREGADAS PELO COMPONENTE AccountPermissionsManager
     setSelectedAccountIds([]);
     setGrantAllAccess(false);
@@ -155,10 +156,10 @@ export default function UsersPage() {
       email: '',
       password: '',
       newRole: 'USER',
-      companyId: '',
       manageFinancialAccounts: false,
       manageFinancialCategories: false
     });
+    setCompanyRoles([]);
     // ✅ LIMPAR PERMISSÕES
     setSelectedAccountIds([]);
     setGrantAllAccess(false);
@@ -199,13 +200,13 @@ export default function UsersPage() {
         return;
       }
       
-      if (!formData.companyId && companies.length > 0) {
-        addToast('Selecione uma empresa para o usuário', 'error');
-        return;
-      }
-      
       if (companies.length === 0) {
         addToast('Não é possível criar usuários sem empresas disponíveis', 'error');
+        return;
+      }
+
+      if (isAdmin() && companyRoles.length === 0) {
+        addToast('Selecione ao menos uma empresa', 'error');
         return;
       }
 
@@ -221,15 +222,21 @@ export default function UsersPage() {
     try {
       if (editingUser) {
         // ✅ EDIÇÃO - empresa não pode ser alterada
-        const { password, companyId: _ignored, ...updateDataWithoutCompany } = formData;
-        const updateData = formData.password
-          ? { ...updateDataWithoutCompany, password: formData.password }
-          : { ...updateDataWithoutCompany };
+        const { password, ...updateData } = formData;
+        if (formData.password) {
+          updateData.password = formData.password;
+        }
 
         updateData.manageFinancialAccounts = formData.manageFinancialAccounts;
         updateData.manageFinancialCategories = formData.manageFinancialCategories;
 
-        await api.put(`/users/${editingUser.id}`, updateData);
+        if (isAdmin() && companyRoles.length === 0) {
+          addToast('Selecione ao menos uma empresa', 'error');
+          setFormLoading(false);
+          return;
+        }
+        const payload = { ...updateData, companies: companyRoles };
+        await api.put(`/users/${editingUser.id}`, payload);
         
         // ✅ ATUALIZAR PERMISSÕES SE FOR USER
         if (formData.newRole === 'USER') {
@@ -245,14 +252,20 @@ export default function UsersPage() {
         addToast('Usuário atualizado com sucesso', 'success');
       } else {
         // ✅ CRIAÇÃO COM PERMISSÕES
+        if (isAdmin() && companyRoles.length === 0) {
+          addToast('Selecione ao menos uma empresa', 'error');
+          setFormLoading(false);
+          return;
+        }
+
         const payload: any = {
           name: formData.name,
           email: formData.email,
           password: formData.password,
           newRole: formData.newRole,
-          companyId: Number(formData.companyId),
           manageFinancialAccounts: formData.manageFinancialAccounts,
           manageFinancialCategories: formData.manageFinancialCategories,
+          companies: companyRoles,
         };
 
         // ✅ ADICIONAR PERMISSÕES APENAS PARA USER
@@ -415,36 +428,56 @@ export default function UsersPage() {
                 </div>
               </div>
 
-              {/* Campo de Empresa */}
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300">
-                  Empresa {!editingUser && '*'}
-                </label>
-                {editingUser || !isAdmin() ? (
+              {/* Empresas e Roles (apenas ADMIN) */}
+              {isAdmin() && (
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-300">
+                    Empresas
+                  </label>
+                  <div className="space-y-2">
+                    {companies.map((comp) => {
+                      const selected = companyRoles.find(c => c.companyId === comp.id);
+                      return (
+                        <div key={comp.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={!!selected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setCompanyRoles([...companyRoles, { companyId: comp.id, role: 'USER' }]);
+                              } else {
+                                setCompanyRoles(companyRoles.filter(c => c.companyId !== comp.id));
+                              }
+                            }}
+                            disabled={formLoading}
+                          />
+                          <span className="text-gray-300">{comp.name}</span>
+                          {selected && (
+                            <select
+                              value={selected.role}
+                              onChange={(e) => setCompanyRoles(companyRoles.map(c => c.companyId === comp.id ? { ...c, role: e.target.value } : c))}
+                              className="px-1 py-1 bg-[#1e2126] border border-gray-700 text-white rounded"
+                              disabled={formLoading}
+                            >
+                              <option value="USER">Usuário</option>
+                              <option value="SUPERUSER">Superusuário</option>
+                              <option value="ADMIN">Administrador</option>
+                            </select>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {!isAdmin() && (
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-300">Empresa</label>
                   <div className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 text-gray-300 rounded">
                     {editingUser ? editingUser.companies[0]?.company.name : companyName}
                   </div>
-                ) : companies.length > 0 ? (
-                  <select
-                    value={formData.companyId}
-                    onChange={(e) => setFormData({ ...formData, companyId: e.target.value })}
-                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb]"
-                    required={!editingUser}
-                    disabled={formLoading}
-                  >
-                    <option value="">-- Selecione uma empresa --</option>
-                    {companies.map((company) => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="w-full px-3 py-2 bg-gray-700 border border-gray-600 text-gray-400 rounded-lg">
-                    {companiesError || 'Nenhuma empresa disponível'}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Permissões de Funcionalidades */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

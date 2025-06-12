@@ -136,7 +136,7 @@ export default function UsersPage() {
       name: user.name,
       email: user.email,
       password: '',
-      newRole: user.role,
+      newRole: user.companies[0]?.role || 'USER',
       companyId: user.companies[0]?.company.id.toString() || '',
       manageFinancialAccounts: user.manageFinancialAccounts || false,
       manageFinancialCategories: user.manageFinancialCategories || false
@@ -594,12 +594,12 @@ export default function UsersPage() {
                       <td className="px-4 py-3 text-gray-300">{user.email}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 text-xs rounded-full ${
-                          user.role === 'ADMIN' ? 'bg-red-600 text-white' :
-                          user.role === 'SUPERUSER' ? 'bg-blue-600 text-white' :
+                          user.companies[0]?.role === 'ADMIN' ? 'bg-red-600 text-white' :
+                          user.companies[0]?.role === 'SUPERUSER' ? 'bg-blue-600 text-white' :
                           'bg-gray-600 text-white'
                         }`}>
-                          {user.role === 'ADMIN' ? 'Administrador' :
-                           user.role === 'SUPERUSER' ? 'Superusuário' : 'Usuário'}
+                          {user.companies[0]?.role === 'ADMIN' ? 'Administrador' :
+                           user.companies[0]?.role === 'SUPERUSER' ? 'Superusuário' : 'Usuário'}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-gray-300">

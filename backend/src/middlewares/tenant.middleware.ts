@@ -30,7 +30,14 @@ export async function tenantMiddleware(
       return;
     }
 
+    const role = await UserService.getUserCompanyRole(req.user.userId, companyId);
+    if (!role) {
+      res.status(403).json({ error: 'Acesso não autorizado à empresa' });
+      return;
+    }
+
     req.user.companyId = companyId;
+    req.user.role = role;
     next();
   } catch (error) {
     res.status(500).json({ error: 'Erro ao validar empresa' });

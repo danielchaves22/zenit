@@ -45,9 +45,9 @@ describe('User routes (CRUD & RBAC)', () => {
     userId = us.id;
 
     // Associações de empresa
-    await prisma.userCompany.create({ data: { userId: adminId, companyId: equinoxId, isDefault: true } });
-    await prisma.userCompany.create({ data: { userId: superId, companyId: otherCompanyId, isDefault: true } });
-    await prisma.userCompany.create({ data: { userId: userId, companyId: otherCompanyId, isDefault: true } });
+    await prisma.userCompany.create({ data: { userId: adminId, companyId: equinoxId, isDefault: true, role: 'ADMIN' } });
+    await prisma.userCompany.create({ data: { userId: superId, companyId: otherCompanyId, isDefault: true, role: 'SUPERUSER' } });
+    await prisma.userCompany.create({ data: { userId: userId, companyId: otherCompanyId, isDefault: true, role: 'USER' } });
 
     // Gera tokens
     const resAd = await request(app)
@@ -248,7 +248,7 @@ describe('User routes (CRUD & RBAC)', () => {
         data: { email: 'todelete@outra.com', password: await bcrypt.hash('pass',10), name: 'Temp', role: 'USER' }
       });
       await prisma.userCompany.create({
-        data: { userId: temp.id, companyId: otherCompanyId, isDefault: true }
+        data: { userId: temp.id, companyId: otherCompanyId, isDefault: true, role: 'USER' }
       });
       const res = await request(app)
         .delete(`/api/users/${temp.id}`)
@@ -262,7 +262,7 @@ describe('User routes (CRUD & RBAC)', () => {
         data: { email: 'temp2@outra.com', password: await bcrypt.hash('pass',10), name: 'Temp2', role: 'USER' }
       });
       await prisma.userCompany.create({
-        data: { userId: temp2.id, companyId: otherCompanyId, isDefault: true }
+        data: { userId: temp2.id, companyId: otherCompanyId, isDefault: true, role: 'USER' }
       });
       const res = await request(app)
         .delete(`/api/users/${temp2.id}`)

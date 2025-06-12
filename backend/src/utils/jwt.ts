@@ -7,7 +7,6 @@ import { JWT_SECRET } from '../config';
  */
 export function generateToken(payload: {
   userId: number;
-  role: string;
 }): string {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '1h' });
 }
@@ -17,7 +16,6 @@ export function generateToken(payload: {
  */
 export function generateRefreshToken(payload: {
   userId: number;
-  role: string;
 }): string {
   const { password, ...payloadWithoutSensitiveData } = payload as any;
   return jwt.sign(payloadWithoutSensitiveData, JWT_SECRET, { expiresIn: '7d' });

@@ -52,7 +52,6 @@ export default class UserService {
             where: { id: existingUser.id },
             data: {
               name,
-              role,
               password: hashed,
               manageFinancialAccounts,
               manageFinancialCategories,
@@ -64,7 +63,6 @@ export default class UserService {
               email,
               password: hashed,
               name,
-              role,
               manageFinancialAccounts,
               manageFinancialCategories,
               mustChangePassword: true
@@ -73,10 +71,11 @@ export default class UserService {
 
       // Criar a associação com a empresa (única)
       await tx.userCompany.create({
-        data: { 
-          userId: user.id, 
-          companyId, 
-          isDefault: true  // Sempre true, pois só há uma empresa por usuário
+        data: {
+          userId: user.id,
+          companyId,
+          isDefault: true, // Sempre true, pois só há uma empresa por usuário
+          role
         }
       });
 
@@ -139,15 +138,31 @@ export default class UserService {
    */
   static async updateUser(
     id: number,
-    data: Partial<Prisma.UserUpdateInput>
+    data: Partial<Prisma.UserUpdateInput>,
+    companyId?: number
   ): Promise<Omit<User, 'password'>> {
+    let newRole: Role | undefined = undefined;
     if (data.password) {
       data.password = await this.hashPassword(data.password as string);
+    }
+    if ((data as any).role) {
+      newRole = (data as any).role as Role;
+      delete (data as any).role;
     }
     const user = await prisma.user.update({
       where: { id },
       data
     });
+
+    if (newRole && companyId) {
+      await prisma.userCompany.update({
+        where: {
+          userId_companyId: { userId: id, companyId }
+        },
+        data: { role: newRole }
+      });
+    }
+
     const { password: _, ...rest } = user;
     return rest;
   }
@@ -173,5 +188,15 @@ export default class UserService {
       }
     });
     return !!association;
+  }
+
+  static async getUserCompanyRole(userId: number, companyId: number): Promise<Role | null> {
+    const association = await prisma.userCompany.findFirst({
+      where: {
+        userId,
+        companyId
+      }
+    });
+    return association ? association.role : null;
   }
 }

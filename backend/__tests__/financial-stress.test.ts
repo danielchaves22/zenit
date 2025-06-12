@@ -42,7 +42,7 @@ describe('Financial System Stress Tests - PRODUCTION CRITICAL', () => {
     userId = user.id;
 
     await prisma.userCompany.create({
-      data: { userId: user.id, companyId, isDefault: true }
+      data: { userId: user.id, companyId, isDefault: true, role: 'USER' }
     });
 
     // Create test accounts with specific balances

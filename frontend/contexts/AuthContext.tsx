@@ -5,17 +5,19 @@ import {
 import { useRouter } from 'next/router'
 import api from '@/lib/api'
 
+interface CompanyRole {
+  id: number;
+  name: string;
+  role: string;
+}
+
 interface User {
   id: number;
   name: string;
   email: string;
-  role: string;
+  companies: CompanyRole[];
   manageFinancialAccounts?: boolean;
   manageFinancialCategories?: boolean;
-  company?: {
-    id: number;
-    name: string;
-  };
   mustChangePassword?: boolean;
 }
 
@@ -128,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedCompanyId = localStorage.getItem('zenit_company_id');
         const initialCompanyId = storedCompanyId
           ? Number(storedCompanyId)
-          : response.data.user.company?.id || null;
+          : response.data.user.companies?.[0]?.id || null;
         setCompanyId(initialCompanyId);
         if (!storedCompanyId && initialCompanyId !== null) {
           localStorage.setItem('zenit_company_id', String(initialCompanyId));
@@ -170,9 +172,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setToken(newToken);
       setUser(userData);
-      if (userData.company?.id) {
-        setCompanyId(userData.company.id);
-        localStorage.setItem('zenit_company_id', userData.company.id.toString());
+      if (userData.companies && userData.companies.length > 0) {
+        const firstCompany = userData.companies[0];
+        setCompanyId(firstCompany.id);
+        localStorage.setItem('zenit_company_id', firstCompany.id.toString());
       }
 
       return userData;
@@ -297,11 +300,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         refreshToken,
         isLoading,
-        userRole: user?.role || null,
+        userRole: user && companyId ? user.companies.find(c => c.id === companyId)?.role || null : null,
         userId: user?.id || null,
         companyId,
         userName: user?.name || null,
-        companyName: user?.company?.name || null,
+        companyName: user && companyId ? user.companies.find(c => c.id === companyId)?.name || null : null,
         manageFinancialAccounts: user?.manageFinancialAccounts || false,
         manageFinancialCategories: user?.manageFinancialCategories || false,
         mustChangePassword,

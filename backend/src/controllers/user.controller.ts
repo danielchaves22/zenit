@@ -257,7 +257,7 @@ export const updateUser = async (req: Request, res: Response) => {
     if (manageFinancialCategories !== undefined) updateData.manageFinancialCategories = manageFinancialCategories;
 
     // Realizar a atualização
-    const updated = await UserService.updateUser(id, updateData);
+    const updated = await UserService.updateUser(id, updateData, companyId);
     return res.status(200).json(updated);
   } catch (error) {
     logger.error(`Erro ao atualizar usuário ${id}:`, error);

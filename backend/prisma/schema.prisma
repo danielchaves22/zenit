@@ -90,6 +90,7 @@ model UserCompany {
   userId    Int
   companyId Int
   isDefault Boolean @default(false)
+  role      Role    @default(USER)
   user      User    @relation(fields: [userId], references: [id])
   company   Company @relation(fields: [companyId], references: [id])
 

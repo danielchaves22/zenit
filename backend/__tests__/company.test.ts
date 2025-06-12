@@ -31,9 +31,9 @@ describe('Company routes (RBAC)', () => {
     const us = await prisma.user.create({ data: { email: 'user@o.com', password: hash, name: 'User', role: 'USER' } });
 
     // Associações
-    await prisma.userCompany.create({ data: { userId: ad.id, companyId: eq.id, isDefault: true } });
-    await prisma.userCompany.create({ data: { userId: su.id, companyId: ot.id, isDefault: true } });
-    await prisma.userCompany.create({ data: { userId: us.id, companyId: ot.id, isDefault: true } });
+    await prisma.userCompany.create({ data: { userId: ad.id, companyId: eq.id, isDefault: true, role: 'ADMIN' } });
+    await prisma.userCompany.create({ data: { userId: su.id, companyId: ot.id, isDefault: true, role: 'SUPERUSER' } });
+    await prisma.userCompany.create({ data: { userId: us.id, companyId: ot.id, isDefault: true, role: 'USER' } });
 
     // Tokens
     const r1 = await request(app).post('/api/auth/login').send({ email: 'admin@e.com', password: 'Senha123' });

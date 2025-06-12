@@ -34,7 +34,7 @@ describe('Auth routes', () => {
 
     // 5) Associa o usuário à segunda empresa (empresaB.id)
     await prisma.userCompany.create({
-      data: { userId: user.id, companyId: empresaB.id, isDefault: true }
+      data: { userId: user.id, companyId: empresaB.id, isDefault: true, role: 'USER' }
     });
   });
 

@@ -59,10 +59,10 @@ describe('Módulo Financeiro', () => {
 
     // Associação usuário-empresa
     await prisma.userCompany.create({
-      data: { userId: admin.id, companyId, isDefault: true }
+      data: { userId: admin.id, companyId, isDefault: true, role: 'ADMIN' }
     });
     await prisma.userCompany.create({
-      data: { userId: userId, companyId, isDefault: false }
+      data: { userId: userId, companyId, isDefault: false, role: 'USER' }
     });
 
     // Login para obter token

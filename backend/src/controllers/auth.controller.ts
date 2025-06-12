@@ -51,11 +51,10 @@ export async function login(req: Request, res: Response) {
 
   try {
     // Buscar usuário com dados necessários
-    const user = await prisma.user.findUnique({ 
+    const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
       include: {
         companies: {
-          take: 1,
           include: {
             company: true
           }
@@ -102,15 +101,16 @@ export async function login(req: Request, res: Response) {
     // Login bem-sucedido - resetar contadores
     await resetLoginAttempts(normalizedEmail, clientIP);
 
-    // Dados da empresa
-    const userCompany = user.companies[0];
-    const companyId = userCompany.companyId;
-    const companyName = userCompany.company.name;
+    const companies = user.companies.map((uc) => ({
+      id: uc.companyId,
+      name: uc.company.name,
+      role: uc.role,
+      isDefault: uc.isDefault
+    }));
 
     // Gerar tokens
     const tokenPayload = {
-      userId: user.id,
-      role: user.role
+      userId: user.id
     };
     
     const token = generateToken(tokenPayload);
@@ -120,7 +120,7 @@ export async function login(req: Request, res: Response) {
     logger.info('User login successful', {
       userId: user.id,
       email: normalizedEmail,
-      companyId,
+      companies,
       ip: clientIP,
       userAgent: req.get('User-Agent')
     });
@@ -133,14 +133,10 @@ export async function login(req: Request, res: Response) {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
         manageFinancialAccounts: user.manageFinancialAccounts,
         manageFinancialCategories: user.manageFinancialCategories,
         mustChangePassword: user.mustChangePassword,
-        company: {
-          id: companyId,
-          name: companyName
-        }
+        companies
       },
       message: 'Login realizado com sucesso'
     });
@@ -228,12 +224,11 @@ export async function getCurrentUser(req: Request, res: Response) {
         id: true,
         name: true,
         email: true,
-        role: true,
         manageFinancialAccounts: true,
         manageFinancialCategories: true,
         companies: {
-          take: 1,
           select: {
+            role: true,
             company: {
               select: {
                 id: true,
@@ -249,20 +244,21 @@ export async function getCurrentUser(req: Request, res: Response) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
-    const company = user.companies[0]?.company;
+    const companies = user.companies.map((uc) => ({
+      id: uc.company.id,
+      name: uc.company.name,
+      role: uc.role,
+      isDefault: uc.isDefault
+    }));
 
     return res.status(200).json({
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role,
         manageFinancialAccounts: user.manageFinancialAccounts,
         manageFinancialCategories: user.manageFinancialCategories,
-        company: company ? {
-          id: company.id,
-          name: company.name
-        } : null
+        companies
       }
     });
 

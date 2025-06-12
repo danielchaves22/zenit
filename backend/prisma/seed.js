@@ -67,7 +67,8 @@ async function main() {
       data: {
         userId: adminUser.id,
         companyId: company.id,
-        isDefault: true
+        isDefault: true,
+        role: 'ADMIN'
       }
     });
     console.log('✅ Associação admin/Equinox criada:', { userId: userCompany.userId, companyId: userCompany.companyId });

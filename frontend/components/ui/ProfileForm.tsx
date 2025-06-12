@@ -32,7 +32,7 @@ export default function ProfileForm({ user }: Props) {
     name: user.name || '',
     email: user.email || '',
     password: '',
-    newRole: user.companies[0]?.role || 'USER',
+    newRole: user.role,
     companyId: user.companies.find(c => c.isDefault)?.company.id || 0
   })
 
@@ -54,7 +54,7 @@ export default function ProfileForm({ user }: Props) {
     setMessage(null)
     setLoading(true)
 
-    if (formData.newRole !== user.companies[0]?.role && isSelf) {
+    if (formData.newRole !== user.role && isSelf) {
       setMessage('Você não pode alterar seu próprio tipo de acesso.')
       setLoading(false)
       return

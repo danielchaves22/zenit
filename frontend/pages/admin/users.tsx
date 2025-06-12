@@ -224,9 +224,9 @@ export default function UsersPage() {
     try {
       if (editingUser) {
         // ✅ EDIÇÃO - empresa não pode ser alterada
-        const { password, ...updateData } = formData;
-        if (formData.password) {
-          updateData.password = formData.password;
+        const updateData: Partial<typeof formData> = { ...formData };
+        if (!updateData.password) {
+          delete updateData.password;
         }
 
         updateData.manageFinancialAccounts = formData.manageFinancialAccounts;

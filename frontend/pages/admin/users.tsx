@@ -16,6 +16,8 @@ import AccountPermissionsManager from '@/components/admin/AccountPermissionsMana
 import { Plus, Users, Edit2, Trash2, AlertCircle, Building2, Shield, Save, X } from 'lucide-react'
 import api from '@/lib/api'
 
+const checkboxClasses = 'w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent'
+
 interface User {
   id: number
   name: string
@@ -434,11 +436,14 @@ export default function UsersPage() {
                   <label className="block text-sm font-medium mb-1 text-gray-300">
                     Empresas
                   </label>
-                  <div className="space-y-2">
+                  <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
                     {companies.map((comp) => {
                       const selected = companyRoles.find(c => c.companyId === comp.id);
                       return (
-                        <div key={comp.id} className="flex items-center gap-2">
+                        <label
+                          key={comp.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg border border-gray-700 hover:bg-[#262b36] cursor-pointer ${formLoading ? 'opacity-50 cursor-not-allowed bg-[#1e2126]' : 'bg-[#1e2126]'}`}
+                        >
                           <input
                             type="checkbox"
                             checked={!!selected}
@@ -450,13 +455,14 @@ export default function UsersPage() {
                               }
                             }}
                             disabled={formLoading}
+                            className={checkboxClasses}
                           />
-                          <span className="text-gray-300">{comp.name}</span>
+                          <span className="flex-1 text-sm text-white">{comp.name}</span>
                           {selected && (
                             <select
                               value={selected.role}
                               onChange={(e) => setCompanyRoles(companyRoles.map(c => c.companyId === comp.id ? { ...c, role: e.target.value } : c))}
-                              className="px-1 py-1 bg-[#1e2126] border border-gray-700 text-white rounded"
+                              className="px-2 py-1 bg-[#1e2126] border border-gray-700 text-white rounded"
                               disabled={formLoading}
                             >
                               <option value="USER">Usuário</option>
@@ -464,7 +470,7 @@ export default function UsersPage() {
                               <option value="ADMIN">Administrador</option>
                             </select>
                           )}
-                        </div>
+                        </label>
                       );
                     })}
                   </div>
@@ -480,42 +486,49 @@ export default function UsersPage() {
               )}
 
               {/* Permissões de Funcionalidades */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    className="mr-2"
-                    checked={formData.manageFinancialAccounts}
-                    onChange={(e) => setFormData({...formData, manageFinancialAccounts: e.target.checked})}
-                  />
-                  Gerenciar Contas Financeiras
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300">
+                  Permissões de Funcionalidades
                 </label>
-                <label className="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="checkbox"
-                    className="mr-2"
-                    checked={formData.manageFinancialCategories}
-                    onChange={(e) => setFormData({...formData, manageFinancialCategories: e.target.checked})}
-                  />
-                  Gerenciar Categorias Financeiras
-                </label>
+                <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
+                  <label className="flex items-center gap-2 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      className={checkboxClasses}
+                      checked={formData.manageFinancialAccounts}
+                      onChange={(e) => setFormData({...formData, manageFinancialAccounts: e.target.checked})}
+                    />
+                    Gerenciar Contas Financeiras
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      className={checkboxClasses}
+                      checked={formData.manageFinancialCategories}
+                      onChange={(e) => setFormData({...formData, manageFinancialCategories: e.target.checked})}
+                    />
+                    Gerenciar Categorias Financeiras
+                  </label>
+                </div>
               </div>
 
               {/* ✅ SEÇÃO DE PERMISSÕES DE CONTAS (apenas para USER) */}
               {shouldShowPermissions() && (
                 <div className="border-t border-gray-700 pt-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Shield size={18} className="text-accent" />
-                    <h4 className="text-md font-medium text-white">Permissões de Acesso Financeiro</h4>
+                  <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Shield size={18} className="text-accent" />
+                      <h4 className="text-md font-medium text-white">Permissões de Acesso Financeiro</h4>
+                    </div>
+
+                    <AccountPermissionsManager
+                      userId={editingUser?.id || null}
+                      selectedAccountIds={selectedAccountIds}
+                      onPermissionsChange={handlePermissionsChange}
+                      disabled={formLoading}
+                      showCurrentPermissions={!!editingUser}
+                    />
                   </div>
-                  
-                  <AccountPermissionsManager
-                    userId={editingUser?.id || null}
-                    selectedAccountIds={selectedAccountIds}
-                    onPermissionsChange={handlePermissionsChange}
-                    disabled={formLoading}
-                    showCurrentPermissions={!!editingUser}
-                  />
                 </div>
               )}
 

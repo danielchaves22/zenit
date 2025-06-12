@@ -190,7 +190,6 @@ export async function refreshToken(req: Request, res: Response) {
     // Gerar novo access token
     const newToken = generateToken({
       userId: user.id,
-      role: user.role
     });
     
     logger.info('Token refreshed successfully', {
@@ -229,6 +228,7 @@ export async function getCurrentUser(req: Request, res: Response) {
         companies: {
           select: {
             role: true,
+            isDefault: true,
             company: {
               select: {
                 id: true,

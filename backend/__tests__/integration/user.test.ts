@@ -106,7 +106,7 @@ describe('User routes (CRUD & RBAC)', () => {
   });
 
   describe('POST /api/users', () => {
-    it('ADMIN pode criar usuário em qualquer empresa', async () => {
+    it('ADMIN pode criar SUPERUSER em qualquer empresa', async () => {
       const res = await request(app)
         .post('/api/users')
         .set('Authorization', `Bearer ${adminToken}`)
@@ -116,10 +116,25 @@ describe('User routes (CRUD & RBAC)', () => {
           password: '1234',
           name: 'Novo',
           companyId: otherCompanyId,
-          newRole: 'USER'
+          newRole: 'SUPERUSER'
         });
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('id');
+    });
+
+    it('ADMIN não pode criar USER', async () => {
+      const res = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', equinoxId.toString())
+        .send({
+          email: 'negado@outra.com',
+          password: '1234',
+          name: 'Negado',
+          companyId: otherCompanyId,
+          newRole: 'USER'
+        });
+      expect(res.status).toBe(403);
     });
 
     it('SUPERUSER não pode criar em outra empresa', async () => {

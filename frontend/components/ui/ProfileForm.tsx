@@ -10,6 +10,19 @@ export type Company = {
   code: number
 }
 
+const EQUINOX_COMPANY_CODE = 0
+
+type Role = 'USER' | 'SUPERUSER' | 'ADMIN'
+
+function allowedRoles(currentRole: string | null, companyCode: number): Role[] {
+  if (currentRole === 'ADMIN') {
+    const roles: Role[] = ['SUPERUSER']
+    if (companyCode === EQUINOX_COMPANY_CODE) roles.push('ADMIN')
+    return roles
+  }
+  return []
+}
+
 export type User = {
   id: number
   name: string
@@ -115,9 +128,15 @@ export default function ProfileForm({ user }: Props) {
             onChange={handleChange}
             className="w-full px-2 py-1.5 border rounded focus:outline-none focus:ring focus:border-primary"
           >
-            <option value="USER">Usuário</option>
-            <option value="SUPERUSER">Superusuário</option>
-            <option value="ADMIN">Administrador</option>
+            {allowedRoles(userRole, user.companies.find(c => c.isDefault)?.company.code || 0).includes('USER') && (
+              <option value="USER">Usuário</option>
+            )}
+            {allowedRoles(userRole, user.companies.find(c => c.isDefault)?.company.code || 0).includes('SUPERUSER') && (
+              <option value="SUPERUSER">Superusuário</option>
+            )}
+            {allowedRoles(userRole, user.companies.find(c => c.isDefault)?.company.code || 0).includes('ADMIN') && (
+              <option value="ADMIN">Administrador</option>
+            )}
           </select>
         </div>
       )}

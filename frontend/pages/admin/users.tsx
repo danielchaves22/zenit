@@ -34,9 +34,31 @@ interface User {
   }[]
 }
 
+const EQUINOX_COMPANY_CODE = 0;
+
 interface Company {
   id: number
   name: string
+  code: number
+}
+
+type Role = 'USER' | 'SUPERUSER' | 'ADMIN'
+
+function allowedRolesForCompany(currentRole: string | null, comp: Company): Role[] {
+  if (currentRole === 'ADMIN') {
+    const roles: Role[] = ['SUPERUSER']
+    if (comp.code === EQUINOX_COMPANY_CODE) roles.push('ADMIN')
+    return roles
+  }
+  if (currentRole === 'SUPERUSER') {
+    return ['SUPERUSER', 'USER']
+  }
+  return []
+}
+
+function defaultRoleForCompany(currentRole: string | null, comp: Company): Role {
+  const allowed = allowedRolesForCompany(currentRole, comp)
+  return allowed[0]
 }
 
 export default function UsersPage() {
@@ -120,11 +142,11 @@ export default function UsersPage() {
       name: '',
       email: '',
       password: '',
-      newRole: 'USER'
+      newRole: companies[0] ? defaultRoleForCompany(userRole, companies[0]) : 'USER'
     });
     setCompanyConfigs(
       companies.length === 1
-        ? [{ companyId: companies[0].id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }]
+        ? [{ companyId: companies[0].id, role: defaultRoleForCompany(userRole, companies[0]), manageFinancialAccounts: false, manageFinancialCategories: false }]
         : []
     );
     setAccountConfigs(
@@ -465,7 +487,7 @@ export default function UsersPage() {
                               if (e.target.checked) {
                                 setCompanyConfigs([
                                   ...companyConfigs,
-                                  { companyId: comp.id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }
+                                  { companyId: comp.id, role: defaultRoleForCompany(userRole, comp), manageFinancialAccounts: false, manageFinancialCategories: false }
                                 ]);
                                 setAccountConfigs(prev => ({
                                   ...prev,
@@ -491,9 +513,15 @@ export default function UsersPage() {
                               className="px-2 py-1 bg-[#1e2126] border border-gray-700 text-white rounded"
                               disabled={formLoading}
                             >
-                              <option value="USER">Usuário</option>
-                              <option value="SUPERUSER">Superusuário</option>
-                              <option value="ADMIN">Administrador</option>
+                              {allowedRolesForCompany(userRole, comp).includes('USER') && (
+                                <option value="USER">Usuário</option>
+                              )}
+                              {allowedRolesForCompany(userRole, comp).includes('SUPERUSER') && (
+                                <option value="SUPERUSER">Superusuário</option>
+                              )}
+                              {allowedRolesForCompany(userRole, comp).includes('ADMIN') && (
+                                <option value="ADMIN">Administrador</option>
+                              )}
                             </select>
                           )}
                         </label>

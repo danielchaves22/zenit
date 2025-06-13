@@ -15,9 +15,7 @@ interface User {
   id: number;
   name: string;
   email: string;
-  companies: CompanyRole[];
-  manageFinancialAccounts?: boolean;
-  manageFinancialCategories?: boolean;
+  companies: (CompanyRole & { manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean })[];
   mustChangePassword?: boolean;
 }
 
@@ -311,8 +309,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         companyId,
         userName: user?.name || null,
         companyName: user && companyId ? user.companies.find(c => c.id === companyId)?.name || null : null,
-        manageFinancialAccounts: user?.manageFinancialAccounts || false,
-        manageFinancialCategories: user?.manageFinancialCategories || false,
+        manageFinancialAccounts: user && companyId ?
+          user.companies.find(c => c.id === companyId)?.manageFinancialAccounts || false
+          : false,
+        manageFinancialCategories: user && companyId ?
+          user.companies.find(c => c.id === companyId)?.manageFinancialCategories || false
+          : false,
         mustChangePassword,
         updateMustChangePassword,
         changeCompany

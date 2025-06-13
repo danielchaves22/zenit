@@ -105,7 +105,9 @@ export async function login(req: Request, res: Response) {
       id: uc.companyId,
       name: uc.company.name,
       role: uc.role,
-      isDefault: uc.isDefault
+      isDefault: uc.isDefault,
+      manageFinancialAccounts: uc.manageFinancialAccounts,
+      manageFinancialCategories: uc.manageFinancialCategories
     }));
 
     // Gerar tokens
@@ -133,8 +135,6 @@ export async function login(req: Request, res: Response) {
         id: user.id,
         name: user.name,
         email: user.email,
-        manageFinancialAccounts: user.manageFinancialAccounts,
-        manageFinancialCategories: user.manageFinancialCategories,
         mustChangePassword: user.mustChangePassword,
         companies
       },
@@ -223,12 +223,12 @@ export async function getCurrentUser(req: Request, res: Response) {
         id: true,
         name: true,
         email: true,
-        manageFinancialAccounts: true,
-        manageFinancialCategories: true,
         companies: {
           select: {
             role: true,
             isDefault: true,
+            manageFinancialAccounts: true,
+            manageFinancialCategories: true,
             company: {
               select: {
                 id: true,
@@ -248,7 +248,9 @@ export async function getCurrentUser(req: Request, res: Response) {
       id: uc.company.id,
       name: uc.company.name,
       role: uc.role,
-      isDefault: uc.isDefault
+      isDefault: uc.isDefault,
+      manageFinancialAccounts: uc.manageFinancialAccounts,
+      manageFinancialCategories: uc.manageFinancialCategories
     }));
 
     return res.status(200).json({
@@ -256,8 +258,6 @@ export async function getCurrentUser(req: Request, res: Response) {
         id: user.id,
         name: user.name,
         email: user.email,
-        manageFinancialAccounts: user.manageFinancialAccounts,
-        manageFinancialCategories: user.manageFinancialCategories,
         companies
       }
     });

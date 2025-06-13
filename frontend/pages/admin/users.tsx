@@ -22,8 +22,6 @@ interface User {
   id: number
   name: string
   email: string
-  manageFinancialAccounts?: boolean
-  manageFinancialCategories?: boolean
   companies: {
     company: {
       id: number
@@ -31,6 +29,8 @@ interface User {
       code: number
     }
     role: string
+    manageFinancialAccounts?: boolean
+    manageFinancialCategories?: boolean
   }[]
 }
 
@@ -59,12 +59,9 @@ export default function UsersPage() {
     name: '',
     email: '',
     password: '',
-    newRole: 'USER',
-    manageFinancialAccounts: false,
-    manageFinancialCategories: false
+    newRole: 'USER'
   });
-
-  const [companyRoles, setCompanyRoles] = useState<{ companyId: number; role: string }[]>([]);
+  const [companyConfigs, setCompanyConfigs] = useState<Array<{ companyId: number; role: string; manageFinancialAccounts: boolean; manageFinancialCategories: boolean }>>([]);
 
   // ✅ ESTADOS PARA PERMISSÕES DE CONTAS
   const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
@@ -93,7 +90,11 @@ export default function UsersPage() {
   async function fetchCompanies() {
     try {
       const response = await api.get('/companies');
-      setCompanies(response.data);
+      let list: Company[] = response.data;
+      if (!isAdmin() && userRole === 'SUPERUSER') {
+        list = response.data.filter((c: Company) => c.id === companyId);
+      }
+      setCompanies(list);
       setCompaniesError(null);
     } catch (err: any) {
       if (err.response?.status === 403) {
@@ -122,11 +123,9 @@ export default function UsersPage() {
       name: '',
       email: '',
       password: '',
-      newRole: 'USER',
-      manageFinancialAccounts: false,
-      manageFinancialCategories: false
+      newRole: 'USER'
     });
-    setCompanyRoles([]);
+    setCompanyConfigs(companies.length === 1 ? [{ companyId: companies[0].id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }] : []);
     // ✅ RESETAR PERMISSÕES
     setSelectedAccountIds([]);
     setGrantAllAccess(false);
@@ -139,11 +138,14 @@ export default function UsersPage() {
       name: user.name,
       email: user.email,
       password: '',
-      newRole: user.companies[0]?.role || 'USER',
-      manageFinancialAccounts: user.manageFinancialAccounts || false,
-      manageFinancialCategories: user.manageFinancialCategories || false
+      newRole: user.companies[0]?.role || 'USER'
     });
-    setCompanyRoles(user.companies.map(c => ({ companyId: c.company.id, role: c.role }))); 
+    setCompanyConfigs(user.companies.map(c => ({
+      companyId: c.company.id,
+      role: c.role,
+      manageFinancialAccounts: (c as any).manageFinancialAccounts || false,
+      manageFinancialCategories: (c as any).manageFinancialCategories || false
+    })));
     // ✅ PERMISSÕES SERÃO CARREGADAS PELO COMPONENTE AccountPermissionsManager
     setSelectedAccountIds([]);
     setGrantAllAccess(false);
@@ -157,11 +159,9 @@ export default function UsersPage() {
       name: '',
       email: '',
       password: '',
-      newRole: 'USER',
-      manageFinancialAccounts: false,
-      manageFinancialCategories: false
+      newRole: 'USER'
     });
-    setCompanyRoles([]);
+    setCompanyConfigs([]);
     // ✅ LIMPAR PERMISSÕES
     setSelectedAccountIds([]);
     setGrantAllAccess(false);
@@ -207,7 +207,7 @@ export default function UsersPage() {
         return;
       }
 
-      if (isAdmin() && companyRoles.length === 0) {
+      if (isAdmin() && companyConfigs.length === 0) {
         addToast('Selecione ao menos uma empresa', 'error');
         return;
       }
@@ -229,15 +229,12 @@ export default function UsersPage() {
           delete updateData.password;
         }
 
-        updateData.manageFinancialAccounts = formData.manageFinancialAccounts;
-        updateData.manageFinancialCategories = formData.manageFinancialCategories;
-
-        if (isAdmin() && companyRoles.length === 0) {
+        if (isAdmin() && companyConfigs.length === 0) {
           addToast('Selecione ao menos uma empresa', 'error');
           setFormLoading(false);
           return;
         }
-        const payload = { ...updateData, companies: companyRoles };
+        const payload = { ...updateData, companies: companyConfigs };
         await api.put(`/users/${editingUser.id}`, payload);
         
         // ✅ ATUALIZAR PERMISSÕES SE FOR USER
@@ -254,7 +251,7 @@ export default function UsersPage() {
         addToast('Usuário atualizado com sucesso', 'success');
       } else {
         // ✅ CRIAÇÃO COM PERMISSÕES
-        if (isAdmin() && companyRoles.length === 0) {
+        if (isAdmin() && companyConfigs.length === 0) {
           addToast('Selecione ao menos uma empresa', 'error');
           setFormLoading(false);
           return;
@@ -265,9 +262,7 @@ export default function UsersPage() {
           email: formData.email,
           password: formData.password,
           newRole: formData.newRole,
-          manageFinancialAccounts: formData.manageFinancialAccounts,
-          manageFinancialCategories: formData.manageFinancialCategories,
-          companies: companyRoles,
+          companies: companyConfigs,
         };
 
         // ✅ ADICIONAR PERMISSÕES APENAS PARA USER
@@ -413,38 +408,36 @@ export default function UsersPage() {
                 />
               </div>
 
-              {/* Empresas e Roles (apenas ADMIN) */}
-              {isAdmin() && (
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-300">
-                    Empresas
-                  </label>
-                  <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
-                    {companies.map((comp) => {
-                      const selected = companyRoles.find(c => c.companyId === comp.id);
-                      return (
-                        <label
-                          key={comp.id}
-                          className={`flex items-center gap-3 p-3 rounded-lg border border-gray-700 hover:bg-[#262b36] cursor-pointer ${formLoading ? 'opacity-50 cursor-not-allowed bg-[#1e2126]' : 'bg-[#1e2126]'}`}
-                        >
+              {/* Empresas */}
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300">
+                  Empresas
+                </label>
+                <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
+                  {companies.map((comp) => {
+                    const cfg = companyConfigs.find(c => c.companyId === comp.id);
+                    const single = companies.length === 1;
+                    return (
+                      <div key={comp.id} className="p-3 border border-gray-700 rounded-lg bg-[#1e2126]">
+                        <label className="flex items-center gap-3">
                           <input
                             type="checkbox"
-                            checked={!!selected}
+                            checked={!!cfg}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setCompanyRoles([...companyRoles, { companyId: comp.id, role: 'USER' }]);
+                                setCompanyConfigs([...companyConfigs, { companyId: comp.id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }]);
                               } else {
-                                setCompanyRoles(companyRoles.filter(c => c.companyId !== comp.id));
+                                setCompanyConfigs(companyConfigs.filter(c => c.companyId !== comp.id));
                               }
                             }}
-                            disabled={formLoading}
+                            disabled={formLoading || single}
                             className={checkboxClasses}
                           />
                           <span className="flex-1 text-sm text-white">{comp.name}</span>
-                          {selected && (
+                          {cfg && (
                             <select
-                              value={selected.role}
-                              onChange={(e) => setCompanyRoles(companyRoles.map(c => c.companyId === comp.id ? { ...c, role: e.target.value } : c))}
+                              value={cfg.role}
+                              onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, role: e.target.value } : c))}
                               className="px-2 py-1 bg-[#1e2126] border border-gray-700 text-white rounded"
                               disabled={formLoading}
                             >
@@ -454,48 +447,34 @@ export default function UsersPage() {
                             </select>
                           )}
                         </label>
-                      );
-                    })}
-                  </div>
+                        {cfg && (
+                          <div className="ml-6 mt-2 space-y-2">
+                            <label className="flex items-center gap-2 text-sm text-gray-300">
+                              <input
+                                type="checkbox"
+                                className={checkboxClasses}
+                                checked={cfg.manageFinancialAccounts}
+                                onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialAccounts: e.target.checked } : c))}
+                              />
+                              Gerenciar Contas Financeiras
+                            </label>
+                            <label className="flex items-center gap-2 text-sm text-gray-300">
+                              <input
+                                type="checkbox"
+                                className={checkboxClasses}
+                                checked={cfg.manageFinancialCategories}
+                                onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialCategories: e.target.checked } : c))}
+                              />
+                              Gerenciar Categorias Financeiras
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-              {!isAdmin() && (
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-300">Empresa</label>
-                  <div className="w-full px-2 py-1.5 bg-gray-700 border border-gray-600 text-gray-300 rounded">
-                    {editingUser ? editingUser.companies[0]?.company.name : companyName}
-                  </div>
-                </div>
-              )}
+              </div>
 
-              {/* Permissões de Funcionalidades */}
-              {shouldShowPermissions() && (
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-300">
-                    Permissões de Funcionalidades
-                  </label>
-                  <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
-                    <label className="flex items-center gap-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        className={checkboxClasses}
-                        checked={formData.manageFinancialAccounts}
-                        onChange={(e) => setFormData({...formData, manageFinancialAccounts: e.target.checked})}
-                      />
-                      Gerenciar Contas Financeiras
-                    </label>
-                    <label className="flex items-center gap-2 text-sm text-gray-300">
-                      <input
-                        type="checkbox"
-                        className={checkboxClasses}
-                        checked={formData.manageFinancialCategories}
-                        onChange={(e) => setFormData({...formData, manageFinancialCategories: e.target.checked})}
-                      />
-                      Gerenciar Categorias Financeiras
-                    </label>
-                  </div>
-                </div>
-              )}
 
               {/* ✅ SEÇÃO DE PERMISSÕES DE CONTAS (apenas para USER) */}
               {shouldShowPermissions() && (

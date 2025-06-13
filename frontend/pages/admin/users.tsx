@@ -509,7 +509,16 @@ export default function UsersPage() {
                           {cfg && (
                             <select
                               value={cfg.role}
-                              onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, role: e.target.value } : c))}
+                              onChange={(e) => {
+                                setCompanyConfigs(
+                                  companyConfigs.map(c =>
+                                    c.companyId === comp.id ? { ...c, role: e.target.value } : c
+                                  )
+                                )
+                                if (companies.length === 1) {
+                                  setFormData({ ...formData, newRole: e.target.value as Role })
+                                }
+                              }}
                               className="px-2 py-1 bg-[#1e2126] border border-gray-700 text-white rounded"
                               disabled={formLoading}
                             >

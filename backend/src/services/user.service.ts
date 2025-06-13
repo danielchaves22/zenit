@@ -10,6 +10,8 @@ export interface CompanyRoleInput {
   companyId: number;
   role: Role;
   isDefault?: boolean;
+  manageFinancialAccounts?: boolean;
+  manageFinancialCategories?: boolean;
 }
 
 export interface CreateUserParams {
@@ -17,8 +19,6 @@ export interface CreateUserParams {
   password: string;
   name: string;
   companies: CompanyRoleInput[];
-  manageFinancialAccounts?: boolean;
-  manageFinancialCategories?: boolean;
 }
 
 export default class UserService {
@@ -34,7 +34,7 @@ export default class UserService {
    * Versão simplificada: um usuário pertence a apenas uma empresa.
    */
   static async createUser(params: CreateUserParams): Promise<Omit<User, 'password'>> {
-    const { email, password, name, companies, manageFinancialAccounts = false, manageFinancialCategories = false } = params;
+    const { email, password, name, companies } = params;
     if (!companies || companies.length === 0) {
       throw new Error('É necessário vincular o usuário a pelo menos uma empresa');
     }
@@ -61,8 +61,6 @@ export default class UserService {
             data: {
               name,
               password: hashed,
-              manageFinancialAccounts,
-              manageFinancialCategories,
               mustChangePassword: true
             }
           })
@@ -71,8 +69,6 @@ export default class UserService {
               email,
               password: hashed,
               name,
-              manageFinancialAccounts,
-              manageFinancialCategories,
               mustChangePassword: true
             }
           });
@@ -85,7 +81,9 @@ export default class UserService {
             userId: user.id,
             companyId: c.companyId,
             role: c.role,
-            isDefault: c.isDefault ?? i === 0
+            isDefault: c.isDefault ?? i === 0,
+            manageFinancialAccounts: c.manageFinancialAccounts ?? false,
+            manageFinancialCategories: c.manageFinancialCategories ?? false
           }
         });
       }
@@ -174,7 +172,9 @@ export default class UserService {
             userId: id,
             companyId: c.companyId,
             role: c.role,
-            isDefault: c.isDefault ?? i === 0
+            isDefault: c.isDefault ?? i === 0,
+            manageFinancialAccounts: c.manageFinancialAccounts ?? false,
+            manageFinancialCategories: c.manageFinancialCategories ?? false
           }
         });
       }
@@ -214,13 +214,15 @@ export default class UserService {
     return !!association;
   }
 
-  static async getUserCompanyRole(userId: number, companyId: number): Promise<Role | null> {
+  static async getUserCompanyContext(userId: number, companyId: number): Promise<{ role: Role; manageFinancialAccounts: boolean; manageFinancialCategories: boolean } | null> {
     const association = await prisma.userCompany.findFirst({
-      where: {
-        userId,
-        companyId
-      }
+      where: { userId, companyId }
     });
-    return association ? association.role : null;
+    if (!association) return null;
+    return {
+      role: association.role,
+      manageFinancialAccounts: association.manageFinancialAccounts,
+      manageFinancialCategories: association.manageFinancialCategories
+    };
   }
 }

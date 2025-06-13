@@ -48,8 +48,6 @@ model User {
   password            String
   name                String
   role                Role                  @default(USER)
-  manageFinancialAccounts   Boolean              @default(false)
-  manageFinancialCategories Boolean              @default(false)
   mustChangePassword        Boolean              @default(true)
   companies           UserCompany[]
   createdAt           DateTime              @default(now())
@@ -91,6 +89,8 @@ model UserCompany {
   companyId Int
   isDefault Boolean @default(false)
   role      Role    @default(USER)
+  manageFinancialAccounts   Boolean @default(false)
+  manageFinancialCategories Boolean @default(false)
   user      User    @relation(fields: [userId], references: [id])
   company   Company @relation(fields: [companyId], references: [id])
 

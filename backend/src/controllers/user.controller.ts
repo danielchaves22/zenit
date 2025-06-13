@@ -26,7 +26,7 @@ function getUserContext(req: Request): { userId: number; role: Role; companyId: 
  */
 export const createUser = async (req: Request, res: Response) => {
   const { role, companyId } = getUserContext(req);
-  const { email, password, name, newRole, companyId: targetCompanyId, companies, manageFinancialAccounts = false, manageFinancialCategories = false } = req.body;
+  const { email, password, name, newRole, companyId: targetCompanyId, companies } = req.body;
 
   // Validações de campos obrigatórios
   if (!email || !password || !name) {
@@ -38,7 +38,7 @@ export const createUser = async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'Acesso negado: USER não pode criar usuários.' });
   }
 
-  let companiesToCreate: { companyId: number; role: Role }[] = [];
+  let companiesToCreate: { companyId: number; role: Role; manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean }[] = [];
 
   if (role === 'SUPERUSER') {
     if (targetCompanyId === undefined || companyId !== Number(targetCompanyId)) {
@@ -65,7 +65,12 @@ export const createUser = async (req: Request, res: Response) => {
     companiesToCreate.push({ companyId: Number(targetCompanyId), role: roleToAssign });
   } else if (role === 'ADMIN') {
     if (Array.isArray(companies) && companies.length > 0) {
-      companiesToCreate = companies.map((c: any) => ({ companyId: Number(c.companyId), role: c.role as Role }));
+      companiesToCreate = companies.map((c: any) => ({
+        companyId: Number(c.companyId),
+        role: c.role as Role,
+        manageFinancialAccounts: c.manageFinancialAccounts,
+        manageFinancialCategories: c.manageFinancialCategories
+      }));
       const adminCompanies = companiesToCreate.filter(c => c.role === 'ADMIN');
       if (adminCompanies.length > 0) {
         const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
@@ -91,9 +96,7 @@ export const createUser = async (req: Request, res: Response) => {
       email,
       password,
       name,
-      companies: companiesToCreate,
-      manageFinancialAccounts,
-      manageFinancialCategories
+      companies: companiesToCreate
     });
     return res.status(201).json(created);
   } catch (error: any) {
@@ -135,12 +138,14 @@ export const getUsers = async (req: Request, res: Response) => {
         email: true,
         name: true,
         role: true,
-        manageFinancialAccounts: true,
-        manageFinancialCategories: true,
         createdAt: true,
         updatedAt: true,
         companies: {
           select: {
+            role: true,
+            isDefault: true,
+            manageFinancialAccounts: true,
+            manageFinancialCategories: true,
             company: { select: { id: true, name: true, code: true } }
           }
         }
@@ -203,10 +208,12 @@ export const getUserById = async (req: Request, res: Response) => {
         email: true,
         name: true,
         role: true,
-        manageFinancialAccounts: true,
-        manageFinancialCategories: true,
         companies: {
-          include: {
+          select: {
+            role: true,
+            isDefault: true,
+            manageFinancialAccounts: true,
+            manageFinancialCategories: true,
             company: { select: { id: true, name: true, code: true } }
           }
         }
@@ -231,7 +238,7 @@ export const getUserById = async (req: Request, res: Response) => {
 export const updateUser = async (req: Request, res: Response) => {
   const { role, companyId, userId: me } = getUserContext(req);
   const id = Number(req.params.id);
-  const { email, password, name, newRole, companies, manageFinancialAccounts, manageFinancialCategories } = req.body;
+  const { email, password, name, newRole, companies } = req.body;
 
   if (isNaN(id)) {
     return res.status(400).json({ error: 'ID inválido.' });
@@ -276,8 +283,6 @@ export const updateUser = async (req: Request, res: Response) => {
     if (newRole && (role === 'ADMIN' || (role === 'SUPERUSER' && newRole !== 'ADMIN'))) {
       updateData.role = newRole;
     }
-    if (manageFinancialAccounts !== undefined) updateData.manageFinancialAccounts = manageFinancialAccounts;
-    if (manageFinancialCategories !== undefined) updateData.manageFinancialCategories = manageFinancialCategories;
 
     // Realizar a atualização
     let ctx: number | { companyId: number; role: Role }[] | undefined = companyId;
@@ -290,7 +295,12 @@ export const updateUser = async (req: Request, res: Response) => {
       if (invalidAdmin) {
         return res.status(403).json({ error: 'ADMIN só pode vincular ADMIN à Equinox.' });
       }
-      ctx = companies.map((c: any) => ({ companyId: Number(c.companyId), role: c.role as Role }));
+      ctx = companies.map((c: any) => ({
+        companyId: Number(c.companyId),
+        role: c.role as Role,
+        manageFinancialAccounts: c.manageFinancialAccounts,
+        manageFinancialCategories: c.manageFinancialCategories
+      }));
     }
     if (newRole === 'ADMIN' && role === 'ADMIN') {
       if (!equinox) {

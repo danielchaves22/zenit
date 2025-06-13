@@ -30,14 +30,20 @@ export async function tenantMiddleware(
       return;
     }
 
-    const role = await UserService.getUserCompanyRole(req.user.userId, companyId);
-    if (!role) {
+    const context = await UserService.getUserCompanyContext(req.user.userId, companyId);
+    if (!context) {
       res.status(403).json({ error: 'Acesso não autorizado à empresa' });
       return;
     }
 
+    // @ts-ignore
     req.user.companyId = companyId;
-    req.user.role = role;
+    // @ts-ignore
+    req.user.role = context.role;
+    // @ts-ignore
+    req.user.manageFinancialAccounts = context.manageFinancialAccounts;
+    // @ts-ignore
+    req.user.manageFinancialCategories = context.manageFinancialCategories;
     next();
   } catch (error) {
     res.status(500).json({ error: 'Erro ao validar empresa' });

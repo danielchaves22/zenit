@@ -7,11 +7,11 @@ export const createUserSchema = z.object({
   companyId: z.number({ invalid_type_error: 'companyId deve ser um número.' }).optional(),
   companies: z.array(z.object({
     companyId: z.number(),
-    role: z.enum(['ADMIN','SUPERUSER','USER'])
+    role: z.enum(['ADMIN','SUPERUSER','USER']),
+    manageFinancialAccounts: z.boolean().optional(),
+    manageFinancialCategories: z.boolean().optional()
   })).optional(),
-  newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional(),
-  manageFinancialAccounts: z.boolean().optional(),
-  manageFinancialCategories: z.boolean().optional()
+  newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional()
 });
 
 export const updateUserSchema = z
@@ -22,11 +22,11 @@ export const updateUserSchema = z
     companyId: z.number({ invalid_type_error: 'companyId deve ser um número.' }).optional(),
     companies: z.array(z.object({
       companyId: z.number(),
-      role: z.enum(['ADMIN','SUPERUSER','USER'])
+      role: z.enum(['ADMIN','SUPERUSER','USER']),
+      manageFinancialAccounts: z.boolean().optional(),
+      manageFinancialCategories: z.boolean().optional()
     })).optional(),
-    newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional(),
-    manageFinancialAccounts: z.boolean().optional(),
-    manageFinancialCategories: z.boolean().optional()
+    newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional()
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Ao menos um campo deve ser fornecido para atualização.'

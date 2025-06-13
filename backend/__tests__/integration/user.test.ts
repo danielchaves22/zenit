@@ -152,6 +152,22 @@ describe('User routes (CRUD & RBAC)', () => {
       expect(res.status).toBe(403);
     });
 
+    it('SUPERUSER pode criar usuário na própria empresa usando companies', async () => {
+      const res = await request(app)
+        .post('/api/users')
+        .set('Authorization', `Bearer ${superToken}`)
+        .set('X-Company-Id', otherCompanyId.toString())
+        .send({
+          email: 'supercreate@outra.com',
+          password: '1234',
+          name: 'Super Create',
+          newRole: 'USER',
+          companies: [{ companyId: otherCompanyId, role: 'USER' }]
+        });
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('id');
+    });
+
     it('USER não pode criar usuários', async () => {
       const res = await request(app)
         .post('/api/users')

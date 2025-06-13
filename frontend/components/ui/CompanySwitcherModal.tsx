@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ModalDrawer } from './ModalDrawer';
+import { Modal } from './Modal';
 import { Button } from './Button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/router';
@@ -36,7 +36,7 @@ export function CompanySwitcherModal({ isOpen, onClose }: CompanySwitcherModalPr
   );
 
   return (
-    <ModalDrawer isOpen={isOpen} onClose={onClose} title="Selecionar Empresa" footer={footer}>
+    <Modal isOpen={isOpen} onClose={onClose} title="Selecionar Empresa" footer={footer}>
       <div className="space-y-4">
         {user?.companies.map((comp) => (
           <label key={comp.id} className="flex items-center gap-2 cursor-pointer">
@@ -50,6 +50,6 @@ export function CompanySwitcherModal({ isOpen, onClose }: CompanySwitcherModalPr
           </label>
         ))}
       </div>
-    </ModalDrawer>
+    </Modal>
   );
 }

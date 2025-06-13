@@ -8,6 +8,7 @@ import { Sidebar } from './Sidebar';
 import { ThemeSelector } from '@/components/ui/ThemeSelector';
 import { User } from 'lucide-react';
 import { RoleBasedItem } from '@/components/navigation/RoleBasedNavigation';
+import { CompanySwitcherModal } from '@/components/ui/CompanySwitcherModal';
 import { 
   Building2, 
   Users, 
@@ -29,6 +30,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
   // Estado para controlar a visibilidade do menu do usuário
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const [companyModalOpen, setCompanyModalOpen] = useState(false);
   
   // Obtém o estado salvo no localStorage ou usa o padrão
   const getSavedCollapsedState = () => {
@@ -97,6 +99,12 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           <span className="text-white text-lg font-bold font-heading">
             {companyName}
           </span>
+          <button
+            onClick={() => setCompanyModalOpen(true)}
+            className="text-sm text-gray-300 hover:text-accent"
+          >
+            Alterar
+          </button>
         </div>
 
         <div className="flex items-center space-x-3">
@@ -159,6 +167,10 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           </main>
         </div>
       </div>
+      <CompanySwitcherModal
+        isOpen={companyModalOpen}
+        onClose={() => setCompanyModalOpen(false)}
+      />
     </div>
   );
 }

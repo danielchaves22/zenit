@@ -52,12 +52,6 @@ export const createUser = async (req: Request, res: Response) => {
 
   let companiesToCreate: { companyId: number; role: Role; manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean }[] = [];
 
-  if (role === 'SUPERUSER') {
-    if (targetCompanyId === undefined || companyId !== Number(targetCompanyId)) {
-      return res.status(403).json({ error: 'SUPERUSER não pode criar usuário em outra empresa.' });
-    }
-  }
-
   // Definição do role a ser atribuído
   let roleToAssign: Role;
   if (role === 'ADMIN') {
@@ -67,7 +61,25 @@ export const createUser = async (req: Request, res: Response) => {
   }
 
   if (role === 'SUPERUSER') {
-    companiesToCreate.push({ companyId: Number(targetCompanyId), role: roleToAssign });
+    let targetId = targetCompanyId !== undefined ? Number(targetCompanyId) : undefined;
+    let accountOpts: { manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean } = {};
+    if (targetId === undefined) {
+      if (Array.isArray(companies) && companies.length === 1) {
+        targetId = Number(companies[0].companyId);
+        accountOpts.manageFinancialAccounts = companies[0].manageFinancialAccounts;
+        accountOpts.manageFinancialCategories = companies[0].manageFinancialCategories;
+      } else {
+        return res.status(400).json({ error: 'É necessário informar companyId ou companies com uma empresa.' });
+      }
+    }
+    if (companyId !== targetId) {
+      return res.status(403).json({ error: 'SUPERUSER não pode criar usuário em outra empresa.' });
+    }
+    companiesToCreate.push({
+      companyId: targetId,
+      role: roleToAssign,
+      ...accountOpts
+    });
   } else if (role === 'ADMIN') {
     if (Array.isArray(companies) && companies.length > 0) {
       companiesToCreate = companies.map((c: any) => ({

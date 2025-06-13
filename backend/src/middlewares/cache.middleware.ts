@@ -13,7 +13,8 @@ export function cacheMiddleware(ttlSeconds: number = 300) {
     }
 
     // Generate cache key from URL and query params
-    const cacheKey = `api:${req.originalUrl}:${JSON.stringify(req.query)}`;
+    const companyId = req.headers['x-company-id'];
+    const cacheKey = `api:${req.originalUrl}:${JSON.stringify(req.query)}:${companyId ?? ''}`;
     
     try {
       const cached = await cacheService.get(cacheKey);

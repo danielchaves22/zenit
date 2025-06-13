@@ -451,7 +451,7 @@ export default function UsersPage() {
                 <label className="block text-sm font-medium mb-1 text-gray-300">
                   Empresas
                 </label>
-                <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
+                <div className="space-y-2">
                   {companies.map((comp) => {
                     const cfg = companyConfigs.find(c => c.companyId === comp.id);
                     const single = companies.length === 1;
@@ -499,24 +499,18 @@ export default function UsersPage() {
                         </label>
                         {cfg && (
                           <div className="ml-6 mt-2 space-y-2">
-                            <label className="flex items-center gap-2 text-sm text-gray-300">
-                              <input
-                                type="checkbox"
-                                className={checkboxClasses}
-                                checked={cfg.manageFinancialAccounts}
-                                onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialAccounts: e.target.checked } : c))}
-                              />
-                              Gerenciar Contas Financeiras
-                            </label>
-                            <label className="flex items-center gap-2 text-sm text-gray-300">
-                              <input
-                                type="checkbox"
-                                className={checkboxClasses}
-                                checked={cfg.manageFinancialCategories}
-                                onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialCategories: e.target.checked } : c))}
-                              />
-                              Gerenciar Categorias Financeiras
-                            </label>
+                            <input
+                              type="checkbox"
+                              className={checkboxClasses}
+                              checked={cfg.manageFinancialAccounts}
+                              onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialAccounts: e.target.checked } : c))}
+                            />
+                            <input
+                              type="checkbox"
+                              className={checkboxClasses}
+                              checked={cfg.manageFinancialCategories}
+                              onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialCategories: e.target.checked } : c))}
+                            />
                             {cfg.role === 'USER' && (
                               <div className="mt-2">
                                 <AccountPermissionsManager

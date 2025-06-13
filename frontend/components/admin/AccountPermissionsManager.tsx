@@ -150,56 +150,20 @@ export default function AccountPermissionsManager({
   const totalActiveCount = activeAccounts.length;
 
   return (
-    <div className="space-y-4">
-      {/* Header com Contador */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h4 className="text-sm font-medium text-white">Permissões de Acesso a Contas</h4>
-          <p className="text-xs text-gray-400 mt-1">
-            {selectedCount === 0 
-              ? 'Nenhuma conta selecionada - usuário não terá acesso a funcionalidades financeiras'
-              : `${selectedCount} de ${totalActiveCount} contas selecionadas`
-            }
-          </p>
-        </div>
-        
-        {selectedCount === 0 && (
-          <div className="flex items-center gap-1 text-yellow-400">
-            <AlertCircle size={16} />
-            <span className="text-xs">Sem acesso</span>
-          </div>
-        )}
-      </div>
+    <div className="space-y-2">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={grantAllAccess}
+          onChange={handleGrantAllToggle}
+          disabled={disabled || totalActiveCount === 0}
+          className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+        />
+        <span className="text-sm text-white">Todas as contas</span>
+      </label>
 
-      {/* Toggle Conceder Todas */}
-      <div className="p-3 bg-[#1a1f2b] border border-gray-700 rounded-lg">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={grantAllAccess}
-            onChange={handleGrantAllToggle}
-            disabled={disabled || totalActiveCount === 0}
-            className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
-          />
-          <div className="flex-1">
-            <div className="text-sm font-medium text-white">
-              Conceder acesso a todas as contas financeiras
-            </div>
-            <div className="text-xs text-gray-400">
-              Usuário terá acesso total às funcionalidades financeiras
-            </div>
-          </div>
-          <Users size={16} className="text-accent" />
-        </label>
-      </div>
-
-      {/* Lista de Contas */}
       {!grantAllAccess && (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-            Selecionar Contas Específicas
-          </div>
-          
           {(loading || permissionsLoading) ? (
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => (
@@ -215,14 +179,13 @@ export default function AccountPermissionsManager({
             <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
               {activeAccounts.map(account => {
                 const isSelected = selectedAccountIds.includes(account.id);
-                const currentAccountAccess = currentAccess?.accounts.find(acc => acc.id === account.id);
-                
+
                 return (
                   <label
                     key={account.id}
                     className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
-                      isSelected 
-                        ? 'bg-accent/10 border-accent' 
+                      isSelected
+                        ? 'bg-accent/10 border-accent'
                         : 'bg-[#1a1f2b] border-gray-700 hover:bg-[#262b36]'
                     } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
@@ -233,7 +196,7 @@ export default function AccountPermissionsManager({
                       disabled={disabled}
                       className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
                     />
-                    
+
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <CreditCard size={14} className="text-blue-400 flex-shrink-0" />
@@ -248,7 +211,6 @@ export default function AccountPermissionsManager({
                         <span className="text-xs text-gray-400">
                           {formatAccountType(account.type)}
                         </span>
-                        
                       </div>
                     </div>
                   </label>

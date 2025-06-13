@@ -4,6 +4,8 @@
   "main": "dist/server.js",
   "scripts": {
     "test": "jest --runInBand",
+    "test:unit": "TEST_TYPE=unit jest --runInBand",
+    "test:integration": "jest --runInBand backend/__tests__/integration",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "start": "node dist/server.js",

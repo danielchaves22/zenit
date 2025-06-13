@@ -11,6 +11,7 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { ArrowLeft, Save, X, Trash2, Calendar, Clock } from 'lucide-react';
 import api from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Account {
   id: number;
@@ -70,6 +71,8 @@ export default function TransactionForm({
   const router = useRouter();
   const { addToast } = useToast();
   const confirmation = useConfirmation();
+  const { userRole } = useAuth();
+  const isSuperuser = userRole === 'SUPERUSER';
   
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -98,6 +101,9 @@ export default function TransactionForm({
 
   // Verificar se o formulário deve estar somente leitura
   const isReadOnly = mode === 'edit' && transaction?.status === 'COMPLETED';
+  const showActions = !isReadOnly || isSuperuser;
+  const actionDisabled = saving || (isReadOnly && !isSuperuser);
+  const statusDisabled = saving || (isReadOnly && !isSuperuser);
   const isPending = formData.status === 'PENDING';
 
   useEffect(() => {
@@ -454,13 +460,13 @@ export default function TransactionForm({
             </div>
           )}
 
-          {!isReadOnly && (
+          {showActions && (
             <>
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleCancel}
-                disabled={saving || isReadOnly}
+                disabled={actionDisabled}
                 className="flex items-center gap-2"
               >
                 <X size={16} />
@@ -470,7 +476,7 @@ export default function TransactionForm({
                 type="button"
                 variant="accent"
                 onClick={handleTopSave}
-                disabled={saving || isReadOnly}
+                disabled={actionDisabled}
                 className="flex items-center gap-2"
               >
                 <Save size={16} />
@@ -633,7 +639,7 @@ export default function TransactionForm({
                 onChange={handleChange}
                 className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                 required
-                disabled={saving || isReadOnly}
+                disabled={statusDisabled}
               >
                 <option value="PENDING">Pendente</option>
                 <option value="COMPLETED">Concluída</option>
@@ -710,13 +716,13 @@ export default function TransactionForm({
             />
           </div>
           
-          {!isReadOnly && (
+          {showActions && (
             <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
               <Button
                 type="button"
                 variant="outline"
                 onClick={handleCancel}
-                disabled={saving || isReadOnly}
+                disabled={actionDisabled}
                 className="flex items-center gap-2"
               >
                 <X size={16} />
@@ -725,7 +731,7 @@ export default function TransactionForm({
               <Button
                 type="submit"
                 variant="accent"
-                disabled={saving || isReadOnly}
+                disabled={actionDisabled}
                 className="flex items-center gap-2"
               >
                 <Save size={16} />

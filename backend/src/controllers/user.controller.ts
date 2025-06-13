@@ -38,6 +38,18 @@ export const createUser = async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'Acesso negado: USER não pode criar usuários.' });
   }
 
+  if (role === 'ADMIN' && newRole !== 'ADMIN' && newRole !== 'SUPERUSER') {
+    return res.status(403).json({
+      error: 'ADMIN só pode criar usuários ADMIN ou SUPERUSER.'
+    });
+  }
+
+  if (role === 'SUPERUSER' && newRole === 'ADMIN') {
+    return res.status(403).json({
+      error: 'SUPERUSER não pode criar usuários ADMIN.'
+    });
+  }
+
   let companiesToCreate: { companyId: number; role: Role; manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean }[] = [];
 
   if (role === 'SUPERUSER') {
@@ -46,19 +58,12 @@ export const createUser = async (req: Request, res: Response) => {
     }
   }
 
-  // Definição de role padrão (usado apenas para SUPERUSER)
-  let roleToAssign: Role = 'USER';
-  if (newRole === 'ADMIN') {
-    if (role !== 'ADMIN') {
-      return res.status(403).json({ error: 'Apenas ADMIN pode criar usuários ADMIN.' });
-    }
-    roleToAssign = 'ADMIN';
-  } else if (newRole === 'SUPERUSER') {
-    if (role === 'ADMIN' || role === 'SUPERUSER') {
-      roleToAssign = 'SUPERUSER';
-    } else {
-      return res.status(403).json({ error: 'Acesso negado: não pode criar SUPERUSER.' });
-    }
+  // Definição do role a ser atribuído
+  let roleToAssign: Role;
+  if (role === 'ADMIN') {
+    roleToAssign = newRole as Role; // validado anteriormente
+  } else {
+    roleToAssign = newRole === 'SUPERUSER' ? 'SUPERUSER' : 'USER';
   }
 
   if (role === 'SUPERUSER') {

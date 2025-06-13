@@ -13,7 +13,7 @@ import { useConfirmation } from '@/hooks/useConfirmation'
 import { useToast } from '@/components/ui/ToastContext'
 import { usePermissions } from '@/hooks/usePermissions'
 import AccountPermissionsManager from '@/components/admin/AccountPermissionsManager'
-import { Plus, Users, Edit2, Trash2, AlertCircle, Building2, Shield, Save, X } from 'lucide-react'
+import { Plus, Users, Edit2, Trash2, Save, X } from 'lucide-react'
 import api from '@/lib/api'
 
 const checkboxClasses = 'w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent'
@@ -62,10 +62,7 @@ export default function UsersPage() {
     newRole: 'USER'
   });
   const [companyConfigs, setCompanyConfigs] = useState<Array<{ companyId: number; role: string; manageFinancialAccounts: boolean; manageFinancialCategories: boolean }>>([]);
-
-  // ✅ ESTADOS PARA PERMISSÕES DE CONTAS
-  const [selectedAccountIds, setSelectedAccountIds] = useState<number[]>([]);
-  const [grantAllAccess, setGrantAllAccess] = useState(false);
+  const [accountConfigs, setAccountConfigs] = useState<Record<number, { selectedAccountIds: number[]; grantAllAccess: boolean }>>({});
 
   useEffect(() => {
     fetchUsers();
@@ -125,10 +122,16 @@ export default function UsersPage() {
       password: '',
       newRole: 'USER'
     });
-    setCompanyConfigs(companies.length === 1 ? [{ companyId: companies[0].id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }] : []);
-    // ✅ RESETAR PERMISSÕES
-    setSelectedAccountIds([]);
-    setGrantAllAccess(false);
+    setCompanyConfigs(
+      companies.length === 1
+        ? [{ companyId: companies[0].id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }]
+        : []
+    );
+    setAccountConfigs(
+      companies.length === 1
+        ? { [companies[0].id]: { selectedAccountIds: [], grantAllAccess: false } }
+        : {}
+    );
     setShowForm(true);
   }
 
@@ -146,9 +149,12 @@ export default function UsersPage() {
       manageFinancialAccounts: (c as any).manageFinancialAccounts || false,
       manageFinancialCategories: (c as any).manageFinancialCategories || false
     })));
-    // ✅ PERMISSÕES SERÃO CARREGADAS PELO COMPONENTE AccountPermissionsManager
-    setSelectedAccountIds([]);
-    setGrantAllAccess(false);
+    const accCfg: Record<number, { selectedAccountIds: number[]; grantAllAccess: boolean }> = {};
+    user.companies.forEach(c => {
+      accCfg[c.company.id] = { selectedAccountIds: [], grantAllAccess: false };
+    });
+    setAccountConfigs(accCfg);
+    // Permissões existentes serão carregadas pelos componentes
     setShowForm(true);
   }
 
@@ -162,15 +168,19 @@ export default function UsersPage() {
       newRole: 'USER'
     });
     setCompanyConfigs([]);
-    // ✅ LIMPAR PERMISSÕES
-    setSelectedAccountIds([]);
-    setGrantAllAccess(false);
+    setAccountConfigs({});
   }
 
   // ✅ HANDLER PARA MUDANÇAS NAS PERMISSÕES
-  const handlePermissionsChange = (accountIds: number[], grantAll: boolean) => {
-    setSelectedAccountIds(accountIds);
-    setGrantAllAccess(grantAll);
+  const handlePermissionsChange = (
+    company: number,
+    accountIds: number[],
+    grantAll: boolean
+  ) => {
+    setAccountConfigs(prev => ({
+      ...prev,
+      [company]: { selectedAccountIds: accountIds, grantAllAccess: grantAll }
+    }));
   };
 
   // ✅ FUNÇÃO PARA CONFIRMAR SALVAMENTO SEM PERMISSÕES
@@ -212,8 +222,13 @@ export default function UsersPage() {
         return;
       }
 
-      // ✅ CONFIRMAR SE É USER SEM PERMISSÕES
-      if (formData.newRole === 'USER' && selectedAccountIds.length === 0) {
+      const lacksPermission = companyConfigs.some(c => {
+        if (c.role !== 'USER') return false;
+        const cfg = accountConfigs[c.companyId];
+        if (!cfg) return true;
+        return !cfg.grantAllAccess && cfg.selectedAccountIds.length === 0;
+      });
+      if (lacksPermission) {
         const shouldContinue = await confirmSaveWithoutPermissions();
         if (!shouldContinue) return;
       }
@@ -236,17 +251,28 @@ export default function UsersPage() {
         }
         const payload = { ...updateData, companies: companyConfigs };
         await api.put(`/users/${editingUser.id}`, payload);
-        
-        // ✅ ATUALIZAR PERMISSÕES SE FOR USER
-        if (formData.newRole === 'USER') {
-          if (grantAllAccess) {
-            await api.post(`/users/${editingUser.id}/account-access/grant-all`);
-          } else {
-            await api.post(`/users/${editingUser.id}/account-access/bulk-update`, {
-              accountIds: selectedAccountIds
-            });
-          }
-        }
+
+        await Promise.all(
+          companyConfigs
+            .filter(c => c.role === 'USER')
+            .map(async (c) => {
+              const acc = accountConfigs[c.companyId];
+              if (!acc) return;
+              if (acc.grantAllAccess) {
+                await api.post(
+                  `/users/${editingUser.id}/account-access/grant-all`,
+                  null,
+                  { headers: { 'X-Company-Id': c.companyId } }
+                );
+              } else {
+                await api.post(
+                  `/users/${editingUser.id}/account-access/bulk-update`,
+                  { accountIds: acc.selectedAccountIds },
+                  { headers: { 'X-Company-Id': c.companyId } }
+                );
+              }
+            })
+        );
         
         addToast('Usuário atualizado com sucesso', 'success');
       } else {
@@ -265,15 +291,31 @@ export default function UsersPage() {
           companies: companyConfigs,
         };
 
-        // ✅ ADICIONAR PERMISSÕES APENAS PARA USER
-        if (formData.newRole === 'USER') {
-          payload.accountPermissions = {
-            grantAllAccess,
-            specificAccountIds: grantAllAccess ? [] : selectedAccountIds
-          };
-        }
+        const response = await api.post('/users', payload);
+        const newId = response.data.id;
 
-        await api.post('/users', payload);
+        await Promise.all(
+          companyConfigs
+            .filter(c => c.role === 'USER')
+            .map(async (c) => {
+              const acc = accountConfigs[c.companyId];
+              if (!acc) return;
+              if (acc.grantAllAccess) {
+                await api.post(
+                  `/users/${newId}/account-access/grant-all`,
+                  null,
+                  { headers: { 'X-Company-Id': c.companyId } }
+                );
+              } else {
+                await api.post(
+                  `/users/${newId}/account-access/bulk-update`,
+                  { accountIds: acc.selectedAccountIds },
+                  { headers: { 'X-Company-Id': c.companyId } }
+                );
+              }
+            })
+        );
+
         addToast('Usuário criado com sucesso', 'success');
       }
 
@@ -313,10 +355,6 @@ export default function UsersPage() {
     );
   }
 
-  // ✅ VERIFICAR SE DEVE MOSTRAR SEÇÃO DE PERMISSÕES
-  const shouldShowPermissions = () => {
-    return formData.newRole === 'USER';
-  };
 
   return (
     <DashboardLayout>
@@ -418,16 +456,28 @@ export default function UsersPage() {
                     const cfg = companyConfigs.find(c => c.companyId === comp.id);
                     const single = companies.length === 1;
                     return (
-                      <div key={comp.id} className="p-3 border border-gray-700 rounded-lg bg-[#1e2126]">
-                        <label className="flex items-center gap-3">
+                      <div key={comp.id} className="p-3 border border-gray-700 rounded-lg bg-[#1e2126] space-y-2">
+                        <label className="flex items-center gap-3 px-3 py-2 bg-[#0f1419] border border-gray-600 rounded-md font-semibold">
                           <input
                             type="checkbox"
                             checked={!!cfg}
                             onChange={(e) => {
                               if (e.target.checked) {
-                                setCompanyConfigs([...companyConfigs, { companyId: comp.id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }]);
+                                setCompanyConfigs([
+                                  ...companyConfigs,
+                                  { companyId: comp.id, role: 'USER', manageFinancialAccounts: false, manageFinancialCategories: false }
+                                ]);
+                                setAccountConfigs(prev => ({
+                                  ...prev,
+                                  [comp.id]: { selectedAccountIds: [], grantAllAccess: false }
+                                }));
                               } else {
                                 setCompanyConfigs(companyConfigs.filter(c => c.companyId !== comp.id));
+                                setAccountConfigs(prev => {
+                                  const newCfg = { ...prev };
+                                  delete newCfg[comp.id];
+                                  return newCfg;
+                                });
                               }
                             }}
                             disabled={formLoading || single}
@@ -467,6 +517,18 @@ export default function UsersPage() {
                               />
                               Gerenciar Categorias Financeiras
                             </label>
+                            {cfg.role === 'USER' && (
+                              <div className="mt-2">
+                                <AccountPermissionsManager
+                                  companyId={comp.id}
+                                  userId={editingUser?.id || null}
+                                  selectedAccountIds={accountConfigs[comp.id]?.selectedAccountIds || []}
+                                  onPermissionsChange={(ids, all) => handlePermissionsChange(comp.id, ids, all)}
+                                  disabled={formLoading}
+                                  showCurrentPermissions={!!editingUser}
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -476,25 +538,7 @@ export default function UsersPage() {
               </div>
 
 
-              {/* ✅ SEÇÃO DE PERMISSÕES DE CONTAS (apenas para USER) */}
-              {shouldShowPermissions() && (
-                <div className="border-t border-gray-700 pt-6">
-                  <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Shield size={18} className="text-accent" />
-                      <h4 className="text-md font-medium text-white">Permissões de Acesso Financeiro</h4>
-                    </div>
 
-                    <AccountPermissionsManager
-                      userId={editingUser?.id || null}
-                      selectedAccountIds={selectedAccountIds}
-                      onPermissionsChange={handlePermissionsChange}
-                      disabled={formLoading}
-                      showCurrentPermissions={!!editingUser}
-                    />
-                  </div>
-                </div>
-              )}
 
               <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
               <Button

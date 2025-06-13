@@ -24,10 +24,15 @@ export function useAccountPermissions() {
   const [loading, setLoading] = useState(false);
 
   // Buscar permissões atuais de um usuário
-  const fetchUserPermissions = async (userId: number): Promise<UserAccountAccess | null> => {
+  const fetchUserPermissions = async (
+    userId: number,
+    companyId?: number
+  ): Promise<UserAccountAccess | null> => {
     setLoading(true);
     try {
-      const response = await api.get(`/users/${userId}/account-access`);
+      const response = await api.get(`/users/${userId}/account-access`, {
+        headers: companyId ? { 'X-Company-Id': companyId } : undefined
+      });
       return response.data;
     } catch (error: any) {
       console.error('Erro ao buscar permissões:', error);
@@ -39,12 +44,18 @@ export function useAccountPermissions() {
   };
 
   // Conceder acesso a contas específicas
-  const grantAccountAccess = async (userId: number, accountIds: number[]): Promise<boolean> => {
+  const grantAccountAccess = async (
+    userId: number,
+    accountIds: number[],
+    companyId?: number
+  ): Promise<boolean> => {
     setLoading(true);
     try {
-      await api.post(`/users/${userId}/account-access/grant`, {
-        accountIds
-      });
+      await api.post(
+        `/users/${userId}/account-access/grant`,
+        { accountIds },
+        { headers: companyId ? { 'X-Company-Id': companyId } : undefined }
+      );
       addToast('Permissões concedidas com sucesso', 'success');
       return true;
     } catch (error: any) {
@@ -57,10 +68,12 @@ export function useAccountPermissions() {
   };
 
   // Conceder acesso a todas as contas
-  const grantAllAccountAccess = async (userId: number): Promise<boolean> => {
+  const grantAllAccountAccess = async (userId: number, companyId?: number): Promise<boolean> => {
     setLoading(true);
     try {
-      await api.post(`/users/${userId}/account-access/grant-all`);
+      await api.post(`/users/${userId}/account-access/grant-all`, null, {
+        headers: companyId ? { 'X-Company-Id': companyId } : undefined
+      });
       addToast('Acesso total concedido com sucesso', 'success');
       return true;
     } catch (error: any) {
@@ -73,11 +86,16 @@ export function useAccountPermissions() {
   };
 
   // Revogar acesso a contas específicas
-  const revokeAccountAccess = async (userId: number, accountIds: number[]): Promise<boolean> => {
+  const revokeAccountAccess = async (
+    userId: number,
+    accountIds: number[],
+    companyId?: number
+  ): Promise<boolean> => {
     setLoading(true);
     try {
       await api.delete(`/users/${userId}/account-access/revoke`, {
-        data: { accountIds }
+        data: { accountIds },
+        headers: companyId ? { 'X-Company-Id': companyId } : undefined
       });
       addToast('Permissões revogadas com sucesso', 'success');
       return true;
@@ -91,10 +109,12 @@ export function useAccountPermissions() {
   };
 
   // Revogar todo o acesso
-  const revokeAllAccountAccess = async (userId: number): Promise<boolean> => {
+  const revokeAllAccountAccess = async (userId: number, companyId?: number): Promise<boolean> => {
     setLoading(true);
     try {
-      await api.delete(`/users/${userId}/account-access/revoke-all`);
+      await api.delete(`/users/${userId}/account-access/revoke-all`, {
+        headers: companyId ? { 'X-Company-Id': companyId } : undefined
+      });
       addToast('Todo acesso revogado com sucesso', 'success');
       return true;
     } catch (error: any) {
@@ -107,12 +127,18 @@ export function useAccountPermissions() {
   };
 
   // Atualizar permissões em lote (substitui todas as existentes)
-  const bulkUpdateAccountAccess = async (userId: number, accountIds: number[]): Promise<boolean> => {
+  const bulkUpdateAccountAccess = async (
+    userId: number,
+    accountIds: number[],
+    companyId?: number
+  ): Promise<boolean> => {
     setLoading(true);
     try {
-      await api.post(`/users/${userId}/account-access/bulk-update`, {
-        accountIds
-      });
+      await api.post(
+        `/users/${userId}/account-access/bulk-update`,
+        { accountIds },
+        { headers: companyId ? { 'X-Company-Id': companyId } : undefined }
+      );
       addToast('Permissões atualizadas com sucesso', 'success');
       return true;
     } catch (error: any) {

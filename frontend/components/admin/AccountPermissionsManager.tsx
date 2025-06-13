@@ -30,6 +30,7 @@ interface UserAccountAccess {
 
 interface AccountPermissionsManagerProps {
   userId?: number | null; // null para criação, number para edição
+  companyId: number;
   selectedAccountIds: number[];
   onPermissionsChange: (accountIds: number[], grantAll: boolean) => void;
   disabled?: boolean;
@@ -38,6 +39,7 @@ interface AccountPermissionsManagerProps {
 
 export default function AccountPermissionsManager({
   userId,
+  companyId,
   selectedAccountIds,
   onPermissionsChange,
   disabled = false,
@@ -56,7 +58,7 @@ export default function AccountPermissionsManager({
     if (userId && showCurrentPermissions) {
       fetchCurrentAccess();
     }
-  }, [userId, showCurrentPermissions]);
+  }, [userId, showCurrentPermissions, companyId]);
 
   useEffect(() => {
     // Sincronizar grantAllAccess com selectedAccountIds
@@ -70,7 +72,9 @@ export default function AccountPermissionsManager({
 
   async function fetchAccounts() {
     try {
-      const response = await api.get('/financial/accounts');
+      const response = await api.get('/financial/accounts', {
+        headers: { 'X-Company-Id': companyId }
+      });
       setAccounts(response.data);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
@@ -81,7 +85,7 @@ export default function AccountPermissionsManager({
   async function fetchCurrentAccess() {
     if (!userId) return;
 
-    const permissions = await fetchUserPermissions(userId);
+    const permissions = await fetchUserPermissions(userId, companyId);
     if (permissions) {
       setCurrentAccess(permissions);
       const accessibleIds = permissions.accounts

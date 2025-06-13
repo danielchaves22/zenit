@@ -383,7 +383,7 @@ export default function UsersPage() {
               </h3>
               
               {/* Dados Básicos */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <Input
                   label="Nome"
                   value={formData.name}
@@ -391,7 +391,9 @@ export default function UsersPage() {
                   required
                   disabled={formLoading}
                 />
-                
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
                   label="Email"
                   type="email"
@@ -400,9 +402,6 @@ export default function UsersPage() {
                   required
                   disabled={formLoading}
                 />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input
                   label={editingUser ? "Nova Senha (deixe em branco para manter)" : "Senha"}
                   type="password"
@@ -412,22 +411,6 @@ export default function UsersPage() {
                   disabled={formLoading}
                   placeholder={editingUser ? "Deixe em branco para não alterar" : ""}
                 />
-
-                <div>
-                  <label className="block text-sm font-medium mb-1 text-gray-300">
-                    Perfil
-                  </label>
-                  <select
-                    value={formData.newRole}
-                    onChange={(e) => setFormData({...formData, newRole: e.target.value})}
-                    className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb]"
-                    disabled={formLoading}
-                  >
-                    <option value="USER">Usuário</option>
-                    <option value="SUPERUSER">Superusuário</option>
-                    {isAdmin() && <option value="ADMIN">Administrador</option>}
-                  </select>
-                </div>
               </div>
 
               {/* Empresas e Roles (apenas ADMIN) */}
@@ -486,31 +469,33 @@ export default function UsersPage() {
               )}
 
               {/* Permissões de Funcionalidades */}
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300">
-                  Permissões de Funcionalidades
-                </label>
-                <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
-                  <label className="flex items-center gap-2 text-sm text-gray-300">
-                    <input
-                      type="checkbox"
-                      className={checkboxClasses}
-                      checked={formData.manageFinancialAccounts}
-                      onChange={(e) => setFormData({...formData, manageFinancialAccounts: e.target.checked})}
-                    />
-                    Gerenciar Contas Financeiras
+              {shouldShowPermissions() && (
+                <div>
+                  <label className="block text-sm font-medium mb-1 text-gray-300">
+                    Permissões de Funcionalidades
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-gray-300">
-                    <input
-                      type="checkbox"
-                      className={checkboxClasses}
-                      checked={formData.manageFinancialCategories}
-                      onChange={(e) => setFormData({...formData, manageFinancialCategories: e.target.checked})}
-                    />
-                    Gerenciar Categorias Financeiras
-                  </label>
+                  <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4 space-y-2">
+                    <label className="flex items-center gap-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        className={checkboxClasses}
+                        checked={formData.manageFinancialAccounts}
+                        onChange={(e) => setFormData({...formData, manageFinancialAccounts: e.target.checked})}
+                      />
+                      Gerenciar Contas Financeiras
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-gray-300">
+                      <input
+                        type="checkbox"
+                        className={checkboxClasses}
+                        checked={formData.manageFinancialCategories}
+                        onChange={(e) => setFormData({...formData, manageFinancialCategories: e.target.checked})}
+                      />
+                      Gerenciar Categorias Financeiras
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* ✅ SEÇÃO DE PERMISSÕES DE CONTAS (apenas para USER) */}
               {shouldShowPermissions() && (

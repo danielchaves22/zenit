@@ -151,16 +151,26 @@ export default function AccountPermissionsManager({
 
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={grantAllAccess}
-          onChange={handleGrantAllToggle}
-          disabled={disabled || totalActiveCount === 0}
-          className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
-        />
-        <span className="text-sm text-white">Todas as contas</span>
-      </label>
+      <div className="p-3 bg-[#1a1f2b] border border-gray-700 rounded-lg">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={grantAllAccess}
+            onChange={handleGrantAllToggle}
+            disabled={disabled || totalActiveCount === 0}
+            className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-white">
+              Conceder acesso a todas as contas financeiras
+            </div>
+            <div className="text-xs text-gray-400">
+              Usuário terá acesso total às funcionalidades financeiras
+            </div>
+          </div>
+          <Users size={16} className="text-accent" />
+        </label>
+      </div>
 
       {!grantAllAccess && (
         <div className="space-y-2">
@@ -206,11 +216,6 @@ export default function AccountPermissionsManager({
                         {isSelected && (
                           <Check size={14} className="text-accent flex-shrink-0" />
                         )}
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-gray-400">
-                          {formatAccountType(account.type)}
-                        </span>
                       </div>
                     </div>
                   </label>

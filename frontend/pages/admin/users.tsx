@@ -497,32 +497,44 @@ export default function UsersPage() {
                             </select>
                           )}
                         </label>
-                        {cfg && (
-                          <div className="ml-6 mt-2 space-y-2">
-                            <input
-                              type="checkbox"
-                              className={checkboxClasses}
-                              checked={cfg.manageFinancialAccounts}
-                              onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialAccounts: e.target.checked } : c))}
-                            />
-                            <input
-                              type="checkbox"
-                              className={checkboxClasses}
-                              checked={cfg.manageFinancialCategories}
-                              onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialCategories: e.target.checked } : c))}
-                            />
-                            {cfg.role === 'USER' && (
-                              <div className="mt-2">
-                                <AccountPermissionsManager
-                                  companyId={comp.id}
-                                  userId={editingUser?.id || null}
-                                  selectedAccountIds={accountConfigs[comp.id]?.selectedAccountIds || []}
-                                  onPermissionsChange={(ids, all) => handlePermissionsChange(comp.id, ids, all)}
-                                  disabled={formLoading}
-                                  showCurrentPermissions={!!editingUser}
-                                />
+                        {cfg && cfg.role === 'USER' && (
+                          <div>
+                            <div className="ml-6 mt-2 space-y-2">
+                              <label className="block text-sm font-medium mb-1 text-gray-300">
+                                Permissões de Acesso
+                              </label>
+                              <div className="p-3 bg-[#1a1f2b] border border-gray-700 rounded-lg space-y-2" style={{ marginBottom: '30px' }}>
+                                <label className="flex items-center gap-2 text-sm text-gray-300">
+                                  <input
+                                    type="checkbox"
+                                    className={checkboxClasses}
+                                    checked={cfg.manageFinancialAccounts}
+                                    onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialAccounts: e.target.checked } : c))}
+                                  />
+                                  Gerenciar Contas Financeiras
+                                </label>
+                                <label className="flex items-center gap-2 text-sm text-gray-300">
+                                  <input
+                                    type="checkbox"
+                                    className={checkboxClasses}
+                                    checked={cfg.manageFinancialCategories}
+                                    onChange={(e) => setCompanyConfigs(companyConfigs.map(c => c.companyId === comp.id ? { ...c, manageFinancialCategories: e.target.checked } : c))}
+                                  />
+                                  Gerenciar Categorias Financeiras
+                                </label>
                               </div>
-                            )}
+                                <label className="block text-sm font-medium mb-1 text-gray-300">
+                                  Permissão às Contas Financeiras
+                                </label>
+                                <AccountPermissionsManager
+                                    companyId={comp.id}
+                                    userId={editingUser?.id || null}
+                                    selectedAccountIds={accountConfigs[comp.id]?.selectedAccountIds || []}
+                                    onPermissionsChange={(ids, all) => handlePermissionsChange(comp.id, ids, all)}
+                                    disabled={formLoading}
+                                    showCurrentPermissions={!!editingUser}
+                                  />
+                            </div>
                           </div>
                         )}
                       </div>

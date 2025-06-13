@@ -74,6 +74,12 @@ export const createUser = async (req: Request, res: Response) => {
         }
       }
     } else if (targetCompanyId !== undefined) {
+      if (roleToAssign === 'ADMIN') {
+        const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
+        if (!equinox || Number(targetCompanyId) !== equinox.id) {
+          return res.status(403).json({ error: 'ADMIN só pode criar ADMIN vinculado à Equinox.' });
+        }
+      }
       companiesToCreate.push({ companyId: Number(targetCompanyId), role: roleToAssign });
     } else {
       return res.status(400).json({ error: 'É necessário informar companies ou companyId.' });
@@ -275,8 +281,29 @@ export const updateUser = async (req: Request, res: Response) => {
 
     // Realizar a atualização
     let ctx: number | { companyId: number; role: Role }[] | undefined = companyId;
+    const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
     if (role === 'ADMIN' && Array.isArray(companies)) {
+      if (!equinox) {
+        return res.status(500).json({ error: 'Empresa Equinox não encontrada' });
+      }
+      const invalidAdmin = companies.some((c: any) => c.role === 'ADMIN' && Number(c.companyId) !== equinox.id);
+      if (invalidAdmin) {
+        return res.status(403).json({ error: 'ADMIN só pode vincular ADMIN à Equinox.' });
+      }
       ctx = companies.map((c: any) => ({ companyId: Number(c.companyId), role: c.role as Role }));
+    }
+    if (newRole === 'ADMIN' && role === 'ADMIN') {
+      if (!equinox) {
+        return res.status(500).json({ error: 'Empresa Equinox não encontrada' });
+      }
+      if (Array.isArray(companies)) {
+        const hasEquinoxAdmin = companies.some((c: any) => c.role === 'ADMIN' && Number(c.companyId) === equinox.id);
+        if (!hasEquinoxAdmin) {
+          return res.status(403).json({ error: 'Usuário ADMIN deve estar vinculado à Equinox.' });
+        }
+      } else if (ctx && typeof ctx === 'number' && ctx !== equinox.id) {
+        return res.status(403).json({ error: 'Usuário ADMIN deve estar vinculado à Equinox.' });
+      }
     }
     const updated = await UserService.updateUser(id, updateData, ctx);
     return res.status(200).json(updated);

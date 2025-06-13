@@ -25,7 +25,7 @@ api.interceptors.request.use(config => {
     config.headers.Authorization = `Bearer ${token}`
   }
   const companyId = localStorage.getItem('zenit_company_id')
-  if (companyId && config.headers) {
+  if (companyId && config.headers && !config.headers['X-Company-Id']) {
     config.headers['X-Company-Id'] = companyId
   }
   return config

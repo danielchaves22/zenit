@@ -37,6 +37,7 @@ interface AuthContextData {
   refreshToken: () => Promise<boolean>;
   mustChangePassword: boolean;
   updateMustChangePassword: (value: boolean) => void;
+  changeCompany: (id: number) => void;
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
@@ -268,6 +269,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  function changeCompany(id: number) {
+    setCompanyId(id);
+    localStorage.setItem('zenit_company_id', String(id));
+  }
+
   // Auto-refresh com verificação menos agressiva
   useEffect(() => {
     if (!token) return;
@@ -308,7 +314,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         manageFinancialAccounts: user?.manageFinancialAccounts || false,
         manageFinancialCategories: user?.manageFinancialCategories || false,
         mustChangePassword,
-        updateMustChangePassword
+        updateMustChangePassword,
+        changeCompany
       }}
     >
       {children}

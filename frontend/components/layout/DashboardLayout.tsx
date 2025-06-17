@@ -114,7 +114,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
 
         <div className="flex items-center space-x-3">
           {/* ✅ SELETOR DE TEMAS (oculto) */}
-          <div className="hidden">
+          <div>
             <ThemeSelector showLabel={false} size="sm" />
           </div>
           <span className="text-sm text-gray-300">{userName}</span>

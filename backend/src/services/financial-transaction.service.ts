@@ -19,6 +19,8 @@ export default class FinancialTransactionService {
     description: string;
     amount: number | string;
     date: Date;
+    dueDate?: Date | null;
+    effectiveDate?: Date | null;
     type: TransactionType;
     status?: TransactionStatus;
     notes?: string;
@@ -162,6 +164,8 @@ export default class FinancialTransactionService {
           description: data.description,
           amount: parsedAmount,
           date: data.date,
+          dueDate: data.dueDate || null,
+          effectiveDate: data.effectiveDate || null,
           type: data.type,
           status: data.status || 'PENDING',
           notes: data.notes,
@@ -392,6 +396,8 @@ export default class FinancialTransactionService {
       description: string;
       amount: number | string;
       date: Date;
+      dueDate?: Date | null;
+      effectiveDate?: Date | null;
       type: TransactionType;
       status: TransactionStatus;
       notes?: string;
@@ -459,6 +465,8 @@ export default class FinancialTransactionService {
       if (data.description !== undefined) updatedData.description = data.description;
       if (data.amount !== undefined) updatedData.amount = parseDecimal(data.amount);
       if (data.date !== undefined) updatedData.date = data.date;
+      if (data.dueDate !== undefined) updatedData.dueDate = data.dueDate;
+      if (data.effectiveDate !== undefined) updatedData.effectiveDate = data.effectiveDate;
       if (data.type !== undefined) updatedData.type = data.type;
       if (data.status !== undefined) updatedData.status = data.status;
       if (data.notes !== undefined) updatedData.notes = data.notes;

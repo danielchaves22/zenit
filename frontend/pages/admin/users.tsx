@@ -651,7 +651,6 @@ export default function UsersPage() {
                     <th className="px-4 py-3 text-center w-24">Ações</th>
                     <th className="px-4 py-3 text-left">Nome</th>
                     <th className="px-4 py-3 text-left">Email</th>
-                    <th className="px-4 py-3 text-left">Perfil</th>
                     <th className="px-4 py-3 text-left">Empresa</th>
                   </tr>
                 </thead>
@@ -689,16 +688,6 @@ export default function UsersPage() {
                       </td>
                       <td className="px-4 py-3 text-white font-medium">{user.name}</td>
                       <td className="px-4 py-3 text-gray-300">{user.email}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          user.companies[0]?.role === 'ADMIN' ? 'bg-red-600 text-white' :
-                          user.companies[0]?.role === 'SUPERUSER' ? 'bg-blue-600 text-white' :
-                          'bg-gray-600 text-white'
-                        }`}>
-                          {user.companies[0]?.role === 'ADMIN' ? 'Administrador' :
-                           user.companies[0]?.role === 'SUPERUSER' ? 'Superusuário' : 'Usuário'}
-                        </span>
-                      </td>
                       <td className="px-4 py-3 text-gray-300">
                         {user.companies.map(uc => uc.company.name).join(', ')}
                       </td>

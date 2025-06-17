@@ -29,6 +29,14 @@ export const createTransactionSchema = z.object({
   date: z.coerce.date({
     errorMap: () => ({ message: 'Data deve ser válida' })
   }),
+
+  dueDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data de vencimento deve ser válida' })
+  }).nullable().optional(),
+
+  effectiveDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data de efetivação deve ser válida' })
+  }).nullable().optional(),
   
   type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
     errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
@@ -101,6 +109,15 @@ export const updateTransactionSchema = z.object({
   date: z.coerce.date({
     errorMap: () => ({ message: 'Data deve ser válida' })
   }).optional(),
+
+  dueDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data de vencimento deve ser válida' })
+  }).nullable().optional(),
+
+  effectiveDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data de efetivação deve ser válida' })
+  }).nullable().optional(),
+
   
   type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
     errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })

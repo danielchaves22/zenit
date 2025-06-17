@@ -29,6 +29,8 @@ export async function createTransaction(req: Request, res: Response) {
       description,
       amount,
       date,
+      dueDate,
+      effectiveDate,
       type,
       status,
       notes,
@@ -42,6 +44,8 @@ export async function createTransaction(req: Request, res: Response) {
       description,
       amount,
       date: new Date(date),
+      dueDate: dueDate ? new Date(dueDate) : null,
+      effectiveDate: effectiveDate ? new Date(effectiveDate) : null,
       type,
       status,
       notes,
@@ -170,7 +174,35 @@ export async function updateTransaction(req: Request, res: Response) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    const updateData = req.body;
+    const {
+      description,
+      amount,
+      date,
+      dueDate,
+      effectiveDate,
+      type,
+      status,
+      notes,
+      fromAccountId,
+      toAccountId,
+      categoryId,
+      tags
+    } = req.body;
+
+    const updateData = {
+      description,
+      amount,
+      date: date ? new Date(date) : undefined,
+      dueDate: dueDate ? new Date(dueDate) : undefined,
+      effectiveDate: effectiveDate ? new Date(effectiveDate) : undefined,
+      type,
+      status,
+      notes,
+      fromAccountId,
+      toAccountId,
+      categoryId,
+      tags
+    };
     const updatedTransaction = await FinancialTransactionService.updateTransaction(
       id,
       updateData,

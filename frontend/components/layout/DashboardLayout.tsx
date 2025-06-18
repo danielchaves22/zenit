@@ -86,7 +86,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Top Navigation com uma borda sutil */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-base-color py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
         <div className="flex items-center space-x-4">
           <Link href="/" className="flex items-center hover:opacity-90">
             <Image
@@ -98,13 +98,13 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
               className="h-10 w-auto"
             />
           </Link>
-          <span className="text-white text-lg font-bold font-heading">
+          <span className="text-base-color text-lg font-bold font-heading">
             {companyName}
           </span>
           {canSwitchCompany && (
             <button
               onClick={() => setCompanyModalOpen(true)}
-              className="text-gray-300 hover:text-accent p-1 rounded"
+              className="text-base-color hover:text-accent p-1 rounded"
               title="Alterar empresa"
               aria-label="Alterar empresa"
             >
@@ -119,7 +119,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
             <ThemeSelector showLabel={false} size="sm" />
           </div>
           <ColorModeToggle />
-          <span className="text-sm text-gray-300">{userName}</span>
+          <span className="text-sm text-base-color">{userName}</span>
           
           <div className="relative" ref={userMenuRef}>
             <button 
@@ -135,15 +135,15 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
             {userMenuOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-surface shadow-lg rounded-md z-10 border border-gray-700 animate-fadeIn">
                 <div className="p-3 border-b border-gray-700">
-                  <p className="font-medium text-white">{userName}</p>
-                  <p className="text-sm text-gray-400">{companyName}</p>
+                  <p className="font-medium text-base-color">{userName}</p>
+                  <p className="text-sm text-muted">{companyName}</p>
                   {/* ✅ ROLE BADGE COM COR DINÂMICA */}
                   <p className="text-xs text-accent">{userRole}</p>
                 </div>
                 <div className="p-2">
                   <button 
                     onClick={() => handleMenuAction(() => router.push('/profile'))}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-elevated rounded text-gray-300"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-elevated rounded text-base-color"
                   >
                     Meu Perfil
                   </button>
@@ -169,7 +169,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           sidebarCollapsed ? 'ml-16' : 'ml-52'
         }`}>
           {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-6 bg-background text-gray-300">
+          <main className="flex-1 overflow-y-auto p-6 bg-background text-base-color">
             {children}
           </main>
         </div>

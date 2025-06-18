@@ -1,5 +1,6 @@
 // frontend/contexts/ThemeContext.tsx - VERSÃO COMPLETA
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import api from '@/lib/api';
 
 // ✅ DEFINIÇÕES DE TEMA
 export interface Theme {
@@ -246,6 +247,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       setCurrentTheme(themeKey);
       localStorage.setItem('selected-theme', themeKey);
       applyTheme(theme);
+      api.put('/preferences/color-scheme', { colorScheme: themeKey }).catch(() => {});
     }
   };
 

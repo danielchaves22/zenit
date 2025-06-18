@@ -4,6 +4,7 @@ import {
 } from 'react'
 import { useRouter } from 'next/router'
 import api from '@/lib/api'
+import { useTheme } from '@/contexts/ThemeContext'
 
 interface CompanyRole {
   id: number;
@@ -95,6 +96,7 @@ function removeSecureCookie(name: string) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const { changeTheme } = useTheme();
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [companyId, setCompanyId] = useState<number | null>(null);
@@ -125,6 +127,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setToken(storedToken);
         setUser({ ...response.data.user, mustChangePassword: storedMustChange === 'true' });
+        if (response.data.preferences?.colorScheme) {
+          changeTheme(response.data.preferences.colorScheme);
+          localStorage.setItem('selected-theme', response.data.preferences.colorScheme);
+        }
 
         const storedCompanyId = localStorage.getItem('zenit_company_id');
         const initialCompanyId = storedCompanyId
@@ -155,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password 
       });
       
-      const { token: newToken, user: userData, refreshToken: newRefreshToken } = res.data;
+      const { token: newToken, user: userData, refreshToken: newRefreshToken, preferences } = res.data;
 
       // Armazenar tokens com prefixos específicos da aplicação
       localStorage.setItem('zenit_token', newToken);
@@ -171,6 +177,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setToken(newToken);
       setUser(userData);
+      if (preferences?.colorScheme) {
+        changeTheme(preferences.colorScheme);
+        localStorage.setItem('selected-theme', preferences.colorScheme);
+      }
       if (userData.companies && userData.companies.length > 0) {
         const firstCompany = userData.companies[0];
         setCompanyId(firstCompany.id);

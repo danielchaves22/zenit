@@ -240,7 +240,7 @@ export function AutocompleteInput({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
-          className={`w-full pl-3 pr-10 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] ${
+          className={`w-full pl-3 pr-10 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           } ${error ? 'border-red-500' : ''}`}
           autoComplete="off"
@@ -260,13 +260,13 @@ export function AutocompleteInput({
       {showSuggestions && suggestions.length > 0 && hasFocus && (
         <div 
           ref={suggestionsRef}
-          className="absolute z-50 w-full mt-1 bg-[#1e2126] border border-gray-700 rounded shadow-lg max-h-60 overflow-y-auto"
+          className="absolute z-50 w-full mt-1 bg-surface border border-gray-700 rounded shadow-lg max-h-60 overflow-y-auto"
         >
           {suggestions.map((suggestion, index) => (
             <div
               key={`${suggestion.description}-${index}`}
-              className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-[#262b36] ${
-                index === activeSuggestionIndex ? 'bg-[#262b36]' : ''
+              className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-elevated ${
+                index === activeSuggestionIndex ? 'bg-elevated' : ''
               } ${index === 0 ? 'rounded-t-lg' : ''} ${
                 index === suggestions.length - 1 ? 'rounded-b-lg' : 'border-b border-gray-700'
               }`}
@@ -295,7 +295,7 @@ export function AutocompleteInput({
           ))}
           
           {/* Footer info */}
-          <div className="px-4 py-2 border-t border-gray-700 bg-[#151921] rounded-b-lg">
+          <div className="px-4 py-2 border-t border-gray-700 bg-surface rounded-b-lg">
             <div className="text-xs text-gray-500 flex items-center justify-between">
               <span>{suggestions.length} sugestões encontradas</span>
               <span>↑↓ navegar • Enter selecionar • Esc fechar</span>

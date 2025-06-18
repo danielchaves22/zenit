@@ -231,7 +231,7 @@ export function SmartNavigation({
     
     const stateClasses = active
       ? "bg-accent text-white border-accent shadow-lg"
-      : "bg-[#151921] border-gray-700 hover:border-accent hover:bg-[#1a1f2b]";
+      : "bg-surface border-gray-700 hover:border-accent hover:bg-elevated";
 
     return (
       <Link key={index} href={item.href} className={`${baseClasses} ${layoutClasses[layout]} ${stateClasses}`}>

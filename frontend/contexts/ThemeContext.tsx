@@ -204,6 +204,8 @@ interface ThemeContextData {
   themesByCategory: Record<string, Theme[]>;
   getThemeInfo: (themeKey: string) => Theme;
   changeTheme: (themeKey: string) => void;
+  colorMode: 'dark' | 'light';
+  changeColorMode: (mode: 'dark' | 'light') => void;
 }
 
 // ✅ CRIAR CONTEXTO
@@ -212,6 +214,7 @@ const ThemeContext = createContext<ThemeContextData>({} as ThemeContextData);
 // ✅ PROVIDER DO CONTEXTO
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [currentTheme, setCurrentTheme] = useState<string>('amber');
+  const [colorMode, setColorMode] = useState<'dark' | 'light'>('dark');
 
   // ✅ APLICAR TEMA NAS CSS VARIABLES
   const applyTheme = (theme: Theme) => {
@@ -230,6 +233,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (savedTheme && AVAILABLE_THEMES.find(t => t.key === savedTheme)) {
       setCurrentTheme(savedTheme);
     }
+    const savedMode = localStorage.getItem('color-mode');
+    if (savedMode === 'light' || savedMode === 'dark') {
+      setColorMode(savedMode);
+    }
   }, []);
 
   // ✅ APLICAR TEMA QUANDO MUDAR
@@ -240,6 +247,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [currentTheme]);
 
+  useEffect(() => {
+    const root = document.documentElement;
+    if (colorMode === 'light') {
+      root.classList.add('theme-light');
+    } else {
+      root.classList.remove('theme-light');
+    }
+  }, [colorMode]);
+
   // ✅ FUNÇÃO PARA MUDAR TEMA
   const changeTheme = (themeKey: string) => {
     const theme = AVAILABLE_THEMES.find(t => t.key === themeKey);
@@ -249,6 +265,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       applyTheme(theme);
       api.put('/preferences/color-scheme', { colorScheme: themeKey }).catch(() => {});
     }
+  };
+
+  const changeColorMode = (mode: 'dark' | 'light') => {
+    setColorMode(mode);
+    localStorage.setItem('color-mode', mode);
   };
 
   // ✅ AGRUPAR TEMAS POR CATEGORIA
@@ -271,7 +292,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       availableThemes: AVAILABLE_THEMES,
       themesByCategory,
       getThemeInfo,
-      changeTheme
+      changeTheme,
+      colorMode,
+      changeColorMode
     }}>
       {children}
     </ThemeContext.Provider>

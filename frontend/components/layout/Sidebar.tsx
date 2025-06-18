@@ -296,7 +296,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
   return (
     <>
       <div
-        className={`h-[calc(100vh-60px)] bg-[#151921] text-gray-300 flex flex-col transition-all duration-300 fixed z-30 top-[60px] left-0 ${
+        className={`h-[calc(100vh-60px)] bg-surface text-gray-300 flex flex-col transition-all duration-300 fixed z-30 top-[60px] left-0 ${
           collapsed ? 'w-16' : 'w-52'
         }`}
         style={{ marginTop: "-1px" }}
@@ -304,7 +304,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         {/* Botão de toggle no centro da borda direita */}
         <button
           onClick={toggleSidebar}
-          className="absolute -right-3 top-1/2 transform -translate-y-1/2 bg-[#151921] rounded-full p-1 text-gray-300 z-10"
+          className="absolute -right-3 top-1/2 transform -translate-y-1/2 bg-surface rounded-full p-1 text-gray-300 z-10"
           aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
         >
           {collapsed ? (
@@ -346,8 +346,8 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                   <div 
                     className={`cursor-pointer px-4 py-3 transition-all duration-200 ${
                       isActive 
-                        ? 'bg-accent text-white shadow-lg' // ✅ USANDO CSS VARIABLE DINÂMICA
-                        : 'text-gray-300 hover:bg-[#1e2126] hover:text-accent'
+                        ? 'bg-accent text-white shadow-lg'
+                        : 'text-gray-300 hover:bg-elevated hover:text-accent'
                     } flex justify-center items-center`}
                     onMouseEnter={(e) => handleMouseEnter(menuItem, e)}
                     onMouseLeave={handleMouseLeave}
@@ -365,8 +365,8 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                       href={href}
                       className={`flex items-center justify-between px-4 py-3 transition-all duration-200 ${
                         isActive 
-                          ? 'bg-accent text-white font-medium shadow-lg border-r-2 border-accent-light' // ✅ USANDO CSS VARIABLES DINÂMICAS
-                          : 'hover:bg-[#1e2126] hover:text-accent hover:border-r-2 hover:border-accent/50'
+                          ? 'bg-accent text-white font-medium shadow-lg border-r-2 border-accent-light'
+                          : 'hover:bg-elevated hover:text-accent hover:border-r-2 hover:border-accent/50'
                       }`}
                       onMouseEnter={(e) => handleMouseEnter(menuItem, e)}
                       onMouseLeave={handleMouseLeave}
@@ -388,8 +388,8 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
 
       {/* Submenu flutuante - para todos os itens no modo colapsado ou apenas múltiplos subitens no expandido */}
       {activeMenu && (
-        <div 
-          className="fixed bg-[#1e2126] border border-gray-700 rounded shadow-lg z-50 transition-opacity duration-200 ease-in-out opacity-100"
+        <div
+          className="fixed bg-surface border border-gray-700 rounded shadow-lg z-50 transition-opacity duration-200 ease-in-out opacity-100"
           style={{ 
             left: `${submenuPosition.left}px`,
             top: submenuPosition.top, 
@@ -406,7 +406,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                 return subItem.isHeader ? (
                   <div 
                     key={index}
-                    className="block bg-[#262b36] px-4 py-2 text-gray-300 whitespace-nowrap hover:text-accent transition-colors"
+                    className="block bg-elevated px-4 py-2 text-gray-300 whitespace-nowrap hover:text-accent transition-colors"
                     onClick={() => {
                       if (subItem.href) {
                         router.push(subItem.href);
@@ -420,7 +420,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
                   <Link
                     key={index}
                     href={subItem.href || '#'}
-                    className="block px-4 py-2 hover:bg-[#262b36] text-gray-300 text-sm whitespace-nowrap hover:text-accent transition-colors"
+                    className="block px-4 py-2 hover:bg-elevated text-gray-300 text-sm whitespace-nowrap hover:text-accent transition-colors"
                   >
                     {subItem.label}
                   </Link>

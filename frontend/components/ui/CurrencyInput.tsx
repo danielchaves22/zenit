@@ -303,7 +303,7 @@ export function CurrencyInput({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
-          className={`w-full pl-10 pr-3 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] text-right font-mono ${
+          className={`w-full pl-10 pr-3 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] text-right font-mono ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           } ${error ? 'border-red-500' : ''} ${inputClassName}`}
           autoComplete="off"

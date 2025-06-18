@@ -15,6 +15,12 @@ module.exports = {
         'accent-hover': 'var(--color-primary-hover, #e08c07)',
         'accent-light': 'var(--color-primary-light, #fbbf24)',
         'accent-dark': 'var(--color-primary-dark, #d97706)',
+        // Cores de fundo e texto controladas por variáveis
+        background: 'var(--color-bg, #1e2126)',
+        surface: 'var(--color-bg-secondary, #151921)',
+        elevated: 'var(--color-bg-tertiary, #0f1419)',
+        text: 'var(--color-text, #f5f5f5)',
+        'text-muted': 'var(--color-text-secondary, #d1d5db)',
         // Cores estáticas mantidas
         neutral: '#F3F4F6',
         info: '#2563EB',

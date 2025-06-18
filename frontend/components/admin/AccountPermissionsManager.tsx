@@ -151,14 +151,14 @@ export default function AccountPermissionsManager({
 
   return (
     <div className="space-y-2">
-      <div className="p-3 bg-[#1a1f2b] border border-gray-700 rounded-lg">
+      <div className="p-3 bg-elevated border border-gray-700 rounded-lg">
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={grantAllAccess}
             onChange={handleGrantAllToggle}
             disabled={disabled || totalActiveCount === 0}
-            className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+            className="w-4 h-4 text-accent bg-background border-gray-700 rounded focus:ring-accent"
           />
           <div className="flex-1">
             <div className="text-sm font-medium text-white">
@@ -177,7 +177,7 @@ export default function AccountPermissionsManager({
           {(loading || permissionsLoading) ? (
             <div className="space-y-2">
               {[...Array(3)].map((_, i) => (
-                <div key={i} className="h-12 bg-[#1a1f2b] rounded animate-pulse" />
+                <div key={i} className="h-12 bg-elevated rounded animate-pulse" />
               ))}
             </div>
           ) : activeAccounts.length === 0 ? (
@@ -196,7 +196,7 @@ export default function AccountPermissionsManager({
                     className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-accent/10 border-accent'
-                        : 'bg-[#1a1f2b] border-gray-700 hover:bg-[#262b36]'
+                        : 'bg-elevated border-gray-700 hover:bg-elevated'
                     } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <input
@@ -204,7 +204,7 @@ export default function AccountPermissionsManager({
                       checked={isSelected}
                       onChange={() => handleAccountToggle(account.id)}
                       disabled={disabled}
-                      className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                      className="w-4 h-4 text-accent bg-background border-gray-700 rounded focus:ring-accent"
                     />
 
                     <div className="flex-1 min-w-0">

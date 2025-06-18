@@ -74,7 +74,7 @@ export function AccessGuard({
               Você não possui permissões suficientes para acessar esta funcionalidade.
             </p>
             
-            <div className="bg-[#1e2126] border border-gray-700 rounded-lg p-4">
+            <div className="bg-background border border-gray-700 rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle size={16} className="text-yellow-400" />
                 <span className="text-sm font-medium text-yellow-400">Informações de Acesso</span>

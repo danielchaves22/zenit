@@ -556,7 +556,7 @@ export default function TransactionForm({
                   name="fromAccountId"
                   value={formData.fromAccountId}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   required
                   disabled={saving || isReadOnly}
                 >
@@ -581,7 +581,7 @@ export default function TransactionForm({
                   name="toAccountId"
                   value={formData.toAccountId}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   required
                   disabled={saving || isReadOnly}
                 >
@@ -606,7 +606,7 @@ export default function TransactionForm({
                   name="categoryId"
                   value={formData.categoryId}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                   disabled={saving || isReadOnly}
                 >
                   <option value="">Sem categoria</option>
@@ -637,7 +637,7 @@ export default function TransactionForm({
                 name="status"
                 value={formData.status}
                 onChange={handleChange}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
                 required
                 disabled={statusDisabled}
               >
@@ -662,7 +662,7 @@ export default function TransactionForm({
                 value={formData.dueDate}
                 onChange={handleChange}
                 disabled={saving || isReadOnly}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               />
             </div>
             <div>
@@ -681,7 +681,7 @@ export default function TransactionForm({
                 value={formData.effectiveDate}
                 onChange={handleChange}
                 disabled={saving || isPending || isReadOnly}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               />
             </div>
           </div>
@@ -710,7 +710,7 @@ export default function TransactionForm({
               value={formData.notes}
               onChange={handleChange}
               rows={4}
-              className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+              className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               placeholder="Informações adicionais sobre a transação..."
               disabled={saving || isReadOnly}
             />

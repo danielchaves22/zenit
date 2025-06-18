@@ -83,9 +83,9 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#1e2126]">
+    <div className="flex flex-col h-screen bg-background">
       {/* Top Navigation com uma borda sutil */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-[#151921] text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
         <div className="flex items-center space-x-4">
           <Link href="/" className="flex items-center hover:opacity-90">
             <Image
@@ -131,7 +131,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
             </button>
             
             {userMenuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-[#1e2126] shadow-lg rounded-md z-10 border border-gray-700 animate-fadeIn">
+              <div className="absolute right-0 mt-2 w-48 bg-surface shadow-lg rounded-md z-10 border border-gray-700 animate-fadeIn">
                 <div className="p-3 border-b border-gray-700">
                   <p className="font-medium text-white">{userName}</p>
                   <p className="text-sm text-gray-400">{companyName}</p>
@@ -141,13 +141,13 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
                 <div className="p-2">
                   <button 
                     onClick={() => handleMenuAction(() => router.push('/profile'))}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-[#262b36] rounded text-gray-300"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-elevated rounded text-gray-300"
                   >
                     Meu Perfil
                   </button>
                   <button 
                     onClick={() => handleMenuAction(logout)}
-                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-[#262b36] rounded"
+                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-elevated rounded"
                   >
                     Sair
                   </button>
@@ -167,7 +167,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           sidebarCollapsed ? 'ml-16' : 'ml-52'
         }`}>
           {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-6 bg-[#1e2126] text-gray-300">
+          <main className="flex-1 overflow-y-auto p-6 bg-background text-gray-300">
             {children}
           </main>
         </div>

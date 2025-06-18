@@ -53,7 +53,7 @@ export function Modal({
 
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div className="w-full max-w-md transform transition-all duration-300 ease-out">
-          <div className="bg-[#151921] rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
             <div className="px-6 pt-6 pb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-white">{title}</h3>
               <button
@@ -69,7 +69,7 @@ export function Modal({
             <div className="px-6 pb-6">{children}</div>
 
             {footer && (
-              <div className="px-6 py-4 bg-[#0f1419] border-t border-gray-700">
+              <div className="px-6 py-4 bg-elevated border-t border-gray-700">
                 {footer}
               </div>
             )}

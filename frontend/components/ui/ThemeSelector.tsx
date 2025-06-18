@@ -96,7 +96,7 @@ export function ThemeSelector({
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`${currentSize.button} bg-[#1e2126] border border-gray-700 rounded hover:bg-[#262b36] transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50 hover-lift`}
+        className={`${currentSize.button} bg-surface border border-gray-700 rounded hover:bg-elevated transition-all duration-200 flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50 hover-lift`}
         style={{ 
           borderColor: isOpen ? currentThemeInfo.colors.primary : undefined,
           boxShadow: isOpen ? `0 0 0 1px ${currentThemeInfo.colors.primary}` : undefined
@@ -116,7 +116,7 @@ export function ThemeSelector({
       </button>
 
       {isOpen && (
-        <div className={`absolute right-0 mt-2 ${currentSize.dropdown} bg-[#1e2126] border border-gray-700 rounded shadow-2xl z-50 animate-fadeIn max-h-96 overflow-y-auto`}>
+        <div className={`absolute right-0 mt-2 ${currentSize.dropdown} bg-surface border border-gray-700 rounded shadow-2xl z-50 animate-fadeIn max-h-96 overflow-y-auto`}>
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-700">
             <h3 className={`${currentSize.text} font-medium text-white`}>Escolher Tema</h3>
@@ -130,7 +130,7 @@ export function ThemeSelector({
                 <div key={category}>
                   {/* Cabeçalho da Categoria */}
                   <div 
-                    className="px-4 py-2 flex items-center gap-2 hover:bg-[#262b36] cursor-pointer transition-colors"
+                    className="px-4 py-2 flex items-center gap-2 hover:bg-elevated cursor-pointer transition-colors"
                     onClick={() => setActiveCategory(activeCategory === category ? null : category)}
                   >
                     {categoryIcons[category as keyof typeof categoryIcons]}
@@ -152,8 +152,8 @@ export function ThemeSelector({
                             changeTheme(theme.key);
                             setIsOpen(false);
                           }}
-                          className={`w-full px-3 py-2.5 flex items-center gap-3 hover:bg-[#262b36] transition-colors ${
-                            currentTheme === theme.key ? 'bg-[#262b36] border-l-2' : ''
+                          className={`w-full px-3 py-2.5 flex items-center gap-3 hover:bg-elevated transition-colors ${
+                            currentTheme === theme.key ? 'bg-elevated border-l-2' : ''
                           }`}
                           style={{
                             borderLeftColor: currentTheme === theme.key ? theme.colors.primary : undefined
@@ -218,8 +218,8 @@ export function ThemeSelector({
                     changeTheme(theme.key);
                     setIsOpen(false);
                   }}
-                  className={`w-full px-4 py-2.5 flex items-center gap-3 hover:bg-[#262b36] transition-colors ${
-                    currentTheme === theme.key ? 'bg-[#262b36]' : ''
+                  className={`w-full px-4 py-2.5 flex items-center gap-3 hover:bg-elevated transition-colors ${
+                    currentTheme === theme.key ? 'bg-elevated' : ''
                   }`}
                 >
                   <div className="flex items-center gap-2 flex-1">
@@ -246,7 +246,7 @@ export function ThemeSelector({
           )}
 
           {/* Footer */}
-          <div className="px-4 py-3 border-t border-gray-700 bg-[#151921]">
+          <div className="px-4 py-3 border-t border-gray-700 bg-surface">
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-500">
                 Preferência salva automaticamente

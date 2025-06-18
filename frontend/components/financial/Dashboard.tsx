@@ -125,7 +125,7 @@ export default function FinancialDashboard() {
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
               period === 'month' 
                 ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
-                : 'bg-[#1e2126] text-gray-300 hover:bg-[#262b36] hover:text-accent border border-gray-700'
+                : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
             }`}
           >
             Mês Atual
@@ -135,7 +135,7 @@ export default function FinancialDashboard() {
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
               period === 'quarter' 
                 ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
-                : 'bg-[#1e2126] text-gray-300 hover:bg-[#262b36] hover:text-accent border border-gray-700'
+                : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
             }`}
           >
             Trimestre
@@ -145,7 +145,7 @@ export default function FinancialDashboard() {
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
               period === 'year' 
                 ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
-                : 'bg-[#1e2126] text-gray-300 hover:bg-[#262b36] hover:text-accent border border-gray-700'
+                : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
             }`}
           >
             Ano
@@ -216,11 +216,11 @@ export default function FinancialDashboard() {
                   <Tooltip
                     formatter={(value) => formatCurrency(Number(value))}
                     contentStyle={{
-                      backgroundColor: '#1e2126',
+                      backgroundColor:  'var(--color-bg)',
                       borderColor: '#374151',
                       color: '#fff',
                     }}
-                    cursor={{ fill: '#262b36' }}
+                    cursor={{ fill:  'var(--color-bg-tertiary)' }}
                   />
                   <Legend />
                   <Bar dataKey="Receitas" fill="#16A34A" />
@@ -235,7 +235,7 @@ export default function FinancialDashboard() {
             <h3 className="text-lg font-medium text-gray-600 mb-4">Contas Financeiras</h3>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
+                <thead className="text-gray-400 bg-elevated uppercase text-xs">
                   <tr>
                     <th className="text-left p-2">Conta</th>
                     <th className="text-left p-2">Tipo</th>
@@ -292,7 +292,7 @@ export default function FinancialDashboard() {
                       <Tooltip
                         formatter={(value) => formatCurrency(Number(value))}
                         contentStyle={{
-                          backgroundColor: '#1e2126',
+                          backgroundColor:  'var(--color-bg)',
                           borderColor: '#374151',
                           color: '#fff',
                         }}

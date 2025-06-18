@@ -75,7 +75,7 @@ export function ModalDrawer({
           ref={drawerRef}
           className={`w-screen ${sizeClasses[size]} transform transition-transform duration-300 ease-in-out`}
         >
-          <div className="flex h-full flex-col bg-[#151921] shadow-2xl border-l border-gray-700">
+          <div className="flex h-full flex-col bg-surface shadow-2xl border-l border-gray-700">
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
               <div className="flex-1 min-w-0">
@@ -93,7 +93,7 @@ export function ModalDrawer({
                 variant="outline"
                 onClick={onClose}
                 disabled={loading}
-                className="ml-4 p-2 hover:bg-[#1e2126]"
+                className="ml-4 p-2 hover:bg-elevated"
                 aria-label="Fechar"
               >
                 <X size={20} />
@@ -109,7 +109,7 @@ export function ModalDrawer({
 
             {/* Footer */}
             {footer && (
-              <div className="border-t border-gray-700 px-6 py-4 bg-[#0f1419]">
+              <div className="border-t border-gray-700 px-6 py-4 bg-elevated">
                 {footer}
               </div>
             )}

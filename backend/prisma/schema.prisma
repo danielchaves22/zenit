@@ -56,6 +56,7 @@ model User {
   recurringTransactions RecurringTransaction[]
   financialAccountAccess UserFinancialAccountAccess[]
   grantedPermissions     UserFinancialAccountAccess[] @relation("GrantedPermissions")
+  preference             UserPreference?
 }
 
 model Company {
@@ -265,4 +266,12 @@ model UserFinancialAccountAccess {
   @@index([financialAccountId])
   @@index([companyId])
   @@index([grantedBy])
+}
+model UserPreference {
+  id Int @id @default(autoincrement())
+  userId Int @unique
+  colorScheme String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

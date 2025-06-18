@@ -118,6 +118,8 @@ export async function login(req: Request, res: Response) {
     const token = generateToken(tokenPayload);
     const refreshToken = generateRefreshToken(tokenPayload);
 
+    const preferences = await prisma.userPreference.findUnique({ where: { userId: user.id } });
+
     // Log de login bem-sucedido
     logger.info('User login successful', {
       userId: user.id,
@@ -137,6 +139,9 @@ export async function login(req: Request, res: Response) {
         email: user.email,
         mustChangePassword: user.mustChangePassword,
         companies
+      },
+      preferences: {
+        colorScheme: preferences?.colorScheme || null
       },
       message: 'Login realizado com sucesso'
     });
@@ -240,6 +245,8 @@ export async function getCurrentUser(req: Request, res: Response) {
       }
     });
 
+    const preferences = await prisma.userPreference.findUnique({ where: { userId } });
+
     if (!user) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
@@ -259,6 +266,9 @@ export async function getCurrentUser(req: Request, res: Response) {
         name: user.name,
         email: user.email,
         companies
+      },
+      preferences: {
+        colorScheme: preferences?.colorScheme || null
       }
     });
 

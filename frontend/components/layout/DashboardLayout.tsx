@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
 import { ThemeSelector } from '@/components/ui/ThemeSelector';
+import { ColorModeToggle } from '@/components/ui/ColorModeToggle';
 import { User, Repeat } from 'lucide-react';
 import { RoleBasedItem } from '@/components/navigation/RoleBasedNavigation';
 import { CompanySwitcherModal } from '@/components/ui/CompanySwitcherModal';
@@ -117,6 +118,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           <div>
             <ThemeSelector showLabel={false} size="sm" />
           </div>
+          <ColorModeToggle />
           <span className="text-sm text-gray-300">{userName}</span>
           
           <div className="relative" ref={userMenuRef}>

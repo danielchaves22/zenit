@@ -6,8 +6,8 @@
 
 */
 -- AlterTable
-ALTER TABLE "User" DROP COLUMN "manageFinancialAccounts",
-DROP COLUMN "manageFinancialCategories";
+ALTER TABLE "User" DROP COLUMN IF EXISTS "manageFinancialAccounts",
+DROP COLUMN IF EXISTS "manageFinancialCategories";
 
 -- AlterTable
 ALTER TABLE "UserCompany" ADD COLUMN     "manageFinancialAccounts" BOOLEAN NOT NULL DEFAULT false,

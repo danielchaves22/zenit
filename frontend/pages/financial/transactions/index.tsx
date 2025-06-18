@@ -162,7 +162,8 @@ export default function TransactionsListPage() {
   function formatDateShort(dateString: string): string {
     return new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit',
-      month: '2-digit'
+      month: '2-digit',
+      timeZone: 'UTC'      
     });
   }
 

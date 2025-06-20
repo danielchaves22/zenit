@@ -155,15 +155,17 @@ export default function TransactionsListPage() {
     }).format(num);
   }
 
-  function formatDate(dateString: string): string {
-    return new Date(dateString).toLocaleDateString('pt-BR');
+  function formatDate(dateString?: string): string {
+    if (!dateString) return '-';
+
+    return new Date(dateString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
   }
 
   function formatDateShort(dateString: string): string {
     return new Date(dateString).toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
-      timeZone: 'UTC'      
+      timeZone: 'UTC'
     });
   }
 
@@ -392,13 +394,13 @@ export default function TransactionsListPage() {
                 <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
                   <tr>
                     <th className="px-4 py-3 text-center w-20">Ações</th>
-                    <th className="px-4 py-3 text-left">Data</th>
+                    <th className="px-2 py-3 text-left">Data Vencimento</th>
+                    <th className="px-2 py-3 text-left">Tipo</th>
                     <th className="px-4 py-3 text-left">Descrição</th>
-                    <th className="px-4 py-3 text-left">Tipo</th>
                     <th className="px-4 py-3 text-right">Valor</th>
+                    <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-left">Conta</th>
                     <th className="px-4 py-3 text-left">Categoria</th>
-                    <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-center">Datas</th>
                   </tr>
                 </thead>
@@ -430,8 +432,18 @@ export default function TransactionsListPage() {
                         </div>
                       </td>
                       
-                      <td className="px-4 py-3 text-gray-300">
-                        {formatDate(transaction.date)}
+                      <td className="px-2 py-3 text-gray-300">
+                        {formatDate(transaction.dueDate)}
+                      </td>
+
+                      <td className="px-2 py-3">
+                        <div className="flex items-center gap-2">
+                          {getTypeIcon(transaction.type)}
+                          <span className="text-sm text-gray-300">
+                            {transaction.type === 'INCOME' ? 'Receita' : 
+                             transaction.type === 'EXPENSE' ? 'Despesa' : 'Transferência'}
+                          </span>
+                        </div>
                       </td>
                       
                       <td className="px-4 py-3">
@@ -447,20 +459,20 @@ export default function TransactionsListPage() {
                         </div>
                       </td>
                       
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          {getTypeIcon(transaction.type)}
-                          <span className="text-sm text-gray-300">
-                            {transaction.type === 'INCOME' ? 'Receita' : 
-                             transaction.type === 'EXPENSE' ? 'Despesa' : 'Transferência'}
-                          </span>
-                        </div>
-                      </td>
-                      
                       <td className="px-4 py-3 text-right">
                         <span className={`font-medium ${getAmountColor(transaction.type)}`}>
                           {formatCurrency(transaction.amount)}
                         </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-center">
+                        <div className="flex items-center gap-1 justify-center">
+                          {getStatusIcon(transaction.status)}
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(transaction.status)}`}>
+                            {transaction.status === 'COMPLETED' ? 'Concluída' :
+                             transaction.status === 'PENDING' ? 'Pendente' : 'Cancelada'}
+                          </span>
+                        </div>
                       </td>
                       
                       <td className="px-4 py-3 text-gray-300">
@@ -483,25 +495,9 @@ export default function TransactionsListPage() {
                         )}
                       </td>
                       
-                      <td className="px-4 py-3 text-center">
-                        <div className="flex items-center gap-1 justify-center">
-                          {getStatusIcon(transaction.status)}
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(transaction.status)}`}>
-                            {transaction.status === 'COMPLETED' ? 'Concluída' :
-                             transaction.status === 'PENDING' ? 'Pendente' : 'Cancelada'}
-                          </span>
-                        </div>
-                      </td>
-                      
                       {/* Nova coluna para datas */}
                       <td className="px-4 py-3">
                         <div className="text-xs space-y-1">
-                          {transaction.dueDate && (
-                            <div className="flex items-center gap-1 text-yellow-400">
-                              <Clock size={10} />
-                              <span>Venc: {formatDateShort(transaction.dueDate)}</span>
-                            </div>
-                          )}
                           {transaction.effectiveDate && (
                             <div className="flex items-center gap-1 text-green-400">
                               <CheckCircle size={10} />

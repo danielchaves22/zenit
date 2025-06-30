@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "802562929547",
+    "project_id": "orcamentoapp2",
+    "storage_bucket": "orcamentoapp2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:802562929547:android:ce21cc85dc6cb4eee1358e",
+        "android_client_info": {
+          "package_name": "br.com.equinox.orcamentoapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCOt073ihTX7pcFRM6U7-sv9r3beo5ko-g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

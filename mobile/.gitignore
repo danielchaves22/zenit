@@ -1,0 +1,45 @@
+gitignore_content = """
+# Flutter / Dart
+.dart_tool/
+.packages
+.buildlog/
+.melos_tool/
+.metadata
+.pub-cache/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Builds
+build/
+ios/Flutter/Generated.xcconfig
+android/.gradle/
+android/app/build/
+windows/
+linux/
+macos/
+
+# Web build outputs
+web/.dart_tool/
+web/build/
+
+# VS Code / IntelliJ / Android Studio
+.vscode/
+.idea/
+*.iml
+
+# Arquivos do sistema
+*.swp
+*.DS_Store
+*.lock
+Thumbs.db
+
+# Arquivos Hive (opcional - se não quiser versionar os dados locais)
+*.hive
+*.hive.lock
+hive_data/
+
+# Arquivos locais específicos
+local.properties
+
+.env
+*.zip

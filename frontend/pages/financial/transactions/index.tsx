@@ -10,9 +10,10 @@ import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { 
-  Plus, Receipt, Edit2, Trash2, Eye, Filter, Download, 
+  Plus, Receipt, Edit2, Trash2, Eye, Filter, Download,
   TrendingUp, TrendingDown, ArrowUpDown, Calendar,
-  Search, RefreshCw, Clock, CheckCircle, X
+  Search, RefreshCw, Clock, CheckCircle, X,
+  ChevronUp, ChevronDown
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
@@ -69,6 +70,11 @@ export default function TransactionsListPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
+
+  const [sortConfig, setSortConfig] = useState<{
+    key: 'dueDate' | 'effectiveDate' | 'description';
+    direction: 'asc' | 'desc';
+  }>({ key: 'dueDate', direction: 'desc' });
   
   const [filters, setFilters] = useState<TransactionFilters>({
     startDate: '',
@@ -220,6 +226,39 @@ export default function TransactionsListPage() {
         return null;
     }
   };
+
+  function handleSort(key: 'dueDate' | 'effectiveDate' | 'description') {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'desc' };
+    });
+  }
+
+  const sortedTransactions = React.useMemo(() => {
+    const sorted = [...transactions];
+    sorted.sort((a, b) => {
+      const { key, direction } = sortConfig;
+      const aValue = (a as any)[key];
+      const bValue = (b as any)[key];
+
+      if (!aValue && !bValue) return 0;
+      if (!aValue) return direction === 'asc' ? -1 : 1;
+      if (!bValue) return direction === 'asc' ? 1 : -1;
+
+      if (key === 'description') {
+        return direction === 'asc'
+          ? String(aValue).localeCompare(String(bValue))
+          : String(bValue).localeCompare(String(aValue));
+      }
+
+      const aDate = new Date(aValue).getTime();
+      const bDate = new Date(bValue).getTime();
+      return direction === 'asc' ? aDate - bDate : bDate - aDate;
+    });
+    return sorted;
+  }, [transactions, sortConfig]);
 
   if (loading && transactions.length === 0) {
     return (
@@ -394,18 +433,54 @@ export default function TransactionsListPage() {
                 <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
                   <tr>
                     <th className="px-4 py-3 text-center w-20">Ações</th>
-                    <th className="px-2 py-3 text-left">Data Vencimento</th>
+                    <th
+                      className="px-2 py-3 text-left cursor-pointer"
+                      onClick={() => handleSort('dueDate')}
+                    >
+                      Data Vencimento
+                      {sortConfig.key === 'dueDate' && (
+                        sortConfig.direction === 'asc' ? (
+                          <ChevronUp size={12} className="inline ml-1" />
+                        ) : (
+                          <ChevronDown size={12} className="inline ml-1" />
+                        )
+                      )}
+                    </th>
                     <th className="px-2 py-3 text-left">Tipo</th>
-                    <th className="px-4 py-3 text-left">Descrição</th>
+                    <th
+                      className="px-4 py-3 text-left cursor-pointer"
+                      onClick={() => handleSort('description')}
+                    >
+                      Descrição
+                      {sortConfig.key === 'description' && (
+                        sortConfig.direction === 'asc' ? (
+                          <ChevronUp size={12} className="inline ml-1" />
+                        ) : (
+                          <ChevronDown size={12} className="inline ml-1" />
+                        )
+                      )}
+                    </th>
                     <th className="px-4 py-3 text-right">Valor</th>
                     <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-left">Conta</th>
                     <th className="px-4 py-3 text-left">Categoria</th>
-                    <th className="px-4 py-3 text-center">Datas</th>
+                    <th
+                      className="px-4 py-3 text-center cursor-pointer"
+                      onClick={() => handleSort('effectiveDate')}
+                    >
+                      Data Pagamento
+                      {sortConfig.key === 'effectiveDate' && (
+                        sortConfig.direction === 'asc' ? (
+                          <ChevronUp size={12} className="inline ml-1" />
+                        ) : (
+                          <ChevronDown size={12} className="inline ml-1" />
+                        )
+                      )}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {transactions.map((transaction) => (
+                  {sortedTransactions.map((transaction) => (
                     <tr 
                       key={transaction.id} 
                       className="border-b border-gray-700 hover:bg-[#1a1f2b]"
@@ -495,7 +570,7 @@ export default function TransactionsListPage() {
                         )}
                       </td>
                       
-                      {/* Nova coluna para datas */}
+                      {/* Coluna data de pagamento */}
                       <td className="px-4 py-3">
                         <div className="text-xs space-y-1">
                           {transaction.effectiveDate && (

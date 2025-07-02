@@ -478,6 +478,7 @@ function CategoriesPageInner() {
                 <tr>
                   <th className="px-4 py-3 text-center w-24">Ações</th>
                   <th className="px-4 py-3 text-left">Categoria</th>
+                  <th className="px-4 py-3 text-left">Cor</th>
                   <th className="px-4 py-3 text-left">Categoria Pai</th>
                   <th className="px-4 py-3 text-left">Código</th>
                   <th className="px-4 py-3 text-center">Padrão</th>
@@ -533,7 +534,7 @@ function CategoriesPageInner() {
                       
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div 
+                          <div
                             className="w-4 h-4 rounded-full border-2 border-white"
                             style={{ backgroundColor: category.color }}
                           />
@@ -550,7 +551,11 @@ function CategoriesPageInner() {
                           </div>
                         </div>
                       </td>
-                      
+
+                      <td className="px-4 py-3 text-gray-300">
+                        {category.color}
+                      </td>
+
                       <td className="px-4 py-3 text-gray-300">
                         -
                       </td>
@@ -617,7 +622,7 @@ function CategoriesPageInner() {
                         
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3 ml-6">
-                            <div 
+                            <div
                               className="w-3 h-3 rounded-full"
                               style={{ backgroundColor: child.color }}
                             />
@@ -634,7 +639,11 @@ function CategoriesPageInner() {
                             </div>
                           </div>
                         </td>
-                        
+
+                        <td className="px-4 py-3 text-gray-300">
+                          {child.color}
+                        </td>
+
                         <td className="px-4 py-3 text-gray-300">
                           {category.name}
                         </td>
@@ -706,7 +715,7 @@ function CategoriesPageInner() {
                       
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div 
+                          <div
                             className="w-4 h-4 rounded-full"
                             style={{ backgroundColor: orphan.color }}
                           />
@@ -726,7 +735,11 @@ function CategoriesPageInner() {
                           </div>
                         </div>
                       </td>
-                      
+
+                      <td className="px-4 py-3 text-gray-300">
+                        {orphan.color}
+                      </td>
+
                       <td className="px-4 py-3 text-yellow-400">
                         Categoria pai excluída
                       </td>

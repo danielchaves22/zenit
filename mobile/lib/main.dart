@@ -1,4 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:orcamento_app/pages/lista_orcamentos_inativos_page.dart';
@@ -14,17 +13,8 @@ import 'pages/login_page.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'utils.dart';
 
-// Importa as opções do Firebase para cada plataforma.
-// O arquivo firebase_options.dart é gerado pelo FlutterFire CLI (ou você pode criá-lo manualmente)
-import 'firebase_options.dart';
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Inicializa o Firebase com as opções adequadas para cada plataforma:
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
 
   await Hive.initFlutter();
   Hive.registerAdapter(OrcamentoAdapter());

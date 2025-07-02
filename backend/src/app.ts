@@ -11,6 +11,7 @@ import userRoutes from './routes/user.routes';
 import companyRoutes from './routes/company.routes';
 import financialRoutes from './routes/financial.routes';
 import preferenceRoutes from './routes/preferences.routes';
+import budgetRoutes from './routes/budget.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
@@ -170,6 +171,7 @@ app.use('/api', tenantMiddleware);
 app.use('/api/users', createRateLimitMiddleware('api'), userRoutes);
 app.use('/api/companies', createRateLimitMiddleware('api'), companyRoutes);
 app.use('/api/preferences', createRateLimitMiddleware('api'), preferenceRoutes);
+app.use('/api/mobile', createRateLimitMiddleware('api'), budgetRoutes);
 app.use('/api/financial', createRateLimitMiddleware('financial'), financialRoutes);
 // Financial routes with cache for read operations
 app.use('/api/financial/summary', createRateLimitMiddleware('financial'), cacheMiddleware(600)); // 10min cache

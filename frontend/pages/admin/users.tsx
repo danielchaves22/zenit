@@ -441,6 +441,7 @@ export default function UsersPage() {
               <div className="grid grid-cols-1 gap-4">
                 <Input
                   label="Nome"
+                  className="w-full md:w-1/2"
                   value={formData.name}
                   onChange={(e) => setFormData({...formData, name: e.target.value})}
                   required

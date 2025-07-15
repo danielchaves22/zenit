@@ -70,7 +70,12 @@ export const createTransactionSchema = z.object({
   
   tags: z.array(
     z.string().max(50, 'Cada tag deve ter no máximo 50 caracteres')
-  ).max(10, 'Máximo 10 tags permitidas').optional()
+  ).max(10, 'Máximo 10 tags permitidas').optional(),
+  repeatTimes: z.coerce.number()
+    .int('Número de repetições deve ser um inteiro')
+    .min(1, 'Número de repetições deve ser pelo menos 1')
+    .max(36, 'Número de repetições deve ser no máximo 36')
+    .optional()
 }).refine((data) => {
   // Validação customizada baseada no tipo
   if (data.type === 'INCOME' && !data.toAccountId) {

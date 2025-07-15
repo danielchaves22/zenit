@@ -38,6 +38,8 @@ O sistema agora implementa controle granular de acesso às contas financeiras pa
 **Comportamento Novo**: Verifica se usuário tem acesso às contas `fromAccountId` e `toAccountId`
 - Se não tem acesso: HTTP 403 com mensagem específica
 - Se tem acesso: Procede normalmente
+- Novo campo opcional `repeatTimes` permite repetir a transação mensalmente. O
+  sistema cria cópias com datas incrementadas e status `PENDING`.
 
 #### 5. **Operações em Contas Específicas**
 Endpoints como `GET/PUT/DELETE /api/financial/accounts/:id` agora verificam acesso:

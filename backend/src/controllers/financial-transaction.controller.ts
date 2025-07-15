@@ -3,6 +3,19 @@ import FinancialTransactionService from '../services/financial-transaction.servi
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import { logger } from '../utils/logger';
 
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  const day = result.getDate();
+  result.setMonth(result.getMonth() + months);
+  const daysInMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  if (day > daysInMonth) {
+    result.setDate(daysInMonth);
+  } else {
+    result.setDate(day);
+  }
+  return result;
+}
+
 /**
  * Função helper simplificada: extrai o único companyId e userId do token
  */
@@ -37,7 +50,8 @@ export async function createTransaction(req: Request, res: Response) {
       fromAccountId,
       toAccountId,
       categoryId,
-      tags
+      tags,
+      repeatTimes
     } = req.body;
 
     const transaction = await FinancialTransactionService.createTransaction({
@@ -56,6 +70,34 @@ export async function createTransaction(req: Request, res: Response) {
       createdBy: userId,
       tags
     });
+
+    const times = Number(repeatTimes) || 0;
+    if (times > 0) {
+      const baseDate = new Date(date);
+      const baseDue = dueDate ? new Date(dueDate) : null;
+
+      for (let i = 1; i <= times; i++) {
+        const nextDate = addMonths(baseDate, i);
+        const nextDue = baseDue ? addMonths(baseDue, i) : null;
+
+        await FinancialTransactionService.createTransaction({
+          description,
+          amount,
+          date: nextDate,
+          dueDate: nextDue,
+          effectiveDate: null,
+          type,
+          status: 'PENDING',
+          notes,
+          fromAccountId,
+          toAccountId,
+          categoryId,
+          companyId,
+          createdBy: userId,
+          tags
+        });
+      }
+    }
 
     return res.status(201).json(transaction);
   } catch (error: any) {

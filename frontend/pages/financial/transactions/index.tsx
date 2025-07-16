@@ -74,7 +74,7 @@ export default function TransactionsListPage() {
   const [sortConfig, setSortConfig] = useState<{
     key: 'dueDate' | 'effectiveDate' | 'description';
     direction: 'asc' | 'desc';
-  }>({ key: 'dueDate', direction: 'desc' });
+  }>({ key: 'dueDate', direction: 'asc' });
   
   const [filters, setFilters] = useState<TransactionFilters>({
     startDate: '',
@@ -232,7 +232,7 @@ export default function TransactionsListPage() {
       if (prev.key === key) {
         return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
       }
-      return { key, direction: 'desc' };
+      return { key, direction: 'asc' };
     });
   }
 

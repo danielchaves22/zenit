@@ -330,46 +330,66 @@ export default function TransactionForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    
-    try {
-      // Preparar dados para envio
-      const payload = {
-        ...formData,
-        amount: parseFloat(formData.amount),
-        date: new Date(formData.date).toISOString(),
-        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-        effectiveDate: formData.effectiveDate ? new Date(formData.effectiveDate).toISOString() : null,
-        fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
-        toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
-        categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        repeatTimes: Number(formData.repeatTimes || 0)
-      };
-      
-      if (mode === 'create') {
-        await api.post('/financial/transactions', payload);
-        addToast('Transação criada com sucesso', 'success');
-      } else {
-        await api.put(`/financial/transactions/${transactionId}`, payload);
-        addToast('Transação atualizada com sucesso', 'success');
+
+    const submit = async () => {
+      setSaving(true);
+
+      try {
+        const payload: any = {
+          description: formData.description,
+          amount: parseFloat(formData.amount),
+          date: new Date(formData.date).toISOString(),
+          dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+          effectiveDate: formData.effectiveDate ? new Date(formData.effectiveDate).toISOString() : null,
+          type: formData.type,
+          status: formData.status,
+          notes: formData.notes,
+          fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
+          toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
+          categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
+          tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
+        };
+
+        if (mode === 'create') {
+          payload.repeatTimes = Number(formData.repeatTimes || 0);
+          await api.post('/financial/transactions', payload);
+          addToast('Transação criada com sucesso', 'success');
+        } else {
+          await api.put(`/financial/transactions/${transactionId}`, payload);
+          addToast('Transação atualizada com sucesso', 'success');
+        }
+
+        if (onSuccess) {
+          onSuccess();
+        } else {
+          router.push('/financial/transactions');
+        }
+
+      } catch (error: any) {
+        console.error('Erro ao salvar transação:', error);
+        addToast(
+          error.response?.data?.error || `Erro ao ${mode === 'create' ? 'criar' : 'atualizar'} transação`,
+          'error'
+        );
+      } finally {
+        setSaving(false);
       }
-      
-      // Callback de sucesso ou redirecionamento padrão
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.push('/financial/transactions');
-      }
-      
-    } catch (error: any) {
-      console.error('Erro ao salvar transação:', error);
-      addToast(
-        error.response?.data?.error || `Erro ao ${mode === 'create' ? 'criar' : 'atualizar'} transação`,
-        'error'
+    };
+
+    const times = Number(formData.repeatTimes || 0);
+    if (mode === 'create' && times > 0) {
+      confirmation.confirm(
+        {
+          title: 'Confirmar Criação de Parcelas',
+          message: `Serão criadas ${times + 1} transações ao todo. Deseja continuar?`,
+          confirmText: 'Confirmar',
+          cancelText: 'Cancelar',
+          type: 'info'
+        },
+        submit
       );
-    } finally {
-      setSaving(false);
+    } else {
+      await submit();
     }
   };
 
@@ -668,21 +688,23 @@ export default function TransactionForm({
                 className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               />
             </div>
-            <div>
-              <Input
-                id="repeatTimes"
-                name="repeatTimes"
-                type="number"
-                label="Repetir (meses)"
-                value={formData.repeatTimes}
-                onChange={handleChange}
-                placeholder="0"
-                disabled={saving || isReadOnly}
-              />
-              <span className="text-xs text-gray-400">
-                Próximas parcelas serão criadas automaticamente
-              </span>
-            </div>
+            {mode === 'create' && (
+              <div>
+                <Input
+                  id="repeatTimes"
+                  name="repeatTimes"
+                  type="number"
+                  label="Repetir (meses)"
+                  value={formData.repeatTimes}
+                  onChange={handleChange}
+                  placeholder="0"
+                  disabled={saving || isReadOnly}
+                />
+                <span className="text-xs text-gray-400">
+                  Próximas parcelas serão criadas automaticamente
+                </span>
+              </div>
+            )}
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <label className="block text-sm font-medium text-gray-300" htmlFor="effectiveDate">

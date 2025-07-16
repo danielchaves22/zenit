@@ -54,8 +54,10 @@ export async function createTransaction(req: Request, res: Response) {
       repeatTimes
     } = req.body;
 
+    const times = Number(repeatTimes) || 0;
+    const total = times + 1;
     const transaction = await FinancialTransactionService.createTransaction({
-      description,
+      description: times > 0 ? `${description} (1 de ${total})` : description,
       amount,
       date: new Date(date),
       dueDate: dueDate ? new Date(dueDate) : null,
@@ -70,8 +72,6 @@ export async function createTransaction(req: Request, res: Response) {
       createdBy: userId,
       tags
     });
-
-    const times = Number(repeatTimes) || 0;
     if (times > 0) {
       const baseDate = new Date(date);
       const baseDue = dueDate ? new Date(dueDate) : null;
@@ -81,7 +81,7 @@ export async function createTransaction(req: Request, res: Response) {
         const nextDue = baseDue ? addMonths(baseDue, i) : null;
 
         await FinancialTransactionService.createTransaction({
-          description,
+          description: `${description} (${i + 1} de ${total})`,
           amount,
           date: nextDate,
           dueDate: nextDue,

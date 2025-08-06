@@ -32,11 +32,15 @@ export default class FinancialTransactionService {
   }): Promise<FinancialTransaction | FinancialTransaction[]> {
     const repeatTimes = data.repeatTimes && data.repeatTimes > 0 ? data.repeatTimes : 1;
     const baseData = { ...data } as any;
+    const baseDescription = data.description;
     delete baseData.repeatTimes;
 
     const transactions: FinancialTransaction[] = [];
 
     for (let i = 0; i < repeatTimes; i++) {
+      baseData.description = `${baseDescription} (${i + 1} de ${repeatTimes})`;
+      baseData.status = i === 0 ? data.status : TransactionStatus.PENDING;
+
       const tx = await this.createSingleTransaction(baseData);
       transactions.push(tx);
 

@@ -24,6 +24,7 @@ export default class RecurringTransactionService {
     categoryId?: number;
     companyId: number;
     createdBy: number;
+    installments?: number;
   }): Promise<RecurringTransaction> {
     
     const nextDueDate = this.calculateNextDueDate(
@@ -59,6 +60,41 @@ export default class RecurringTransactionService {
       frequency: data.frequency,
       nextDueDate
     });
+
+    if (data.installments && data.installments > 0) {
+      let currentDate = new Date(data.startDate);
+      for (let i = 0; i < data.installments; i++) {
+        await prisma.financialTransaction.create({
+          data: {
+            description: recurring.description,
+            amount: recurring.amount,
+            date: currentDate,
+            scheduledDate: currentDate,
+            type: recurring.type,
+            status: 'PENDING',
+            notes: recurring.notes,
+            fromAccount: data.fromAccountId ? { connect: { id: data.fromAccountId } } : undefined,
+            toAccount: data.toAccountId ? { connect: { id: data.toAccountId } } : undefined,
+            category: data.categoryId ? { connect: { id: data.categoryId } } : undefined,
+            company: { connect: { id: data.companyId } },
+            createdByUser: { connect: { id: data.createdBy } },
+            recurringTransaction: { connect: { id: recurring.id } }
+          }
+        });
+        currentDate = this.getNextOccurrence(
+          currentDate,
+          data.frequency,
+          data.dayOfMonth,
+          data.dayOfWeek
+        );
+      }
+
+      const updated = await prisma.recurringTransaction.update({
+        where: { id: recurring.id },
+        data: { nextDueDate: currentDate }
+      });
+      return updated;
+    }
 
     return recurring;
   }
@@ -165,7 +201,8 @@ export default class RecurringTransactionService {
   static async generateScheduledTransactions(
     recurringId: number,
     monthsAhead: number = 12,
-    companyId: number
+    companyId: number,
+    installments?: number
   ): Promise<number> {
     const recurring = await prisma.recurringTransaction.findFirst({
       where: { id: recurringId, companyId, isActive: true }
@@ -182,6 +219,9 @@ export default class RecurringTransactionService {
     let generated = 0;
 
     while (currentDate <= endDate && (!recurring.endDate || currentDate <= recurring.endDate)) {
+      if (installments !== undefined && generated >= installments) {
+        break;
+      }
       // Check if already exists
       const exists = await prisma.financialTransaction.findFirst({
         where: {

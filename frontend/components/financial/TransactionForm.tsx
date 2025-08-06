@@ -83,7 +83,7 @@ export default function TransactionForm({
   const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
 
   const formRef = useRef<HTMLFormElement>(null);
-  
+
   const [formData, setFormData] = useState({
     description: '',
     amount: '0.00',
@@ -99,6 +99,7 @@ export default function TransactionForm({
     tags: '',
     repeatTimes: ''
   });
+  const [isRecurring, setIsRecurring] = useState(false);
 
   // Verificar se o formulário deve estar somente leitura
   const isReadOnly = mode === 'edit' && transaction?.status === 'COMPLETED';
@@ -328,6 +329,14 @@ export default function TransactionForm({
     setFormData(prev => ({ ...prev, amount: value }));
   };
 
+  const handleRecurringChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setIsRecurring(checked);
+    if (!checked) {
+      setFormData(prev => ({ ...prev, repeatTimes: '' }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -335,17 +344,23 @@ export default function TransactionForm({
     try {
       // Preparar dados para envio
       const payload = {
-        ...formData,
+        description: formData.description,
         amount: parseFloat(formData.amount),
         date: new Date(formData.date).toISOString(),
         dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
         effectiveDate: formData.effectiveDate ? new Date(formData.effectiveDate).toISOString() : null,
+        type: formData.type,
+        status: formData.status,
+        notes: formData.notes,
         fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
         toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
         categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        repeatTimes: Number(formData.repeatTimes || 0)
-      };
+      } as any;
+
+      if (mode === 'create' && isRecurring) {
+        payload.repeatTimes = Number(formData.repeatTimes || 0);
+      }
       
       if (mode === 'create') {
         await api.post('/financial/transactions', payload);
@@ -509,8 +524,8 @@ export default function TransactionForm({
           onSubmit={handleSubmit}
           className="space-y-6"
         >
-          {/* Primeira linha: Valor destacado */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {/* Primeira linha: Valor e recorrência */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
             <CurrencyInput
               id="amount"
               label="Valor *"
@@ -520,6 +535,35 @@ export default function TransactionForm({
               disabled={saving || isReadOnly}
               inputClassName="py-4 text-2xl"
             />
+
+            {mode === 'create' && (
+              <div className="flex items-center mt-4 md:mt-0">
+                <input
+                  id="isRecurring"
+                  type="checkbox"
+                  className="mr-2"
+                  checked={isRecurring}
+                  onChange={handleRecurringChange}
+                  disabled={saving || isReadOnly}
+                />
+                <label htmlFor="isRecurring" className="text-sm text-gray-300">
+                  Recorrente
+                </label>
+              </div>
+            )}
+
+            {mode === 'create' && isRecurring && (
+              <Input
+                id="repeatTimes"
+                name="repeatTimes"
+                type="number"
+                label="Repetir (meses)"
+                value={formData.repeatTimes}
+                onChange={handleChange}
+                placeholder="0"
+                disabled={saving || isReadOnly}
+              />
+            )}
           </div>
 
           {/* Segunda linha: Descrição */}
@@ -667,21 +711,6 @@ export default function TransactionForm({
                 disabled={saving || isReadOnly}
                 className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               />
-            </div>
-            <div>
-              <Input
-                id="repeatTimes"
-                name="repeatTimes"
-                type="number"
-                label="Repetir (meses)"
-                value={formData.repeatTimes}
-                onChange={handleChange}
-                placeholder="0"
-                disabled={saving || isReadOnly}
-              />
-              <span className="text-xs text-gray-400">
-                Próximas parcelas serão criadas automaticamente
-              </span>
             </div>
             <div>
               <div className="flex items-center gap-3 mb-2">

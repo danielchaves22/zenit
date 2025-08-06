@@ -10,10 +10,8 @@ const prisma = new PrismaClient();
 // ============================================
 
 export default class FinancialTransactionService {
-  
   /**
-   * CRITICAL: Creates financial transaction with ACID guarantees
-   * Netflix-level reliability for financial operations
+   * Cria transações financeiras considerando repetições
    */
   static async createTransaction(data: {
     description: string;
@@ -30,11 +28,56 @@ export default class FinancialTransactionService {
     companyId: number;
     createdBy: number;
     tags?: string[];
+    repeatTimes?: number;
+  }): Promise<FinancialTransaction | FinancialTransaction[]> {
+    const repeatTimes = data.repeatTimes && data.repeatTimes > 0 ? data.repeatTimes : 1;
+    const baseData = { ...data } as any;
+    delete baseData.repeatTimes;
+
+    const transactions: FinancialTransaction[] = [];
+
+    for (let i = 0; i < repeatTimes; i++) {
+      const tx = await this.createSingleTransaction(baseData);
+      transactions.push(tx);
+
+      baseData.date = this.addMonths(baseData.date, 1);
+      if (baseData.dueDate) baseData.dueDate = this.addMonths(baseData.dueDate, 1);
+      if (baseData.effectiveDate) baseData.effectiveDate = this.addMonths(baseData.effectiveDate, 1);
+    }
+
+    return repeatTimes === 1 ? transactions[0] : transactions;
+  }
+
+  private static addMonths(date: Date, months: number): Date {
+    const d = new Date(date);
+    d.setMonth(d.getMonth() + months);
+    return d;
+  }
+
+  /**
+   * CRITICAL: Creates financial transaction with ACID guarantees
+   * Netflix-level reliability for financial operations
+   */
+  private static async createSingleTransaction(data: {
+    description: string;
+    amount: number | string;
+    date: Date;
+    dueDate?: Date | null;
+    effectiveDate?: Date | null;
+    type: TransactionType;
+    status?: TransactionStatus;
+    notes?: string;
+    fromAccountId?: number | null;
+    toAccountId?: number | null;
+    categoryId?: number | null;
+    companyId: number;
+    createdBy: number;
+    tags?: string[];
   }): Promise<FinancialTransaction> {
-    
+
     const startTime = Date.now();
     const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     logger.info('Financial transaction creation started', {
       transactionId,
       type: data.type,
@@ -47,7 +90,7 @@ export default class FinancialTransactionService {
     // ✅ CRITICAL: Input validation BEFORE any DB operation
     this.validateTransactionData(data.type, data.fromAccountId, data.toAccountId);
     const parsedAmount = parseDecimal(data.amount);
-    
+
     if (parsedAmount.lte(0)) {
       throw new Error('Transaction amount must be positive');
     }
@@ -55,7 +98,7 @@ export default class FinancialTransactionService {
     // ✅ CRITICAL: Maximum 3 retry attempts for deadlocks
     const maxRetries = 3;
     let retryCount = 0;
-    
+
     while (retryCount < maxRetries) {
       try {
         return await this.executeTransactionWithFullLocking(data, parsedAmount, transactionId, startTime);
@@ -64,18 +107,18 @@ export default class FinancialTransactionService {
         if ((error.code === 'P2034' || error.message.includes('deadlock') || error.message.includes('serialization')) && retryCount < maxRetries - 1) {
           retryCount++;
           const backoffMs = Math.min(100 * Math.pow(2, retryCount), 1000); // Exponential backoff
-          
+
           logger.warn('Transaction deadlock detected, retrying', {
             transactionId,
             retryCount,
             backoffMs,
             error: error.message
           });
-          
+
           await new Promise(resolve => setTimeout(resolve, backoffMs));
           continue;
         }
-        
+
         // ✅ CRITICAL: Log all financial transaction failures
         logger.error('CRITICAL: Financial transaction failed', {
           transactionId,
@@ -84,11 +127,11 @@ export default class FinancialTransactionService {
           retryCount,
           data: { ...data, amount: parsedAmount.toString() }
         });
-        
+
         throw error;
       }
     }
-    
+
     throw new Error('Transaction failed after maximum retries');
   }
 

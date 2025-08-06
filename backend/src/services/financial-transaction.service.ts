@@ -41,7 +41,11 @@ export default class FinancialTransactionService {
       baseData.description = `${baseDescription} (${i + 1} de ${repeatTimes})`;
       baseData.status = i === 0 ? data.status : TransactionStatus.PENDING;
 
-      const tx = await this.createSingleTransaction(baseData);
+      if (i > 0 || baseData.status === TransactionStatus.PENDING) {
+        baseData.effectiveDate = null;
+      }
+
+      const tx = await this.createSingleTransaction({ ...baseData });
       transactions.push(tx);
 
       baseData.date = this.addMonths(baseData.date, 1);

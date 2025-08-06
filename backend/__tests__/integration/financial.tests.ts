@@ -380,6 +380,34 @@ describe('Módulo Financeiro', () => {
       expect(account?.balance.toString()).toBe('2349.25');
     });
 
+    it('Deve criar transações recorrentes pendentes após a primeira', async () => {
+      const res = await request(app)
+        .post('/api/financial/transactions')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
+        .send({
+          description: 'Assinatura Serviço',
+          amount: 100,
+          date: new Date().toISOString(),
+          effectiveDate: new Date().toISOString(),
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: checkingAccountId,
+          categoryId: expenseCategoryId,
+          repeatTimes: 3
+        });
+
+      expect(res.status).toBe(201);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body).toHaveLength(3);
+      expect(res.body[0].status).toBe('COMPLETED');
+      expect(res.body[0].effectiveDate).not.toBeNull();
+      for (let i = 1; i < res.body.length; i++) {
+        expect(res.body[i].status).toBe('PENDING');
+        expect(res.body[i].effectiveDate).toBeNull();
+      }
+    });
+
     it('Deve obter um resumo financeiro', async () => {
       const res = await request(app)
         .get('/api/financial/summary')

@@ -466,11 +466,6 @@ export default function TransactionForm({
         </div>
         
         <div className="flex items-center gap-3">
-          {isTypeLocked && (
-            <div className="px-3 py-1 bg-[#2563eb] text-white text-sm rounded-full">
-              Tipo bloqueado
-            </div>
-          )}
 
           {showActions && (
             <>
@@ -520,7 +515,7 @@ export default function TransactionForm({
         >
           {/* Primeira linha: Valor e recorrência */}
           <div className="flex items-center gap-4">
-            <div className="w-48">
+            <div >
               <CurrencyInput
                 id="amount"
                 label="Valor *"

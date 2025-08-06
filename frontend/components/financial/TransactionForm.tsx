@@ -100,6 +100,8 @@ export default function TransactionForm({
     repeatTimes: ''
   });
 
+  const [isRecurring, setIsRecurring] = useState(false);
+
   // Verificar se o formulário deve estar somente leitura
   const isReadOnly = mode === 'edit' && transaction?.status === 'COMPLETED';
   const showActions = !isReadOnly || isSuperuser;
@@ -328,6 +330,13 @@ export default function TransactionForm({
     setFormData(prev => ({ ...prev, amount: value }));
   };
 
+  const handleRecurringChange = (checked: boolean) => {
+    setIsRecurring(checked);
+    if (!checked) {
+      setFormData(prev => ({ ...prev, repeatTimes: '' }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -344,7 +353,7 @@ export default function TransactionForm({
         toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
         categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        repeatTimes: Number(formData.repeatTimes || 0)
+        repeatTimes: isRecurring ? Number(formData.repeatTimes || 0) : 0
       };
       
       if (mode === 'create') {
@@ -509,17 +518,51 @@ export default function TransactionForm({
           onSubmit={handleSubmit}
           className="space-y-6"
         >
-          {/* Primeira linha: Valor destacado */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <CurrencyInput
-              id="amount"
-              label="Valor *"
-              value={formData.amount}
-              onChange={handleAmountChange}
-              required
-              disabled={saving || isReadOnly}
-              inputClassName="py-4 text-2xl"
-            />
+          {/* Primeira linha: Valor e recorrência */}
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <CurrencyInput
+                id="amount"
+                label="Valor *"
+                value={formData.amount}
+                onChange={handleAmountChange}
+                required
+                disabled={saving || isReadOnly}
+                inputClassName="py-4 text-2xl"
+              />
+            </div>
+            {mode === 'create' && (
+              <>
+                <div className="flex items-center">
+                  <span className="mr-2 text-sm text-gray-300">Recorrente</span>
+                  <label htmlFor="isRecurring" className="inline-flex items-center cursor-pointer relative">
+                    <input
+                      id="isRecurring"
+                      type="checkbox"
+                      checked={isRecurring}
+                      onChange={(e) => handleRecurringChange(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-10 h-5 bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent peer-checked:bg-accent transition-colors"></div>
+                    <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                  </label>
+                </div>
+                {isRecurring && (
+                  <div className="w-28">
+                    <Input
+                      id="repeatTimes"
+                      name="repeatTimes"
+                      type="number"
+                      label="Repetir (meses)"
+                      value={formData.repeatTimes}
+                      onChange={handleChange}
+                      placeholder="0"
+                      disabled={saving || isReadOnly}
+                    />
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           {/* Segunda linha: Descrição */}
@@ -628,7 +671,7 @@ export default function TransactionForm({
           </div>
           
           {/* Quarta linha: Status e Datas */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <input type="hidden" name="date" value={formData.date} readOnly />
 
             <div>
@@ -667,21 +710,6 @@ export default function TransactionForm({
                 disabled={saving || isReadOnly}
                 className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               />
-            </div>
-            <div>
-              <Input
-                id="repeatTimes"
-                name="repeatTimes"
-                type="number"
-                label="Repetir (meses)"
-                value={formData.repeatTimes}
-                onChange={handleChange}
-                placeholder="0"
-                disabled={saving || isReadOnly}
-              />
-              <span className="text-xs text-gray-400">
-                Próximas parcelas serão criadas automaticamente
-              </span>
             </div>
             <div>
               <div className="flex items-center gap-3 mb-2">

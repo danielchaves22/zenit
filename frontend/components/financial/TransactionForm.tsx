@@ -96,7 +96,8 @@ export default function TransactionForm({
     fromAccountId: '',
     toAccountId: '',
     categoryId: '',
-    tags: ''
+    tags: '',
+    repeatTimes: ''
   });
 
   // Verificar se o formulário deve estar somente leitura
@@ -177,7 +178,8 @@ export default function TransactionForm({
         fromAccountId: txn.fromAccount?.id.toString() || '',
         toAccountId: txn.toAccount?.id.toString() || '',
         categoryId: txn.category?.id.toString() || '',
-        tags: txn.tags.map((t: any) => t.name).join(', ')
+        tags: txn.tags.map((t: any) => t.name).join(', '),
+        repeatTimes: txn.repeatTimes?.toString() || ''
       });
     } catch (error: any) {
       console.error('Erro ao carregar transação:', error);
@@ -341,7 +343,8 @@ export default function TransactionForm({
         fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
         toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
         categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
+        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        repeatTimes: Number(formData.repeatTimes || 0)
       };
       
       if (mode === 'create') {
@@ -625,7 +628,7 @@ export default function TransactionForm({
           </div>
           
           {/* Quarta linha: Status e Datas */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <input type="hidden" name="date" value={formData.date} readOnly />
 
             <div>
@@ -664,6 +667,21 @@ export default function TransactionForm({
                 disabled={saving || isReadOnly}
                 className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
               />
+            </div>
+            <div>
+              <Input
+                id="repeatTimes"
+                name="repeatTimes"
+                type="number"
+                label="Repetir (meses)"
+                value={formData.repeatTimes}
+                onChange={handleChange}
+                placeholder="0"
+                disabled={saving || isReadOnly}
+              />
+              <span className="text-xs text-gray-400">
+                Próximas parcelas serão criadas automaticamente
+              </span>
             </div>
             <div>
               <div className="flex items-center gap-3 mb-2">

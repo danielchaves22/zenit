@@ -23,6 +23,7 @@ export const createRecurringTransactionSchema = z.object({
   fromAccountId: z.number().optional().nullable(),
   toAccountId: z.number().optional().nullable(),
   categoryId: z.number().optional().nullable(),
+  installments: z.number().min(1).optional(),
 }).refine(data => {
   // Regra: Se for EXPENSE, precisa de fromAccountId
   if (data.type === 'EXPENSE' && !data.fromAccountId) return false;
@@ -58,7 +59,8 @@ export const updateRecurringTransactionSchema = z.object({
 
 // Schema para gerar transações
 export const generateTransactionsSchema = z.object({
-  monthsAhead: z.number().min(1).max(36).optional().default(12)
+  monthsAhead: z.number().min(1).max(36).optional().default(12),
+  installments: z.number().min(1).max(120).optional()
 });
 
 // Schema para listar transações recorrentes

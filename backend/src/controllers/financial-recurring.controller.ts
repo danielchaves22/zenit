@@ -37,7 +37,8 @@ export async function createRecurringTransaction(req: Request, res: Response) {
       notes,
       fromAccountId,
       toAccountId,
-      categoryId
+      categoryId,
+      installments
     } = req.body;
 
     const recurring = await RecurringTransactionService.createRecurringTransaction({
@@ -54,7 +55,8 @@ export async function createRecurringTransaction(req: Request, res: Response) {
       toAccountId,
       categoryId,
       companyId,
-      createdBy: userId
+      createdBy: userId,
+      installments
     });
 
     return res.status(201).json(recurring);
@@ -212,12 +214,13 @@ export async function generateScheduledTransactions(req: Request, res: Response)
     }
 
     const { companyId } = getUserContext(req);
-    const { monthsAhead = 12 } = req.body;
+    const { monthsAhead = 12, installments } = req.body;
 
     const generated = await RecurringTransactionService.generateScheduledTransactions(
       id,
       monthsAhead,
-      companyId
+      companyId,
+      installments
     );
 
     return res.status(200).json({ 

@@ -539,7 +539,7 @@ export default function TransactionForm({
                       onChange={(e) => handleRecurringChange(e.target.checked)}
                       className="sr-only peer"
                     />
-                    <div className="w-10 h-5 bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent peer-checked:bg-accent transition-colors"></div>
+                    <div className="w-10 h-5 bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-success peer-checked:bg-success transition-colors"></div>
                     <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
                   </label>
                 </div>

@@ -520,7 +520,7 @@ export default function TransactionForm({
         >
           {/* Primeira linha: Valor e recorrência */}
           <div className="flex items-center gap-4">
-            <div className="flex-1">
+            <div className="w-48">
               <CurrencyInput
                 id="amount"
                 label="Valor *"
@@ -528,12 +528,13 @@ export default function TransactionForm({
                 onChange={handleAmountChange}
                 required
                 disabled={saving || isReadOnly}
+                className="mb-0"
                 inputClassName="py-4 text-2xl"
               />
             </div>
             {mode === 'create' && (
               <>
-                <div className="flex items-center">
+                <div className="flex items-center h-full">
                   <span className="mr-2 text-sm text-gray-300">Recorrente</span>
                   <label htmlFor="isRecurring" className="inline-flex items-center cursor-pointer relative">
                     <input

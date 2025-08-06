@@ -37,7 +37,8 @@ export async function createTransaction(req: Request, res: Response) {
       fromAccountId,
       toAccountId,
       categoryId,
-      tags
+      tags,
+      repeatTimes
     } = req.body;
 
     const transaction = await FinancialTransactionService.createTransaction({
@@ -54,7 +55,8 @@ export async function createTransaction(req: Request, res: Response) {
       categoryId,
       companyId,
       createdBy: userId,
-      tags
+      tags,
+      repeatTimes
     });
 
     return res.status(201).json(transaction);

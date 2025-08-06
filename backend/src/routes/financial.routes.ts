@@ -56,8 +56,7 @@ import {
   getTransactionAutocomplete
 } from '../controllers/financial-transaction.controller';
 
-// ✅ IMPORTAR ROTAS RECORRENTES E RELATÓRIOS
-import recurringRoutes from './financial-recurring.routes';
+// ✅ IMPORTAR ROTAS DE RELATÓRIOS
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 
 const router = Router();
@@ -101,9 +100,6 @@ router.delete('/transactions/:id', deleteTransaction);
 
 // ✅ ROTAS DE RELATÓRIOS - ORDEM IMPORTA!
 router.use('/reports/financial-account-movement', financialAccountMovementRoutes);
-
-// ✅ ROTAS RECORRENTES
-router.use('/recurring', recurringRoutes);
 
 // Rotas de Relatórios/Dashboard
 router.get('/summary', getFinancialSummary);

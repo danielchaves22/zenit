@@ -25,6 +25,7 @@ export default class FinancialTransactionService {
     fromAccountId?: number | null;
     toAccountId?: number | null;
     categoryId?: number | null;
+    budgetId?: number | null;
     companyId: number;
     createdBy: number;
     tags?: string[];
@@ -223,6 +224,7 @@ export default class FinancialTransactionService {
           fromAccount: data.fromAccountId ? { connect: { id: data.fromAccountId } } : undefined,
           toAccount: data.toAccountId ? { connect: { id: data.toAccountId } } : undefined,
           category: data.categoryId ? { connect: { id: data.categoryId } } : undefined,
+          budget: data.budgetId ? { connect: { id: data.budgetId } } : undefined,
           company: { connect: { id: data.companyId } },
           createdByUser: { connect: { id: data.createdBy } },
           tags: data.tags && data.tags.length > 0 ? {

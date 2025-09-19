@@ -1,74 +1,52 @@
 // lib/services/sync_manager.dart
 
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive/hive.dart';
 import 'package:orcamento_app/models/orcamento.dart';
 import 'package:orcamento_app/utils.dart';
+import 'api_service.dart';
 
 class SyncManager {
   final Box<Orcamento> localBox;
-  final FirebaseFirestore firestore;
+  final ApiService api;
 
-  SyncManager({required this.localBox, required this.firestore});
+  SyncManager({required this.localBox, required this.api});
 
-  /// Inicia a escuta das alterações locais para fazer o push automático,
-  /// mas somente se o usuário estiver autenticado.
   void startListening() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return; // Se não estiver autenticado, não sincroniza
-
     localBox.watch().listen((event) {
       if (!event.deleted && event.value != null) {
         Orcamento orc = event.value as Orcamento;
-        // Atualiza o updatedAt e adiciona o uid para sincronização
         orc.updatedAt = dataDeTrabalhoAtual;
-        pushOrcamento(orc, user.uid);
+        pushOrcamento(orc);
       }
     });
   }
 
-  /// Faz o push de um orçamento para o Firestore, incluindo o UID
-  Future<void> pushOrcamento(Orcamento orcamento, String uid) async {
+  Future<void> pushOrcamento(Orcamento orcamento) async {
     try {
-      final Map<String, dynamic> jsonData = orcamentoToJson(orcamento, uid);
-      await firestore
-          .collection('orcamentos')
-          .doc(orcamento.id)
-          .set(jsonData, SetOptions(merge: true));
+      final Map<String, dynamic> jsonData = orcamentoToJson(orcamento);
+      await api.post('/api/mobile/budgets', jsonData);
     } catch (e) {
       print('Erro no push de orcamento ${orcamento.id}: $e');
     }
   }
 
-  /// Faz o pull dos orçamentos do Firestore e atualiza o box local se o documento remoto estiver mais atualizado.
   Future<void> pullOrcamentos() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return; // Sem usuário autenticado, não sincroniza
-
     try {
-      QuerySnapshot snapshot = await firestore
-          .collection('orcamentos')
-          .where('uid', isEqualTo: user.uid)
-          .get();
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>;
-        Orcamento remoteOrcamento = orcamentoFromJson(data);
-        Orcamento? localOrcamento = localBox.get(remoteOrcamento.id);
-        if (localOrcamento == null ||
-            remoteOrcamento.updatedAt.isAfter(localOrcamento.updatedAt)) {
-          localBox.put(remoteOrcamento.id, remoteOrcamento);
+      final list = await api.getList('/api/mobile/budgets');
+      for (var data in list) {
+        Orcamento remote = orcamentoFromJson(data);
+        Orcamento? local = localBox.get(remote.id);
+        if (local == null || remote.updatedAt.isAfter(local.updatedAt)) {
+          localBox.put(remote.id, remote);
         }
       }
     } catch (e) {
-      print('Erro no pull dos orçamentos: $e');
+      print('Erro no pull dos orcamentos: $e');
     }
   }
 }
 
-/// Exemplo simplificado de conversão para JSON, agora incluindo o uid.
-Map<String, dynamic> orcamentoToJson(Orcamento orc, String uid) {
+Map<String, dynamic> orcamentoToJson(Orcamento orc) {
   return {
     'id': orc.id,
     'valorInicial': orc.valorInicial,
@@ -86,11 +64,9 @@ Map<String, dynamic> orcamentoToJson(Orcamento orc, String uid) {
     'status': orc.status.index,
     'saldoExtraDoDia': orc.saldoExtraDoDia,
     'updatedAt': orc.updatedAt.toIso8601String(),
-    'uid': uid, // Associação com o UID do usuário autenticado
   };
 }
 
-/// Exemplo simplificado de criação de um Orcamento a partir de JSON.
 Orcamento orcamentoFromJson(Map<String, dynamic> json) {
   return Orcamento(
     id: json['id'],
@@ -98,7 +74,7 @@ Orcamento orcamentoFromJson(Map<String, dynamic> json) {
     saldoAtual: json['saldoAtual'],
     dataFinal: DateTime.parse(json['dataFinal']),
     saldoFinalDesejado: json['saldoFinalDesejado'],
-    movimentacoes: [], // Aqui você deve carregar as movimentações se necessário
+    movimentacoes: [],
     orcamentoDiarioInicial: json['orcamentoDiarioInicial'],
     orcamentoDiarioAtual: json['orcamentoDiarioAtual'],
     dataInicio: DateTime.parse(json['dataInicio']),

@@ -57,6 +57,7 @@ model User {
   financialAccountAccess UserFinancialAccountAccess[]
   grantedPermissions     UserFinancialAccountAccess[] @relation("GrantedPermissions")
   preference             UserPreference?
+  budgets               Budget[]
 }
 
 model Company {
@@ -74,6 +75,7 @@ model Company {
   financialTags       FinancialTag[]
   recurringTransactions RecurringTransaction[]
   userFinancialAccountAccess UserFinancialAccountAccess[]
+  budgets             Budget[]
 }
 
 model CompanyGroup {
@@ -174,6 +176,8 @@ model FinancialTransaction {
   toAccount       FinancialAccount?    @relation("ToAccount", fields: [toAccountId], references: [id])
   categoryId      Int?
   category        FinancialCategory?   @relation(fields: [categoryId], references: [id])
+  budgetId        Int?
+  budget          Budget?              @relation(fields: [budgetId], references: [id])
   companyId       Int
   company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy       Int
@@ -191,6 +195,7 @@ model FinancialTransaction {
   @@index([toAccountId])
   @@index([categoryId])
   @@index([date])
+  @@index([budgetId])
   
   // ✅ NOVOS ÍNDICES PARA PERFORMANCE
   @@index([dueDate, status])                              // Relatórios de inadimplência
@@ -274,4 +279,43 @@ model UserPreference {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum BudgetStatus {
+  ACTIVE
+  ARCHIVED
+  EXPIRED
+  DELETED
+}
+
+enum BudgetType {
+  SPENDING
+  SAVING
+}
+
+model Budget {
+  id                Int       @id @default(autoincrement())
+  code              String    @unique
+  initialAmount     Decimal   @db.Decimal(15, 2)
+  currentBalance    Decimal   @db.Decimal(15, 2)
+  endDate           DateTime
+  desiredFinalBalance Decimal @db.Decimal(15, 2)
+  dailyBudgetInitial Decimal  @db.Decimal(15, 2)
+  dailyBudgetCurrent Decimal  @db.Decimal(15, 2)
+  startDate         DateTime
+  type              BudgetType
+  dailyBudgetDate   DateTime
+  isWork            Boolean   @default(false)
+  status            BudgetStatus @default(ACTIVE)
+  extraDailyBalance Decimal   @db.Decimal(15, 2) @default(0)
+  companyId         Int
+  company           Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy         Int
+  createdByUser     User      @relation(fields: [createdBy], references: [id])
+  transactions      FinancialTransaction[]
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([companyId])
+  @@index([code])
 }

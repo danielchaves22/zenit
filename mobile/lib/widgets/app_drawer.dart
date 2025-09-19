@@ -1,7 +1,6 @@
 // lib/widgets/app_drawer.dart
 
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -14,10 +13,8 @@ class AppDrawer extends StatelessWidget {
   }
 
   Widget _buildSyncSection(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    bool isLoggedIn = user != null;
     DateTime? lastSync = getLastSync();
-    if (isLoggedIn) {
+    if (true) {
       if (lastSync != null) {
         return ListTile(
           leading: const Icon(Icons.sync),
@@ -36,16 +33,6 @@ class AppDrawer extends StatelessWidget {
           onTap: () {},
         );
       }
-    } else {
-      return ListTile(
-        leading: const Icon(Icons.sync_disabled),
-        title: const Text("Sincronização"),
-        subtitle: const Text("Faça login para sincronizar"),
-        onTap: () {
-          Navigator.pushNamed(context, '/login');
-        },
-      );
-    }
   }
 
   @override

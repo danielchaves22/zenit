@@ -1,6 +1,6 @@
 // lib/pages/login_page.dart
 
-import 'package:firebase_auth/firebase_auth.dart';
+import '../services/api_service.dart';
 import 'package:flutter/material.dart';
 
 class LoginPage extends StatefulWidget {
@@ -14,9 +14,8 @@ class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLoginMode = true; // true = login, false = cadastro
   String? _error;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ApiService api = ApiService();
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -24,22 +23,14 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
-      if (_isLoginMode) {
-        await _auth.signInWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      } else {
-        await _auth.createUserWithEmailAndPassword(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-        );
-      }
-      // Depois de autenticar, retorne à tela principal (por exemplo, a listagem)
+      await api.login(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
       Navigator.pop(context);
-    } on FirebaseAuthException catch (e) {
+    } catch (e) {
       setState(() {
-        _error = e.message;
+        _error = e.toString();
       });
     }
   }
@@ -48,7 +39,7 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isLoginMode ? 'Entrar' : 'Criar Conta'),
+        title: const Text('Entrar'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -84,17 +75,7 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: _submit,
-                child: Text(_isLoginMode ? 'Entrar' : 'Registrar'),
-              ),
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isLoginMode = !_isLoginMode;
-                  });
-                },
-                child: Text(_isLoginMode
-                    ? 'Criar nova conta'
-                    : 'Já possui conta? Entrar'),
+                child: const Text('Entrar'),
               ),
             ],
           ),

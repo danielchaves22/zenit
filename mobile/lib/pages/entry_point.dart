@@ -6,8 +6,7 @@ import '../models/orcamento.dart';
 import 'lista_orcamentos_page.dart';
 import 'resumo_orcamento_page.dart';
 import '../utils.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/api_service.dart';
 import 'package:orcamento_app/services/sync_manager.dart';
 
 class EntryPoint extends StatefulWidget {
@@ -55,26 +54,10 @@ class _EntryPointState extends State<EntryPoint> {
   }
 
   void _startSyncIfNeeded() {
-    // Importa o FirebaseAuth e FirebaseFirestore
-    // Certifique-se de ter adicionado a dependência firebase_auth no pubspec.yaml
-    // e também que o arquivo sync_manager.dart está disponível em lib/services/
-    //
-    // Esse código assume que você importou:
-    // import 'package:firebase_auth/firebase_auth.dart';
-    // import 'package:cloud_firestore/cloud_firestore.dart';
-    // import 'package:orcamento_app/services/sync_manager.dart';
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      // Instancia o SyncManager passando o box local e a instância do Firestore
-      final syncManager = SyncManager(
-        localBox: box,
-        firestore: FirebaseFirestore.instance,
-      );
-      // Inicia a escuta das alterações (push)
-      syncManager.startListening();
-      // Realiza um pull inicial dos dados do backend
-      syncManager.pullOrcamentos();
-    }
+    final api = ApiService();
+    final syncManager = SyncManager(localBox: box, api: api);
+    syncManager.startListening();
+    syncManager.pullOrcamentos();
   }
 
   @override

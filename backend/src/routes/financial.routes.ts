@@ -56,8 +56,9 @@ import {
   getTransactionAutocomplete
 } from '../controllers/financial-transaction.controller';
 
-// ✅ IMPORTAR ROTAS DE RELATÓRIOS
+// ✅ IMPORTAR ROTAS DE RELATÓRIOS E CARTÃO DE CRÉDITO
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
+import creditCardRoutes from './credit-card.routes';
 
 const router = Router();
 
@@ -100,6 +101,9 @@ router.delete('/transactions/:id', deleteTransaction);
 
 // ✅ ROTAS DE RELATÓRIOS - ORDEM IMPORTA!
 router.use('/reports/financial-account-movement', financialAccountMovementRoutes);
+
+// ✅ ROTAS DE CARTÃO DE CRÉDITO
+router.use('/', creditCardRoutes);
 
 // Rotas de Relatórios/Dashboard
 router.get('/summary', getFinancialSummary);

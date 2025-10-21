@@ -42,6 +42,21 @@ enum RecurringFrequency {
   YEARLY
 }
 
+enum InvoiceStatus {
+  OPEN
+  CLOSED
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  CANCELED
+}
+
+enum PaymentType {
+  FULL_PAYMENT
+  MINIMUM_PAYMENT
+  PARTIAL_PAYMENT
+}
+
 model User {
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
@@ -57,6 +72,8 @@ model User {
   financialAccountAccess UserFinancialAccountAccess[]
   grantedPermissions     UserFinancialAccountAccess[] @relation("GrantedPermissions")
   preference             UserPreference?
+  creditCardInstallments CreditCardInstallment[]
+  creditCardInvoicePayments CreditCardInvoicePayment[]
 }
 
 model Company {
@@ -74,6 +91,8 @@ model Company {
   financialTags       FinancialTag[]
   recurringTransactions RecurringTransaction[]
   userFinancialAccountAccess UserFinancialAccountAccess[]
+  creditCardInvoices  CreditCardInvoice[]
+  creditCardInstallments CreditCardInstallment[]
 }
 
 model CompanyGroup {
@@ -119,6 +138,9 @@ model FinancialAccount {
   outgoingTransactions FinancialTransaction[] @relation("FromAccount")
   incomingTransactions FinancialTransaction[] @relation("ToAccount")
   userAccess            UserFinancialAccountAccess[]
+  creditCardConfig      CreditCardConfig?
+  creditCardInvoices    CreditCardInvoice[]
+  creditCardInstallments CreditCardInstallment[]
 
   @@unique([name, companyId])
   @@index([companyId])
@@ -143,6 +165,7 @@ model FinancialCategory {
   // Relações
   transactions    FinancialTransaction[]
   recurringTransactions RecurringTransaction[]
+  creditCardInstallments CreditCardInstallment[]
 
   @@unique([name, parentId, companyId])
   @@unique([companyId, type, isDefault], name: "unique_default_category_per_company_type") // ✅ CONSTRAINT
@@ -182,6 +205,8 @@ model FinancialTransaction {
   scheduledDate           DateTime?
   recurringTransactionId  Int?
   recurringTransaction    RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
+  creditCardInvoiceTransactions CreditCardInvoiceTransaction[]
+  creditCardInvoicePayments CreditCardInvoicePayment[]
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
@@ -274,4 +299,197 @@ model UserPreference {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ============================================
+// CREDIT CARD MODELS
+// ============================================
+
+model CreditCardConfig {
+  id                    Int              @id @default(autoincrement())
+  financialAccountId    Int              @unique
+  financialAccount      FinancialAccount @relation(fields: [financialAccountId], references: [id], onDelete: Cascade)
+
+  // Limites
+  creditLimit           Decimal          @db.Decimal(15, 2)
+  usedLimit             Decimal          @db.Decimal(15, 2) @default(0)
+  availableLimit        Decimal          @db.Decimal(15, 2) @default(0)
+
+  // Ciclo de Faturamento
+  closingDay            Int              // 1-31: Dia do fechamento da fatura
+  dueDay                Int              // 1-31: Dia do vencimento
+  dueDaysAfterClosing   Int              @default(10) // Dias entre fechamento e vencimento
+
+  // Taxas e Juros
+  annualFee             Decimal?         @db.Decimal(15, 2)
+  annualFeeMonthlyCharge Decimal?        @db.Decimal(15, 2)
+  interestRate          Decimal?         @db.Decimal(5, 2)  // Taxa de juros mensal (%)
+  latePaymentFee        Decimal?         @db.Decimal(15, 2)
+  minimumPaymentPercent Decimal          @db.Decimal(5, 2) @default(10.00) // % do valor da fatura
+
+  // Alertas
+  alertLimitPercent     Decimal          @db.Decimal(5, 2) @default(80.00) // Alerta quando usar 80%
+  enableLimitAlerts     Boolean          @default(true)
+  enableDueAlerts       Boolean          @default(true)
+  dueDaysBeforeAlert    Int              @default(3)
+
+  // Controle
+  isActive              Boolean          @default(true)
+  lastInvoiceGenerated  DateTime?        // Data da última fatura gerada
+
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  @@index([financialAccountId])
+  @@index([isActive])
+}
+
+model CreditCardInvoice {
+  id                    Int                      @id @default(autoincrement())
+  financialAccountId    Int
+  financialAccount      FinancialAccount         @relation(fields: [financialAccountId], references: [id], onDelete: Cascade)
+  companyId             Int
+  company               Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Período
+  referenceMonth        Int                      // 1-12
+  referenceYear         Int
+  closingDate           DateTime                 // Data de fechamento
+  dueDate               DateTime                 // Data de vencimento
+
+  // Valores
+  previousBalance       Decimal                  @db.Decimal(15, 2) @default(0)
+  purchasesAmount       Decimal                  @db.Decimal(15, 2) @default(0)
+  paymentsAmount        Decimal                  @db.Decimal(15, 2) @default(0)
+  interestAmount        Decimal                  @db.Decimal(15, 2) @default(0)
+  feesAmount            Decimal                  @db.Decimal(15, 2) @default(0)
+  totalAmount           Decimal                  @db.Decimal(15, 2) @default(0)
+  minimumPayment        Decimal                  @db.Decimal(15, 2) @default(0)
+  paidAmount            Decimal                  @db.Decimal(15, 2) @default(0)
+  remainingAmount       Decimal                  @db.Decimal(15, 2) @default(0)
+
+  // Status e Controle
+  status                InvoiceStatus            @default(OPEN)
+  isPaid                Boolean                  @default(false)
+  paidAt                DateTime?
+  isOverdue             Boolean                  @default(false)
+
+  // Auditoria
+  generatedAt           DateTime                 @default(now())
+  closedAt              DateTime?
+
+  // Relações
+  transactions          CreditCardInvoiceTransaction[]
+  payments              CreditCardInvoicePayment[]
+  installmentPayments   CreditCardInstallmentPayment[]
+
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  @@unique([financialAccountId, referenceYear, referenceMonth])
+  @@index([financialAccountId, status])
+  @@index([companyId, dueDate])
+  @@index([dueDate, status])
+  @@index([status])
+}
+
+model CreditCardInvoiceTransaction {
+  id                    Int                   @id @default(autoincrement())
+  invoiceId             Int
+  invoice               CreditCardInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  transactionId         Int
+  transaction           FinancialTransaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  // Controle de parcelamento
+  installmentId         Int?
+  installment           CreditCardInstallment? @relation(fields: [installmentId], references: [id])
+  isInstallment         Boolean               @default(false)
+
+  createdAt             DateTime              @default(now())
+
+  @@unique([invoiceId, transactionId])
+  @@index([invoiceId])
+  @@index([transactionId])
+  @@index([installmentId])
+}
+
+model CreditCardInstallment {
+  id                    Int                   @id @default(autoincrement())
+  financialAccountId    Int
+  financialAccount      FinancialAccount      @relation(fields: [financialAccountId], references: [id], onDelete: Cascade)
+  companyId             Int
+  company               Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Dados da compra
+  description           String
+  totalAmount           Decimal               @db.Decimal(15, 2)
+  numberOfInstallments  Int
+  installmentAmount     Decimal               @db.Decimal(15, 2)
+
+  // Controle
+  purchaseDate          DateTime
+  firstDueDate          DateTime
+  categoryId            Int?
+  category              FinancialCategory?    @relation(fields: [categoryId], references: [id])
+
+  // Auditoria
+  createdBy             Int
+  createdByUser         User                  @relation(fields: [createdBy], references: [id])
+
+  // Relações
+  invoiceTransactions   CreditCardInvoiceTransaction[]
+  installmentPayments   CreditCardInstallmentPayment[]
+
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  @@index([financialAccountId])
+  @@index([companyId])
+  @@index([categoryId])
+}
+
+model CreditCardInstallmentPayment {
+  id                    Int                      @id @default(autoincrement())
+  installmentId         Int
+  installment           CreditCardInstallment    @relation(fields: [installmentId], references: [id], onDelete: Cascade)
+  invoiceId             Int
+  invoice               CreditCardInvoice        @relation(fields: [invoiceId], references: [id])
+
+  // Dados do pagamento
+  installmentNumber     Int
+  amount                Decimal                  @db.Decimal(15, 2)
+  dueDate               DateTime
+  isPaid                Boolean                  @default(false)
+  paidAt                DateTime?
+
+  createdAt             DateTime                 @default(now())
+
+  @@unique([installmentId, installmentNumber])
+  @@index([installmentId])
+  @@index([invoiceId])
+  @@index([dueDate])
+}
+
+model CreditCardInvoicePayment {
+  id                    Int                   @id @default(autoincrement())
+  invoiceId             Int
+  invoice               CreditCardInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  transactionId         Int?
+  transaction           FinancialTransaction? @relation(fields: [transactionId], references: [id])
+
+  // Dados do pagamento
+  amount                Decimal               @db.Decimal(15, 2)
+  paymentType           PaymentType
+  paymentDate           DateTime
+  notes                 String?
+
+  // Auditoria
+  createdBy             Int
+  createdByUser         User                  @relation(fields: [createdBy], references: [id])
+
+  createdAt             DateTime              @default(now())
+
+  @@index([invoiceId])
+  @@index([transactionId])
+  @@index([paymentDate])
 }

@@ -61,15 +61,17 @@ interface TransactionFormProps {
   isTypeLocked?: boolean;
   onSuccess?: () => void;
   onCancel?: () => void;
+  onTransactionLoaded?: (transaction: Transaction) => void;
 }
 
-export default function TransactionForm({ 
-  mode, 
-  transactionId, 
+export default function TransactionForm({
+  mode,
+  transactionId,
   initialType = 'EXPENSE',
   isTypeLocked = false,
   onSuccess,
-  onCancel 
+  onCancel,
+  onTransactionLoaded
 }: TransactionFormProps) {
   const router = useRouter();
   const { addToast } = useToast();
@@ -190,6 +192,9 @@ export default function TransactionForm({
       const txn = response.data;
       
       setTransaction(txn);
+      if (onTransactionLoaded) {
+        onTransactionLoaded(txn);
+      }
       setFormData({
         description: txn.description,
         amount: txn.amount,
@@ -474,8 +479,22 @@ export default function TransactionForm({
     }
   };
 
-  const getTypeLabel = () => {
-    const baseLabel = mode === 'create' ? 'Nova' : 'Editar';
+  const getHeaderLabel = () => {
+    if (mode === 'edit') {
+      if (loading) {
+        return 'Carregando transação...';
+      }
+
+      const descriptionForDisplay = formData.description || transaction?.description || 'Transação';
+
+      return formatTransactionDescription(
+        descriptionForDisplay,
+        transaction?.installmentNumber,
+        transaction?.totalInstallments
+      );
+    }
+
+    const baseLabel = 'Nova';
     switch (formData.type) {
       case 'INCOME':
         return `${baseLabel} Receita`;
@@ -511,7 +530,7 @@ export default function TransactionForm({
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">{getTypeLabel()}</h1>
+          <h1 className="text-2xl font-semibold text-white">{getHeaderLabel()}</h1>
           <div className="flex items-center gap-2 ml-4">
             <button
               type="button"
@@ -592,7 +611,7 @@ export default function TransactionForm({
         >
           {/* Primeira linha: Valor e recorrência */}
           <div className="flex items-center gap-4">
-            <div >
+            <div>
               <CurrencyInput
                 id="amount"
                 label="Valor *"
@@ -604,7 +623,17 @@ export default function TransactionForm({
                 inputClassName="py-4 text-2xl"
               />
             </div>
-            {!isSimpleMode && mode === 'create' && (
+            {mode === 'edit' &&
+              transaction?.totalInstallments !== undefined &&
+              transaction?.totalInstallments !== null &&
+              transaction.totalInstallments > 1 && (
+                <div className="flex flex-col">
+                  <span className="px-4 py-2 rounded-md bg-blue-900/70 border border-blue-500 text-blue-100 font-semibold uppercase tracking-wide">
+                    {`Parcela ${transaction.installmentNumber ?? 1} de ${transaction.totalInstallments}`}
+                  </span>
+                </div>
+              )}
+            {mode === 'create' && (
               <>
                 <div className="flex items-center h-full">
                   <span className="mr-2 text-sm text-gray-300">Recorrente</span>

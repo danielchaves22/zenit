@@ -9,7 +9,7 @@ import { AutocompleteInput } from '@/components/ui/AutoCompleteInput'; // ✅ IM
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { ArrowLeft, Save, X, Trash2, Calendar, Clock } from 'lucide-react';
+import { ArrowLeft, Save, X, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -81,6 +81,7 @@ export default function TransactionForm({
   const [saving, setSaving] = useState(false);
   const [defaultsLoaded, setDefaultsLoaded] = useState(false);
   const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
+  const [formMode, setFormMode] = useState<'simple' | 'detailed'>('detailed');
 
   const formRef = useRef<HTMLFormElement>(null);
   
@@ -108,15 +109,33 @@ export default function TransactionForm({
   const actionDisabled = saving || (isReadOnly && !isSuperuser);
   const statusDisabled = saving || (isReadOnly && !isSuperuser);
   const isPending = formData.status === 'PENDING';
+  const isSimpleMode = formMode === 'simple';
+  const isCompleted = formData.status === 'COMPLETED';
+  const completionHint = isCompleted
+    ? formData.effectiveDate
+      ? `(efetivada em ${new Date(formData.effectiveDate).toLocaleDateString('pt-BR')})`
+      : '(efetivada hoje)'
+    : '(pendente)';
 
   useEffect(() => {
     fetchAccounts();
     fetchCategories();
-    
+
     if (mode === 'edit' && transactionId) {
       fetchTransaction();
     }
   }, [mode, transactionId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storedMode = localStorage.getItem('transactionFormMode');
+    if (storedMode === 'simple' || storedMode === 'detailed') {
+      setFormMode(storedMode);
+    }
+  }, []);
 
   // Auto-foco no campo de valor para transações novas
   useEffect(() => {
@@ -330,11 +349,34 @@ export default function TransactionForm({
     setFormData(prev => ({ ...prev, amount: value }));
   };
 
+  const handleFormModeChange = (modeToSet: 'simple' | 'detailed') => {
+    if (saving) {
+      return;
+    }
+
+    setFormMode(modeToSet);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('transactionFormMode', modeToSet);
+    }
+  };
+
   const handleRecurringChange = (checked: boolean) => {
     setIsRecurring(checked);
     if (!checked) {
       setFormData(prev => ({ ...prev, repeatTimes: '' }));
     }
+  };
+
+  const handleSimpleStatusChange = (checked: boolean) => {
+    setFormData(prev => {
+      const today = new Date().toISOString().split('T')[0];
+      return {
+        ...prev,
+        status: checked ? 'COMPLETED' : 'PENDING',
+        effectiveDate: checked ? (prev.effectiveDate || today) : '',
+      };
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -463,8 +505,36 @@ export default function TransactionForm({
             Voltar
           </Button>
           <h1 className="text-2xl font-semibold text-white">{getTypeLabel()}</h1>
+          <div className="flex items-center gap-2 ml-4">
+            <button
+              type="button"
+              onClick={() => handleFormModeChange('simple')}
+              className={`px-3 py-1.5 rounded border text-sm font-semibold transition-colors ${
+                isSimpleMode
+                  ? 'border-accent bg-accent text-white'
+                  : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
+              }`}
+              disabled={saving}
+              aria-pressed={isSimpleMode}
+            >
+              Simples
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFormModeChange('detailed')}
+              className={`px-3 py-1.5 rounded border text-sm font-semibold transition-colors ${
+                !isSimpleMode
+                  ? 'border-accent bg-accent text-white'
+                  : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
+              }`}
+              disabled={saving}
+              aria-pressed={!isSimpleMode}
+            >
+              Detalhado
+            </button>
+          </div>
         </div>
-        
+
         <div className="flex items-center gap-3">
 
           {showActions && (
@@ -527,7 +597,7 @@ export default function TransactionForm({
                 inputClassName="py-4 text-2xl"
               />
             </div>
-            {mode === 'create' && (
+            {!isSimpleMode && mode === 'create' && (
               <>
                 <div className="flex items-center h-full">
                   <span className="mr-2 text-sm text-gray-300">Recorrente</span>
@@ -665,99 +735,139 @@ export default function TransactionForm({
               </div>
             )}
           </div>
-          
-          {/* Quarta linha: Status e Datas */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <input type="hidden" name="date" value={formData.date} readOnly />
 
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
-                Status *
-              </label>
-              <select
-                id="status"
-                name="status"
-                value={formData.status}
-                onChange={handleChange}
-                className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
-                required
-                disabled={statusDisabled}
-              >
-                <option value="PENDING">Pendente</option>
-                <option value="COMPLETED">Concluída</option>
-                <option value="CANCELED">Cancelada</option>
-              </select>
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
-                  Data de Vencimento
-                </label>
-                <span className="text-xs text-gray-400">
-                  Para transações pendentes
-                </span>
+          {/* Quarta linha: Status e Datas */}
+          <input type="hidden" name="date" value={formData.date} readOnly />
+          {isSimpleMode ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                    Data de Vencimento
+                  </label>
+                  <span className="text-xs text-gray-400">Padrão: data de hoje</span>
+                </div>
+                <input
+                  id="dueDate"
+                  name="dueDate"
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={handleChange}
+                  disabled={saving || isReadOnly}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                />
               </div>
-              <input
-                id="dueDate"
-                name="dueDate"
-                type="date"
-                value={formData.dueDate}
-                onChange={handleChange}
-                disabled={saving || isReadOnly}
-                className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <label className="block text-sm font-medium text-gray-300" htmlFor="effectiveDate">
-                  Data de Efetivação
+              <div className="flex flex-col justify-center gap-2">
+                <span className="text-sm font-medium text-gray-300">Transação concluída</span>
+                <label className="inline-flex items-center cursor-pointer relative w-12 h-6">
+                  <input
+                    type="checkbox"
+                    checked={isCompleted}
+                    onChange={(e) => handleSimpleStatusChange(e.target.checked)}
+                    className="sr-only peer"
+                    disabled={statusDisabled}
+                  />
+                  <div className="w-full h-full bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-success peer-checked:bg-success transition-colors"></div>
+                  <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6"></div>
                 </label>
-                <span className="text-xs text-gray-400">
-                  Quando a transação foi efetivada
-                </span>
+                <span className="text-xs text-gray-400">{completionHint}</span>
               </div>
-              <input
-                id="effectiveDate"
-                name="effectiveDate"
-                type="date"
-                value={formData.effectiveDate}
-                onChange={handleChange}
-                disabled={saving || isPending || isReadOnly}
-                className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
-              />
             </div>
-          </div>
-          
-          {/* Quinta linha: Tags */}
-          <div>
-            <Input
-              id="tags"
-              name="tags"
-              label="Tags (separadas por vírgula)"
-              value={formData.tags}
-              onChange={handleChange}
-              placeholder="Ex: alimentação, mercado, urgente"
-              disabled={saving || isReadOnly}
-            />
-          </div>
-          
-          {/* Sexta linha: Observações */}
-          <div>
-            <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="notes">
-              Observações
-            </label>
-            <textarea
-              id="notes"
-              name="notes"
-              value={formData.notes}
-              onChange={handleChange}
-              rows={4}
-              className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
-              placeholder="Informações adicionais sobre a transação..."
-              disabled={saving || isReadOnly}
-            />
-          </div>
-          
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
+                  Status *
+                </label>
+                <select
+                  id="status"
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  required
+                  disabled={statusDisabled}
+                >
+                  <option value="PENDING">Pendente</option>
+                  <option value="COMPLETED">Concluída</option>
+                  <option value="CANCELED">Cancelada</option>
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                    Data de Vencimento
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    Para transações pendentes
+                  </span>
+                </div>
+                <input
+                  id="dueDate"
+                  name="dueDate"
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={handleChange}
+                  disabled={saving || isReadOnly}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="effectiveDate">
+                    Data de Efetivação
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    Quando a transação foi efetivada
+                  </span>
+                </div>
+                <input
+                  id="effectiveDate"
+                  name="effectiveDate"
+                  type="date"
+                  value={formData.effectiveDate}
+                  onChange={handleChange}
+                  disabled={saving || isPending || isReadOnly}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {!isSimpleMode && (
+            <>
+              {/* Quinta linha: Tags */}
+              <div>
+                <Input
+                  id="tags"
+                  name="tags"
+                  label="Tags (separadas por vírgula)"
+                  value={formData.tags}
+                  onChange={handleChange}
+                  placeholder="Ex: alimentação, mercado, urgente"
+                  disabled={saving || isReadOnly}
+                />
+              </div>
+
+              {/* Sexta linha: Observações */}
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="notes">
+                  Observações
+                </label>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  rows={4}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  placeholder="Informações adicionais sobre a transação..."
+                  disabled={saving || isReadOnly}
+                />
+              </div>
+            </>
+          )}
+
           {showActions && (
             <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
               <Button

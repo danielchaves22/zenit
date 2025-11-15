@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -7,9 +7,33 @@ export async function getUserPreference(userId: number) {
 }
 
 export async function setColorScheme(userId: number, colorScheme: string) {
+  return updateUserPreferences(userId, { colorScheme });
+}
+
+export async function updateUserPreferences(
+  userId: number,
+  data: {
+    colorScheme?: string | null;
+    confirmNegativeBalanceMovements?: boolean;
+  }
+) {
+  const updateData: Prisma.UserPreferenceUpdateInput = {};
+
+  if (data.colorScheme !== undefined) {
+    updateData.colorScheme = data.colorScheme;
+  }
+
+  if (data.confirmNegativeBalanceMovements !== undefined) {
+    updateData.confirmNegativeBalanceMovements = data.confirmNegativeBalanceMovements;
+  }
+
   return prisma.userPreference.upsert({
     where: { userId },
-    update: { colorScheme },
-    create: { userId, colorScheme }
+    update: updateData,
+    create: {
+      userId,
+      colorScheme: data.colorScheme ?? null,
+      confirmNegativeBalanceMovements: data.confirmNegativeBalanceMovements ?? true
+    }
   });
 }

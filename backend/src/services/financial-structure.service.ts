@@ -70,7 +70,8 @@ export default class FinancialStructureService {
             balance: 0,
             isActive: true,
             isDefault: true,
-            companyId
+            companyId,
+            allowNegativeBalance: true
           }
         });
         logger.info('Created default financial account', { 

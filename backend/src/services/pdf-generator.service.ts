@@ -1,5 +1,6 @@
 // backend/src/services/pdf-generator.service.ts
 import { logger } from '../utils/logger';
+import { formatInstallmentDescription } from '../utils/installments';
 
 interface PDFOptions {
   title: string;
@@ -111,9 +112,14 @@ export default class PDFGeneratorService {
         const amount = formatCurrency(transaction.amount);
         const account = transaction.financialAccount.name;
         const category = transaction.category?.name || 'Sem categoria';
-        
+        const description = formatInstallmentDescription(
+          transaction.description,
+          transaction.installmentNumber,
+          transaction.totalInstallments
+        );
+
         content += `${dateTime.padEnd(20)}${type.padEnd(10)}${amount.padStart(15)} ${account.padEnd(20)} ${category}\n`;
-        content += `${''.padEnd(20)}${transaction.description.padEnd(70)}\n`;
+        content += `${''.padEnd(20)}${description.padEnd(70)}\n`;
         content += '\n';
       }
 
@@ -183,6 +189,8 @@ export default class PDFGeneratorService {
       category?: {
         name: string;
       };
+      installmentNumber?: number | null;
+      totalInstallments?: number | null;
     }
 
     interface PeriodData {
@@ -489,10 +497,17 @@ export default class PDFGeneratorService {
                     </td>
                     <td class="text-center">${period.transactions.length}</td>
                 </tr>
-                ${period.transactions.map((transaction: PeriodTransaction): string => `
+                ${period.transactions.map((transaction: PeriodTransaction): string => {
+                  const formattedDescription = formatInstallmentDescription(
+                    transaction.description,
+                    transaction.installmentNumber,
+                    transaction.totalInstallments
+                  );
+
+                  return `
                     <tr class="transaction-detail">
                         <td style="padding-left: 20px;">
-                            ${transaction.description}<br>
+                            ${formattedDescription}<br>
                             <small style="color: #666;">
                                 ${transaction.financialAccount.name}
                                 ${transaction.category ? ` • ${transaction.category.name}` : ''}
@@ -509,7 +524,8 @@ export default class PDFGeneratorService {
                             <small style="color: #666;">${new Date(transaction.date).toLocaleDateString('pt-BR')}</small>
                         </td>
                     </tr>
-                `).join('')}
+                `;
+                }).join('')}
             `).join('')}
         </tbody>
         ${totals ? `

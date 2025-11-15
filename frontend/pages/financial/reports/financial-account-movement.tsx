@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import api from '@/lib/api';
+import { formatTransactionDescription } from '@/utils/transactions';
 import { Roboto_Condensed } from 'next/font/google';
 
 // Configurar a fonte Roboto Condensed
@@ -42,6 +43,8 @@ interface Transaction {
   type: 'INCOME' | 'EXPENSE';
   financialAccount: FinancialAccount;
   category?: Category;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
 }
 
 interface PeriodData {
@@ -649,7 +652,11 @@ export default function FinancialMovementReport() {
                                   {formatDate(transaction.date)}
                                 </td>
                                 <td className="border border-gray-400 p-1" style={{ padding: '2px 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {transaction.description}
+                                  {formatTransactionDescription(
+                                    transaction.description,
+                                    transaction.installmentNumber,
+                                    transaction.totalInstallments
+                                  )}
                                 </td>
                                 <td className="border border-gray-400 p-1" style={{ padding: '2px 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {transaction.financialAccount.name}

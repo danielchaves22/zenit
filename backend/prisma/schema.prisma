@@ -164,6 +164,10 @@ model FinancialTransaction {
   // ✅ VALORES MÚLTIPLOS (preparação para futuro)
   originalAmount  Decimal?             @db.Decimal(15, 2) // Valor original
   paidAmount      Decimal?             @db.Decimal(15, 2) // Valor pago (com juros/desconto)
+
+  // ✅ CONTROLE DE PARCELAS
+  installmentNumber  Int?
+  totalInstallments  Int?
   
   type            TransactionType
   status          TransactionStatus    @default(COMPLETED) // ✅ MUDANÇA: padrão COMPLETED

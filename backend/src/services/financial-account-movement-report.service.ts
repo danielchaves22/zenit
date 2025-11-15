@@ -29,6 +29,8 @@ interface Transaction {
     name: string;
     color: string;
   };
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
 }
 
 interface PeriodData {
@@ -130,7 +132,9 @@ export default class FinancialAccountMovementReportService {
           date: txn.date.toISOString(),
           type: 'INCOME',
           financialAccount: txn.toAccount,
-          category: txn.category
+          category: txn.category,
+          installmentNumber: txn.installmentNumber,
+          totalInstallments: txn.totalInstallments
         });
       }
 
@@ -143,7 +147,9 @@ export default class FinancialAccountMovementReportService {
           date: txn.date.toISOString(),
           type: 'EXPENSE',
           financialAccount: txn.fromAccount,
-          category: txn.category
+          category: txn.category,
+          installmentNumber: txn.installmentNumber,
+          totalInstallments: txn.totalInstallments
         });
       }
 
@@ -158,7 +164,9 @@ export default class FinancialAccountMovementReportService {
             date: txn.date.toISOString(),
             type: 'EXPENSE',
             financialAccount: txn.fromAccount,
-            category: txn.category
+            category: txn.category,
+            installmentNumber: txn.installmentNumber,
+            totalInstallments: txn.totalInstallments
           });
         }
 
@@ -171,7 +179,9 @@ export default class FinancialAccountMovementReportService {
             date: txn.date.toISOString(),
             type: 'INCOME',
             financialAccount: txn.toAccount,
-            category: txn.category
+            category: txn.category,
+            installmentNumber: txn.installmentNumber,
+            totalInstallments: txn.totalInstallments
           });
         }
       }

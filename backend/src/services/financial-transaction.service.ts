@@ -33,24 +33,29 @@ export default class FinancialTransactionService {
     const repeatTimes = data.repeatTimes && data.repeatTimes > 0 ? data.repeatTimes : 1;
     const baseData = { ...data } as any;
     const baseDescription = data.description;
+    const baseDate = baseData.date;
+    const baseDueDate = baseData.dueDate || null;
+    const baseEffectiveDate = baseData.effectiveDate || null;
     delete baseData.repeatTimes;
 
     const transactions: FinancialTransaction[] = [];
 
     for (let i = 0; i < repeatTimes; i++) {
-      baseData.description = `${baseDescription} (${i + 1} de ${repeatTimes})`;
-      baseData.status = i === 0 ? data.status : TransactionStatus.PENDING;
+      const currentStatus = i === 0 ? data.status : TransactionStatus.PENDING;
 
-      if (i > 0 || baseData.status === TransactionStatus.PENDING) {
-        baseData.effectiveDate = null;
-      }
+      baseData.description = baseDescription;
+      baseData.status = currentStatus;
+      baseData.date = this.addMonths(baseDate, i);
+      baseData.dueDate = baseDueDate ? this.addMonths(baseDueDate, i) : null;
+      baseData.effectiveDate =
+        i === 0 && currentStatus !== TransactionStatus.PENDING
+          ? baseEffectiveDate
+          : null;
+      baseData.installmentNumber = i + 1;
+      baseData.totalInstallments = repeatTimes;
 
       const tx = await this.createSingleTransaction({ ...baseData });
       transactions.push(tx);
-
-      baseData.date = this.addMonths(baseData.date, 1);
-      if (baseData.dueDate) baseData.dueDate = this.addMonths(baseData.dueDate, 1);
-      if (baseData.effectiveDate) baseData.effectiveDate = this.addMonths(baseData.effectiveDate, 1);
     }
 
     return repeatTimes === 1 ? transactions[0] : transactions;
@@ -81,6 +86,8 @@ export default class FinancialTransactionService {
     companyId: number;
     createdBy: number;
     tags?: string[];
+    installmentNumber?: number | null;
+    totalInstallments?: number | null;
   }): Promise<FinancialTransaction> {
 
     const startTime = Date.now();
@@ -220,6 +227,8 @@ export default class FinancialTransactionService {
           type: data.type,
           status: data.status || 'PENDING',
           notes: data.notes,
+          installmentNumber: data.installmentNumber ?? null,
+          totalInstallments: data.totalInstallments ?? null,
           fromAccount: data.fromAccountId ? { connect: { id: data.fromAccountId } } : undefined,
           toAccount: data.toAccountId ? { connect: { id: data.toAccountId } } : undefined,
           category: data.categoryId ? { connect: { id: data.categoryId } } : undefined,
@@ -456,6 +465,8 @@ export default class FinancialTransactionService {
       toAccountId?: number | null;
       categoryId?: number | null;
       tags?: string[];
+      installmentNumber?: number | null;
+      totalInstallments?: number | null;
     }>,
     companyId: number
   ): Promise<FinancialTransaction> {
@@ -521,6 +532,8 @@ export default class FinancialTransactionService {
       if (data.type !== undefined) updatedData.type = data.type;
       if (data.status !== undefined) updatedData.status = data.status;
       if (data.notes !== undefined) updatedData.notes = data.notes;
+      if (data.installmentNumber !== undefined) updatedData.installmentNumber = data.installmentNumber;
+      if (data.totalInstallments !== undefined) updatedData.totalInstallments = data.totalInstallments;
 
       const updated = await tx.financialTransaction.update({
         where: { id },

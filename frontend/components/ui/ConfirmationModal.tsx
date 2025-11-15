@@ -1,5 +1,5 @@
 // frontend/components/ui/ConfirmationModal.tsx
-import React, { useEffect } from 'react';
+import React, { ReactNode, useEffect } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { Button } from './Button';
 
@@ -13,6 +13,7 @@ interface ConfirmationModalProps {
   cancelText?: string;
   type?: 'danger' | 'warning' | 'info';
   loading?: boolean;
+  children?: ReactNode;
 }
 
 export function ConfirmationModal({
@@ -24,7 +25,8 @@ export function ConfirmationModal({
   confirmText = 'Confirmar',
   cancelText = 'Cancelar',
   type = 'danger',
-  loading = false
+  loading = false,
+  children
 }: ConfirmationModalProps) {
   // Handle ESC key
   useEffect(() => {
@@ -106,6 +108,11 @@ export function ConfirmationModal({
               <p className="text-gray-300 leading-relaxed">
                 {message}
               </p>
+              {children && (
+                <div className="mt-4 text-gray-200">
+                  {children}
+                </div>
+              )}
             </div>
 
             {/* Actions */}

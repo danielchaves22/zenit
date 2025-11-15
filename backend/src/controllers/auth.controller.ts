@@ -141,7 +141,8 @@ export async function login(req: Request, res: Response) {
         companies
       },
       preferences: {
-        colorScheme: preferences?.colorScheme || null
+        colorScheme: preferences?.colorScheme || null,
+        confirmNegativeBalanceMovements: preferences?.confirmNegativeBalanceMovements ?? true
       },
       message: 'Login realizado com sucesso'
     });
@@ -268,7 +269,8 @@ export async function getCurrentUser(req: Request, res: Response) {
         companies
       },
       preferences: {
-        colorScheme: preferences?.colorScheme || null
+        colorScheme: preferences?.colorScheme || null,
+        confirmNegativeBalanceMovements: preferences?.confirmNegativeBalanceMovements ?? true
       }
     });
 

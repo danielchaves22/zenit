@@ -20,6 +20,16 @@ interface User {
   mustChangePassword?: boolean;
 }
 
+interface UserPreferences {
+  colorScheme: string | null;
+  confirmNegativeBalanceMovements: boolean;
+}
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+  colorScheme: null,
+  confirmNegativeBalanceMovements: true
+};
+
 interface AuthContextData {
   token: string | null;
   user: User | null;
@@ -37,6 +47,8 @@ interface AuthContextData {
   mustChangePassword: boolean;
   updateMustChangePassword: (value: boolean) => void;
   changeCompany: (id: number) => void;
+  preferences: UserPreferences;
+  updatePreferences: (updates: Partial<UserPreferences>) => Promise<UserPreferences>;
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData);
@@ -102,6 +114,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [companyId, setCompanyId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [mustChangePassword, setMustChangePassword] = useState<boolean>(false);
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
+
+  const normalizePreferences = (raw: any): UserPreferences => ({
+    colorScheme: raw?.colorScheme ?? null,
+    confirmNegativeBalanceMovements: raw?.confirmNegativeBalanceMovements ?? true
+  });
 
   // Carregar estado inicial
   useEffect(() => {
@@ -127,9 +145,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setToken(storedToken);
         setUser({ ...response.data.user, mustChangePassword: storedMustChange === 'true' });
-        if (response.data.preferences?.colorScheme) {
-          changeTheme(response.data.preferences.colorScheme);
-          localStorage.setItem('selected-theme', response.data.preferences.colorScheme);
+        const normalizedPreferences = normalizePreferences(response.data.preferences);
+        setPreferences(normalizedPreferences);
+        if (normalizedPreferences.colorScheme) {
+          changeTheme(normalizedPreferences.colorScheme);
+          localStorage.setItem('selected-theme', normalizedPreferences.colorScheme);
         }
 
         const storedCompanyId = localStorage.getItem('zenit_company_id');
@@ -177,9 +197,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setToken(newToken);
       setUser(userData);
-      if (preferences?.colorScheme) {
-        changeTheme(preferences.colorScheme);
-        localStorage.setItem('selected-theme', preferences.colorScheme);
+      const normalizedPreferences = normalizePreferences(preferences);
+      setPreferences(normalizedPreferences);
+      if (normalizedPreferences.colorScheme) {
+        changeTheme(normalizedPreferences.colorScheme);
+        localStorage.setItem('selected-theme', normalizedPreferences.colorScheme);
       }
       if (userData.companies && userData.companies.length > 0) {
         const firstCompany = userData.companies[0];
@@ -252,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     setCompanyId(null);
+    setPreferences(DEFAULT_PREFERENCES);
   }
 
   function logout() {
@@ -280,6 +303,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   function changeCompany(id: number) {
     setCompanyId(id);
     localStorage.setItem('zenit_company_id', String(id));
+  }
+
+  async function updatePreferencesHandler(
+    updates: Partial<UserPreferences>
+  ): Promise<UserPreferences> {
+    const response = await api.put('/preferences', updates);
+    const normalized = normalizePreferences(response.data);
+
+    setPreferences(normalized);
+
+    if (updates.colorScheme !== undefined && normalized.colorScheme) {
+      changeTheme(normalized.colorScheme);
+      localStorage.setItem('selected-theme', normalized.colorScheme);
+    }
+
+    return normalized;
   }
 
   // Auto-refresh com verificação menos agressiva
@@ -327,7 +366,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : false,
         mustChangePassword,
         updateMustChangePassword,
-        changeCompany
+        changeCompany,
+        preferences,
+        updatePreferences: updatePreferencesHandler
       }}
     >
       {children}

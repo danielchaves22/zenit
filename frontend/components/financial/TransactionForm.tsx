@@ -1,5 +1,5 @@
 // frontend/components/financial/TransactionForm.tsx - COM DATAS DE VENCIMENTO E EFETIVAÇÃO
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -13,6 +13,7 @@ import { ArrowLeft, Save, X, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
 import { formatTransactionDescription } from '@/utils/transactions';
 import { useAuth } from '@/contexts/AuthContext';
+import { getApiErrorMessage } from '@/utils/errors';
 
 interface Account {
   id: number;
@@ -20,6 +21,8 @@ interface Account {
   type: string;
   isDefault: boolean;
   isActive: boolean;
+  balance: string | number;
+  allowNegativeBalance: boolean;
 }
 
 interface Category {
@@ -76,7 +79,7 @@ export default function TransactionForm({
   const router = useRouter();
   const { addToast } = useToast();
   const confirmation = useConfirmation();
-  const { userRole } = useAuth();
+  const { userRole, preferences, updatePreferences } = useAuth();
   const isSuperuser = userRole === 'SUPERUSER';
   
   const [transaction, setTransaction] = useState<Transaction | null>(null);
@@ -107,6 +110,41 @@ export default function TransactionForm({
   });
 
   const [isRecurring, setIsRecurring] = useState(false);
+
+  const createDefaultNegativeConfirmation = () => ({
+    open: false,
+    payload: null as any,
+    accountName: '',
+    currentBalance: 0,
+    transactionAmount: 0
+  });
+
+  const [negativeConfirmation, setNegativeConfirmation] = useState(createDefaultNegativeConfirmation);
+  const [skipNegativeConfirmation, setSkipNegativeConfirmation] = useState(false);
+
+  const currencyFormatter = useMemo(
+    () => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }),
+    []
+  );
+
+  const parseToNumber = (value: string | number | null | undefined) => {
+    if (value === null || value === undefined) {
+      return 0;
+    }
+
+    if (typeof value === 'number') {
+      return value;
+    }
+
+    let sanitized = value;
+
+    if (sanitized.includes(',')) {
+      sanitized = sanitized.replace(/\./g, '').replace(',', '.');
+    }
+
+    const numeric = Number(sanitized);
+    return Number.isNaN(numeric) ? 0 : numeric;
+  };
 
   // Verificar se o formulário deve estar somente leitura
   const isReadOnly = mode === 'edit' && transaction?.status === 'COMPLETED';
@@ -210,9 +248,9 @@ export default function TransactionForm({
         tags: txn.tags.map((t: any) => t.name).join(', '),
         repeatTimes: txn.repeatTimes?.toString() || ''
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error('Erro ao carregar transação:', error);
-      addToast('Erro ao carregar dados da transação', 'error');
+      addToast(getApiErrorMessage(error, 'Erro ao carregar dados da transação'), 'error');
       handleCancel();
     } finally {
       setLoading(false);
@@ -225,7 +263,7 @@ export default function TransactionForm({
       setAccounts(response.data);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
-      addToast('Erro ao carregar contas', 'error');
+      addToast(getApiErrorMessage(error, 'Erro ao carregar contas'), 'error');
     }
   }
 
@@ -235,7 +273,7 @@ export default function TransactionForm({
       setCategories(response.data);
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
-      addToast('Erro ao carregar categorias', 'error');
+      addToast(getApiErrorMessage(error, 'Erro ao carregar categorias'), 'error');
     }
   }
 
@@ -387,12 +425,80 @@ export default function TransactionForm({
     });
   };
 
+  const submitTransaction = async (payload: any) => {
+    try {
+      if (mode === 'create') {
+        await api.post('/financial/transactions', payload);
+        addToast('Transação criada com sucesso', 'success');
+      } else {
+        await api.put(`/financial/transactions/${transactionId}`, payload);
+        addToast('Transação atualizada com sucesso', 'success');
+      }
+
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push('/financial/transactions');
+      }
+
+      return true;
+    } catch (error: any) {
+      console.error('Erro ao salvar transação:', error);
+      addToast(
+        getApiErrorMessage(error, `Erro ao ${mode === 'create' ? 'criar' : 'atualizar'} transação`),
+        'error'
+      );
+      return false;
+    }
+  };
+
+  const handleNegativeConfirmationClose = () => {
+    setNegativeConfirmation(createDefaultNegativeConfirmation());
+    setSkipNegativeConfirmation(false);
+  };
+
+  const handleNegativeConfirmationConfirm = async () => {
+    if (!negativeConfirmation.payload) {
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      if (skipNegativeConfirmation && preferences.confirmNegativeBalanceMovements) {
+        try {
+          await updatePreferences({ confirmNegativeBalanceMovements: false });
+          addToast('Confirmação desativada para movimentações sem saldo.', 'success');
+        } catch (error) {
+          addToast(
+            getApiErrorMessage(
+              error,
+              'Não foi possível atualizar a preferência de confirmação.'
+            ),
+            'error'
+          );
+          return;
+        }
+      }
+
+      const success = await submitTransaction(negativeConfirmation.payload);
+      if (success) {
+        handleNegativeConfirmationClose();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) {
+      return;
+    }
+
     setSaving(true);
-    
+
     try {
-      // Preparar dados para envio
       const payload = {
         ...formData,
         amount: parseFloat(formData.amount),
@@ -405,28 +511,44 @@ export default function TransactionForm({
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
         repeatTimes: isRecurring ? Number(formData.repeatTimes || 0) : 0
       };
-      
-      if (mode === 'create') {
-        await api.post('/financial/transactions', payload);
-        addToast('Transação criada com sucesso', 'success');
-      } else {
-        await api.put(`/financial/transactions/${transactionId}`, payload);
-        addToast('Transação atualizada com sucesso', 'success');
+
+      const amountValue = typeof payload.amount === 'number'
+        ? payload.amount
+        : parseToNumber(payload.amount as any);
+
+      if (mode === 'create' && payload.type === 'EXPENSE' && payload.fromAccountId) {
+        const fromAccount = accounts.find(acc => acc.id === payload.fromAccountId);
+
+        if (fromAccount) {
+          const accountBalance = parseToNumber(fromAccount.balance);
+
+          if (!fromAccount.allowNegativeBalance && accountBalance < amountValue) {
+            addToast(
+              'A conta selecionada não permite saldo negativo e não possui saldo suficiente para esta despesa.',
+              'error'
+            );
+            return;
+          }
+
+          if (
+            fromAccount.allowNegativeBalance &&
+            accountBalance < amountValue &&
+            preferences.confirmNegativeBalanceMovements
+          ) {
+            setNegativeConfirmation({
+              open: true,
+              payload,
+              accountName: fromAccount.name,
+              currentBalance: accountBalance,
+              transactionAmount: amountValue
+            });
+            setSkipNegativeConfirmation(false);
+            return;
+          }
+        }
       }
-      
-      // Callback de sucesso ou redirecionamento padrão
-      if (onSuccess) {
-        onSuccess();
-      } else {
-        router.push('/financial/transactions');
-      }
-      
-    } catch (error: any) {
-      console.error('Erro ao salvar transação:', error);
-      addToast(
-        error.response?.data?.error || `Erro ao ${mode === 'create' ? 'criar' : 'atualizar'} transação`,
-        'error'
-      );
+
+      await submitTransaction(payload);
     } finally {
       setSaving(false);
     }
@@ -458,7 +580,7 @@ export default function TransactionForm({
             router.push('/financial/transactions');
           }
         } catch (error: any) {
-          addToast(error.response?.data?.error || 'Erro ao excluir transação', 'error');
+          addToast(getApiErrorMessage(error, 'Erro ao excluir transação'), 'error');
           throw error;
         }
       }
@@ -934,6 +1056,60 @@ export default function TransactionForm({
           )}
         </form>
       </Card>
+
+      <ConfirmationModal
+        isOpen={negativeConfirmation.open}
+        onClose={handleNegativeConfirmationClose}
+        onConfirm={handleNegativeConfirmationConfirm}
+        title="Confirmar movimentação com saldo negativo"
+        message={`A conta "${negativeConfirmation.accountName}" ficará com saldo negativo. Deseja continuar?`}
+        confirmText="Confirmar lançamento"
+        cancelText="Cancelar"
+        type="warning"
+        loading={saving}
+      >
+        <div className="space-y-3 text-sm">
+          <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3">
+            <p>
+              Saldo atual:{' '}
+              <strong>{currencyFormatter.format(negativeConfirmation.currentBalance)}</strong>
+            </p>
+            <p>
+              Valor da despesa:{' '}
+              <strong>{currencyFormatter.format(negativeConfirmation.transactionAmount)}</strong>
+            </p>
+            <p>
+              Déficit estimado:{' '}
+              <strong className="text-red-300">
+                {currencyFormatter.format(
+                  negativeConfirmation.transactionAmount - negativeConfirmation.currentBalance
+                )}
+              </strong>
+            </p>
+            <p>
+              Saldo projetado:{' '}
+              <strong>
+                {currencyFormatter.format(
+                  negativeConfirmation.currentBalance - negativeConfirmation.transactionAmount
+                )}
+              </strong>
+            </p>
+          </div>
+
+          {preferences.confirmNegativeBalanceMovements && (
+            <label className="flex items-center gap-3 text-gray-200">
+              <input
+                type="checkbox"
+                checked={skipNegativeConfirmation}
+                onChange={(event) => setSkipNegativeConfirmation(event.target.checked)}
+                className="h-4 w-4 rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                disabled={saving}
+              />
+              Não solicitar confirmação novamente para esta situação
+            </label>
+          )}
+        </div>
+      </ConfirmationModal>
 
       <ConfirmationModal
         isOpen={confirmation.isOpen}

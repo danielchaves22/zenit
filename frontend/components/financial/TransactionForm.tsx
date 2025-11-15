@@ -11,6 +11,7 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { ArrowLeft, Save, X, Trash2 } from 'lucide-react';
 import api from '@/lib/api';
+import { formatTransactionDescription } from '@/utils/transactions';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface Account {
@@ -43,6 +44,8 @@ interface Transaction {
   toAccount?: { id: number; name: string };
   category?: { id: number; name: string; color: string };
   tags: { id: number; name: string }[];
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
 }
 
 // ✅ INTERFACE PARA SUGESTÕES DE AUTOCOMPLETE
@@ -430,7 +433,11 @@ export default function TransactionForm({
     confirmation.confirm(
       {
         title: 'Confirmar Exclusão',
-        message: `Tem certeza que deseja excluir a transação "${transaction.description}"? Esta ação não pode ser desfeita.`,
+        message: `Tem certeza que deseja excluir a transação "${formatTransactionDescription(
+          transaction.description,
+          transaction.installmentNumber,
+          transaction.totalInstallments
+        )}"? Esta ação não pode ser desfeita.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         type: 'danger'

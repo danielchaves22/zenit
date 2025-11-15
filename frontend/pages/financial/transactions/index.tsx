@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
+import { formatTransactionDescription } from '@/utils/transactions';
 
 interface Transaction {
   id: number;
@@ -34,6 +35,8 @@ interface Transaction {
   tags: { id: number; name: string }[];
   createdByUser: { id: number; name: string };
   createdAt: string;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
 }
 
 interface TransactionFilters {
@@ -135,7 +138,11 @@ export default function TransactionsListPage() {
     confirmation.confirm(
       {
         title: 'Confirmar Exclusão',
-        message: `Tem certeza que deseja excluir a transação "${transaction.description}"? Esta ação não pode ser desfeita.`,
+        message: `Tem certeza que deseja excluir a transação "${formatTransactionDescription(
+          transaction.description,
+          transaction.installmentNumber,
+          transaction.totalInstallments
+        )}"? Esta ação não pode ser desfeita.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         type: 'danger'
@@ -524,7 +531,11 @@ export default function TransactionsListPage() {
                       <td className="px-4 py-3">
                         <div>
                           <div className="font-medium text-white">
-                            {transaction.description}
+                            {formatTransactionDescription(
+                              transaction.description,
+                              transaction.installmentNumber,
+                              transaction.totalInstallments
+                            )}
                           </div>
                           {transaction.notes && (
                             <div className="text-xs text-gray-400 mt-1">

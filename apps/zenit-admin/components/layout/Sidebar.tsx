@@ -3,10 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  PieChart, CreditCard, Building2, Receipt, Home,
-  Users, Settings, ChevronLeft, ChevronRight, Shield, BarChart3
-} from 'lucide-react';
+import { Home, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { AccessGuard } from '@/components/ui/AccessGuard';
@@ -134,75 +131,17 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       ],
     },
     {
-      title: 'Financeiro',
-      type: 'title'
-    },
-    {
-      icon: <Receipt size={20} />,
-      label: 'Transações',
-      subItems: [
-        { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
-        { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
-        { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
-        { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
-      ],
-    },
-    {
-      icon: <PieChart size={20} />,
-      label: 'Dashboard',
-      subItems: [
-        { label: 'Dashboard Financeiro', href: '/financial/dashboard'},
-      ],
-    },
-    {
-      icon: <CreditCard size={20} />,
-      label: 'Contas',
-      subItems: [
-        { label: 'Contas', href: '/financial/accounts'},
-      ],
-      requiredPermission: 'FINANCIAL_ACCOUNTS'
+      title: 'Administração',
+      type: 'title',
+      requiredRole: 'ADMIN'
     },
     {
       icon: <Building2 size={20} />,
-      label: 'Categorias',
+      label: 'Empresas',
       subItems: [
-        { label: 'Categorias', href: '/financial/categories' },
+        { label: 'Empresas', href: '/admin/companies' },
       ],
-      requiredPermission: 'FINANCIAL_CATEGORIES'
-    },
-    {
-      title: 'Relatórios',
-      type: 'title'
-    },
-    {
-      icon: <BarChart3 size={20} />,
-      label: 'Relatórios',
-      subItems: [
-        { label: 'Relatórios', hideWhenExpanded: true, isHeader: true },
-        { label: 'Movimentação de Contas Financeiras', href: '/financial/reports/financial-account-movement' },
-        { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' }
-      ],
-    },
-    {
-      title: 'Administração',
-      type: 'title',
-      requiredRole: 'SUPERUSER' // ✅ Seção só aparece para SUPERUSER ou ADMIN
-    },
-    {
-      icon: <Users size={20} />,
-      label: 'Usuários',
-      subItems: [
-        { label: 'Usuários', href: '/admin/users' },
-      ],
-      requiredRole: 'SUPERUSER' // ✅ Apenas SUPERUSER e ADMIN podem ver
-    },
-    {
-      icon: <Settings size={20} />,
-      label: 'Configurações',
-      subItems: [
-        { label: 'Configurações', href: '/admin/settings' },
-      ],
-      requiredRole: 'SUPERUSER' // ✅ Apenas SUPERUSER e ADMIN podem ver
+      allowedRoles: ['ADMIN']
     },
   ];
 

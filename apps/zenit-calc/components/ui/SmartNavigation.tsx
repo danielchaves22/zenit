@@ -3,7 +3,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { usePermissions, UserRole } from '@/hooks/usePermissions';
-import { Building2, Users } from 'lucide-react';
+import { Users } from 'lucide-react';
 
 interface NavigationItem {
   label: string;
@@ -45,14 +45,6 @@ export function SmartNavigation({
       description: 'Gerenciar Usuários',
       category: 'administração',
       allowedRoles: ['ADMIN', 'SUPERUSER', 'USER']
-    },
-    {
-      label: 'Empresas',
-      href: '/admin/companies',
-      icon: <Building2 size={20} />,
-      description: 'Administrar empresas',
-      category: 'administração',
-      allowedRoles: ['ADMIN']
     }
   ];
 

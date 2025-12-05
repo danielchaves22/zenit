@@ -3,11 +3,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { usePermissions, UserRole } from '@/hooks/usePermissions';
-import { 
-  Home, DollarSign, CreditCard, Receipt, Building2, 
-  BarChart3, Users, Settings, TrendingUp, TrendingDown,
-  ArrowUpDown, Calendar
-} from 'lucide-react';
+import { Home, Building2 } from 'lucide-react';
 
 interface NavigationItem {
   label: string;
@@ -21,40 +17,11 @@ interface NavigationItem {
 
 const quickNavigationItems: NavigationItem[] = [
   {
-    label: 'Nova Despesa',
-    href: '/financial/transactions/new?type=EXPENSE&locked=true',
-    icon: <TrendingDown size={16} />,
-    description: 'Registrar nova despesa',
-    category: 'financeiro'
-  },
-  {
-    label: 'Nova Receita',
-    href: '/financial/transactions/new?type=INCOME&locked=true',
-    icon: <TrendingUp size={16} />,
-    description: 'Registrar nova receita',
-    category: 'financeiro'
-  },
-  {
-    label: 'Nova Transferência',
-    href: '/financial/transactions/new?type=TRANSFER&locked=true',
-    icon: <ArrowUpDown size={16} />,
-    description: 'Transferir entre contas',
-    category: 'financeiro'
-  },
-  
-  {
-    label: 'Transações',
-    href: '/financial/transactions',
-    icon: <Receipt size={20} />,
-    description: 'Lançamentos financeiros',
-    category: 'financeiro'
-  },
-  {
-    label: 'Dashboard Financeiro',
-    href: '/financial/dashboard',
-    icon: <DollarSign size={20} />,
-    description: 'Resumos e indicadores financeiros',
-    category: 'financeiro'
+    label: 'Empresas',
+    href: '/admin/companies',
+    icon: <Building2 size={20} />,
+    description: 'Gerenciar empresas cadastradas',
+    category: 'administracao'
   }
 ];
 
@@ -69,91 +36,14 @@ const navigationItems: NavigationItem[] = [
     category: 'principal'
   },
   
-  // Módulo Financeiro
-  {
-    label: 'Dashboard Financeiro',
-    href: '/financial/dashboard',
-    icon: <DollarSign size={20} />,
-    description: 'Resumos e indicadores financeiros',
-    category: 'financeiro'
-  },
-  {
-    label: 'Nova Despesa',
-    href: '/financial/transactions/new?type=EXPENSE&locked=true',
-    icon: <TrendingDown size={16} />,
-    description: 'Registrar nova despesa',
-    category: 'financeiro'
-  },
-  {
-    label: 'Nova Receita',
-    href: '/financial/transactions/new?type=INCOME&locked=true',
-    icon: <TrendingUp size={16} />,
-    description: 'Registrar nova receita',
-    category: 'financeiro'
-  },
-  {
-    label: 'Nova Transferência',
-    href: '/financial/transactions/new?type=TRANSFER&locked=true',
-    icon: <ArrowUpDown size={16} />,
-    description: 'Transferir entre contas',
-    category: 'financeiro'
-  },
-  
-  {
-    label: 'Transações',
-    href: '/financial/transactions',
-    icon: <Receipt size={20} />,
-    description: 'Lançamentos financeiros',
-    category: 'financeiro'
-  },
-  
-  {
-    label: 'Contas Financeiras',
-    href: '/financial/accounts',
-    icon: <CreditCard size={20} />,
-    description: 'Gerenciar contas bancárias e cartões',
-    category: 'financeiro'
-  },
-  {
-    label: 'Categorias',
-    href: '/financial/categories',
-    icon: <Building2 size={20} />,
-    description: 'Organizar receitas e despesas',
-    category: 'financeiro'
-  },
-  
-  // Relatórios
-  {
-    label: 'Relatórios Financeiros',
-    href: '/financial/reports',
-    icon: <BarChart3 size={20} />,
-    description: 'Análises e demonstrativos',
-    category: 'relatórios'
-  },
-  {
-    label: 'Movimentação de Contas',
-    href: '/financial/reports/financial-account-movement',
-    icon: <Calendar size={16} />,
-    description: 'Relatório detalhado de movimentações',
-    category: 'relatórios'
-  },
-  
   // Administração
   {
-    label: 'Usuários',
-    href: '/admin/users',
-    icon: <Users size={20} />,
-    description: 'Gerenciar usuários do sistema',
-    category: 'administração',
-    requiredRole: 'SUPERUSER'
-  },
-  {
-    label: 'Configurações',
-    href: '/admin/settings',
-    icon: <Settings size={20} />,
-    description: 'Configurações do sistema',
-    category: 'administração',
-    requiredRole: 'SUPERUSER'
+    label: 'Empresas',
+    href: '/admin/companies',
+    icon: <Building2 size={20} />,
+    description: 'Administrar empresas',
+    category: 'administracao',
+    allowedRoles: ['ADMIN']
   }
 ];
 

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Building2, Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarProps {
@@ -59,14 +59,6 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       visible: canSeeUsers,
       subItems: [
         { label: 'Usuários', href: '/admin/users', isHeader: true, hideWhenExpanded: true },
-      ],
-    },
-    {
-      icon: (cls: string) => <Building2 size={20} className={cls} />,
-      label: 'Empresas',
-      visible: canSeeCompanies,
-      subItems: [
-        { label: 'Empresas', href: '/admin/companies', isHeader: true, hideWhenExpanded: true },
       ],
     },
   ].filter(i => i.visible);

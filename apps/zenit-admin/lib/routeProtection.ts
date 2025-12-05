@@ -11,30 +11,17 @@ export interface RoutePermission {
 
 // ✅ CONFIGURAÇÃO DE PERMISSÕES POR ROTA
 export const routePermissions: RoutePermission[] = [
-  // Rotas de Administração - Usuários
+  // Rotas de Administração - Empresas (app dedicada)
   {
-    path: '/admin/users',
-    requiredRole: 'SUPERUSER',
+    path: '/admin/companies',
+    allowedRoles: ['ADMIN'],
     redirectTo: '/'
   },
-  
-  // Rotas de Administração - Configurações
-  {
-    path: '/admin/settings',
-    requiredRole: 'SUPERUSER',
-    redirectTo: '/'
-  },
-  
-  // Rotas Financeiras - Acesso para todos
-  {
-    path: '/financial/*',
-    requiredRole: 'USER' // Todos os usuários autenticados
-  },
-  
-  // Área administrativa geral
+
+  // Área administrativa geral - força admin em qualquer rota /admin
   {
     path: '/admin/*',
-    requiredRole: 'SUPERUSER', // Fallback para área admin
+    requiredRole: 'ADMIN',
     redirectTo: '/'
   }
 ];
@@ -120,8 +107,8 @@ export function getAllowedRoutes(userRole: UserRole | null): string[] {
   );
   
   // Rotas administrativas baseadas no role
-  if (userRole === 'SUPERUSER' || userRole === 'ADMIN') {
-    allowedRoutes.push('/admin/users', '/admin/settings');
+  if (userRole === 'ADMIN') {
+    allowedRoutes.push('/admin/companies');
   }
   
   return allowedRoutes;

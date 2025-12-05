@@ -6,11 +6,11 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { MainNavigation, QuickNavigation } from '@/components/ui/SmartNavigation';
-import { DollarSign, Users, Building2, TrendingUp, Zap, Shield } from 'lucide-react';
+import { DollarSign, Users, TrendingUp, Zap, Shield } from 'lucide-react';
 
 export default function HomePage() {
   const { user } = useAuth();
-  const { getRoleLabel, currentRole, canManageUsers, canManageCompanies } = usePermissions();
+  const { getRoleLabel, currentRole, canManageUsers } = usePermissions();
 
   const getQuickStats = () => {
     const stats = [
@@ -29,14 +29,6 @@ export default function HomePage() {
         color: 'text-blue-400',
         bgColor: 'bg-blue-900/20',
         available: canManageUsers()
-      },
-      {
-        label: 'Empresas',
-        value: '3',
-        icon: <Building2 size={20} />,
-        color: 'text-purple-400',
-        bgColor: 'bg-purple-900/20',
-        available: canManageCompanies()
       },
       {
         label: 'Crescimento',
@@ -107,11 +99,10 @@ export default function HomePage() {
                   <span className="px-3 py-1 bg-blue-600 text-white text-sm rounded-full">
                     Perfil: {getRoleLabel()}
                   </span>
-                  <span className="px-3 py-1 bg-[#1e2126] text-blue-300 text-sm rounded-full border border-blue-600">
+                    <span className="px-3 py-1 bg-[#1e2126] text-blue-300 text-sm rounded-full border border-blue-600">
                     Funcionalidades: {(() => {
                       let count = 6; // Funcionalidades básicas do financeiro
                       if (canManageUsers()) count += 1;
-                      if (canManageCompanies()) count += 1;
                       return count;
                     })()} disponíveis
                   </span>

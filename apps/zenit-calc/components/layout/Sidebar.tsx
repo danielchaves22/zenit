@@ -1,8 +1,8 @@
 ﻿// frontend/components/layout/Sidebar.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarProps {
@@ -38,10 +38,19 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
 
   const [internalCollapsed, setInternalCollapsed] = useState(getSavedCollapsedState);
   const collapsed = isCollapsed !== undefined ? isCollapsed : internalCollapsed;
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
   }, [collapsed]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const toggleSidebar = () => {
     const next = !collapsed;
@@ -61,19 +70,42 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         { label: 'Usuários', href: '/admin/users', isHeader: true, hideWhenExpanded: true },
       ],
     },
+    {
+      icon: (cls: string) => <Building2 size={20} className={cls} />,
+      label: 'Empresas',
+      visible: canSeeCompanies,
+      subItems: [
+        { label: 'Empresas', href: '/admin/companies', isHeader: true, hideWhenExpanded: true },
+      ],
+    },
   ].filter(i => i.visible);
 
   const [activeMenu, setActiveMenu] = useState<MenuItem | null>(null);
   const [submenuPosition, setSubmenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  const clearCloseTimeout = () => {
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleCloseMenu = () => {
+    clearCloseTimeout();
+    closeTimeoutRef.current = setTimeout(() => {
+      setActiveMenu(null);
+    }, 140);
+  };
 
   const getFirstClickableSubItem = (item: MenuItem) => item.subItems.find(s => !!s.href);
   const hasMultipleClickableSubItems = (item: MenuItem) =>
     item.subItems.filter(s => !!s.href && !s.hideWhenExpanded).length > 1;
 
   const handleMouseEnter = (item: MenuItem, e: React.MouseEvent) => {
+    clearCloseTimeout();
     try {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setSubmenuPosition({ top: rect.top + window.scrollY, left: rect.right + 8 });
+      setSubmenuPosition({ top: rect.top + window.scrollY, left: rect.right + 1 });
     } catch {}
     if (collapsed || hasMultipleClickableSubItems(item)) {
       setActiveMenu(item);
@@ -82,7 +114,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     }
   };
 
-  const handleMouseLeave = () => setActiveMenu(null);
+  const handleMouseLeave = () => scheduleCloseMenu();
 
   return (
     <div
@@ -102,7 +134,12 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
           {menuItems.map((item, idx) => {
             const first = getFirstClickableSubItem(item);
             const href = first?.href || '#';
-            const isActive = item.subItems.some(sub => sub.href && router.pathname === sub.href);
+            const isActive = item.subItems.some(sub => {
+              if (!sub.href) return false;
+              if (router.pathname === sub.href) return true;
+              if (sub.href !== '/' && router.pathname.startsWith(sub.href + '/')) return true;
+              return false;
+            });
 
             if (collapsed) {
               return (
@@ -125,7 +162,9 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
               <li key={idx}>
                 <Link
                   href={href}
-                  className="flex items-center justify-between px-3 py-2 hover:bg-elevated"
+                  className={`flex items-center justify-between px-3 py-2 ${
+                    isActive ? 'bg-elevated' : 'hover:bg-elevated'
+                  }`}
                   style={{ borderRight: isActive ? '2px solid var(--color-primary)' : undefined }}
                   onMouseEnter={(e) => handleMouseEnter(item, e)}
                   onMouseLeave={handleMouseLeave}
@@ -142,16 +181,12 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         </ul>
       </nav>
 
-      <div className="p-3 border-t border-soft text-xs text-muted">
-        <div className={`${collapsed ? 'hidden' : 'block'}`}>Acesso controlado por role</div>
-      </div>
-
       {activeMenu && (
         <div
           className="fixed bg-surface border border-soft rounded shadow-lg z-50 animate-fadeIn"
           style={{ left: submenuPosition.left, top: submenuPosition.top, minWidth: 200 }}
-          onMouseEnter={() => setActiveMenu(activeMenu)}
-          onMouseLeave={handleMouseLeave}
+          onMouseEnter={clearCloseTimeout}
+          onMouseLeave={scheduleCloseMenu}
         >
           <div className="py-1">
             {activeMenu.subItems

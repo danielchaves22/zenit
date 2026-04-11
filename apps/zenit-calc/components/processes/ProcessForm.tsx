@@ -67,6 +67,10 @@ function formatStatus(status: ProcessStatus | null): string {
   return 'Calculo';
 }
 
+function formatOrigin(originType: ProcessOriginType): string {
+  return originType === 'IMPORT' ? 'Importacao' : 'Manual';
+}
+
 export function ProcessForm({ mode, processId }: ProcessFormProps) {
   const router = useRouter();
   const { addToast } = useToast();
@@ -87,6 +91,7 @@ export function ProcessForm({ mode, processId }: ProcessFormProps) {
   const [selectedTags, setSelectedTags] = useState<ProcessTag[]>([]);
   const [newTagName, setNewTagName] = useState('');
   const [history, setHistory] = useState<ProcessStatusHistoryItem[]>([]);
+  const [originTypeInfo, setOriginTypeInfo] = useState<ProcessOriginType>('MANUAL');
 
   useEffect(() => {
     if (isEdit && (processId === undefined || processId === null)) return;
@@ -133,6 +138,9 @@ export function ProcessForm({ mode, processId }: ProcessFormProps) {
 
         setSelectedTags(process.processTags.map((item) => item.tag));
         setHistory(process.statusHistory || []);
+        setOriginTypeInfo(process.originType || 'MANUAL');
+      } else {
+        setOriginTypeInfo('MANUAL');
       }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erro ao carregar dados do formulario.');
@@ -263,6 +271,13 @@ export function ProcessForm({ mode, processId }: ProcessFormProps) {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-300 mb-1">Origem</label>
+            <div className="w-full px-3 py-2 bg-elevated border border-soft rounded text-base-color">
+              {formatOrigin(originTypeInfo)}
+            </div>
           </div>
 
           <Input

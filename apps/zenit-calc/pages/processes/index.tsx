@@ -11,10 +11,11 @@ import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { useToast } from '@/components/ui/ToastContext';
 import TagMultiSelectAutocomplete, { TagOption } from '@/components/ui/TagMultiSelectAutocomplete';
-import { Plus, FileText, Edit2, Trash2 } from 'lucide-react';
+import { Plus, FileText, Edit2, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 
 type ProcessStatus = 'SOLICITACAO' | 'INICIAL' | 'CALCULO';
+type ProcessOriginType = 'MANUAL' | 'IMPORT';
 type TagMatchMode = 'ANY' | 'ALL';
 
 interface ProcessTag extends TagOption {}
@@ -22,6 +23,7 @@ interface ProcessTag extends TagOption {}
 interface ProcessItem {
   id: number;
   status: ProcessStatus;
+  originType: ProcessOriginType;
   requestingLawyerName: string | null;
   claimantName: string | null;
   notes: string | null;
@@ -58,6 +60,16 @@ function statusClass(status: ProcessStatus): string {
   return 'bg-emerald-100 text-emerald-900 border border-emerald-300';
 }
 
+function formatOrigin(originType: ProcessOriginType): string {
+  return originType === 'IMPORT' ? 'Importacao' : 'Manual';
+}
+
+function originClass(originType: ProcessOriginType): string {
+  return originType === 'IMPORT'
+    ? 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+    : 'bg-slate-100 text-slate-900 border border-slate-300';
+}
+
 export default function ProcessesPage() {
   const router = useRouter();
   const confirmation = useConfirmation();
@@ -71,6 +83,7 @@ export default function ProcessesPage() {
   const [endDateFilter, setEndDateFilter] = useState('');
   const [tagMatchMode, setTagMatchMode] = useState<TagMatchMode>('ANY');
   const [tagMatchModeLoaded, setTagMatchModeLoaded] = useState(false);
+  const [isAdvancedFiltersOpen, setIsAdvancedFiltersOpen] = useState(false);
 
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
@@ -300,31 +313,46 @@ export default function ProcessesPage() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-            <div className="md:col-span-3">
-              <TagMultiSelectAutocomplete
-                id="process-filter-tags"
-                label="Filtrar por tags"
-                selectedOptions={selectedTags}
-                onSelectedOptionsChange={(options) => setSelectedTags(options as ProcessTag[])}
-                fetchOptions={fetchTagOptions}
-                placeholder="Digite para buscar tags"
-                emptyMessage="Nenhuma tag encontrada."
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm text-gray-300 mb-1">Combinacao das tags</label>
-              <select
-                value={tagMatchMode}
-                onChange={(event) => setTagMatchMode(event.target.value as TagMatchMode)}
-                className="w-full px-3 py-2 bg-background border border-soft rounded text-base-color focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
-              >
-                <option value="ANY">Alguma</option>
-                <option value="ALL">Todas</option>
-              </select>
-            </div>
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setIsAdvancedFiltersOpen((prev) => !prev)}
+              className="w-full md:w-auto inline-flex items-center gap-2 px-3 py-2 border border-soft rounded text-sm text-base-color hover:bg-elevated transition-colors"
+            >
+              {isAdvancedFiltersOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              Filtro Avancado
+            </button>
           </div>
+
+          {isAdvancedFiltersOpen && (
+            <div className="mt-3 border border-soft rounded p-3 bg-elevated/30">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                <div className="md:col-span-3">
+                  <TagMultiSelectAutocomplete
+                    id="process-filter-tags"
+                    label="Filtrar por tags"
+                    selectedOptions={selectedTags}
+                    onSelectedOptionsChange={(options) => setSelectedTags(options as ProcessTag[])}
+                    fetchOptions={fetchTagOptions}
+                    placeholder="Digite para buscar tags"
+                    emptyMessage="Nenhuma tag encontrada."
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm text-gray-300 mb-1">Combinacao das tags</label>
+                  <select
+                    value={tagMatchMode}
+                    onChange={(event) => setTagMatchMode(event.target.value as TagMatchMode)}
+                    className="w-full px-3 py-2 bg-background border border-soft rounded text-base-color focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent"
+                  >
+                    <option value="ANY">Alguma</option>
+                    <option value="ALL">Todas</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 mt-4">
             <Button variant="accent" onClick={applyFilters} disabled={loading}>
@@ -380,6 +408,7 @@ export default function ProcessesPage() {
                     <tr>
                       <th className="px-4 py-3 text-center w-28">Acoes</th>
                       <th className="px-4 py-3 text-left">Processo</th>
+                      <th className="px-4 py-3 text-left">Origem</th>
                       <th className="px-4 py-3 text-left">Advogado</th>
                       <th className="px-4 py-3 text-left">Reclamante</th>
                       <th className="px-4 py-3 text-left">Tags</th>
@@ -411,6 +440,13 @@ export default function ProcessesPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-white font-medium">#{item.id}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-medium ${originClass(item.originType)}`}
+                          >
+                            {formatOrigin(item.originType)}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-gray-300">{item.requestingLawyerName || '-'}</td>
                         <td className="px-4 py-3 text-gray-300">{item.claimantName || '-'}</td>
                         <td className="px-4 py-3 text-gray-300">

@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Users, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Building2, Briefcase, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarProps {
@@ -76,6 +76,22 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       visible: canSeeCompanies,
       subItems: [
         { label: 'Empresas', href: '/admin/companies', isHeader: true, hideWhenExpanded: true },
+      ],
+    },
+    {
+      icon: (cls: string) => <Briefcase size={20} className={cls} />,
+      label: 'Processos',
+      visible: true,
+      subItems: [
+        { label: 'Processos', href: '/processes', isHeader: true, hideWhenExpanded: true },
+      ],
+    },
+    {
+      icon: (cls: string) => <Inbox size={20} className={cls} />,
+      label: 'Importações',
+      visible: true,
+      subItems: [
+        { label: 'Importações', href: '/imports', isHeader: true, hideWhenExpanded: true },
       ],
     },
   ].filter(i => i.visible);

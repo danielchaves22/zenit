@@ -73,6 +73,16 @@ export const MONITORING_CONFIG = {
   logLevel: getOptionalEnv('LOG_LEVEL', IS_PRODUCTION ? 'info' : 'debug')
 };
 
+export const INTEGRATIONS_CONFIG = {
+  gmailClientId: process.env.GMAIL_OAUTH_CLIENT_ID || '',
+  gmailClientSecret: process.env.GMAIL_OAUTH_CLIENT_SECRET || '',
+  gmailRedirectUri: process.env.GMAIL_OAUTH_REDIRECT_URI || '',
+  gmailPubSubTopic: process.env.GMAIL_PUBSUB_TOPIC || '',
+  gmailWebhookSecret: process.env.GMAIL_WEBHOOK_SECRET || '',
+  frontendUrl: process.env.FRONTEND_URL || '',
+  webhookBaseUrl: process.env.WEBHOOK_BASE_URL || ''
+};
+
 // Validação final na inicialização
 if (IS_PRODUCTION) {
   console.log('🔒 Production environment detected - validating critical configs...');

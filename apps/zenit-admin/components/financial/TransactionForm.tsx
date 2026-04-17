@@ -1,0 +1,951 @@
+// frontend/components/financial/TransactionForm.tsx - COM DATAS DE VENCIMENTO E EFETIVAÇÃO
+import React, { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
+import { Card } from '@/components/ui/Card';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { AutocompleteInput } from '@/components/ui/AutoCompleteInput'; // ✅ IMPORT DO AUTOCOMPLETE
+import { useToast } from '@/components/ui/ToastContext';
+import { useConfirmation } from '@/hooks/useConfirmation';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { ArrowLeft, Save, X, Trash2 } from 'lucide-react';
+import api from '@/lib/api';
+import { formatTransactionDescription } from '@/utils/transactions';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface Account {
+  id: number;
+  name: string;
+  type: string;
+  isDefault: boolean;
+  isActive: boolean;
+}
+
+interface Category {
+  id: number;
+  name: string;
+  type: string;
+  color: string;
+  isDefault: boolean;
+}
+
+interface Transaction {
+  id: number;
+  description: string;
+  amount: string;
+  date: string;
+  dueDate?: string;
+  effectiveDate?: string;
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  status: 'PENDING' | 'COMPLETED' | 'CANCELED';
+  notes?: string;
+  fromAccount?: { id: number; name: string };
+  toAccount?: { id: number; name: string };
+  category?: { id: number; name: string; color: string };
+  tags: { id: number; name: string }[];
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
+}
+
+// ✅ INTERFACE PARA SUGESTÕES DE AUTOCOMPLETE
+interface AutocompleteSuggestion {
+  description: string;
+  frequency: number;
+}
+
+interface TransactionFormProps {
+  mode: 'create' | 'edit';
+  transactionId?: string;
+  initialType?: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  isTypeLocked?: boolean;
+  onSuccess?: () => void;
+  onCancel?: () => void;
+  onTransactionLoaded?: (transaction: Transaction) => void;
+}
+
+export default function TransactionForm({
+  mode,
+  transactionId,
+  initialType = 'EXPENSE',
+  isTypeLocked = false,
+  onSuccess,
+  onCancel,
+  onTransactionLoaded
+}: TransactionFormProps) {
+  const router = useRouter();
+  const { addToast } = useToast();
+  const confirmation = useConfirmation();
+  const { userRole } = useAuth();
+  const isSuperuser = userRole === 'SUPERUSER';
+  
+  const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(mode === 'edit');
+  const [saving, setSaving] = useState(false);
+  const [defaultsLoaded, setDefaultsLoaded] = useState(false);
+  const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
+  const [formMode, setFormMode] = useState<'simple' | 'detailed'>('detailed');
+
+  const formRef = useRef<HTMLFormElement>(null);
+  
+  const [formData, setFormData] = useState({
+    description: '',
+    amount: '0.00',
+    date: new Date().toISOString().split('T')[0],
+    dueDate: new Date().toISOString().split('T')[0],
+    effectiveDate: new Date().toISOString().split('T')[0],
+    type: initialType,
+    status: 'COMPLETED',
+    notes: '',
+    fromAccountId: '',
+    toAccountId: '',
+    categoryId: '',
+    tags: '',
+    repeatTimes: ''
+  });
+
+  const [isRecurring, setIsRecurring] = useState(false);
+
+  // Verificar se o formulário deve estar somente leitura
+  const isReadOnly = mode === 'edit' && transaction?.status === 'COMPLETED';
+  const showActions = !isReadOnly || isSuperuser;
+  const actionDisabled = saving || (isReadOnly && !isSuperuser);
+  const statusDisabled = saving || (isReadOnly && !isSuperuser);
+  const isPending = formData.status === 'PENDING';
+  const isSimpleMode = formMode === 'simple';
+  const isCompleted = formData.status === 'COMPLETED';
+  const completionHint = isCompleted
+    ? formData.effectiveDate
+      ? `(efetivada em ${new Date(formData.effectiveDate).toLocaleDateString('pt-BR')})`
+      : '(efetivada hoje)'
+    : '(pendente)';
+
+  useEffect(() => {
+    fetchAccounts();
+    fetchCategories();
+
+    if (mode === 'edit' && transactionId) {
+      fetchTransaction();
+    }
+  }, [mode, transactionId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const storedMode = localStorage.getItem('transactionFormMode');
+    if (storedMode === 'simple' || storedMode === 'detailed') {
+      setFormMode(storedMode);
+    }
+  }, []);
+
+  // Auto-foco no campo de valor para transações novas
+  useEffect(() => {
+    if (mode === 'create' && shouldFocusAmount && !loading) {
+      const amountInput = document.getElementById('amount');
+      if (amountInput) {
+        setTimeout(() => {
+          amountInput.focus();
+          setShouldFocusAmount(false);
+        }, 100);
+      }
+    }
+  }, [mode, shouldFocusAmount, loading]);
+
+  // Auto-selecionar valores padrão quando os dados estiverem carregados
+  useEffect(() => {
+    if (mode === 'create' && !defaultsLoaded && accounts.length > 0 && categories.length > 0) {
+      autoSelectDefaults();
+      setDefaultsLoaded(true);
+    }
+  }, [mode, accounts, categories, defaultsLoaded, formData.type]);
+
+  // ✅ FUNÇÃO PARA BUSCAR SUGESTÕES DE AUTOCOMPLETE FILTRADA POR TIPO
+  const fetchAutocompleteSuggestions = async (query: string): Promise<AutocompleteSuggestion[]> => {
+    if (query.length < 3) {
+      return [];
+    }
+
+    try {
+      // ✅ INCLUIR O TIPO DE TRANSAÇÃO NA REQUISIÇÃO
+      const response = await api.get('/financial/transactions/autocomplete', {
+        params: { 
+          q: query,
+          type: formData.type // ✅ PASSAR O TIPO ATUAL DO FORMULÁRIO
+        }
+      });
+      return response.data.suggestions || [];
+    } catch (error) {
+      console.error('Error fetching autocomplete suggestions:', error);
+      return [];
+    }
+  };
+
+  async function fetchTransaction() {
+    if (!transactionId) return;
+    
+    try {
+      const response = await api.get(`/financial/transactions/${transactionId}`);
+      const txn = response.data;
+      
+      setTransaction(txn);
+      if (onTransactionLoaded) {
+        onTransactionLoaded(txn);
+      }
+      setFormData({
+        description: txn.description,
+        amount: txn.amount,
+        date: new Date(txn.date).toISOString().split('T')[0],
+        dueDate: txn.dueDate ? new Date(txn.dueDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        effectiveDate: txn.effectiveDate ? new Date(txn.effectiveDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        type: txn.type,
+        status: txn.status,
+        notes: txn.notes || '',
+        fromAccountId: txn.fromAccount?.id.toString() || '',
+        toAccountId: txn.toAccount?.id.toString() || '',
+        categoryId: txn.category?.id.toString() || '',
+        tags: txn.tags.map((t: any) => t.name).join(', '),
+        repeatTimes: txn.repeatTimes?.toString() || ''
+      });
+    } catch (error: any) {
+      console.error('Erro ao carregar transação:', error);
+      addToast('Erro ao carregar dados da transação', 'error');
+      handleCancel();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function fetchAccounts() {
+    try {
+      const response = await api.get('/financial/accounts');
+      setAccounts(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar contas:', error);
+      addToast('Erro ao carregar contas', 'error');
+    }
+  }
+
+  async function fetchCategories() {
+    try {
+      const response = await api.get('/financial/categories');
+      setCategories(response.data);
+    } catch (error) {
+      console.error('Erro ao carregar categorias:', error);
+      addToast('Erro ao carregar categorias', 'error');
+    }
+  }
+
+  function autoSelectDefaults() {
+    const updates: Partial<typeof formData> = {};
+
+    // Auto-selecionar conta padrão
+    if (!formData.fromAccountId && !formData.toAccountId) {
+      const defaultAccount = accounts.find(acc => acc.isDefault && acc.isActive);
+      if (defaultAccount) {
+        if (formData.type === 'EXPENSE') {
+          updates.fromAccountId = defaultAccount.id.toString();
+        } else if (formData.type === 'INCOME') {
+          updates.toAccountId = defaultAccount.id.toString();
+        }
+      } else {
+        // Se não há conta padrão, usar a primeira conta ativa
+        const firstActiveAccount = accounts.find(acc => acc.isActive);
+        if (firstActiveAccount) {
+          if (formData.type === 'EXPENSE') {
+            updates.fromAccountId = firstActiveAccount.id.toString();
+          } else if (formData.type === 'INCOME') {
+            updates.toAccountId = firstActiveAccount.id.toString();
+          }
+        }
+      }
+    }
+
+    // Auto-selecionar categoria padrão
+    if (!formData.categoryId && formData.type !== 'TRANSFER') {
+      const defaultCategory = categories.find(cat => 
+        cat.isDefault && cat.type === formData.type
+      );
+      if (defaultCategory) {
+        updates.categoryId = defaultCategory.id.toString();
+      } else {
+        // Se não há categoria padrão, usar a primeira categoria do tipo
+        const firstCategoryOfType = categories.find(cat => cat.type === formData.type);
+        if (firstCategoryOfType) {
+          updates.categoryId = firstCategoryOfType.id.toString();
+        }
+      }
+    }
+
+    // Garantir que as datas estejam sempre preenchidas
+    if (!formData.dueDate) {
+      updates.dueDate = new Date().toISOString().split('T')[0];
+    }
+    if (!formData.effectiveDate) {
+      updates.effectiveDate = new Date().toISOString().split('T')[0];
+    }
+
+    if (Object.keys(updates).length > 0) {
+      setFormData(prev => ({ ...prev, ...updates }));
+    }
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    
+    // Tratamento especial para o tipo de transação
+    if (name === 'type' && !isTypeLocked) {
+      const newType = value;
+      
+      // Resetar contas de acordo com o tipo
+      if (newType === 'EXPENSE') {
+        setFormData(prev => ({ ...prev, type: newType, toAccountId: '' }));
+      } else if (newType === 'INCOME') {
+        setFormData(prev => ({ ...prev, type: newType, fromAccountId: '' }));
+      } else {
+        setFormData(prev => ({ ...prev, type: newType as 'INCOME' | 'EXPENSE' | 'TRANSFER' }));
+      }
+      
+      // Auto-selecionar categoria padrão do novo tipo
+      const defaultCategory = categories.find(cat => 
+        cat.isDefault && cat.type === newType
+      );
+      if (defaultCategory) {
+        setFormData(prev => ({ ...prev, categoryId: defaultCategory.id.toString() }));
+      } else {
+        // Se não há padrão, usar primeira categoria do tipo
+        const firstCategoryOfType = categories.filter(c => c.type === newType);
+        if (firstCategoryOfType.length > 0) {
+          setFormData(prev => ({ ...prev, categoryId: firstCategoryOfType[0].id.toString() }));
+        } else {
+          setFormData(prev => ({ ...prev, categoryId: '' }));
+        }
+      }
+    } else {
+      setFormData(prev => {
+        const updated: any = { ...prev, [name]: value };
+
+        if (name === 'status') {
+          if (value === 'PENDING') {
+            updated.effectiveDate = '';
+          } else if (!prev.effectiveDate) {
+            updated.effectiveDate = new Date().toISOString().split('T')[0];
+          }
+        }
+
+        return updated;
+      });
+    }
+  };
+
+  // ✅ HANDLER PARA MUDANÇA NA DESCRIÇÃO (AUTOCOMPLETE)
+  const handleDescriptionChange = (value: string) => {
+    setFormData(prev => ({ ...prev, description: value }));
+  };
+
+  // ✅ HANDLER PARA SELEÇÃO DE SUGESTÃO
+  const handleSuggestionSelect = (description: string) => {
+    // Opcional: Adicionar lógica adicional quando uma sugestão é selecionada
+    // Por exemplo, analisar a descrição e sugerir categoria baseada no histórico
+    console.log('Sugestão selecionada:', description);
+  };
+
+  const handleAmountChange = (value: string) => {
+    setFormData(prev => ({ ...prev, amount: value }));
+  };
+
+  const handleFormModeChange = (modeToSet: 'simple' | 'detailed') => {
+    if (saving) {
+      return;
+    }
+
+    setFormMode(modeToSet);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('transactionFormMode', modeToSet);
+    }
+  };
+
+  const handleRecurringChange = (checked: boolean) => {
+    setIsRecurring(checked);
+    if (!checked) {
+      setFormData(prev => ({ ...prev, repeatTimes: '' }));
+    }
+  };
+
+  const handleSimpleStatusChange = (checked: boolean) => {
+    setFormData(prev => {
+      const today = new Date().toISOString().split('T')[0];
+      return {
+        ...prev,
+        status: checked ? 'COMPLETED' : 'PENDING',
+        effectiveDate: checked ? (prev.effectiveDate || today) : '',
+      };
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    
+    try {
+      // Preparar dados para envio
+      const payload = {
+        ...formData,
+        amount: parseFloat(formData.amount),
+        date: new Date(formData.date).toISOString(),
+        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
+        effectiveDate: formData.effectiveDate ? new Date(formData.effectiveDate).toISOString() : null,
+        fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
+        toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
+        categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
+        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        repeatTimes: isRecurring ? Number(formData.repeatTimes || 0) : 0
+      };
+      
+      if (mode === 'create') {
+        await api.post('/financial/transactions', payload);
+        addToast('Transação criada com sucesso', 'success');
+      } else {
+        await api.put(`/financial/transactions/${transactionId}`, payload);
+        addToast('Transação atualizada com sucesso', 'success');
+      }
+      
+      // Callback de sucesso ou redirecionamento padrão
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push('/financial/transactions');
+      }
+      
+    } catch (error: any) {
+      console.error('Erro ao salvar transação:', error);
+      addToast(
+        error.response?.data?.error || `Erro ao ${mode === 'create' ? 'criar' : 'atualizar'} transação`,
+        'error'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!transaction) return;
+    
+    confirmation.confirm(
+      {
+        title: 'Confirmar Exclusão',
+        message: `Tem certeza que deseja excluir a transação "${formatTransactionDescription(
+          transaction.description,
+          transaction.installmentNumber,
+          transaction.totalInstallments
+        )}"? Esta ação não pode ser desfeita.`,
+        confirmText: 'Excluir',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        try {
+          await api.delete(`/financial/transactions/${transactionId}`);
+          addToast('Transação excluída com sucesso', 'success');
+          
+          if (onSuccess) {
+            onSuccess();
+          } else {
+            router.push('/financial/transactions');
+          }
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao excluir transação', 'error');
+          throw error;
+        }
+      }
+    );
+  };
+
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+    } else {
+      router.push('/financial/transactions');
+    }
+  };
+
+  const handleTopSave = () => {
+    if (formRef.current) {
+      formRef.current.requestSubmit();
+    }
+  };
+
+  const getHeaderLabel = () => {
+    if (mode === 'edit') {
+      if (loading) {
+        return 'Carregando transação...';
+      }
+
+      const descriptionForDisplay = formData.description || transaction?.description || 'Transação';
+
+      return formatTransactionDescription(
+        descriptionForDisplay,
+        transaction?.installmentNumber,
+        transaction?.totalInstallments
+      );
+    }
+
+    const baseLabel = 'Nova';
+    switch (formData.type) {
+      case 'INCOME':
+        return `${baseLabel} Receita`;
+      case 'EXPENSE':
+        return `${baseLabel} Despesa`;
+      case 'TRANSFER':
+        return `${baseLabel} Transferência`;
+      default:
+        return `${baseLabel} Transação`;
+    }
+  };
+
+  // Encontrar categorias e contas padrão para exibir informação visual
+  const defaultAccount = accounts.find(acc => acc.isDefault);
+  const defaultCategory = categories.find(cat => cat.isDefault && cat.type === formData.type);
+
+  const saveButtonLabel = saving
+    ? 'Salvando...'
+    : mode === 'create'
+      ? 'Criar Transação'
+      : 'Salvar Alterações';
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            onClick={handleCancel}
+            className="flex items-center gap-2"
+            disabled={saving}
+          >
+            <ArrowLeft size={16} />
+            Voltar
+          </Button>
+          <h1 className="text-2xl font-semibold text-white">{getHeaderLabel()}</h1>
+          <div className="flex items-center gap-2 ml-4">
+            <button
+              type="button"
+              onClick={() => handleFormModeChange('simple')}
+              className={`px-3 py-1.5 rounded border text-sm font-semibold transition-colors ${
+                isSimpleMode
+                  ? 'border-accent bg-accent text-white'
+                  : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
+              }`}
+              disabled={saving}
+              aria-pressed={isSimpleMode}
+            >
+              Simples
+            </button>
+            <button
+              type="button"
+              onClick={() => handleFormModeChange('detailed')}
+              className={`px-3 py-1.5 rounded border text-sm font-semibold transition-colors ${
+                !isSimpleMode
+                  ? 'border-accent bg-accent text-white'
+                  : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
+              }`}
+              disabled={saving}
+              aria-pressed={!isSimpleMode}
+            >
+              Detalhado
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+
+          {showActions && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={actionDisabled}
+                className="flex items-center gap-2"
+              >
+                <X size={16} />
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="accent"
+                onClick={handleTopSave}
+                disabled={actionDisabled}
+                className="flex items-center gap-2"
+              >
+                <Save size={16} />
+                {saveButtonLabel}
+              </Button>
+
+              {mode === 'edit' && (
+                <Button
+                  variant="danger"
+                  onClick={handleDelete}
+                  className="flex items-center gap-2"
+                  disabled={saving || isReadOnly}
+                >
+                  <Trash2 size={16} />
+                  Excluir
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <Card>
+        <form
+          ref={formRef}
+          id="transaction-form"
+          onSubmit={handleSubmit}
+          className="space-y-6"
+        >
+          {/* Primeira linha: Valor e recorrência */}
+          <div className="flex items-center gap-4">
+            <div>
+              <CurrencyInput
+                id="amount"
+                label="Valor *"
+                value={formData.amount}
+                onChange={handleAmountChange}
+                required
+                disabled={saving || isReadOnly}
+                className="mb-0"
+                inputClassName="py-4 text-2xl"
+              />
+            </div>
+            {mode === 'edit' &&
+              transaction?.totalInstallments !== undefined &&
+              transaction?.totalInstallments !== null &&
+              transaction.totalInstallments > 1 && (
+                <div className="flex flex-col">
+                  <span className="px-4 py-2 rounded-md bg-blue-900/70 border border-blue-500 text-blue-100 font-semibold uppercase tracking-wide">
+                    {`Parcela ${transaction.installmentNumber ?? 1} de ${transaction.totalInstallments}`}
+                  </span>
+                </div>
+              )}
+            {mode === 'create' && (
+              <>
+                <div className="flex items-center h-full">
+                  <span className="mr-2 text-sm text-gray-300">Recorrente</span>
+                  <label htmlFor="isRecurring" className="inline-flex items-center cursor-pointer relative">
+                    <input
+                      id="isRecurring"
+                      type="checkbox"
+                      checked={isRecurring}
+                      onChange={(e) => handleRecurringChange(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-10 h-5 bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-success peer-checked:bg-success transition-colors"></div>
+                    <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                  </label>
+                </div>
+                {isRecurring && (
+                  <div className="w-28">
+                    <Input
+                      id="repeatTimes"
+                      name="repeatTimes"
+                      type="number"
+                      label="Repetir (meses)"
+                      value={formData.repeatTimes}
+                      onChange={handleChange}
+                      placeholder="0"
+                      disabled={saving || isReadOnly}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Segunda linha: Descrição */}
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <label className="block text-sm font-medium text-gray-300" htmlFor="description">
+                Descrição *
+              </label>
+              <span className="text-xs text-gray-400">
+                Digite pelo menos 3 caracteres para ver sugestões baseadas no seu histórico
+              </span>
+            </div>
+            <AutocompleteInput
+              id="description"
+              value={formData.description}
+              onChange={handleDescriptionChange}
+              onSuggestionSelect={handleSuggestionSelect}
+              fetchSuggestions={fetchAutocompleteSuggestions}
+              required
+              placeholder="Ex: Compra no supermercado, Recebimento de cliente..."
+              disabled={saving || isReadOnly}
+              minLength={3}
+              maxSuggestions={10}
+              className="mb-0"
+            />
+          </div>
+
+          {/* Terceira linha: Contas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {(formData.type === 'EXPENSE' || formData.type === 'TRANSFER') && (
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="fromAccountId">
+                  Conta de Origem *
+                </label>
+                <select
+                  id="fromAccountId"
+                  name="fromAccountId"
+                  value={formData.fromAccountId}
+                  onChange={handleChange}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  required
+                  disabled={saving || isReadOnly}
+                >
+                  <option value="">Selecione uma conta</option>
+                  {accounts.map(account => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                      {account.isDefault && ' ⭐'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {(formData.type === 'INCOME' || formData.type === 'TRANSFER') && (
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="toAccountId">
+                  Conta de Destino *
+                </label>
+                <select
+                  id="toAccountId"
+                  name="toAccountId"
+                  value={formData.toAccountId}
+                  onChange={handleChange}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  required
+                  disabled={saving || isReadOnly}
+                >
+                  <option value="">Selecione uma conta</option>
+                  {accounts.map(account => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                      {account.isDefault && ' ⭐'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+            {formData.type !== 'TRANSFER' && (
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="categoryId">
+                  Categoria
+                </label>
+                <select
+                  id="categoryId"
+                  name="categoryId"
+                  value={formData.categoryId}
+                  onChange={handleChange}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  disabled={saving || isReadOnly}
+                >
+                  <option value="">Sem categoria</option>
+                  {categories
+                    .filter(category => category.type === formData.type)
+                    .map(category => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                        {category.isDefault && ' ⭐'}
+                      </option>
+                    ))
+                  }
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Quarta linha: Status e Datas */}
+          <input type="hidden" name="date" value={formData.date} readOnly />
+          {isSimpleMode ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                    Data de Vencimento
+                  </label>
+                  <span className="text-xs text-gray-400">Padrão: data de hoje</span>
+                </div>
+                <input
+                  id="dueDate"
+                  name="dueDate"
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={handleChange}
+                  disabled={saving || isReadOnly}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                />
+              </div>
+              <div className="flex flex-col justify-center gap-2">
+                <span className="text-sm font-medium text-gray-300">Transação concluída</span>
+                <label className="inline-flex items-center cursor-pointer relative w-12 h-6">
+                  <input
+                    type="checkbox"
+                    checked={isCompleted}
+                    onChange={(e) => handleSimpleStatusChange(e.target.checked)}
+                    className="sr-only peer"
+                    disabled={statusDisabled}
+                  />
+                  <div className="w-full h-full bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-success peer-checked:bg-success transition-colors"></div>
+                  <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6"></div>
+                </label>
+                <span className="text-xs text-gray-400">{completionHint}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
+                  Status *
+                </label>
+                <select
+                  id="status"
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  required
+                  disabled={statusDisabled}
+                >
+                  <option value="PENDING">Pendente</option>
+                  <option value="COMPLETED">Concluída</option>
+                  <option value="CANCELED">Cancelada</option>
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                    Data de Vencimento
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    Para transações pendentes
+                  </span>
+                </div>
+                <input
+                  id="dueDate"
+                  name="dueDate"
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={handleChange}
+                  disabled={saving || isReadOnly}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <label className="block text-sm font-medium text-gray-300" htmlFor="effectiveDate">
+                    Data de Efetivação
+                  </label>
+                  <span className="text-xs text-gray-400">
+                    Quando a transação foi efetivada
+                  </span>
+                </div>
+                <input
+                  id="effectiveDate"
+                  name="effectiveDate"
+                  type="date"
+                  value={formData.effectiveDate}
+                  onChange={handleChange}
+                  disabled={saving || isPending || isReadOnly}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                />
+              </div>
+            </div>
+          )}
+
+          {!isSimpleMode && (
+            <>
+              {/* Quinta linha: Tags */}
+              <div>
+                <Input
+                  id="tags"
+                  name="tags"
+                  label="Tags (separadas por vírgula)"
+                  value={formData.tags}
+                  onChange={handleChange}
+                  placeholder="Ex: alimentação, mercado, urgente"
+                  disabled={saving || isReadOnly}
+                />
+              </div>
+
+              {/* Sexta linha: Observações */}
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="notes">
+                  Observações
+                </label>
+                <textarea
+                  id="notes"
+                  name="notes"
+                  value={formData.notes}
+                  onChange={handleChange}
+                  rows={4}
+                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  placeholder="Informações adicionais sobre a transação..."
+                  disabled={saving || isReadOnly}
+                />
+              </div>
+            </>
+          )}
+
+          {showActions && (
+            <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                disabled={actionDisabled}
+                className="flex items-center gap-2"
+              >
+                <X size={16} />
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="accent"
+                disabled={actionDisabled}
+                className="flex items-center gap-2"
+              >
+                <Save size={16} />
+                {saving
+                  ? 'Salvando...'
+                  : mode === 'create'
+                    ? 'Criar Transação'
+                    : 'Salvar Alterações'
+                }
+              </Button>
+            </div>
+          )}
+        </form>
+      </Card>
+
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={confirmation.handleClose}
+        onConfirm={confirmation.handleConfirm}
+        title={confirmation.options.title}
+        message={confirmation.options.message}
+        confirmText={confirmation.options.confirmText}
+        cancelText={confirmation.options.cancelText}
+        type={confirmation.options.type}
+        loading={confirmation.loading}
+      />
+    </>
+  );
+}

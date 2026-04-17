@@ -795,17 +795,19 @@ CMD ["npm", "start"]
 
 ### Code Organization
 ```
-frontend/
-├── components/
-│   ├── ui/           # Componentes básicos
-│   ├── admin/        # Funcionalidades administrativas
-│   ├── financial/    # Módulo financeiro
-│   └── layout/       # Layout e navegação
-├── contexts/         # Context providers
-├── hooks/           # Custom hooks
-├── lib/             # Utilitários e configurações
-├── pages/           # Páginas Next.js
-└── styles/          # Estilos globais
+apps/
+├── zenit/                # Frontend Zenit (login/rotas próprios)
+│   ├── components/
+│   │   ├── ui/           # Componentes básicos
+│   │   ├── admin/        # Funcionalidades administrativas
+│   │   ├── financial/    # Módulo financeiro
+│   │   └── layout/       # Layout e navegação
+│   ├── contexts/         # Context providers
+│   ├── hooks/            # Custom hooks
+│   ├── lib/              # Utilitários e configurações
+│   ├── pages/            # Páginas Next.js
+│   └── styles/           # Estilos globais
+└── zenit-calc/           # Frontend ZenitCalc (estrutura inicial, login dedicado)
 ```
 
 ### TypeScript Integration

@@ -10,13 +10,15 @@
     "test:coverage": "jest --coverage",
     "start": "node dist/server.js",
     "dev": "nodemon --exec ts-node src/server.ts",
+    "worker:gmail:dev": "nodemon --exec ts-node src/workers/gmail.worker.ts",
     "build": "rimraf dist && prisma generate && tsc --project tsconfig.build.json",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:seed": "node prisma/seed.js"
+    "prisma:seed": "node prisma/seed.js",
+    "worker:gmail": "node dist/workers/gmail.worker.js"
   },
   "repository": {
     "type": "git",

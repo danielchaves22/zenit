@@ -5,7 +5,7 @@
 ### **1. Editar o ThemeContext.tsx**
 
 ```typescript
-// frontend/contexts/ThemeContext.tsx
+// apps/zenit/contexts/ThemeContext.tsx
 
 // ✅ PASSO 1: Adicionar nova cor no type
 export type ThemeColor = 'amber' | 'blue' | 'purple' | 'green' | 'red' | 'indigo' | 'pink' | 

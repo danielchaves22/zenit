@@ -42,6 +42,41 @@ enum RecurringFrequency {
   YEARLY
 }
 
+enum ProcessStatus {
+  SOLICITACAO
+  INICIAL
+  CALCULO
+}
+
+enum ProcessOriginType {
+  MANUAL
+  IMPORT
+}
+
+enum InboundImportSourceType {
+  EMAIL
+}
+
+enum InboundImportDestinationType {
+  PROCESS
+  CLIENT
+  OTHER
+}
+
+enum AiProvider {
+  OPENAI
+}
+
+enum GmailConnectionStatus {
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+enum ProcessSourceProvider {
+  GMAIL
+}
+
 model User {
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
@@ -57,6 +92,9 @@ model User {
   financialAccountAccess UserFinancialAccountAccess[]
   grantedPermissions     UserFinancialAccountAccess[] @relation("GrantedPermissions")
   preference             UserPreference?
+  createdProcesses       Process[]            @relation("ProcessCreatedBy")
+  updatedProcesses       Process[]            @relation("ProcessUpdatedBy")
+  processStatusChanges   ProcessStatusHistory[] @relation("ProcessStatusHistoryChangedBy")
 }
 
 model Company {
@@ -74,6 +112,12 @@ model Company {
   financialTags       FinancialTag[]
   recurringTransactions RecurringTransaction[]
   userFinancialAccountAccess UserFinancialAccountAccess[]
+  processes           Process[]
+  processTags         ProcessTag[]
+  inboundImports      InboundImport[]
+  aiCredentials       CompanyAiCredential[]
+  gmailConnection     GmailConnection?
+  emailIngestionConfig EmailIngestionConfig?
 }
 
 model CompanyGroup {
@@ -164,6 +208,10 @@ model FinancialTransaction {
   // ✅ VALORES MÚLTIPLOS (preparação para futuro)
   originalAmount  Decimal?             @db.Decimal(15, 2) // Valor original
   paidAmount      Decimal?             @db.Decimal(15, 2) // Valor pago (com juros/desconto)
+
+  // ✅ CONTROLE DE PARCELAS
+  installmentNumber  Int?
+  totalInstallments  Int?
   
   type            TransactionType
   status          TransactionStatus    @default(COMPLETED) // ✅ MUDANÇA: padrão COMPLETED
@@ -267,6 +315,183 @@ model UserFinancialAccountAccess {
   @@index([companyId])
   @@index([grantedBy])
 }
+
+model Process {
+  id                  Int                @id @default(autoincrement())
+  companyId           Int
+  status              ProcessStatus
+  requestingLawyerName String?
+  claimantName        String?
+  notes               String?
+  originType          ProcessOriginType  @default(MANUAL)
+  sourceImportId      Int?               @unique
+  sourceProvider      ProcessSourceProvider?
+  sourceThreadId      String?
+  createdBy           Int
+  updatedBy           Int?
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  deletedAt           DateTime?
+
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  sourceImport        InboundImport?     @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  createdByUser       User               @relation("ProcessCreatedBy", fields: [createdBy], references: [id], onDelete: Cascade)
+  updatedByUser       User?              @relation("ProcessUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+  statusHistory       ProcessStatusHistory[]
+  processTags         ProcessTagLink[]
+
+  @@index([companyId])
+  @@index([companyId, status])
+  @@index([companyId, createdAt])
+  @@index([companyId, deletedAt])
+  @@unique([companyId, sourceProvider, sourceThreadId], name: "unique_process_per_company_source_thread")
+}
+
+model ProcessStatusHistory {
+  id          Int           @id @default(autoincrement())
+  processId   Int
+  fromStatus  ProcessStatus?
+  toStatus    ProcessStatus
+  changedBy   Int
+  changedAt   DateTime      @default(now())
+  reason      String?
+
+  process     Process       @relation(fields: [processId], references: [id], onDelete: Cascade)
+  changedByUser User        @relation("ProcessStatusHistoryChangedBy", fields: [changedBy], references: [id], onDelete: Cascade)
+
+  @@index([processId])
+  @@index([changedBy])
+  @@index([changedAt])
+}
+
+model ProcessTag {
+  id          Int           @id @default(autoincrement())
+  name        String
+  companyId   Int
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  processes   ProcessTagLink[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+}
+
+model ProcessTagLink {
+  id          Int           @id @default(autoincrement())
+  processId   Int
+  tagId       Int
+  createdAt   DateTime      @default(now())
+
+  process     Process       @relation(fields: [processId], references: [id], onDelete: Cascade)
+  tag         ProcessTag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([processId, tagId], name: "unique_process_tag_link")
+  @@index([processId])
+  @@index([tagId])
+}
+
+model InboundImport {
+  id              Int                         @id @default(autoincrement())
+  companyId       Int
+  connectionId    Int?
+  sourceType      InboundImportSourceType    @default(EMAIL)
+  externalId      String
+  externalThreadId String?
+  payloadMetadata Json?
+  destinationType InboundImportDestinationType?
+  destinationId   String?
+  processedAt     DateTime?
+  sourceReceivedAt DateTime?
+  createdAt       DateTime                    @default(now())
+
+  company         Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  connection      GmailConnection?            @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  process         Process?
+
+  @@unique([companyId, sourceType, externalId], name: "unique_inbound_import_per_company_source")
+  @@index([companyId])
+  @@index([connectionId])
+  @@index([companyId, createdAt])
+  @@index([companyId, destinationType])
+  @@index([companyId, processedAt])
+  @@index([companyId, externalThreadId])
+}
+
+model CompanyAiCredential {
+  id              Int        @id @default(autoincrement())
+  companyId       Int
+  provider        AiProvider @default(OPENAI)
+  apiKeyCiphertext String
+  apiKeyIv        String
+  apiKeyTag       String
+  model           String     @default("gpt-4o-mini")
+  promptVersion   String     @default("v1")
+  isActive        Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  company         Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider], name: "unique_ai_credential_per_company_provider")
+  @@index([companyId])
+}
+
+model GmailConnection {
+  id                     Int                   @id @default(autoincrement())
+  companyId              Int                   @unique
+  googleEmail            String
+  googleUserId           String?
+  refreshTokenCiphertext String
+  refreshTokenIv         String
+  refreshTokenTag        String
+  accessTokenCiphertext  String?
+  accessTokenIv          String?
+  accessTokenTag         String?
+  accessTokenExpiresAt   DateTime?
+  status                 GmailConnectionStatus @default(ACTIVE)
+  watchExpiration        DateTime?
+  lastError              String?
+  disabledAt             DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  company                Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  syncState              GmailSyncState?
+  inboundImports         InboundImport[]
+
+  @@index([companyId, status])
+  @@index([googleEmail])
+}
+
+model GmailSyncState {
+  id                    Int             @id @default(autoincrement())
+  connectionId          Int             @unique
+  lastHistoryId         String?
+  lastPollingAt         DateTime?
+  lastReconcileAt       DateTime?
+  lastProcessedMessageAt DateTime?
+  updatedAt             DateTime        @updatedAt
+
+  connection            GmailConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+}
+
+model EmailIngestionConfig {
+  id                           Int       @id @default(autoincrement())
+  companyId                    Int       @unique
+  enabled                      Boolean   @default(false)
+  subjectRequiredText          String    @default("Inicial Trabalhista")
+  lookbackDays                 Int       @default(3)
+  pollingIntervalMinutes       Int       @default(5)
+  reconciliationIntervalMinutes Int      @default(60)
+  maxEmailsPerRun              Int       @default(50)
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+
+  company                      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
 model UserPreference {
   id Int @id @default(autoincrement())
   userId Int @unique

@@ -1,5 +1,6 @@
 // backend/src/services/excel-generator.service.ts
 import { logger } from '../utils/logger';
+import { formatInstallmentDescription } from '../utils/installments';
 
 interface ExcelOptions {
   title: string;
@@ -100,8 +101,13 @@ export default class ExcelGeneratorService {
         const type = transaction.type === 'INCOME' ? 'ENTRADA' : 'SAÍDA';
         const category = transaction.category?.name || 'Sem categoria';
         const transactionDate = new Date(transaction.date).toLocaleDateString('pt-BR');
-        
-        csv += `"${period.periodLabel}","${transactionDate}","${type}","${transaction.description}","${transaction.financialAccount.name}","${category}","${formatCurrency(transaction.amount)}","${transaction.id}"\n`;
+        const description = formatInstallmentDescription(
+          transaction.description,
+          transaction.installmentNumber,
+          transaction.totalInstallments
+        );
+
+        csv += `"${period.periodLabel}","${transactionDate}","${type}","${description}","${transaction.financialAccount.name}","${category}","${formatCurrency(transaction.amount)}","${transaction.id}"\n`;
       }
     }
     csv += '\n';

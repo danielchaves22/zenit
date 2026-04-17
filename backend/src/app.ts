@@ -11,6 +11,13 @@ import userRoutes from './routes/user.routes';
 import companyRoutes from './routes/company.routes';
 import financialRoutes from './routes/financial.routes';
 import preferenceRoutes from './routes/preferences.routes';
+import processRoutes from './routes/process.routes';
+import processTagRoutes from './routes/process-tag.routes';
+import inboundImportRoutes from './routes/inbound-import.routes';
+import openAiIntegrationRoutes from './routes/openai-integration.routes';
+import gmailIntegrationRoutes from './routes/gmail-integration.routes';
+import integrationPublicRoutes from './routes/integration-public.routes';
+import adminCompanyOpenAiRoutes from './routes/admin-company-openai.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
@@ -159,6 +166,7 @@ app.get('/metrics', (req, res, next) => {
 
 // 13) Rotas públicas de autenticação COM rate limiting
 app.use('/api/auth', createRateLimitMiddleware('auth'), authRoutes);
+app.use('/api', createRateLimitMiddleware('api'), integrationPublicRoutes);
 
 // 14) Middleware de autenticação
 app.use('/api', authMiddleware);
@@ -170,6 +178,12 @@ app.use('/api', tenantMiddleware);
 app.use('/api/users', createRateLimitMiddleware('api'), userRoutes);
 app.use('/api/companies', createRateLimitMiddleware('api'), companyRoutes);
 app.use('/api/preferences', createRateLimitMiddleware('api'), preferenceRoutes);
+app.use('/api/processes', createRateLimitMiddleware('api'), processRoutes);
+app.use('/api/process-tags', createRateLimitMiddleware('api'), processTagRoutes);
+app.use('/api/inbound-imports', createRateLimitMiddleware('api'), inboundImportRoutes);
+app.use('/api/integrations/openai', createRateLimitMiddleware('api'), openAiIntegrationRoutes);
+app.use('/api/integrations/gmail', createRateLimitMiddleware('api'), gmailIntegrationRoutes);
+app.use('/api/admin/companies', createRateLimitMiddleware('api'), adminCompanyOpenAiRoutes);
 app.use('/api/financial', createRateLimitMiddleware('financial'), financialRoutes);
 // Financial routes with cache for read operations
 app.use('/api/financial/summary', createRateLimitMiddleware('financial'), cacheMiddleware(600)); // 10min cache

@@ -63,6 +63,20 @@ enum InboundImportDestinationType {
   OTHER
 }
 
+enum AiProvider {
+  OPENAI
+}
+
+enum GmailConnectionStatus {
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+enum ProcessSourceProvider {
+  GMAIL
+}
+
 model User {
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
@@ -101,6 +115,9 @@ model Company {
   processes           Process[]
   processTags         ProcessTag[]
   inboundImports      InboundImport[]
+  aiCredentials       CompanyAiCredential[]
+  gmailConnection     GmailConnection?
+  emailIngestionConfig EmailIngestionConfig?
 }
 
 model CompanyGroup {
@@ -308,6 +325,8 @@ model Process {
   notes               String?
   originType          ProcessOriginType  @default(MANUAL)
   sourceImportId      Int?               @unique
+  sourceProvider      ProcessSourceProvider?
+  sourceThreadId      String?
   createdBy           Int
   updatedBy           Int?
   createdAt           DateTime           @default(now())
@@ -325,6 +344,7 @@ model Process {
   @@index([companyId, status])
   @@index([companyId, createdAt])
   @@index([companyId, deletedAt])
+  @@unique([companyId, sourceProvider, sourceThreadId], name: "unique_process_per_company_source_thread")
 }
 
 model ProcessStatusHistory {
@@ -375,22 +395,101 @@ model ProcessTagLink {
 model InboundImport {
   id              Int                         @id @default(autoincrement())
   companyId       Int
+  connectionId    Int?
   sourceType      InboundImportSourceType    @default(EMAIL)
   externalId      String
+  externalThreadId String?
   payloadMetadata Json?
   destinationType InboundImportDestinationType?
   destinationId   String?
   processedAt     DateTime?
+  sourceReceivedAt DateTime?
   createdAt       DateTime                    @default(now())
 
   company         Company                     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  connection      GmailConnection?            @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   process         Process?
 
   @@unique([companyId, sourceType, externalId], name: "unique_inbound_import_per_company_source")
   @@index([companyId])
+  @@index([connectionId])
   @@index([companyId, createdAt])
   @@index([companyId, destinationType])
   @@index([companyId, processedAt])
+  @@index([companyId, externalThreadId])
+}
+
+model CompanyAiCredential {
+  id              Int        @id @default(autoincrement())
+  companyId       Int
+  provider        AiProvider @default(OPENAI)
+  apiKeyCiphertext String
+  apiKeyIv        String
+  apiKeyTag       String
+  model           String     @default("gpt-4o-mini")
+  promptVersion   String     @default("v1")
+  isActive        Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  company         Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider], name: "unique_ai_credential_per_company_provider")
+  @@index([companyId])
+}
+
+model GmailConnection {
+  id                     Int                   @id @default(autoincrement())
+  companyId              Int                   @unique
+  googleEmail            String
+  googleUserId           String?
+  refreshTokenCiphertext String
+  refreshTokenIv         String
+  refreshTokenTag        String
+  accessTokenCiphertext  String?
+  accessTokenIv          String?
+  accessTokenTag         String?
+  accessTokenExpiresAt   DateTime?
+  status                 GmailConnectionStatus @default(ACTIVE)
+  watchExpiration        DateTime?
+  lastError              String?
+  disabledAt             DateTime?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  company                Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  syncState              GmailSyncState?
+  inboundImports         InboundImport[]
+
+  @@index([companyId, status])
+  @@index([googleEmail])
+}
+
+model GmailSyncState {
+  id                    Int             @id @default(autoincrement())
+  connectionId          Int             @unique
+  lastHistoryId         String?
+  lastPollingAt         DateTime?
+  lastReconcileAt       DateTime?
+  lastProcessedMessageAt DateTime?
+  updatedAt             DateTime        @updatedAt
+
+  connection            GmailConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+}
+
+model EmailIngestionConfig {
+  id                           Int       @id @default(autoincrement())
+  companyId                    Int       @unique
+  enabled                      Boolean   @default(false)
+  subjectRequiredText          String    @default("Inicial Trabalhista")
+  lookbackDays                 Int       @default(3)
+  pollingIntervalMinutes       Int       @default(5)
+  reconciliationIntervalMinutes Int      @default(60)
+  maxEmailsPerRun              Int       @default(50)
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+
+  company                      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model UserPreference {

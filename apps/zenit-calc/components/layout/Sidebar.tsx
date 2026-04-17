@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { Users, Building2, Briefcase, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Building2, Briefcase, Inbox, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface SidebarProps {
@@ -92,6 +92,14 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       visible: true,
       subItems: [
         { label: 'Importações', href: '/imports', isHeader: true, hideWhenExpanded: true },
+      ],
+    },
+    {
+      icon: (cls: string) => <Settings size={20} className={cls} />,
+      label: 'Configurações',
+      visible: true,
+      subItems: [
+        { label: 'Configurações', href: '/settings', isHeader: true, hideWhenExpanded: true },
       ],
     },
   ].filter(i => i.visible);

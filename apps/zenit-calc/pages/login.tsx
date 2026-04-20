@@ -1,6 +1,7 @@
 // frontend/pages/login.tsx
 import React, { useState } from 'react'
 import { useRouter } from 'next/router'
+import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
@@ -84,6 +85,18 @@ export default function LoginPage() {
             <p className="mt-4 text-center text-red-400">{error}</p>
           )}
         </form>
+
+        <div className="mt-6 border-t border-soft pt-4 text-sm text-muted">
+          <div className="flex items-center justify-center gap-4">
+            <Link href="/privacy" className="text-accent underline">
+              Politica de Privacidade
+            </Link>
+            <span aria-hidden="true">|</span>
+            <Link href="/terms" className="text-accent underline">
+              Termos de Servico
+            </Link>
+          </div>
+        </div>
       </Card>
     </div>
   );

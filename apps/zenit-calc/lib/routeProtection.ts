@@ -1,5 +1,4 @@
-// frontend/lib/routeProtection.ts - SISTEMA DE PROTEÇÃO DE ROTAS
-import { UserRole } from '@/hooks/usePermissions';
+﻿import { UserRole } from '@/hooks/usePermissions';
 
 export interface RoutePermission {
   path: string;
@@ -9,43 +8,32 @@ export interface RoutePermission {
   redirectTo?: string;
 }
 
-// ✅ CONFIGURAÇÃO DE PERMISSÕES POR ROTA
 export const routePermissions: RoutePermission[] = [
-  // Rotas de Administração - Usuários
   {
     path: '/admin/users',
     requiredRole: 'SUPERUSER',
     redirectTo: '/'
   },
-
-  // Rotas de Administração - Configurações
   {
     path: '/admin/settings',
     requiredRole: 'SUPERUSER',
     redirectTo: '/'
   },
-
-  // Rotas Financeiras removidas
-
-  // Área administrativa geral
   {
     path: '/admin/*',
-    requiredRole: 'SUPERUSER', // Fallback para área admin
+    requiredRole: 'SUPERUSER',
     redirectTo: '/'
   }
 ];
 
-// ✅ FUNÇÃO PARA VERIFICAR PERMISSÃO DE ROTA
 export function checkRoutePermission(
   path: string,
   userRole: UserRole | null
 ): { hasAccess: boolean; redirectTo?: string } {
-
   if (!userRole) {
     return { hasAccess: false, redirectTo: '/login' };
   }
 
-  // Buscar configuração específica para a rota
   const routeConfig = routePermissions.find(config => {
     if (config.path.endsWith('*')) {
       const basePath = config.path.slice(0, -1);
@@ -54,20 +42,18 @@ export function checkRoutePermission(
     return config.path === path;
   });
 
-  // Se não há configuração específica, permitir acesso
   if (!routeConfig) {
     return { hasAccess: true };
   }
 
   const roleHierarchy: Record<UserRole, number> = {
-    'ADMIN': 3,
-    'SUPERUSER': 2,
-    'USER': 1
+    ADMIN: 3,
+    SUPERUSER: 2,
+    USER: 1
   };
 
   const userLevel = roleHierarchy[userRole] || 0;
 
-  // Verificar roles negados
   if (routeConfig.deniedRoles?.includes(userRole)) {
     return {
       hasAccess: false,
@@ -75,7 +61,6 @@ export function checkRoutePermission(
     };
   }
 
-  // Verificar roles específicos permitidos
   if (routeConfig.allowedRoles) {
     const hasAccess = routeConfig.allowedRoles.includes(userRole);
     return {
@@ -84,7 +69,6 @@ export function checkRoutePermission(
     };
   }
 
-  // Verificar role mínimo necessário
   if (routeConfig.requiredRole) {
     const requiredLevel = roleHierarchy[routeConfig.requiredRole] || 0;
     const hasAccess = userLevel >= requiredLevel;
@@ -97,16 +81,12 @@ export function checkRoutePermission(
   return { hasAccess: true };
 }
 
-// ✅ FUNÇÃO PARA OBTER ROTAS PERMITIDAS PARA UM USUÁRIO
 export function getAllowedRoutes(userRole: UserRole | null): string[] {
   if (!userRole) return [];
 
   const allowedRoutes: string[] = [];
-
-  // Rotas básicas sempre permitidas
   allowedRoutes.push('/', '/profile');
 
-  // Rotas administrativas baseadas no role
   if (userRole === 'SUPERUSER' || userRole === 'ADMIN') {
     allowedRoutes.push('/admin/users', '/admin/settings');
   }
@@ -114,13 +94,11 @@ export function getAllowedRoutes(userRole: UserRole | null): string[] {
   return allowedRoutes;
 }
 
-// ✅ VERIFICAR SE UMA ROTA É PÚBLICA
 export function isPublicRoute(path: string): boolean {
-  const publicRoutes = ['/login', '/register', '/forgot-password'];
+  const publicRoutes = ['/login'];
   return publicRoutes.includes(path);
 }
 
-// ✅ OBTER INFORMAÇÕES DE PERMISSÃO PARA DEBUG
 export function getRoutePermissionInfo(path: string, userRole: UserRole | null) {
   const permission = checkRoutePermission(path, userRole);
   const allowedRoutes = getAllowedRoutes(userRole);

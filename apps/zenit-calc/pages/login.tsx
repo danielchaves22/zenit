@@ -1,7 +1,5 @@
-// frontend/pages/login.tsx
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import { useRouter } from 'next/router'
-import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
@@ -38,7 +36,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md bg-elevated border-soft shadow-lg">
         <div className="flex justify-center mb-6">
           <div className="text-center">
@@ -78,7 +76,7 @@ export default function LoginPage() {
             className="w-full"
             disabled={loading}
           >
-            {loading ? 'Entrando…' : 'Entrar'}
+            {loading ? 'Entrando...' : 'Entrar'}
           </Button>
 
           {error && (
@@ -88,13 +86,19 @@ export default function LoginPage() {
 
         <div className="mt-6 border-t border-soft pt-4 text-sm text-muted">
           <div className="flex items-center justify-center gap-4">
-            <Link href="/privacy" className="text-accent underline">
+            <a
+              href="https://zenitapp.net/privacy"
+              className="text-accent underline"
+            >
               Politica de Privacidade
-            </Link>
+            </a>
             <span aria-hidden="true">|</span>
-            <Link href="/terms" className="text-accent underline">
+            <a
+              href="https://zenitapp.net/terms"
+              className="text-accent underline"
+            >
               Termos de Servico
-            </Link>
+            </a>
           </div>
         </div>
       </Card>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Redirecionando para o app | Zenit App</title>
+  <meta http-equiv="refresh" content="0;url=https://calc.zenitapp.net/login" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <section class="panel center">
+      <h1 class="title">Redirecionando...</h1>
+      <p class="subtitle">Voce sera encaminhado para a aplicacao em instantes.</p>
+      <p class="actions" style="justify-content:center;">
+        <a class="btn" href="https://calc.zenitapp.net/login">Ir para login</a>
+      </p>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var target = 'https://calc.zenitapp.net/login';
+      if (window.location.search) {
+        target += window.location.search;
+      }
+      window.location.replace(target);
+    })();
+  </script>
+</body>
+</html>

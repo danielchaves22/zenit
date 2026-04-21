@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useRouter } from 'next/router'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card } from '@/components/ui/Card'
@@ -20,7 +20,7 @@ export default function FirstAccessPage() {
     setError(null)
 
     if (password !== confirm) {
-      setError('As senhas não coincidem')
+      setError('As senhas nao coincidem')
       return
     }
 

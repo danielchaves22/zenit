@@ -3,45 +3,107 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Zenit App | Automacao para Calculos Trabalhistas</title>
+  <title>Zenit App | Plataforma para cálculo trabalhista</title>
   <meta
     name="description"
-    content="Zenit App centraliza solicitacoes de calculo trabalhista com fluxo operacional, rastreabilidade e importacao opcional de Gmail."
+    content="Zenit App centraliza solicitações de cálculo trabalhista com fluxo operacional, rastreabilidade e integração opcional com Gmail."
   />
+  <meta name="theme-color" content="#07112a" />
+  <link rel="icon" type="image/png" href="/assets/images/logo_principal.png" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <main class="container">
-    <section class="panel">
-      <header class="hero">
-        <h1 class="title">Zenit App</h1>
-        <p class="subtitle">
-          Plataforma para escritorios de calculo trabalhista com controle de processos e operacao auditavel.
+    <header class="brand-banner">
+      <a class="brand brand-home" href="/" aria-label="Zenit App">
+        <img class="brand-logo" src="/assets/images/logo_principal.png" alt="Logo oficial do Zenit App" />
+      </a>
+      <p class="brand-tagline">Automação para cálculos trabalhistas</p>
+    </header>
+
+    <section class="hero-panel">
+      <div class="hero-grid">
+        <div>
+          <h1 class="title">Fluxo auditável para cada solicitação de cálculo trabalhista.</h1>
+          <p class="subtitle">
+            Centralize solicitações, acompanhe cada etapa operacional e reduza retrabalho com um processo claro do início ao fim.
+          </p>
+          <section class="actions">
+            <a class="btn" href="https://calc.zenitapp.net/login">Acessar aplicação</a>
+          </section>
+        </div>
+
+        <aside class="hero-highlight">
+          <h2>Valor prático para o dia a dia</h2>
+          <ul class="checklist">
+            <li>Rastreabilidade por status e histórico operacional.</li>
+            <li>Padronização da triagem para solicitações recorrentes.</li>
+            <li>Integração opcional com Gmail para identificar demandas.</li>
+            <li>Visibilidade do que está pendente, em andamento e finalizado.</li>
+          </ul>
+        </aside>
+      </div>
+    </section>
+
+    <section class="feature-grid">
+      <article class="card">
+        <h2 class="card-title">
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4 7.2C4 6.28 4.75 5.53 5.67 5.53H18.33C19.25 5.53 20 6.28 20 7.2V16.8C20 17.72 19.25 18.47 18.33 18.47H5.67C4.75 18.47 4 17.72 4 16.8V7.2Z" />
+              <path d="M4.67 8.87L12 13.53L19.33 8.87" />
+            </svg>
+          </span>
+          <span>Entrada unificada</span>
+        </h2>
+        <p>
+          Traga as solicitações para um único lugar, com contexto mínimo obrigatório e classificação consistente.
         </p>
-      </header>
+      </article>
 
-      <section class="grid">
-        <article class="card">
-          <h2>Finalidade do app</h2>
-          <p>
-            Organizar a jornada operacional do calculo, da solicitacao inicial ate a etapa de calculo, com historico de status e tags.
-          </p>
-        </article>
+      <article class="card">
+        <h2 class="card-title">
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M4.5 6.5H11.5" />
+              <path d="M4.5 12H17.5" />
+              <path d="M4.5 17.5H13.5" />
+              <circle cx="14.5" cy="6.5" r="2.2" />
+              <circle cx="9.5" cy="12" r="2.2" />
+              <circle cx="16.5" cy="17.5" r="2.2" />
+            </svg>
+          </span>
+          <span>Operação controlada</span>
+        </h2>
+        <p>
+          Estruture o fluxo de trabalho com etapas claras, donos definidos e menos dependência de acompanhamento manual.
+        </p>
+      </article>
 
-        <article class="card">
-          <h2>Uso de dados Google</h2>
-          <p>
-            Quando a integracao Gmail e habilitada pela empresa, o Zenit processa dados de email para identificar solicitacoes,
-            evitar duplicidade e criar registros de processo no sistema.
-          </p>
-        </article>
-      </section>
+      <article class="card">
+        <h2 class="card-title">
+          <span class="card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 4.33L18.67 7.03V11.15C18.67 15.27 15.78 19.14 12 20.13C8.22 19.14 5.33 15.27 5.33 11.15V7.03L12 4.33Z" />
+              <path d="M9.22 12.23L11.2 14.2L14.87 10.53" />
+            </svg>
+          </span>
+          <span>Governança de dados</span>
+        </h2>
+        <p>
+          Mantenha uma trilha objetiva de eventos para auditoria interna, qualidade e melhoria contínua do processo.
+        </p>
+      </article>
+    </section>
 
-      <section class="actions">
-        <a class="btn" href="https://calc.zenitapp.net/login">Acessar aplicacao</a>
-        <a class="btn secondary" href="/privacy">Politica de Privacidade</a>
-        <a class="btn secondary" href="/terms">Termos de Servico</a>
-      </section>
+    <section class="legal-panel">
+      <p class="small">
+        Para requisitos de conformidade, consulte a política e os termos oficiais da plataforma.
+      </p>
+      <div class="legal-links">
+        <a class="btn ghost" href="/privacy" target="_blank" rel="noopener noreferrer">Ver política</a>
+        <a class="btn ghost" href="/terms" target="_blank" rel="noopener noreferrer">Ver termos</a>
+      </div>
     </section>
   </main>
 </body>

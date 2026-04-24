@@ -1,28 +1,28 @@
-# 1. Imagem base leve
 FROM node:20-alpine
 
-# 2. Define a working directory
 WORKDIR /app
 
 ARG NEXT_PUBLIC_API_URL
-ARG NODE_ENV=production
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NODE_ENV=$NODE_ENV
 
-# 3. Copia package.json e lockfile 
+# Install system deps required by some npm packages during install/build.
+RUN apk add --no-cache python3 make g++
+
+# Install dependencies from monorepo root lockfile/workspaces.
 COPY package*.json ./
-
-# 4. Instala deps
+COPY apps/zenit-admin/package.json ./apps/zenit-admin/package.json
+COPY apps/zenit-calc/package.json ./apps/zenit-calc/package.json
+COPY apps/zenit-cash/package.json ./apps/zenit-cash/package.json
+COPY backend/package.json ./backend/package.json
+COPY packages/shared-users-core/package.json ./packages/shared-users-core/package.json
 RUN npm ci
 
-# 5. Copia todo o código
+# Copy source and build only zenit-calc workspace.
 COPY . .
+RUN npm --workspace apps/zenit-calc run build
 
-# 6. Faz o build do Next.js
-RUN npm run build
-
-# 7. Expõe a porta 3000 (padrão do Next)
 EXPOSE 3000
 
-# 8. Start em modo produção
-CMD ["npm", "start"]
+ENV NODE_ENV=production
+
+CMD ["npm", "--workspace", "apps/zenit-calc", "run", "start"]

@@ -1,86 +1,47 @@
-# ============================================
-# MULTI-STAGE DOCKER BUILD - CORRIGIDO
-# ============================================
+FROM node:20-alpine
 
-# Stage 1: Builder
-FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install build dependencies for native modules
+# Build/runtime system dependencies.
 RUN apk add --no-cache \
     python3 \
     make \
     g++ \
-    git
-
-# Copy package files
-COPY package*.json ./
-COPY prisma ./prisma
-
-# Install ALL dependencies (including dev) for build
-RUN npm ci && npm cache clean --force
-
-# Generate Prisma client
-RUN npx prisma generate
-
-# Copy source code
-COPY . .
-
-# Build TypeScript
-RUN npm run build
-
-# ============================================
-# Stage 2: Production Runtime
-FROM node:20-alpine AS production
-WORKDIR /app
-
-# Create non-root user for security
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nextjs -u 1001
-
-# Install runtime dependencies
-RUN apk add --no-cache \
     postgresql-client \
     curl \
     tini \
-    && rm -rf /var/cache/apk/*
+    netcat-openbsd
 
-# Copy package files for production install
+# Install dependencies from monorepo root lockfile/workspaces.
 COPY package*.json ./
-COPY prisma ./prisma
+COPY apps/zenit-admin/package.json ./apps/zenit-admin/package.json
+COPY apps/zenit-calc/package.json ./apps/zenit-calc/package.json
+COPY apps/zenit-cash/package.json ./apps/zenit-cash/package.json
+COPY backend/package.json ./backend/package.json
+COPY packages/shared-users-core/package.json ./packages/shared-users-core/package.json
+RUN npm ci
 
-# Install ONLY production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Copy source and build only backend workspace.
+COPY . .
+RUN npm --workspace backend run build
 
-# Generate Prisma client for production
-RUN npx prisma generate
+WORKDIR /app/backend
 
-# Copy built application from builder stage
-COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
+# Ensure entrypoint is executable and Prisma client is generated in container.
+RUN chmod +x docker-entrypoint.sh && npx prisma generate
 
-# Copy startup script
-COPY --chown=nextjs:nodejs docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh
-
-# Create logs directory
-RUN mkdir -p logs && chown nextjs:nodejs logs
-
-# Environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
 
-# Security: Run as non-root user
+# Security: run as non-root user.
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+RUN mkdir -p /app/backend/logs && chown -R nextjs:nodejs /app/backend/logs
 USER nextjs
 
-# Expose port
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:3000/health || exit 1
 
-# Use tini as init system for proper signal handling
 ENTRYPOINT ["tini", "--"]
-
-# Start application
 CMD ["./docker-entrypoint.sh"]

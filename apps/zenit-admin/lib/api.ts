@@ -1,53 +1,35 @@
 import axios from 'axios'
+import { SSO_STORAGE_KEYS } from '@zenit/shared-users-core'
 
-// 🔍 LOG 1: Verificar variável de ambiente durante o build
-const envApiUrl = process.env.NEXT_PUBLIC_API_URL;
-const finalBaseUrl = envApiUrl || '/api';
-
-console.log('🔍 [API Config] Environment variable:', envApiUrl);
-console.log('🔍 [API Config] Final base URL:', finalBaseUrl);
-console.log('🔍 [API Config] Node env:', process.env.NODE_ENV);
+const envApiUrl = process.env.NEXT_PUBLIC_API_URL
+const finalBaseUrl = envApiUrl || '/api'
+const APP_KEY = process.env.NEXT_PUBLIC_APP_KEY || 'zenit-admin'
 
 const api = axios.create({
-  baseURL: finalBaseUrl,
+  baseURL: finalBaseUrl
 })
 
-// 🔍 LOG 2: Interceptar todas as requisições
 api.interceptors.request.use(config => {
-  const fullUrl = `${config.baseURL}${config.url}`;
-  console.log('🚀 [REQUEST] Method:', config.method?.toUpperCase());
-  console.log('🚀 [REQUEST] Base URL:', config.baseURL);
-  console.log('🚀 [REQUEST] Endpoint:', config.url);
-  console.log('🚀 [REQUEST] Full URL:', fullUrl);
-  
-  const token = localStorage.getItem('zenit_admin_token')
+  const token = localStorage.getItem(SSO_STORAGE_KEYS.token)
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`
   }
-  const companyId = localStorage.getItem('zenit_admin_company_id')
+
+  const companyId = localStorage.getItem(SSO_STORAGE_KEYS.companyId)
   if (companyId && config.headers && !config.headers['X-Company-Id']) {
     config.headers['X-Company-Id'] = companyId
   }
-  return config
-});
 
-// 🔍 LOG 3: Interceptar todas as respostas (incluindo erros)
-api.interceptors.response.use(
-  response => {
-    console.log('✅ [RESPONSE] Status:', response.status);
-    console.log('✅ [RESPONSE] URL:', response.config.url);
-    console.log('✅ [RESPONSE] Data:', response.data);
-    return response;
-  },
-  error => {
-    console.error('❌ [ERROR] Status:', error.response?.status);
-    console.error('❌ [ERROR] URL:', error.config?.url);
-    console.error('❌ [ERROR] Full URL:', `${error.config?.baseURL}${error.config?.url}`);
-    console.error('❌ [ERROR] Response:', error.response?.data);
-    console.error('❌ [ERROR] Message:', error.message);
-    return Promise.reject(error);
+  if (config.headers) {
+    config.headers['X-App-Key'] = APP_KEY
   }
-);
+
+  return config
+})
+
+api.interceptors.response.use(
+  response => response,
+  error => Promise.reject(error)
+)
 
 export default api
-

@@ -1,17 +1,17 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import FinancialTransactionService from '../services/financial-transaction.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import { logger } from '../utils/logger';
 
 /**
- * Função helper simplificada: extrai o único companyId e userId do token
+ * FunÃ§Ã£o helper simplificada: extrai o Ãºnico companyId e userId do token
  */
 function getUserContext(req: Request): { companyId: number; userId: number } {
-  // @ts-ignore - O middleware já validou a existência desses valores
+  // @ts-ignore - O middleware jÃ¡ validou a existÃªncia desses valores
   const { companyId, userId } = req.user;
   
   if (!companyId) {
-    throw new Error('Contexto de empresa não encontrado');
+    throw new Error('Contexto de empresa nÃ£o encontrado');
   }
   
   return { companyId, userId };
@@ -19,7 +19,7 @@ function getUserContext(req: Request): { companyId: number; userId: number } {
 
 /**
  * POST /api/financial/transactions
- * Cria uma nova transação financeira
+ * Cria uma nova transaÃ§Ã£o financeira
  */
 export async function createTransaction(req: Request, res: Response) {
   try {
@@ -61,16 +61,16 @@ export async function createTransaction(req: Request, res: Response) {
 
     return res.status(201).json(transaction);
   } catch (error: any) {
-    logger.error('Erro ao criar transação financeira:', error);
+    logger.error('Erro ao criar transaÃ§Ã£o financeira:', error);
     return res.status(400).json({
-      error: error.message || 'Erro ao criar transação financeira'
+      error: error.message || 'Erro ao criar transaÃ§Ã£o financeira'
     });
   }
 }
 
 /**
  * GET /api/financial/transactions
- * Lista transações financeiras com filtros avançados
+ * Lista transaÃ§Ãµes financeiras com filtros avanÃ§ados
  */
 export async function getTransactions(req: Request, res: Response) {
   try {
@@ -81,6 +81,7 @@ export async function getTransactions(req: Request, res: Response) {
     const {
       startDate,
       endDate,
+      includeVirtualFixed,
       type,
       status,
       accountId,
@@ -88,7 +89,7 @@ export async function getTransactions(req: Request, res: Response) {
       search,
       page,
       pageSize
-    } = req.query;
+    } = req.body;
 
     const accessFilter =
       await UserFinancialAccountAccessService.getAccessibleTransactionFilter(
@@ -97,47 +98,56 @@ export async function getTransactions(req: Request, res: Response) {
         companyId
       );
 
+    const accessibleAccountIds =
+      await UserFinancialAccountAccessService.getUserAccessibleAccounts(
+        userId,
+        role,
+        companyId
+      );
+
     const result = await FinancialTransactionService.listTransactions({
       companyId,
-      startDate: startDate ? new Date(startDate as string) : undefined,
-      endDate: endDate ? new Date(endDate as string) : undefined,
-      type: type as any,
-      status: status as any,
-      accountId: accountId ? Number(accountId) : undefined,
-      categoryId: categoryId ? Number(categoryId) : undefined,
-      search: search as string,
-      page: page ? Number(page) : 1,
-      pageSize: pageSize ? Number(pageSize) : 20,
-      accessFilter
+      startDate,
+      endDate,
+      includeVirtualFixed,
+      type,
+      status,
+      accountId,
+      categoryId,
+      search,
+      page,
+      pageSize,
+      accessFilter,
+      accessibleAccountIds
     });
 
     return res.status(200).json(result);
-  } catch (error) {
-    logger.error('Erro ao listar transações financeiras:', error);
-    return res.status(500).json({
-      error: 'Erro ao listar transações financeiras'
+  } catch (error: any) {
+    logger.error('Erro ao listar transacoes financeiras:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao listar transacoes financeiras'
     });
   }
 }
 
 /**
  * GET /api/financial/transactions/:id
- * Obtém uma transação financeira específica pelo ID
+ * ObtÃ©m uma transaÃ§Ã£o financeira especÃ­fica pelo ID
  */
 export async function getTransactionById(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+      return res.status(400).json({ error: 'ID invÃ¡lido' });
     }
 
     const transaction = await FinancialTransactionService.getTransactionById(id);
     
     if (!transaction) {
-      return res.status(404).json({ error: 'Transação não encontrada' });
+      return res.status(404).json({ error: 'TransaÃ§Ã£o nÃ£o encontrada' });
     }
 
-    // Verificar se pertence à empresa do usuário
+    // Verificar se pertence Ã  empresa do usuÃ¡rio
     const { companyId } = getUserContext(req);
     if (transaction.companyId !== companyId) {
       return res.status(403).json({ error: 'Acesso negado' });
@@ -145,31 +155,31 @@ export async function getTransactionById(req: Request, res: Response) {
 
     return res.status(200).json(transaction);
   } catch (error) {
-    logger.error(`Erro ao buscar transação financeira:`, error);
+    logger.error(`Erro ao buscar transaÃ§Ã£o financeira:`, error);
     return res.status(500).json({
-      error: 'Erro ao buscar transação financeira'
+      error: 'Erro ao buscar transaÃ§Ã£o financeira'
     });
   }
 }
 
 /**
  * PUT /api/financial/transactions/:id
- * Atualiza uma transação financeira
+ * Atualiza uma transaÃ§Ã£o financeira
  */
 export async function updateTransaction(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+      return res.status(400).json({ error: 'ID invÃ¡lido' });
     }
 
     const { companyId } = getUserContext(req);
 
-    // Verificar se a transação existe e pertence à empresa
+    // Verificar se a transaÃ§Ã£o existe e pertence Ã  empresa
     const existingTransaction = await FinancialTransactionService.getTransactionById(id);
     
     if (!existingTransaction) {
-      return res.status(404).json({ error: 'Transação não encontrada' });
+      return res.status(404).json({ error: 'TransaÃ§Ã£o nÃ£o encontrada' });
     }
 
     if (existingTransaction.companyId !== companyId) {
@@ -213,31 +223,31 @@ export async function updateTransaction(req: Request, res: Response) {
 
     return res.status(200).json(updatedTransaction);
   } catch (error: any) {
-    logger.error(`Erro ao atualizar transação financeira:`, error);
+    logger.error(`Erro ao atualizar transaÃ§Ã£o financeira:`, error);
     return res.status(400).json({
-      error: error.message || 'Erro ao atualizar transação financeira'
+      error: error.message || 'Erro ao atualizar transaÃ§Ã£o financeira'
     });
   }
 }
 
 /**
  * PATCH /api/financial/transactions/:id/status
- * Atualiza apenas o status de uma transação
+ * Atualiza apenas o status de uma transaÃ§Ã£o
  */
 export async function updateTransactionStatus(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+      return res.status(400).json({ error: 'ID invÃ¡lido' });
     }
 
     const { companyId } = getUserContext(req);
 
-    // Verificar se a transação existe e pertence à empresa
+    // Verificar se a transaÃ§Ã£o existe e pertence Ã  empresa
     const existingTransaction = await FinancialTransactionService.getTransactionById(id);
     
     if (!existingTransaction) {
-      return res.status(404).json({ error: 'Transação não encontrada' });
+      return res.status(404).json({ error: 'TransaÃ§Ã£o nÃ£o encontrada' });
     }
 
     if (existingTransaction.companyId !== companyId) {
@@ -252,31 +262,31 @@ export async function updateTransactionStatus(req: Request, res: Response) {
 
     return res.status(200).json(updatedTransaction);
   } catch (error: any) {
-    logger.error(`Erro ao atualizar status da transação:`, error);
+    logger.error(`Erro ao atualizar status da transaÃ§Ã£o:`, error);
     return res.status(400).json({
-      error: error.message || 'Erro ao atualizar status da transação'
+      error: error.message || 'Erro ao atualizar status da transaÃ§Ã£o'
     });
   }
 }
 
 /**
  * DELETE /api/financial/transactions/:id
- * Exclui uma transação financeira
+ * Exclui uma transaÃ§Ã£o financeira
  */
 export async function deleteTransaction(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
     if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+      return res.status(400).json({ error: 'ID invÃ¡lido' });
     }
 
     const { companyId } = getUserContext(req);
 
-    // Verificar se a transação existe e pertence à empresa
+    // Verificar se a transaÃ§Ã£o existe e pertence Ã  empresa
     const existingTransaction = await FinancialTransactionService.getTransactionById(id);
     
     if (!existingTransaction) {
-      return res.status(404).json({ error: 'Transação não encontrada' });
+      return res.status(404).json({ error: 'TransaÃ§Ã£o nÃ£o encontrada' });
     }
 
     if (existingTransaction.companyId !== companyId) {
@@ -286,16 +296,16 @@ export async function deleteTransaction(req: Request, res: Response) {
     await FinancialTransactionService.deleteTransaction(id);
     return res.status(204).send();
   } catch (error: any) {
-    logger.error(`Erro ao excluir transação financeira:`, error);
+    logger.error(`Erro ao excluir transaÃ§Ã£o financeira:`, error);
     return res.status(500).json({
-      error: error.message || 'Erro ao excluir transação financeira'
+      error: error.message || 'Erro ao excluir transaÃ§Ã£o financeira'
     });
   }
 }
 
 /**
  * GET /api/financial/summary
- * Obtém um resumo financeiro para o dashboard
+ * ObtÃ©m um resumo financeiro para o dashboard
  */
 export async function getFinancialSummary(req: Request, res: Response) {
   try {
@@ -303,7 +313,7 @@ export async function getFinancialSummary(req: Request, res: Response) {
     // @ts-ignore - auth middleware adiciona
     const { userId, role } = req.user;
     
-    // Parâmetros de período (padrão: mês atual)
+    // ParÃ¢metros de perÃ­odo (padrÃ£o: mÃªs atual)
     const { 
       startDate: startDateParam, 
       endDate: endDateParam 
@@ -316,10 +326,10 @@ export async function getFinancialSummary(req: Request, res: Response) {
       startDate = new Date(startDateParam as string);
       endDate = new Date(endDateParam as string);
     } else {
-      // Padrão: mês atual
+      // PadrÃ£o: mÃªs atual
       const now = new Date();
-      startDate = new Date(now.getFullYear(), now.getMonth(), 1); // Primeiro dia do mês
-      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Último dia do mês
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1); // Primeiro dia do mÃªs
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0); // Ãšltimo dia do mÃªs
     }
 
     const accessibleAccountIds =
@@ -352,18 +362,18 @@ export async function getFinancialSummary(req: Request, res: Response) {
 }
 
 /**
- * ✅ GET /api/financial/transactions/autocomplete
- * Autocomplete inteligente para descrições de transações filtrado por tipo
+ * âœ… GET /api/financial/transactions/autocomplete
+ * Autocomplete inteligente para descriÃ§Ãµes de transaÃ§Ãµes filtrado por tipo
  */
 export async function getTransactionAutocomplete(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { q, type, limit } = req.query; // ✅ ADICIONAR PARÂMETRO TYPE
+    const { q, type, limit } = req.query; // âœ… ADICIONAR PARÃ‚METRO TYPE
 
-    // Validação de entrada
+    // ValidaÃ§Ã£o de entrada
     if (!q || typeof q !== 'string') {
       return res.status(400).json({ 
-        error: 'Parâmetro q é obrigatório e deve ser uma string' 
+        error: 'ParÃ¢metro q Ã© obrigatÃ³rio e deve ser uma string' 
       });
     }
 
@@ -373,17 +383,17 @@ export async function getTransactionAutocomplete(req: Request, res: Response) {
       });
     }
 
-    // ✅ VALIDAR TIPO DE TRANSAÇÃO
+    // âœ… VALIDAR TIPO DE TRANSAÃ‡ÃƒO
     if (!type || typeof type !== 'string') {
       return res.status(400).json({ 
-        error: 'Parâmetro type é obrigatório (INCOME, EXPENSE, TRANSFER)' 
+        error: 'ParÃ¢metro type Ã© obrigatÃ³rio (INCOME, EXPENSE, TRANSFER)' 
       });
     }
 
     const validTypes = ['INCOME', 'EXPENSE', 'TRANSFER'];
     if (!validTypes.includes(type.toUpperCase())) {
       return res.status(400).json({ 
-        error: 'Tipo de transação inválido. Use: INCOME, EXPENSE ou TRANSFER' 
+        error: 'Tipo de transaÃ§Ã£o invÃ¡lido. Use: INCOME, EXPENSE ou TRANSFER' 
       });
     }
 
@@ -391,21 +401,21 @@ export async function getTransactionAutocomplete(req: Request, res: Response) {
 
     // Validar limite (opcional)
     const maxResults = limit && typeof limit === 'string' 
-      ? Math.min(parseInt(limit), 20) // Máximo 20 resultados
-      : 10; // Padrão 10
+      ? Math.min(parseInt(limit), 20) // MÃ¡ximo 20 resultados
+      : 10; // PadrÃ£o 10
 
-    // ✅ DELEGAR LÓGICA PARA O SERVICE COM FILTRO POR TIPO
+    // âœ… DELEGAR LÃ“GICA PARA O SERVICE COM FILTRO POR TIPO
     const suggestions = await FinancialTransactionService.getDescriptionSuggestions(
       companyId,
       q,
-      transactionType, // ✅ PASSAR O TIPO
+      transactionType, // âœ… PASSAR O TIPO
       maxResults
     );
 
     return res.status(200).json({
       suggestions,
       query: q,
-      type: transactionType, // ✅ RETORNAR O TIPO USADO
+      type: transactionType, // âœ… RETORNAR O TIPO USADO
       total: suggestions.length
     });
 
@@ -417,7 +427,8 @@ export async function getTransactionAutocomplete(req: Request, res: Response) {
     });
     
     return res.status(500).json({
-      error: 'Erro interno ao buscar sugestões'
+      error: 'Erro interno ao buscar sugestÃµes'
     });
   }
 }
+

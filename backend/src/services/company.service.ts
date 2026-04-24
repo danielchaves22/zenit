@@ -1,7 +1,8 @@
 // backend/src/services/company.service.ts - COM MÉTODO PARA LISTAR EMPRESAS DO USUÁRIO
-import { PrismaClient, Company, Prisma } from '@prisma/client';
+import { PrismaClient, Company, Prisma, AppKey } from '@prisma/client';
 import { logger } from '../utils/logger';
 import FinancialStructureService from './financial-structure.service';
+import AppAccessService from './app-access.service';
 
 const prisma = new PrismaClient();
 
@@ -38,6 +39,12 @@ export default class CompanyService {
     const company = await prisma.company.create({
       data: { name, address, code }
     });
+
+    await AppAccessService.setCompanyEntitlements(company.id, [
+      { appKey: AppKey.ZENIT_CASH, enabled: true },
+      { appKey: AppKey.ZENIT_CALC, enabled: true },
+      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+    ]);
 
     logger.info('Company created successfully', { 
       companyId: company.id, 

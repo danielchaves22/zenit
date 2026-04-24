@@ -1,6 +1,9 @@
-import app from './app';
+﻿import { startServer } from './app';
 import { PORT } from './config';
+import { logger } from './utils/logger';
+import { startFixedTransactionMaterializerJob } from './jobs/fixed-transaction-materializer.job';
 
-app.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
+startServer(PORT);
+startFixedTransactionMaterializerJob();
+
+logger.info(`Servidor rodando na porta ${PORT}`);

@@ -1,4 +1,4 @@
-import { requireAccountAccess, requireTransactionAccountAccess } from '../middlewares/financial-access.middleware';
+﻿import { requireAccountAccess, requireTransactionAccountAccess } from '../middlewares/financial-access.middleware';
 import { requireFeaturePermission } from '../middlewares/feature-permission.middleware';
 import { Router } from 'express';
 import { validate } from '../middlewares/validate.middleware';
@@ -19,6 +19,12 @@ import {
   updateTransactionStatusSchema,
   autocompleteQuerySchema
 } from '../validators/financial-transaction.validator';
+import {
+  createFixedTransactionSchema,
+  listFixedTransactionsSchema,
+  materializeFixedTransactionSchema,
+  updateFixedTransactionSchema
+} from '../validators/fixed-transaction.validator';
 
 import {
   createAccount,
@@ -56,52 +62,61 @@ import {
   getTransactionAutocomplete
 } from '../controllers/financial-transaction.controller';
 
-// ✅ IMPORTAR ROTAS DE RELATÓRIOS
+import {
+  cancelFixedTransaction,
+  createFixedTransaction,
+  listFixedTransactions,
+  materializeFixedTransactionOccurrence,
+  updateFixedTransaction
+} from '../controllers/fixed-transaction.controller';
+
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 
 const router = Router();
 
-// Rotas de padrões da empresa
 router.get('/defaults', getCompanyDefaults);
 
-// Rotas de Contas Financeiras
+// Financial accounts
 router.post('/accounts', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(createAccountSchema), createAccount);
 router.get('/accounts', validate(listAccountsSchema), getAccounts);
-router.get('/accounts/:id', requireAccountAccess(), getAccountById); // ✅ MIDDLEWARE
-router.put('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), validate(updateAccountSchema), updateAccount); // ✅ MIDDLEWARE
-router.delete('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), deleteAccount); // ✅ MIDDLEWARE
-router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), adjustBalance); // ✅ MIDDLEWARE
+router.get('/accounts/:id', requireAccountAccess(), getAccountById);
+router.put('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), validate(updateAccountSchema), updateAccount);
+router.delete('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), deleteAccount);
+router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), adjustBalance);
 
-// Gerenciar conta padrão
-router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccount); // ✅ MIDDLEWARE
-router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount); // ✅ MIDDLEWARE
+router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccount);
+router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount);
 
-// Rotas de Categorias Financeiras
+// Financial categories
 router.post('/categories', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(createCategorySchema), createCategory);
 router.get('/categories', validate(listCategoriesSchema), getCategories);
 router.get('/categories/:id', getCategoryById);
 router.put('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(updateCategorySchema), updateCategory);
 router.delete('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'), deleteCategory);
 
-// Gerenciar categoria padrão
 router.post('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), setDefaultCategory);
 router.delete('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), unsetDefaultCategory);
 
-// ✅ ROTA DE AUTOCOMPLETE - DEVE VIR ANTES DAS ROTAS COM :id
+// Keep autocomplete before /transactions/:id
 router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);
 
-// Rotas de Transações Financeiras
-router.post('/transactions', requireTransactionAccountAccess(), validate(createTransactionSchema), createTransaction); // ✅ MIDDLEWARE
+// Materialized + projected transactions
+router.post('/transactions', requireTransactionAccountAccess(), validate(createTransactionSchema), createTransaction);
 router.get('/transactions', validate(listTransactionsSchema), getTransactions);
 router.get('/transactions/:id', getTransactionById);
-router.put('/transactions/:id', requireTransactionAccountAccess(), validate(updateTransactionSchema), updateTransaction); // ✅ MIDDLEWARE
+router.put('/transactions/:id', requireTransactionAccountAccess(), validate(updateTransactionSchema), updateTransaction);
 router.patch('/transactions/:id/status', validate(updateTransactionStatusSchema), updateTransactionStatus);
 router.delete('/transactions/:id', deleteTransaction);
 
-// ✅ ROTAS DE RELATÓRIOS - ORDEM IMPORTA!
-router.use('/reports/financial-account-movement', financialAccountMovementRoutes);
+// Fixed transaction templates
+router.post('/fixed-transactions', requireTransactionAccountAccess(), validate(createFixedTransactionSchema), createFixedTransaction);
+router.get('/fixed-transactions', validate(listFixedTransactionsSchema), listFixedTransactions);
+router.put('/fixed-transactions/:id', validate(updateFixedTransactionSchema), updateFixedTransaction);
+router.patch('/fixed-transactions/:id/cancel', cancelFixedTransaction);
+router.post('/fixed-transactions/:id/materialize', validate(materializeFixedTransactionSchema), materializeFixedTransactionOccurrence);
 
-// Rotas de Relatórios/Dashboard
+// Reports
+router.use('/reports/financial-account-movement', financialAccountMovementRoutes);
 router.get('/summary', getFinancialSummary);
 
 export default router;

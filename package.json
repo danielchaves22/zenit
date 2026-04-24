@@ -1,0 +1,15 @@
+{
+  "name": "zenit-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "backend",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:backend": "npm --workspace backend run build",
+    "build:zenit-cash": "npm --workspace apps/zenit-cash run build",
+    "build:zenit-calc": "npm --workspace apps/zenit-calc run build",
+    "build:zenit-admin": "npm --workspace apps/zenit-admin run build"
+  }
+}

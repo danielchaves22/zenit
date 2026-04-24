@@ -9,6 +9,11 @@ const prisma = new PrismaClient({
 const EQUINOX_COMPANY_CODE = 0;
 const ADMIN_EMAIL = 'admin@equinox.com.br';
 const ADMIN_PASSWORD = '@dmin05c10';
+const APP_CATALOG = [
+  { appKey: 'ZENIT_CASH', name: 'Zenit Cash' },
+  { appKey: 'ZENIT_CALC', name: 'Zenit Calc' },
+  { appKey: 'ZENIT_ADMIN', name: 'Zenit Admin' }
+];
 
 async function main() {
   try {
@@ -96,6 +101,8 @@ async function main() {
       console.log('[seed] Admin-company link already existed. Flags normalized.');
     }
 
+    await ensureAppAccess(company.id, adminUser.id);
+
     console.log('[seed] Seed completed successfully.');
 
     if (adminCreatedNow) {
@@ -168,6 +175,39 @@ async function createDefaultFinancialStructure(companyId) {
       },
     };
   });
+}
+
+async function ensureAppAccess(companyId, userId) {
+  for (const app of APP_CATALOG) {
+    const catalogItem = await prisma.ecosystemApp.upsert({
+      where: { appKey: app.appKey },
+      update: { name: app.name, isActive: true },
+      create: { appKey: app.appKey, name: app.name, isActive: true }
+    });
+
+    await prisma.companyAppEntitlement.upsert({
+      where: {
+        unique_company_app_entitlement: {
+          companyId,
+          appId: catalogItem.id
+        }
+      },
+      update: { enabled: true },
+      create: { companyId, appId: catalogItem.id, enabled: true }
+    });
+
+    await prisma.userAppGrant.upsert({
+      where: {
+        unique_user_company_app_grant: {
+          userId,
+          companyId,
+          appId: catalogItem.id
+        }
+      },
+      update: { granted: true },
+      create: { userId, companyId, appId: catalogItem.id, granted: true }
+    });
+  }
 }
 
 main()

@@ -514,7 +514,7 @@ interface AuthContextData {
 ```typescript
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const token = request.cookies.get('zenit_token')?.value;
+  const token = request.cookies.get('zenit_sso_token')?.value;
   
   if (!isPublicRoute && !token) {
     const url = new URL('/login', request.url);
@@ -690,7 +690,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use(config => {
-  const token = localStorage.getItem('zenit_token');
+  const token = localStorage.getItem('zenit_sso_token');
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -796,7 +796,7 @@ CMD ["npm", "start"]
 ### Code Organization
 ```
 apps/
-├── zenit/                # Frontend Zenit (login/rotas próprios)
+├── zenit-cash/                # Frontend Zenit Cash (login/rotas próprios)
 │   ├── components/
 │   │   ├── ui/           # Componentes básicos
 │   │   ├── admin/        # Funcionalidades administrativas
@@ -891,3 +891,6 @@ O frontend do Zenit Core representa uma implementação moderna e escalável de 
 A arquitetura foi pensada para crescer com o produto, mantendo performance, acessibilidade e experiência do usuário como pilares fundamentais. O sistema de permissões granular garante que cada usuário veja apenas o que deve ver, enquanto o design system consistente proporciona uma experiência coesa em toda a aplicação.
 
 A integração perfeita entre frontend e backend através de APIs tipadas e autenticação segura garante uma experiência fluida e confiável para os usuários finais.
+
+
+

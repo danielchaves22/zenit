@@ -1,7 +1,8 @@
-import { PrismaClient, FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
+﻿import { PrismaClient, FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { parseDecimal } from '../utils/money';
 import cacheService from './cache.service';
+import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
 
 const prisma = new PrismaClient();
 
@@ -11,7 +12,7 @@ const prisma = new PrismaClient();
 
 export default class FinancialTransactionService {
   /**
-   * Cria transações financeiras considerando repetições
+   * Cria transaÃ§Ãµes financeiras considerando repetiÃ§Ãµes
    */
   static async createTransaction(data: {
     description: string;
@@ -102,7 +103,7 @@ export default class FinancialTransactionService {
       companyId: data.companyId
     });
 
-    // ✅ CRITICAL: Input validation BEFORE any DB operation
+    // âœ… CRITICAL: Input validation BEFORE any DB operation
     this.validateTransactionData(data.type, data.fromAccountId, data.toAccountId);
     const parsedAmount = parseDecimal(data.amount);
 
@@ -110,7 +111,7 @@ export default class FinancialTransactionService {
       throw new Error('Transaction amount must be positive');
     }
 
-    // ✅ CRITICAL: Maximum 3 retry attempts for deadlocks
+    // âœ… CRITICAL: Maximum 3 retry attempts for deadlocks
     const maxRetries = 3;
     let retryCount = 0;
 
@@ -118,7 +119,7 @@ export default class FinancialTransactionService {
       try {
         return await this.executeTransactionWithFullLocking(data, parsedAmount, transactionId, startTime);
       } catch (error: any) {
-        // ✅ CRITICAL: Retry only on deadlock/serialization failures
+        // âœ… CRITICAL: Retry only on deadlock/serialization failures
         if ((error.code === 'P2034' || error.message.includes('deadlock') || error.message.includes('serialization')) && retryCount < maxRetries - 1) {
           retryCount++;
           const backoffMs = Math.min(100 * Math.pow(2, retryCount), 1000); // Exponential backoff
@@ -134,7 +135,7 @@ export default class FinancialTransactionService {
           continue;
         }
 
-        // ✅ CRITICAL: Log all financial transaction failures
+        // âœ… CRITICAL: Log all financial transaction failures
         logger.error('CRITICAL: Financial transaction failed', {
           transactionId,
           error: error.message,
@@ -163,7 +164,7 @@ export default class FinancialTransactionService {
     
     return await prisma.$transaction(async (tx) => {
       
-      // ✅ CRITICAL: Acquire locks in DETERMINISTIC ORDER to prevent deadlocks
+      // âœ… CRITICAL: Acquire locks in DETERMINISTIC ORDER to prevent deadlocks
       const accountsToLock = [];
       if (data.fromAccountId) accountsToLock.push(data.fromAccountId);
       if (data.toAccountId && data.toAccountId !== data.fromAccountId) {
@@ -175,7 +176,7 @@ export default class FinancialTransactionService {
       
       const lockedAccounts: any[] = [];
       
-      // ✅ CRITICAL: Acquire ALL locks BEFORE any business logic
+      // âœ… CRITICAL: Acquire ALL locks BEFORE any business logic
       for (const accountId of accountsToLock) {
         try {
           const result = await tx.$queryRaw`
@@ -191,12 +192,12 @@ export default class FinancialTransactionService {
           
           const account = (result as any[])[0];
           
-          // ✅ CRITICAL: Verify account belongs to company
+          // âœ… CRITICAL: Verify account belongs to company
           if (account.companyId !== data.companyId) {
             throw new Error(`Account ${accountId} does not belong to company ${data.companyId}`);
           }
           
-          // ✅ CRITICAL: Verify account is active
+          // âœ… CRITICAL: Verify account is active
           if (!account.isActive) {
             throw new Error(`Account ${accountId} is inactive`);
           }
@@ -211,12 +212,12 @@ export default class FinancialTransactionService {
         }
       }
       
-      // ✅ CRITICAL: Business logic validation AFTER locks acquired
+      // âœ… CRITICAL: Business logic validation AFTER locks acquired
       if (data.status === 'COMPLETED') {
         await this.validateBusinessRules(data, parsedAmount, lockedAccounts);
       }
       
-      // ✅ CRITICAL: Create transaction record FIRST (for audit trail)
+      // âœ… CRITICAL: Create transaction record FIRST (for audit trail)
       const transaction = await tx.financialTransaction.create({
         data: {
           description: data.description,
@@ -243,7 +244,7 @@ export default class FinancialTransactionService {
         }
       });
       
-      // ✅ CRITICAL: Update account balances ATOMICALLY
+      // âœ… CRITICAL: Update account balances ATOMICALLY
       if (data.status === 'COMPLETED') {
         await this.updateAccountBalancesAtomic(tx, {
           transactionId: transaction.id,
@@ -253,11 +254,11 @@ export default class FinancialTransactionService {
           toAccountId: data.toAccountId
         });
         
-        // ✅ CRITICAL: Verify balance integrity AFTER update
+        // âœ… CRITICAL: Verify balance integrity AFTER update
         await this.verifyBalanceIntegrity(tx, accountsToLock);
       }
       
-      // ✅ CRITICAL: Success audit log
+      // âœ… CRITICAL: Success audit log
       logger.info('Financial transaction completed successfully', {
         transactionId,
         dbTransactionId: transaction.id,
@@ -267,7 +268,7 @@ export default class FinancialTransactionService {
         accountsAffected: accountsToLock.length
       });
 
-      // ✅ CRITICAL: Invalidate relevant caches
+      // âœ… CRITICAL: Invalidate relevant caches
       const affectedAccountIds = accountsToLock;
       await this.invalidateFinancialCaches(data.companyId, affectedAccountIds);
       
@@ -299,16 +300,16 @@ export default class FinancialTransactionService {
       const currentBalance = parseDecimal(fromAccount.balance);
       const transactionAmount = parseDecimal(amount);
       
-      // ✅ VERIFICAR SE PERMITE SALDO NEGATIVO
+      // âœ… VERIFICAR SE PERMITE SALDO NEGATIVO
       if (!fromAccount.allowNegativeBalance) {
-        // ✅ VALIDAÇÃO TRADICIONAL - não permite negativo
+        // âœ… VALIDAÃ‡ÃƒO TRADICIONAL - nÃ£o permite negativo
         if (currentBalance.lt(transactionAmount)) {
           throw new Error(
             `Insufficient balance. Available: ${currentBalance.toFixed(2)}, Required: ${transactionAmount.toFixed(2)}`
           );
         }
       } else {
-        // ✅ PERMITE NEGATIVO - mas ainda logamos para auditoria
+        // âœ… PERMITE NEGATIVO - mas ainda logamos para auditoria
         const newBalance = currentBalance.minus(transactionAmount);
         if (newBalance.lt(0)) {
           logger.warn('Transaction creating negative balance', {
@@ -332,7 +333,7 @@ export default class FinancialTransactionService {
       const currentBalance = parseDecimal(fromAccount.balance);
       const transferAmount = parseDecimal(amount);
       
-      // ✅ VERIFICAR SE PERMITE SALDO NEGATIVO PARA TRANSFERÊNCIAS
+      // âœ… VERIFICAR SE PERMITE SALDO NEGATIVO PARA TRANSFERÃŠNCIAS
       if (!fromAccount.allowNegativeBalance) {
         if (currentBalance.lt(transferAmount)) {
           throw new Error(
@@ -340,7 +341,7 @@ export default class FinancialTransactionService {
           );
         }
       } else {
-        // ✅ PERMITE NEGATIVO - mas ainda logamos para auditoria
+        // âœ… PERMITE NEGATIVO - mas ainda logamos para auditoria
         const newBalance = currentBalance.minus(transferAmount);
         if (newBalance.lt(0)) {
           logger.warn('Transfer creating negative balance', {
@@ -389,7 +390,7 @@ export default class FinancialTransactionService {
       `;
     } 
     else if (type === 'TRANSFER' && fromAccountId && toAccountId) {
-      // ✅ CRITICAL: BOTH updates in same atomic operation
+      // âœ… CRITICAL: BOTH updates in same atomic operation
       await tx.$executeRaw`
         UPDATE "FinancialAccount" 
         SET balance = balance - ${amountDecimal}, "updatedAt" = NOW()
@@ -427,14 +428,14 @@ export default class FinancialTransactionService {
       const account = result[0];
       const balance = parseDecimal(account.balance);
       
-      // ✅ SÓ VERIFICAR NEGATIVOS SE A CONTA NÃO PERMITE
+      // âœ… SÃ“ VERIFICAR NEGATIVOS SE A CONTA NÃƒO PERMITE
       if (!account.allowNegativeBalance && balance.lt(0)) {
         throw new Error(
           `CRITICAL: Account ${accountId} (${account.name}) has negative balance: ${balance.toFixed(2)} but allowNegativeBalance is false`
         );
       }
       
-      // ✅ LOG PARA AUDITORIA DE SALDOS NEGATIVOS PERMITIDOS
+      // âœ… LOG PARA AUDITORIA DE SALDOS NEGATIVOS PERMITIDOS
       if (account.allowNegativeBalance && balance.lt(0)) {
         logger.info('Account with authorized negative balance', {
           accountId,
@@ -475,7 +476,7 @@ export default class FinancialTransactionService {
     
     return await prisma.$transaction(async (tx) => {
       
-      // ✅ CRITICAL: Lock original transaction first
+      // âœ… CRITICAL: Lock original transaction first
       const original = await tx.$queryRaw`
         SELECT * FROM "FinancialTransaction" 
         WHERE id = ${id} 
@@ -488,12 +489,12 @@ export default class FinancialTransactionService {
 
       const originalTxn = original[0];
       
-      // ✅ CRITICAL: Company ownership verification
+      // âœ… CRITICAL: Company ownership verification
       if (originalTxn.companyId !== companyId) {
         throw new Error(`Transaction ${id} does not belong to company ${companyId}`);
       }
 
-      // ✅ CRITICAL: Collect ALL accounts that need locking (old + new)
+      // âœ… CRITICAL: Collect ALL accounts that need locking (old + new)
       const accountsToLock = new Set<number>();
       
       if (originalTxn.fromAccountId) accountsToLock.add(originalTxn.fromAccountId);
@@ -501,7 +502,7 @@ export default class FinancialTransactionService {
       if (data.fromAccountId) accountsToLock.add(data.fromAccountId);
       if (data.toAccountId) accountsToLock.add(data.toAccountId);
       
-      // ✅ CRITICAL: Acquire locks in deterministic order
+      // âœ… CRITICAL: Acquire locks in deterministic order
       const sortedAccountIds = Array.from(accountsToLock).sort((a, b) => a - b);
       
       for (const accountId of sortedAccountIds) {
@@ -512,7 +513,7 @@ export default class FinancialTransactionService {
         `;
       }
 
-      // ✅ CRITICAL: If was COMPLETED, reverse the effects first
+      // âœ… CRITICAL: If was COMPLETED, reverse the effects first
       if (originalTxn.status === 'COMPLETED') {
         await this.reverseAccountBalancesAtomic(tx, {
           type: originalTxn.type,
@@ -522,7 +523,7 @@ export default class FinancialTransactionService {
         });
       }
 
-      // ✅ CRITICAL: Update the transaction record
+      // âœ… CRITICAL: Update the transaction record
       const updatedData: any = {};
       if (data.description !== undefined) updatedData.description = data.description;
       if (data.amount !== undefined) updatedData.amount = parseDecimal(data.amount);
@@ -540,7 +541,7 @@ export default class FinancialTransactionService {
         data: updatedData
       });
 
-      // ✅ CRITICAL: Apply new effects if COMPLETED
+      // âœ… CRITICAL: Apply new effects if COMPLETED
       const newStatus = data.status || originalTxn.status;
       if (newStatus === 'COMPLETED') {
         await this.updateAccountBalancesAtomic(tx, {
@@ -551,7 +552,7 @@ export default class FinancialTransactionService {
           toAccountId: updated.toAccountId
         });
         
-        // ✅ CRITICAL: Verify integrity
+        // âœ… CRITICAL: Verify integrity
         await this.verifyBalanceIntegrity(tx, sortedAccountIds);
       }
 
@@ -697,6 +698,7 @@ export default class FinancialTransactionService {
     companyId: number;
     startDate?: Date;
     endDate?: Date;
+    includeVirtualFixed?: boolean;
     type?: TransactionType;
     status?: TransactionStatus;
     accountId?: number;
@@ -704,12 +706,14 @@ export default class FinancialTransactionService {
     search?: string;
     page?: number;
     pageSize?: number;
-    accessFilter?: any; // ✅ NOVO PARÂMETRO
-  }): Promise<{ data: FinancialTransaction[]; total: number; pages: number }> {
+    accessFilter?: any;
+    accessibleAccountIds?: number[];
+  }): Promise<{ data: any[]; total: number; pages: number }> {
     const {
       companyId,
       startDate,
       endDate,
+      includeVirtualFixed = true,
       type,
       status,
       accountId,
@@ -717,51 +721,319 @@ export default class FinancialTransactionService {
       search,
       page = 1,
       pageSize = 20,
-      accessFilter // ✅ NOVO PARÂMETRO
+      accessFilter,
+      accessibleAccountIds
     } = params;
 
-    const where: Prisma.FinancialTransactionWhereInput = {
-      companyId,
-      ...(startDate && { date: { gte: startDate } }),
-      ...(endDate && { date: { lte: endDate } }),
-      ...(type && { type }),
-      ...(status && { status }),
-      ...(categoryId && { categoryId }),
-      ...(accountId && {
+    if (!startDate || !endDate) {
+      throw new Error('startDate e endDate sao obrigatorios para listar transacoes');
+    }
+
+    const normalizedSearch = search?.trim();
+    const whereFilters: Prisma.FinancialTransactionWhereInput[] = [
+      { companyId },
+      { date: { gte: startDate, lte: endDate } }
+    ];
+
+    if (type) {
+      whereFilters.push({ type });
+    }
+
+    if (status) {
+      whereFilters.push({ status });
+    }
+
+    if (categoryId) {
+      whereFilters.push({ categoryId });
+    }
+
+    if (accountId) {
+      whereFilters.push({
         OR: [
           { fromAccountId: accountId },
           { toAccountId: accountId }
         ]
-      }),
-      ...(search && {
+      });
+    }
+
+    if (normalizedSearch) {
+      whereFilters.push({
         OR: [
-          { description: { contains: search, mode: 'insensitive' } },
-          { notes: { contains: search, mode: 'insensitive' } }
+          { description: { contains: normalizedSearch, mode: 'insensitive' } },
+          { notes: { contains: normalizedSearch, mode: 'insensitive' } }
         ]
-      }),
-      // ✅ APLICAR FILTRO DE PERMISSÕES SE FORNECIDO
-      ...(accessFilter && { AND: [accessFilter] })
-    };
+      });
+    }
 
-    const [data, total] = await Promise.all([
-      prisma.financialTransaction.findMany({
-        where,
-        include: {
-          category: { select: { id: true, name: true, color: true } },
-          fromAccount: { select: { id: true, name: true } },
-          toAccount: { select: { id: true, name: true } },
-          tags: { select: { id: true, name: true } },
-          createdByUser: { select: { id: true, name: true } }
-        },
-        orderBy: { date: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize
-      }),
-      prisma.financialTransaction.count({ where })
-    ]);
+    if (accessFilter) {
+      whereFilters.push(accessFilter);
+    }
 
-    const pages = Math.ceil(total / pageSize);
+    const where: Prisma.FinancialTransactionWhereInput = { AND: whereFilters };
+
+    const materialized = await prisma.financialTransaction.findMany({
+      where,
+      include: {
+        category: { select: { id: true, name: true, color: true } },
+        fromAccount: { select: { id: true, name: true } },
+        toAccount: { select: { id: true, name: true } },
+        tags: { select: { id: true, name: true } },
+        createdByUser: { select: { id: true, name: true } }
+      }
+    });
+
+    const decoratedMaterialized = materialized.map((transaction: any) => ({
+      ...transaction,
+      isVirtual: false,
+      isFixed: !!transaction.recurringTransactionId,
+      fixedTemplateId: transaction.recurringTransactionId ?? null,
+      virtualKey: undefined
+    }));
+
+    if (!includeVirtualFixed) {
+      const sortedOnlyMaterialized = this.sortTransactionsForList(decoratedMaterialized);
+      const total = sortedOnlyMaterialized.length;
+      const pages = Math.ceil(total / pageSize) || 1;
+      const paged = sortedOnlyMaterialized.slice((page - 1) * pageSize, page * pageSize);
+      return { data: paged, total, pages };
+    }
+
+    // Transacoes virtuais de fixas sempre sao PENDING e nunca TRANSFER.
+    if ((status && status !== TransactionStatus.PENDING) || type === TransactionType.TRANSFER) {
+      const sortedOnlyMaterialized = this.sortTransactionsForList(decoratedMaterialized);
+      const total = sortedOnlyMaterialized.length;
+      const pages = Math.ceil(total / pageSize) || 1;
+      const paged = sortedOnlyMaterialized.slice((page - 1) * pageSize, page * pageSize);
+      return { data: paged, total, pages };
+    }
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const projectionStart = startDate > todayStart ? startDate : todayStart;
+
+    const existingOccurrenceKeys = new Set<string>();
+    const existingOccurrenceWhereFilters: Prisma.FinancialTransactionWhereInput[] = [
+      { companyId },
+      { date: { gte: projectionStart, lte: endDate } },
+      { recurringTransactionId: { not: null } }
+    ];
+
+    if (accessFilter) {
+      existingOccurrenceWhereFilters.push(accessFilter);
+    }
+
+    const existingOccurrences = projectionStart <= endDate
+      ? await prisma.financialTransaction.findMany({
+          where: { AND: existingOccurrenceWhereFilters },
+          select: {
+            recurringTransactionId: true,
+            occurrenceKey: true,
+            dueDate: true,
+            date: true
+          }
+        })
+      : [];
+
+    for (const transaction of existingOccurrences) {
+      if (!transaction.recurringTransactionId) {
+        continue;
+      }
+
+      const baseDate = transaction.dueDate || transaction.date;
+      if (!baseDate) {
+        continue;
+      }
+
+      const key = transaction.occurrenceKey || buildOccurrenceKeyValue(transaction.recurringTransactionId, new Date(baseDate));
+      existingOccurrenceKeys.add(key);
+    }
+
+    const virtualTransactions: any[] = [];
+
+    if (projectionStart <= endDate) {
+      const templates = await FixedTransactionService.getTemplatesForProjection({
+        companyId,
+        rangeStart: projectionStart,
+        rangeEnd: endDate,
+        accessibleAccountIds
+      });
+
+      const startCursor = new Date(projectionStart.getFullYear(), projectionStart.getMonth(), 1);
+      const endCursor = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+
+      for (const template of templates as any[]) {
+        if (type && template.type !== type) {
+          continue;
+        }
+
+        if (categoryId && template.categoryId !== categoryId) {
+          continue;
+        }
+
+        if (accountId) {
+          const matchesAccount = template.fromAccountId === accountId || template.toAccountId === accountId;
+          if (!matchesAccount) {
+            continue;
+          }
+        }
+
+        if (normalizedSearch) {
+          const normalizedTemplateText = `${template.description ?? ''} ${template.notes ?? ''}`.toLowerCase();
+          if (!normalizedTemplateText.includes(normalizedSearch.toLowerCase())) {
+            continue;
+          }
+        }
+
+        let cursor = new Date(startCursor);
+
+        while (cursor <= endCursor) {
+          const occurrenceDate = FixedTransactionService.buildVirtualDateForMonth(
+            cursor.getFullYear(),
+            cursor.getMonth(),
+            template.dayOfMonth || 1
+          );
+
+          if (occurrenceDate >= projectionStart && occurrenceDate <= endDate) {
+            if (template.startDate <= occurrenceDate && (!template.endDate || template.endDate >= occurrenceDate)) {
+              const occurrenceKey = buildOccurrenceKeyValue(template.id, occurrenceDate);
+
+              if (!existingOccurrenceKeys.has(occurrenceKey)) {
+                const virtualTransaction = {
+                  id: null,
+                  description: template.description,
+                  amount: template.amount,
+                  date: occurrenceDate,
+                  dueDate: occurrenceDate,
+                  effectiveDate: null,
+                  type: template.type,
+                  status: TransactionStatus.PENDING,
+                  notes: template.notes,
+                  fromAccountId: template.fromAccountId,
+                  toAccountId: template.toAccountId,
+                  categoryId: template.categoryId,
+                  recurringTransactionId: template.id,
+                  occurrenceKey,
+                  installmentNumber: null,
+                  totalInstallments: null,
+                  tags: [],
+                  category: template.category,
+                  fromAccount: template.fromAccount,
+                  toAccount: template.toAccount,
+                  createdByUser: { id: template.createdBy, name: 'Template Fixa' },
+                  createdAt: occurrenceDate,
+                  updatedAt: occurrenceDate,
+                  isVirtual: true,
+                  virtualKey: occurrenceKey,
+                  fixedTemplateId: template.id,
+                  isFixed: true
+                };
+
+                if (this.matchesProjectedTransactionFilters(virtualTransaction, {
+                  type,
+                  status,
+                  accountId,
+                  categoryId,
+                  search: normalizedSearch
+                })) {
+                  virtualTransactions.push(virtualTransaction);
+                }
+              }
+            }
+          }
+
+          cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+        }
+      }
+    }
+
+    const merged = [...decoratedMaterialized, ...virtualTransactions];
+    const sorted = this.sortTransactionsForList(merged);
+
+    const total = sorted.length;
+    const pages = Math.ceil(total / pageSize) || 1;
+    const data = sorted.slice((page - 1) * pageSize, page * pageSize);
+
     return { data, total, pages };
+  }
+
+  private static sortTransactionsForList(transactions: any[]): any[] {
+    return [...transactions].sort((a, b) => {
+      const aDateValue = new Date(a?.dueDate || a?.date || 0).getTime();
+      const bDateValue = new Date(b?.dueDate || b?.date || 0).getTime();
+
+      if (aDateValue !== bDateValue) {
+        return bDateValue - aDateValue;
+      }
+
+      const aCreated = new Date(a?.createdAt || a?.date || 0).getTime();
+      const bCreated = new Date(b?.createdAt || b?.date || 0).getTime();
+
+      if (aCreated !== bCreated) {
+        return bCreated - aCreated;
+      }
+
+      const aVirtual = a?.isVirtual ? 1 : 0;
+      const bVirtual = b?.isVirtual ? 1 : 0;
+
+      if (aVirtual !== bVirtual) {
+        return aVirtual - bVirtual;
+      }
+
+      const aId = typeof a?.id === 'number' ? a.id : 0;
+      const bId = typeof b?.id === 'number' ? b.id : 0;
+      return bId - aId;
+    });
+  }
+
+  private static matchesProjectedTransactionFilters(
+    transaction: {
+      description?: string;
+      notes?: string | null;
+      type: TransactionType;
+      status: TransactionStatus;
+      fromAccountId?: number | null;
+      toAccountId?: number | null;
+      categoryId?: number | null;
+    },
+    filters: {
+      type?: TransactionType;
+      status?: TransactionStatus;
+      accountId?: number;
+      categoryId?: number;
+      search?: string;
+    }
+  ): boolean {
+    if (filters.type && transaction.type !== filters.type) {
+      return false;
+    }
+
+    if (filters.status && transaction.status !== filters.status) {
+      return false;
+    }
+
+    if (filters.categoryId && transaction.categoryId !== filters.categoryId) {
+      return false;
+    }
+
+    if (filters.accountId) {
+      const matchesAccount =
+        transaction.fromAccountId === filters.accountId ||
+        transaction.toAccountId === filters.accountId;
+
+      if (!matchesAccount) {
+        return false;
+      }
+    }
+
+    if (filters.search) {
+      const haystack = `${transaction.description ?? ''} ${transaction.notes ?? ''}`.toLowerCase();
+      if (!haystack.includes(filters.search.toLowerCase())) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   static async getTransactionById(id: number): Promise<FinancialTransaction | null> {
@@ -781,7 +1053,7 @@ export default class FinancialTransactionService {
     companyId: number,
     startDate: Date,
     endDate: Date,
-    accessibleAccountIds?: number[] // ✅ NOVO PARÂMETRO OPCIONAL
+    accessibleAccountIds?: number[] // âœ… NOVO PARÃ‚METRO OPCIONAL
   ): Promise<{
     income: number;
     expense: number;
@@ -789,7 +1061,7 @@ export default class FinancialTransactionService {
     accounts: { id: number; name: string; balance: any; type: string }[];
     topCategories: { id: number; name: string; amount: number; color: string }[];
   }> {
-    // CACHE: Try to get from cache first (se não houver filtro de contas específicas)
+    // CACHE: Try to get from cache first (se nÃ£o houver filtro de contas especÃ­ficas)
     let cacheKey: string | null = null;
     if (!accessibleAccountIds || accessibleAccountIds.length === 0) {
       cacheKey = cacheService.getDashboardKey(
@@ -812,7 +1084,7 @@ export default class FinancialTransactionService {
       }
     }
 
-    // ✅ FILTRAR CONTAS POR PERMISSÕES
+    // âœ… FILTRAR CONTAS POR PERMISSÃ•ES
     const accountWhere: any = { 
       companyId, 
       isActive: true 
@@ -827,7 +1099,7 @@ export default class FinancialTransactionService {
       select: { id: true, name: true, balance: true, type: true }
     });
 
-    // ✅ FILTRAR TRANSAÇÕES POR CONTAS ACESSÍVEIS
+    // âœ… FILTRAR TRANSAÃ‡Ã•ES POR CONTAS ACESSÃVEIS
     const transactionWhere: any = {
       companyId,
       status: 'COMPLETED',
@@ -857,7 +1129,7 @@ export default class FinancialTransactionService {
       _sum: { amount: true }
     });
 
-    // Inclui transferências na soma quando filtrando por contas específicas
+    // Inclui transferÃªncias na soma quando filtrando por contas especÃ­ficas
     let incomingTransferAggregate = { _sum: { amount: new Prisma.Decimal(0) } } as { _sum: { amount: Prisma.Decimal | null } };
     let outgoingTransferAggregate = { _sum: { amount: new Prisma.Decimal(0) } } as { _sum: { amount: Prisma.Decimal | null } };
 
@@ -932,7 +1204,7 @@ export default class FinancialTransactionService {
       topCategories
     };
 
-    // CACHE: Store for 10 minutes (apenas se não houver filtro específico)
+    // CACHE: Store for 10 minutes (apenas se nÃ£o houver filtro especÃ­fico)
     if (cacheKey) {
       await cacheService.set(cacheKey, result, 600);
       logger.info('Financial summary cached', { companyId, cacheKey });
@@ -960,17 +1232,17 @@ export default class FinancialTransactionService {
   }
 
   /**
-   * Busca sugestões de autocomplete para descrições de transações
-   * Filtrado por tipo de transação para melhor relevância e performance
+   * Busca sugestÃµes de autocomplete para descriÃ§Ãµes de transaÃ§Ãµes
+   * Filtrado por tipo de transaÃ§Ã£o para melhor relevÃ¢ncia e performance
    */
   static async getDescriptionSuggestions(
     companyId: number, 
     query: string, 
-    transactionType: TransactionType, // ✅ NOVO PARÂMETRO
+    transactionType: TransactionType, // âœ… NOVO PARÃ‚METRO
     limit: number = 10
   ): Promise<Array<{ description: string; frequency: number }>> {
     
-    // Validação de entrada
+    // ValidaÃ§Ã£o de entrada
     if (!query || query.trim().length < 3) {
       return [];
     }
@@ -978,12 +1250,12 @@ export default class FinancialTransactionService {
     const normalizedQuery = query.trim();
     
     try {
-      // ✅ BUSCAR DESCRIÇÕES FILTRADAS POR TIPO E FREQUÊNCIA
+      // âœ… BUSCAR DESCRIÃ‡Ã•ES FILTRADAS POR TIPO E FREQUÃŠNCIA
       const suggestions = await prisma.financialTransaction.groupBy({
         by: ['description'],
         where: {
           companyId,
-          type: transactionType, // ✅ FILTRO POR TIPO DE TRANSAÇÃO
+          type: transactionType, // âœ… FILTRO POR TIPO DE TRANSAÃ‡ÃƒO
           description: {
             contains: normalizedQuery,
             mode: 'insensitive' // Case-insensitive search
@@ -999,7 +1271,7 @@ export default class FinancialTransactionService {
             }
           },
           {
-            description: 'asc' // Alfabética como critério secundário
+            description: 'asc' // AlfabÃ©tica como critÃ©rio secundÃ¡rio
           }
         ],
         take: limit
@@ -1007,7 +1279,7 @@ export default class FinancialTransactionService {
 
       // Mapear resultado para formato esperado
       const formattedSuggestions = suggestions
-        .filter(item => item.description) // Garantir que descrição não é null
+        .filter(item => item.description) // Garantir que descriÃ§Ã£o nÃ£o Ã© null
         .map(item => ({
           description: item.description!,
           frequency: item._count.description
@@ -1016,7 +1288,7 @@ export default class FinancialTransactionService {
       logger.debug('Autocomplete suggestions generated with type filter', {
         companyId,
         query: normalizedQuery,
-        transactionType, // ✅ LOG DO TIPO
+        transactionType, // âœ… LOG DO TIPO
         resultCount: formattedSuggestions.length,
         topResult: formattedSuggestions[0]?.description
       });
@@ -1027,12 +1299,15 @@ export default class FinancialTransactionService {
       logger.error('Error fetching description suggestions', {
         companyId,
         query: normalizedQuery,
-        transactionType, // ✅ LOG DO TIPO NO ERRO
+        transactionType, // âœ… LOG DO TIPO NO ERRO
         error: error instanceof Error ? error.message : String(error)
       });
       
-      // Em caso de erro, retornar array vazio em vez de lançar exceção
+      // Em caso de erro, retornar array vazio em vez de lanÃ§ar exceÃ§Ã£o
       return [];
     }
   }
 }
+
+
+

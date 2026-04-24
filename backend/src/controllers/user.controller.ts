@@ -1,7 +1,9 @@
 import { Request, Response } from 'express';
-import { PrismaClient, Role } from '@prisma/client';
+import { AppKey, PrismaClient, Role } from '@prisma/client';
 import UserService from '../services/user.service';
 import { logger } from '../utils/logger';
+import AppAccessService from '../services/app-access.service';
+import { toPrismaAppKey } from '../constants/app-access';
 
 const prisma = new PrismaClient();
 const EQUINOX_COMPANY_CODE = 0;
@@ -26,7 +28,7 @@ function getUserContext(req: Request): { userId: number; role: Role; companyId: 
  */
 export const createUser = async (req: Request, res: Response) => {
   const { role, companyId } = getUserContext(req);
-  const { email, password, name, newRole, companyId: targetCompanyId, companies } = req.body;
+  const { email, password, name, newRole, companyId: targetCompanyId, companies, appGrants } = req.body;
 
   // Validações de campos obrigatórios
   if (!email || !password || !name) {
@@ -115,6 +117,30 @@ export const createUser = async (req: Request, res: Response) => {
       name,
       companies: companiesToCreate
     });
+
+    let grantsPayload: Array<{ companyId: number; appKey: AppKey; granted: boolean }> = []
+    if (Array.isArray(appGrants)) {
+      grantsPayload = appGrants
+        .map((grant: any) => {
+          const appKey = toPrismaAppKey(grant.appKey)
+          if (!appKey) return null
+          return {
+            companyId: Number(grant.companyId),
+            appKey,
+            granted: grant.granted !== false
+          }
+        })
+        .filter((grant): grant is { companyId: number; appKey: AppKey; granted: boolean } => grant !== null)
+    } else {
+      grantsPayload = await AppAccessService.buildDefaultGrantsForCompanies(
+        companiesToCreate.map(company => company.companyId)
+      )
+    }
+
+    if (grantsPayload.length > 0) {
+      await AppAccessService.setUserGrantsForManyCompanies(created.id, grantsPayload)
+    }
+
     return res.status(201).json(created);
   } catch (error: any) {
     logger.error('Erro ao criar usuário:', error);
@@ -157,6 +183,13 @@ export const getUsers = async (req: Request, res: Response) => {
         role: true,
         createdAt: true,
         updatedAt: true,
+        appGrants: {
+          select: {
+            companyId: true,
+            granted: true,
+            app: { select: { appKey: true } }
+          }
+        },
         companies: {
           select: {
             role: true,
@@ -225,6 +258,13 @@ export const getUserById = async (req: Request, res: Response) => {
         email: true,
         name: true,
         role: true,
+        appGrants: {
+          select: {
+            companyId: true,
+            granted: true,
+            app: { select: { appKey: true } }
+          }
+        },
         companies: {
           select: {
             role: true,
@@ -255,7 +295,7 @@ export const getUserById = async (req: Request, res: Response) => {
 export const updateUser = async (req: Request, res: Response) => {
   const { role, companyId, userId: me } = getUserContext(req);
   const id = Number(req.params.id);
-  const { email, password, name, newRole, companies } = req.body;
+  const { email, password, name, newRole, companies, appGrants } = req.body;
 
   if (isNaN(id)) {
     return res.status(400).json({ error: 'ID inválido.' });
@@ -333,6 +373,23 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
     const updated = await UserService.updateUser(id, updateData, ctx);
+
+    if (Array.isArray(appGrants)) {
+      const grantsPayload = appGrants
+        .map((grant: any) => {
+          const appKey = toPrismaAppKey(grant.appKey)
+          if (!appKey) return null
+          return {
+            companyId: Number(grant.companyId),
+            appKey,
+            granted: grant.granted !== false
+          }
+        })
+        .filter((grant): grant is { companyId: number; appKey: AppKey; granted: boolean } => grant !== null)
+
+      await AppAccessService.setUserGrantsForManyCompanies(id, grantsPayload)
+    }
+
     return res.status(200).json(updated);
   } catch (error) {
     logger.error(`Erro ao atualizar usuário ${id}:`, error);

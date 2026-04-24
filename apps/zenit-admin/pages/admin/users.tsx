@@ -15,6 +15,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import AccountPermissionsManager from '@/components/admin/AccountPermissionsManager'
 import { Plus, Users, Edit2, Trash2, Save, X } from 'lucide-react'
 import api from '@/lib/api'
+import { AppKey, allowedRolesForCompany, defaultRoleForCompany } from '@zenit/shared-users-core'
 
 const checkboxClasses = 'w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent'
 
@@ -22,6 +23,13 @@ interface User {
   id: number
   name: string
   email: string
+  appGrants?: {
+    companyId: number
+    granted: boolean
+    app: {
+      appKey: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN'
+    }
+  }[]
   companies: {
     company: {
       id: number
@@ -34,8 +42,6 @@ interface User {
   }[]
 }
 
-const EQUINOX_COMPANY_CODE = 0;
-
 interface Company {
   id: number
   name: string
@@ -44,21 +50,18 @@ interface Company {
 
 type Role = 'USER' | 'SUPERUSER' | 'ADMIN'
 
-function allowedRolesForCompany(currentRole: string | null, comp: Company): Role[] {
-  if (currentRole === 'ADMIN') {
-    const roles: Role[] = ['SUPERUSER']
-    if (comp.code === EQUINOX_COMPANY_CODE) roles.push('ADMIN')
-    return roles
-  }
-  if (currentRole === 'SUPERUSER') {
-    return ['SUPERUSER', 'USER']
-  }
-  return []
+const APP_KEY = (process.env.NEXT_PUBLIC_APP_KEY || 'zenit-admin') as AppKey
+
+const APP_LABELS: Record<AppKey, string> = {
+  'zenit-cash': 'Zenit Cash',
+  'zenit-calc': 'Zenit Calc',
+  'zenit-admin': 'Zenit Admin'
 }
 
-function defaultRoleForCompany(currentRole: string | null, comp: Company): Role {
-  const allowed = allowedRolesForCompany(currentRole, comp)
-  return allowed[0]
+function fromBackendAppKey(value: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN'): AppKey {
+  if (value === 'ZENIT_CASH') return 'zenit-cash'
+  if (value === 'ZENIT_CALC') return 'zenit-calc'
+  return 'zenit-admin'
 }
 
 export default function UsersPage() {
@@ -85,6 +88,8 @@ export default function UsersPage() {
   });
   const [companyConfigs, setCompanyConfigs] = useState<Array<{ companyId: number; role: string; manageFinancialAccounts: boolean; manageFinancialCategories: boolean }>>([]);
   const [accountConfigs, setAccountConfigs] = useState<Record<number, { selectedAccountIds: number[]; grantAllAccess: boolean }>>({});
+  const [companyEntitlements, setCompanyEntitlements] = useState<Record<number, AppKey[]>>({})
+  const [appGrantsByCompany, setAppGrantsByCompany] = useState<Record<number, AppKey[]>>({})
 
   useEffect(() => {
     fetchUsers();
@@ -114,6 +119,21 @@ export default function UsersPage() {
         list = response.data.filter((c: Company) => c.id === companyId);
       }
       setCompanies(list);
+      const entitlementEntries = await Promise.all(
+        list.map(async company => {
+          const entitlementResponse = await api.get(`/app-access/company/${company.id}/entitlements`)
+          const enabledApps = (entitlementResponse.data || [])
+            .filter((item: { appKey: AppKey; enabled: boolean }) => item.enabled)
+            .map((item: { appKey: AppKey }) => item.appKey as AppKey)
+          return [company.id, enabledApps] as const
+        })
+      )
+      setCompanyEntitlements(
+        entitlementEntries.reduce<Record<number, AppKey[]>>((acc, [id, apps]) => {
+          acc[id] = apps
+          return acc
+        }, {})
+      )
       setCompaniesError(null);
     } catch (err: any) {
       if (err.response?.status === 403) {
@@ -142,11 +162,11 @@ export default function UsersPage() {
       name: '',
       email: '',
       password: '',
-      newRole: companies[0] ? defaultRoleForCompany(userRole, companies[0]) : 'USER'
+      newRole: companies[0] ? defaultRoleForCompany(userRole as any, companies[0]) : 'USER'
     });
     setCompanyConfigs(
       companies.length === 1
-        ? [{ companyId: companies[0].id, role: defaultRoleForCompany(userRole, companies[0]), manageFinancialAccounts: false, manageFinancialCategories: false }]
+        ? [{ companyId: companies[0].id, role: defaultRoleForCompany(userRole as any, companies[0]), manageFinancialAccounts: false, manageFinancialCategories: false }]
         : []
     );
     setAccountConfigs(
@@ -154,6 +174,17 @@ export default function UsersPage() {
         ? { [companies[0].id]: { selectedAccountIds: [], grantAllAccess: false } }
         : {}
     );
+    if (companies.length === 1) {
+      const enabledApps = companyEntitlements[companies[0].id] || []
+      const defaultApps = enabledApps.includes(APP_KEY)
+        ? [APP_KEY]
+        : enabledApps.length > 0
+          ? [enabledApps[0]]
+          : []
+      setAppGrantsByCompany({ [companies[0].id]: defaultApps })
+    } else {
+      setAppGrantsByCompany({})
+    }
     setShowForm(true);
   }
 
@@ -176,6 +207,13 @@ export default function UsersPage() {
       accCfg[c.company.id] = { selectedAccountIds: [], grantAllAccess: false };
     });
     setAccountConfigs(accCfg);
+    const mappedAppGrants = (user.appGrants || []).reduce<Record<number, AppKey[]>>((acc, grant) => {
+      if (!grant.granted) return acc
+      if (!acc[grant.companyId]) acc[grant.companyId] = []
+      acc[grant.companyId].push(fromBackendAppKey(grant.app.appKey))
+      return acc
+    }, {})
+    setAppGrantsByCompany(mappedAppGrants)
     // Permissões existentes serão carregadas pelos componentes
     setShowForm(true);
   }
@@ -191,6 +229,7 @@ export default function UsersPage() {
     });
     setCompanyConfigs([]);
     setAccountConfigs({});
+    setAppGrantsByCompany({})
   }
 
   // ✅ HANDLER PARA MUDANÇAS NAS PERMISSÕES
@@ -204,6 +243,31 @@ export default function UsersPage() {
       [company]: { selectedAccountIds: accountIds, grantAllAccess: grantAll }
     }));
   };
+
+  function toggleAppGrant(companyIdValue: number, appKey: AppKey) {
+    setAppGrantsByCompany(prev => {
+      const current = prev[companyIdValue] || []
+      const hasKey = current.includes(appKey)
+      return {
+        ...prev,
+        [companyIdValue]: hasKey
+          ? current.filter(existing => existing !== appKey)
+          : [...current, appKey]
+      }
+    })
+  }
+
+  function buildAppGrantsPayload() {
+    return companyConfigs.flatMap(config => {
+      const enabledApps = companyEntitlements[config.companyId] || []
+      const selectedApps = new Set(appGrantsByCompany[config.companyId] || [])
+      return enabledApps.map(appKey => ({
+        companyId: config.companyId,
+        appKey,
+        granted: selectedApps.has(appKey)
+      }))
+    })
+  }
 
   // ✅ FUNÇÃO PARA CONFIRMAR SALVAMENTO SEM PERMISSÕES
   const confirmSaveWithoutPermissions = (): Promise<boolean> => {
@@ -271,7 +335,7 @@ export default function UsersPage() {
           setFormLoading(false);
           return;
         }
-        const payload = { ...updateData, companies: companyConfigs };
+        const payload = { ...updateData, companies: companyConfigs, appGrants: buildAppGrantsPayload() };
         await api.put(`/users/${editingUser.id}`, payload);
 
         await Promise.all(
@@ -311,6 +375,7 @@ export default function UsersPage() {
           password: formData.password,
           newRole: formData.newRole,
           companies: companyConfigs,
+          appGrants: buildAppGrantsPayload(),
         };
 
         const response = await api.post('/users', payload);
@@ -485,14 +550,24 @@ export default function UsersPage() {
                             checked={!!cfg}
                             onChange={(e) => {
                               if (e.target.checked) {
+                                const enabledApps = companyEntitlements[comp.id] || []
+                                const defaultApps = enabledApps.includes(APP_KEY)
+                                  ? [APP_KEY]
+                                  : enabledApps.length > 0
+                                    ? [enabledApps[0]]
+                                    : []
                                 setCompanyConfigs([
                                   ...companyConfigs,
-                                  { companyId: comp.id, role: defaultRoleForCompany(userRole, comp), manageFinancialAccounts: false, manageFinancialCategories: false }
+                                  { companyId: comp.id, role: defaultRoleForCompany(userRole as any, comp), manageFinancialAccounts: false, manageFinancialCategories: false }
                                 ]);
                                 setAccountConfigs(prev => ({
                                   ...prev,
                                   [comp.id]: { selectedAccountIds: [], grantAllAccess: false }
                                 }));
+                                setAppGrantsByCompany(prev => ({
+                                  ...prev,
+                                  [comp.id]: defaultApps
+                                }))
                               } else {
                                 setCompanyConfigs(companyConfigs.filter(c => c.companyId !== comp.id));
                                 setAccountConfigs(prev => {
@@ -500,6 +575,11 @@ export default function UsersPage() {
                                   delete newCfg[comp.id];
                                   return newCfg;
                                 });
+                                setAppGrantsByCompany(prev => {
+                                  const next = { ...prev }
+                                  delete next[comp.id]
+                                  return next
+                                })
                               }
                             }}
                             disabled={formLoading || single}
@@ -522,18 +602,38 @@ export default function UsersPage() {
                               className="px-2 py-1 bg-[#1e2126] border border-gray-700 text-white rounded"
                               disabled={formLoading}
                             >
-                              {allowedRolesForCompany(userRole, comp).includes('USER') && (
+                              {allowedRolesForCompany(userRole as any, comp).includes('USER') && (
                                 <option value="USER">Usuário</option>
                               )}
-                              {allowedRolesForCompany(userRole, comp).includes('SUPERUSER') && (
+                              {allowedRolesForCompany(userRole as any, comp).includes('SUPERUSER') && (
                                 <option value="SUPERUSER">Superusuário</option>
                               )}
-                              {allowedRolesForCompany(userRole, comp).includes('ADMIN') && (
+                              {allowedRolesForCompany(userRole as any, comp).includes('ADMIN') && (
                                 <option value="ADMIN">Administrador</option>
                               )}
                             </select>
                           )}
                         </label>
+                        {cfg && (
+                          <div className="ml-6 mt-2 space-y-2">
+                            <label className="block text-sm font-medium mb-1 text-gray-300">
+                              Aplicativos do ecossistema
+                            </label>
+                            <div className="flex flex-wrap gap-3">
+                              {(companyEntitlements[comp.id] || []).map(appKey => (
+                                <label key={appKey} className="flex items-center gap-2 text-sm text-gray-300">
+                                  <input
+                                    type="checkbox"
+                                    className={checkboxClasses}
+                                    checked={(appGrantsByCompany[comp.id] || []).includes(appKey)}
+                                    onChange={() => toggleAppGrant(comp.id, appKey)}
+                                  />
+                                  {APP_LABELS[appKey]}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         {cfg && cfg.role === 'USER' && (
                           <div>
                             <div className="ml-6 mt-2 space-y-2">
@@ -714,3 +814,4 @@ export default function UsersPage() {
     </DashboardLayout>
   );
 }
+

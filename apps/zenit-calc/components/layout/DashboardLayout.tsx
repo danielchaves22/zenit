@@ -15,7 +15,7 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayoutProps) {
-  const { logout, userName, companyName, userRole, user } = useAuth();
+  const { logout, userName, companyName, userRole, user, hasCurrentAppAccess } = useAuth();
   const router = useRouter();
 
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -52,6 +52,22 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
 
   const toggleUserMenu = () => setUserMenuOpen(!userMenuOpen);
   const handleMenuAction = (action: () => void) => { setUserMenuOpen(false); action(); };
+
+  if (user && !hasCurrentAppAccess) {
+    return (
+      <div className="min-h-screen bg-background text-white flex items-center justify-center p-6">
+        <div className="max-w-lg w-full bg-surface border border-gray-700 rounded-lg p-6 text-center">
+          <h2 className="text-xl font-semibold mb-3">Acesso ao aplicativo negado</h2>
+          <p className="text-gray-300 mb-4">
+            Seu usuario nao possui grant para este aplicativo na empresa selecionada.
+          </p>
+          <button onClick={logout} className="px-4 py-2 rounded bg-accent text-white">
+            Sair
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-background">

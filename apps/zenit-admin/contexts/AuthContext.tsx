@@ -1,316 +1,295 @@
-// frontend/contexts/AuthContext.tsx - VERSÃO CORRIGIDA URGENTE
 import {
-  createContext, useContext, useEffect, useState, ReactNode,
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  ReactNode
 } from 'react'
 import { useRouter } from 'next/router'
 import api from '@/lib/api'
 import { useTheme } from '@/contexts/ThemeContext'
+import { SSO_STORAGE_KEYS } from '@zenit/shared-users-core'
+
+interface AppAccess {
+  appKey: string
+  enabled: boolean
+  granted: boolean
+  allowed: boolean
+}
 
 interface CompanyRole {
-  id: number;
-  name: string;
-  role: string;
+  id: number
+  name: string
+  role: string
+  manageFinancialAccounts?: boolean
+  manageFinancialCategories?: boolean
 }
 
 interface User {
-  id: number;
-  name: string;
-  email: string;
-  companies: (CompanyRole & { manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean })[];
-  mustChangePassword?: boolean;
+  id: number
+  name: string
+  email: string
+  companies: CompanyRole[]
+  appAccessByCompany?: Record<number, AppAccess[]>
+  mustChangePassword?: boolean
 }
 
 interface AuthContextData {
-  token: string | null;
-  user: User | null;
-  login: (email: string, password: string) => Promise<User>;
-  logout: () => void;
-  isLoading: boolean;
-  userRole: string | null;
-  userId: number | null;
-  companyId: number | null;
-  userName: string | null;
-  companyName: string | null;
-  manageFinancialAccounts: boolean;
-  manageFinancialCategories: boolean;
-  refreshToken: () => Promise<boolean>;
-  mustChangePassword: boolean;
-  updateMustChangePassword: (value: boolean) => void;
-  changeCompany: (id: number) => void;
+  token: string | null
+  user: User | null
+  login: (email: string, password: string) => Promise<User>
+  logout: () => void
+  isLoading: boolean
+  userRole: string | null
+  userId: number | null
+  companyId: number | null
+  userName: string | null
+  companyName: string | null
+  manageFinancialAccounts: boolean
+  manageFinancialCategories: boolean
+  refreshToken: () => Promise<boolean>
+  mustChangePassword: boolean
+  updateMustChangePassword: (value: boolean) => void
+  changeCompany: (id: number) => void
+  hasCurrentAppAccess: boolean
 }
 
-const AuthContext = createContext<AuthContextData>({} as AuthContextData);
+const AuthContext = createContext<AuthContextData>({} as AuthContextData)
+const APP_KEY = process.env.NEXT_PUBLIC_APP_KEY || 'zenit-admin'
 
-const STORAGE_KEYS = {
-  token: 'zenit_admin_token',
-  refreshToken: 'zenit_admin_refresh_token',
-  mustChangePassword: 'zenit_admin_must_change_password',
-  companyId: 'zenit_admin_company_id'
-};
-
-// Função auxiliar para configurar cookies de forma segura
 function setSecureCookie(name: string, value: string, maxAge?: number) {
-  const domain = window.location.hostname;
-  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1';
-  
-  let cookieString = `${name}=${value}; path=/`;
-  
-  // Só adicionar domínio se não for localhost
+  const domain = window.location.hostname
+  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1'
+
+  let cookieString = `${name}=${value}; path=/`
   if (!isLocalhost) {
-    cookieString += `; domain=${domain}`;
+    cookieString += `; domain=${domain}`
   }
-  
-  // Adicionar configurações de segurança
-  cookieString += `; samesite=strict`;
-  
-  // Só usar secure em HTTPS
+  cookieString += '; samesite=strict'
   if (window.location.protocol === 'https:') {
-    cookieString += `; secure`;
+    cookieString += '; secure'
   }
-  
-  // Adicionar expiração se fornecida
   if (maxAge !== undefined) {
-    cookieString += `; max-age=${maxAge}`;
+    cookieString += `; max-age=${maxAge}`
   }
-  
-  document.cookie = cookieString;
+  document.cookie = cookieString
 }
 
-// Função auxiliar para remover cookies de forma segura
 function removeSecureCookie(name: string) {
-  const domain = window.location.hostname;
-  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1';
-  
-  // Tentar remover com diferentes configurações para garantir limpeza
+  const domain = window.location.hostname
+  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1'
+
   const cookieConfigs = [
     `${name}=; max-age=0; path=/`,
-    `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`,
-  ];
-  
-  // Só adicionar domínio se não for localhost
+    `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+  ]
+
   if (!isLocalhost) {
     cookieConfigs.push(
       `${name}=; max-age=0; path=/; domain=${domain}`,
       `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${domain}`,
-      `${name}=; max-age=0; path=/; domain=.${domain}`,
-    );
+      `${name}=; max-age=0; path=/; domain=.${domain}`
+    )
   }
-  
+
   cookieConfigs.forEach(config => {
-    document.cookie = config;
-  });
+    document.cookie = config
+  })
+}
+
+function hasAppAccess(user: User | null, currentCompanyId: number | null): boolean {
+  if (!user || !currentCompanyId) return false
+  const appAccess = user.appAccessByCompany?.[currentCompanyId] || []
+  return appAccess.some(entry => entry.appKey === APP_KEY && entry.allowed)
+}
+
+function pickAccessibleCompanyId(user: User): number | null {
+  for (const company of user.companies) {
+    const access = user.appAccessByCompany?.[company.id] || []
+    if (access.some(entry => entry.appKey === APP_KEY && entry.allowed)) {
+      return company.id
+    }
+  }
+  return null
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
-  const { changeTheme } = useTheme();
-  const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [companyId, setCompanyId] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [mustChangePassword, setMustChangePassword] = useState<boolean>(false);
+  const router = useRouter()
+  const { changeTheme } = useTheme()
+  const [token, setToken] = useState<string | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [companyId, setCompanyId] = useState<number | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [mustChangePassword, setMustChangePassword] = useState<boolean>(false)
 
-  // Carregar estado inicial
   useEffect(() => {
-    initializeAuth();
-  }, []);
+    void initializeAuth()
+  }, [])
 
   async function initializeAuth() {
-    setIsLoading(true);
-    
+    setIsLoading(true)
+
     try {
-      // APENAS buscar do localStorage - não mexer com cookies de outros sites
-      const storedToken = localStorage.getItem(STORAGE_KEYS.token); // Prefixo específico para o admin
-      const storedMustChange = localStorage.getItem(STORAGE_KEYS.mustChangePassword);
+      const storedToken = localStorage.getItem(SSO_STORAGE_KEYS.token)
+      const storedMustChange = localStorage.getItem(SSO_STORAGE_KEYS.mustChangePassword)
 
       if (storedMustChange) {
-        setMustChangePassword(storedMustChange === 'true');
+        setMustChangePassword(storedMustChange === 'true')
       }
 
       if (storedToken) {
         const response = await api.get('/auth/me', {
           headers: { Authorization: `Bearer ${storedToken}` }
-        });
+        })
 
-        setToken(storedToken);
-        setUser({ ...response.data.user, mustChangePassword: storedMustChange === 'true' });
+        const userData = {
+          ...response.data.user,
+          mustChangePassword: storedMustChange === 'true'
+        } as User
+
+        setToken(storedToken)
+        setUser(userData)
+
         if (response.data.preferences?.colorScheme) {
-          changeTheme(response.data.preferences.colorScheme);
-          localStorage.setItem('selected-theme', response.data.preferences.colorScheme);
+          changeTheme(response.data.preferences.colorScheme)
+          localStorage.setItem('selected-theme', response.data.preferences.colorScheme)
         }
 
-        const storedCompanyId = localStorage.getItem(STORAGE_KEYS.companyId);
-        const initialCompanyId = storedCompanyId
-          ? Number(storedCompanyId)
-          : response.data.user.companies?.[0]?.id || null;
-        setCompanyId(initialCompanyId);
-        if (!storedCompanyId && initialCompanyId !== null) {
-          localStorage.setItem(STORAGE_KEYS.companyId, String(initialCompanyId));
+        const storedCompanyId = localStorage.getItem(SSO_STORAGE_KEYS.companyId)
+        const parsedStoredCompany = storedCompanyId ? Number(storedCompanyId) : null
+        const accessibleCompany = pickAccessibleCompanyId(userData)
+        const selectedCompanyId =
+          parsedStoredCompany && hasAppAccess(userData, parsedStoredCompany)
+            ? parsedStoredCompany
+            : accessibleCompany
+
+        setCompanyId(selectedCompanyId)
+        if (selectedCompanyId !== null) {
+          localStorage.setItem(SSO_STORAGE_KEYS.companyId, String(selectedCompanyId))
         }
       }
     } catch (error) {
-      console.error('Erro ao inicializar autenticação:', error);
-      // Token inválido - limpar APENAS nossos dados
-      safeCleanup();
+      safeCleanup()
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
   }
 
   async function login(email: string, password: string): Promise<User> {
-    console.log('🔐 [AUTH] Starting login process...');
-    console.log('🔐 [AUTH] Email:', email);
-    
-    try {
-      console.log('🔐 [AUTH] Making API call to /auth/login');
-      const res = await api.post('/auth/login', { 
-        email: email.toLowerCase().trim(), 
-        password 
-      });
-      
-      const { token: newToken, user: userData, refreshToken: newRefreshToken, preferences } = res.data;
+    const response = await api.post('/auth/login', {
+      email: email.toLowerCase().trim(),
+      password
+    })
 
-      // Armazenar tokens com prefixos específicos da aplicação
-      localStorage.setItem(STORAGE_KEYS.token, newToken);
-      localStorage.setItem(STORAGE_KEYS.refreshToken, newRefreshToken);
-      
-      // Cookie com configuração MUITO específica e segura
-      setSecureCookie(STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7); // 7 dias
+    const { token: newToken, user: userData, refreshToken: newRefreshToken, preferences } = response.data
 
-      console.log(userData);
+    localStorage.setItem(SSO_STORAGE_KEYS.token, newToken)
+    localStorage.setItem(SSO_STORAGE_KEYS.refreshToken, newRefreshToken)
+    setSecureCookie(SSO_STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7)
 
-      localStorage.setItem(STORAGE_KEYS.mustChangePassword, String(userData.mustChangePassword));
-      setMustChangePassword(userData.mustChangePassword);
+    localStorage.setItem(SSO_STORAGE_KEYS.mustChangePassword, String(userData.mustChangePassword))
+    setMustChangePassword(userData.mustChangePassword)
 
-      setToken(newToken);
-      setUser(userData);
-      if (preferences?.colorScheme) {
-        changeTheme(preferences.colorScheme);
-        localStorage.setItem('selected-theme', preferences.colorScheme);
-      }
-      if (userData.companies && userData.companies.length > 0) {
-        const firstCompany = userData.companies[0];
-        setCompanyId(firstCompany.id);
-        localStorage.setItem(STORAGE_KEYS.companyId, firstCompany.id.toString());
-      }
+    setToken(newToken)
+    setUser(userData)
 
-      return userData;
-      
-    } catch (error: any) {
-      console.error('🔐 [AUTH] Login failed:', error);
-      console.error('🔐 [AUTH] Error details:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        url: error.config?.url,
-        method: error.config?.method
-      });
-      
-      if (error.response?.status === 429) {
-        throw new Error('Muitas tentativas de login. Tente novamente em alguns minutos.');
-      }
-      
-      if (error.response?.status === 423) {
-        throw new Error('Conta temporariamente bloqueada. Contate o suporte.');
-      }
-      
-      throw new Error(error.response?.data?.error || 'Erro ao fazer login');
+    if (preferences?.colorScheme) {
+      changeTheme(preferences.colorScheme)
+      localStorage.setItem('selected-theme', preferences.colorScheme)
     }
+
+    const nextCompanyId = pickAccessibleCompanyId(userData)
+    setCompanyId(nextCompanyId)
+    if (nextCompanyId !== null) {
+      localStorage.setItem(SSO_STORAGE_KEYS.companyId, nextCompanyId.toString())
+    }
+
+    return userData
   }
 
   async function refreshToken(): Promise<boolean> {
     try {
-      const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.refreshToken);
-      
+      const storedRefreshToken = localStorage.getItem(SSO_STORAGE_KEYS.refreshToken)
       if (!storedRefreshToken) {
-        return false;
+        return false
       }
 
       const response = await api.post('/auth/refresh', {
         refreshToken: storedRefreshToken
-      });
+      })
 
-      const { token: newToken } = response.data;
-      
-      localStorage.setItem(STORAGE_KEYS.token, newToken);
-      setSecureCookie(STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7); // 7 dias
-      
-      setToken(newToken);
-      
-      return true;
-    } catch (error) {
-      console.error('Token refresh failed:', error);
-      safeCleanup();
-      return false;
+      const { token: newToken } = response.data
+
+      localStorage.setItem(SSO_STORAGE_KEYS.token, newToken)
+      setSecureCookie(SSO_STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7)
+      setToken(newToken)
+
+      return true
+    } catch (_error) {
+      safeCleanup()
+      return false
     }
   }
 
-  // Função de limpeza SEGURA - apenas nossos dados
   function safeCleanup() {
-    // Limpar APENAS dados da nossa aplicação
-    localStorage.removeItem(STORAGE_KEYS.token);
-    localStorage.removeItem(STORAGE_KEYS.refreshToken);
-    localStorage.removeItem(STORAGE_KEYS.mustChangePassword);
-    localStorage.removeItem(STORAGE_KEYS.companyId);
-    
-    // Remover APENAS nosso cookie específico
-    removeSecureCookie(STORAGE_KEYS.token);
-    
-    setToken(null);
-    setUser(null);
-    setCompanyId(null);
+    localStorage.removeItem(SSO_STORAGE_KEYS.token)
+    localStorage.removeItem(SSO_STORAGE_KEYS.refreshToken)
+    localStorage.removeItem(SSO_STORAGE_KEYS.mustChangePassword)
+    localStorage.removeItem(SSO_STORAGE_KEYS.companyId)
+
+    removeSecureCookie(SSO_STORAGE_KEYS.token)
+
+    setToken(null)
+    setUser(null)
+    setCompanyId(null)
   }
 
   function logout() {
-    safeCleanup();
-    
-    console.log('User logged out', { timestamp: new Date().toISOString() });
-    
-    // Redirecionar após cleanup
-    window.location.href = '/login';
+    safeCleanup()
+    window.location.href = '/login'
   }
 
   useEffect(() => {
     if (!isLoading && user?.mustChangePassword && router.pathname !== '/first-access') {
-      router.replace('/first-access');
+      router.replace('/first-access')
     }
-  }, [isLoading, user, router.pathname]);
+  }, [isLoading, router, router.pathname, user])
 
   function updateMustChangePassword(value: boolean) {
-    setMustChangePassword(value);
-    localStorage.setItem(STORAGE_KEYS.mustChangePassword, String(value));
+    setMustChangePassword(value)
+    localStorage.setItem(SSO_STORAGE_KEYS.mustChangePassword, String(value))
     if (user) {
-      setUser({ ...user, mustChangePassword: value });
+      setUser({ ...user, mustChangePassword: value })
     }
   }
 
   function changeCompany(id: number) {
-    setCompanyId(id);
-    localStorage.setItem(STORAGE_KEYS.companyId, String(id));
+    setCompanyId(id)
+    localStorage.setItem(SSO_STORAGE_KEYS.companyId, String(id))
   }
 
-  // Auto-refresh com verificação menos agressiva
   useEffect(() => {
-    if (!token) return;
+    if (!token) return
 
     const checkTokenValidity = async () => {
       try {
-        await api.get('/auth/validate');
+        await api.get('/auth/validate')
       } catch (error: any) {
         if (error.response?.status === 401) {
-          const refreshed = await refreshToken();
+          const refreshed = await refreshToken()
           if (!refreshed) {
-            logout();
+            logout()
           }
         }
       }
-    };
+    }
 
-    // Verificar a cada 10 minutos (menos agressivo)
-    const interval = setInterval(checkTokenValidity, 10 * 60 * 1000);
-    
-    return () => clearInterval(interval);
-  }, [token]);
+    const interval = setInterval(checkTokenValidity, 10 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [token])
+
+  const hasCurrentAppAccess = useMemo(() => hasAppAccess(user, companyId), [user, companyId])
 
   return (
     <AuthContext.Provider
@@ -326,28 +305,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         companyId,
         userName: user?.name || null,
         companyName: user && companyId ? user.companies.find(c => c.id === companyId)?.name || null : null,
-        manageFinancialAccounts: user && companyId ?
-          user.companies.find(c => c.id === companyId)?.manageFinancialAccounts || false
-          : false,
-        manageFinancialCategories: user && companyId ?
-          user.companies.find(c => c.id === companyId)?.manageFinancialCategories || false
-          : false,
+        manageFinancialAccounts:
+          user && companyId
+            ? user.companies.find(c => c.id === companyId)?.manageFinancialAccounts || false
+            : false,
+        manageFinancialCategories:
+          user && companyId
+            ? user.companies.find(c => c.id === companyId)?.manageFinancialCategories || false
+            : false,
         mustChangePassword,
         updateMustChangePassword,
-        changeCompany
+        changeCompany,
+        hasCurrentAppAccess
       }}
     >
       {children}
     </AuthContext.Provider>
-  );
+  )
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  
+  const context = useContext(AuthContext)
+
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error('useAuth must be used within an AuthProvider')
   }
-  
-  return context;
+
+  return context
 }
+

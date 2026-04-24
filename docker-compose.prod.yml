@@ -174,7 +174,7 @@ services:
   # ============================================
   frontend:
     build:
-      context: ./apps/zenit
+      context: ./apps/zenit-cash
       dockerfile: Dockerfile
     container_name: zenit-frontend
     restart: unless-stopped

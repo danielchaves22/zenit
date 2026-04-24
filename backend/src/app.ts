@@ -18,9 +18,11 @@ import openAiIntegrationRoutes from './routes/openai-integration.routes';
 import gmailIntegrationRoutes from './routes/gmail-integration.routes';
 import integrationPublicRoutes from './routes/integration-public.routes';
 import adminCompanyOpenAiRoutes from './routes/admin-company-openai.routes';
+import appAccessRoutes from './routes/app-access.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
+import { appAccessMiddleware } from './middlewares/app-access.middleware';
 import { errorHandler } from './middlewares/error.middleware';
 import { createRateLimitMiddleware } from './middlewares/rate-limit.middleware';
 import { requestLogger } from './middlewares/request-logger.middleware';
@@ -174,6 +176,9 @@ app.use('/api', authMiddleware);
 // 15) Middleware de tenant
 app.use('/api', tenantMiddleware);
 
+// 15.1) Middleware de acesso por aplicacao (SSO + grants por app)
+app.use('/api', appAccessMiddleware);
+
 // 16) Rate limiting para APIs autenticadas
 app.use('/api/users', createRateLimitMiddleware('api'), userRoutes);
 app.use('/api/companies', createRateLimitMiddleware('api'), companyRoutes);
@@ -184,6 +189,7 @@ app.use('/api/inbound-imports', createRateLimitMiddleware('api'), inboundImportR
 app.use('/api/integrations/openai', createRateLimitMiddleware('api'), openAiIntegrationRoutes);
 app.use('/api/integrations/gmail', createRateLimitMiddleware('api'), gmailIntegrationRoutes);
 app.use('/api/admin/companies', createRateLimitMiddleware('api'), adminCompanyOpenAiRoutes);
+app.use('/api/app-access', createRateLimitMiddleware('api'), appAccessRoutes);
 app.use('/api/financial', createRateLimitMiddleware('financial'), financialRoutes);
 // Financial routes with cache for read operations
 app.use('/api/financial/summary', createRateLimitMiddleware('financial'), cacheMiddleware(600)); // 10min cache

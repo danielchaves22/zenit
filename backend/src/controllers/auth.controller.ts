@@ -6,6 +6,8 @@ import { PrismaClient } from '@prisma/client';
 import { generateToken, generateRefreshToken, verifyToken } from '../utils/jwt';
 import { logger } from '../utils/logger';
 import { resetLoginAttempts, recordFailedLogin } from '../middlewares/rate-limit.middleware';
+import AppAccessService from '../services/app-access.service';
+import { APP_HEADER, toPrismaAppKey, toHeaderAppKey } from '../constants/app-access';
 
 const prisma = new PrismaClient();
 
@@ -36,12 +38,25 @@ function getErrorStack(error: unknown): string | undefined {
   return undefined;
 }
 
+async function buildAppAccessByCompany(userId: number, companyIds: number[]) {
+  const accessByCompany: Record<number, { appKey: string; enabled: boolean; granted: boolean; allowed: boolean }[]> = {};
+  await Promise.all(
+    companyIds.map(async companyId => {
+      accessByCompany[companyId] = await AppAccessService.getEffectiveAccess(userId, companyId);
+    })
+  );
+  return accessByCompany;
+}
+
 /**
  * POST /api/auth/login - Login com proteção contra brute force
  */
 export async function login(req: Request, res: Response) {
   const { email, password } = req.body;
   const clientIP = getClientIP(req);
+  const appHeader = req.headers[APP_HEADER];
+  const appHeaderValue = Array.isArray(appHeader) ? appHeader[0] : appHeader;
+  const requestedApp = toPrismaAppKey(appHeaderValue);
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios' });
@@ -110,6 +125,24 @@ export async function login(req: Request, res: Response) {
       manageFinancialCategories: uc.manageFinancialCategories
     }));
 
+    const appAccessByCompany = await buildAppAccessByCompany(
+      user.id,
+      companies.map(company => company.id)
+    );
+
+    if (requestedApp) {
+      const requestedKey = toHeaderAppKey(requestedApp);
+      const hasRequestedAccess = Object.values(appAccessByCompany).some(companyAccess =>
+        companyAccess.some(access => access.appKey === requestedKey && access.allowed)
+      );
+
+      if (!hasRequestedAccess) {
+        return res.status(403).json({
+          error: 'Usuario sem acesso ao aplicativo solicitado.'
+        });
+      }
+    }
+
     // Gerar tokens
     const tokenPayload = {
       userId: user.id
@@ -138,7 +171,8 @@ export async function login(req: Request, res: Response) {
         name: user.name,
         email: user.email,
         mustChangePassword: user.mustChangePassword,
-        companies
+        companies,
+        appAccessByCompany
       },
       preferences: {
         colorScheme: preferences?.colorScheme || null
@@ -260,12 +294,18 @@ export async function getCurrentUser(req: Request, res: Response) {
       manageFinancialCategories: uc.manageFinancialCategories
     }));
 
+    const appAccessByCompany = await buildAppAccessByCompany(
+      user.id,
+      companies.map(company => company.id)
+    );
+
     return res.status(200).json({
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
-        companies
+        companies,
+        appAccessByCompany
       },
       preferences: {
         colorScheme: preferences?.colorScheme || null

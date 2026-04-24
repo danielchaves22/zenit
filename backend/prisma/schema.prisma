@@ -14,6 +14,12 @@ enum Role {
   USER
 }
 
+enum AppKey {
+  ZENIT_CASH
+  ZENIT_CALC
+  ZENIT_ADMIN
+}
+
 enum AccountType {
   CHECKING
   SAVINGS
@@ -91,6 +97,7 @@ model User {
   recurringTransactions RecurringTransaction[]
   financialAccountAccess UserFinancialAccountAccess[]
   grantedPermissions     UserFinancialAccountAccess[] @relation("GrantedPermissions")
+  appGrants             UserAppGrant[]
   preference             UserPreference?
   createdProcesses       Process[]            @relation("ProcessCreatedBy")
   updatedProcesses       Process[]            @relation("ProcessUpdatedBy")
@@ -118,6 +125,8 @@ model Company {
   aiCredentials       CompanyAiCredential[]
   gmailConnection     GmailConnection?
   emailIngestionConfig EmailIngestionConfig?
+  appEntitlements     CompanyAppEntitlement[]
+  userAppGrants       UserAppGrant[]
 }
 
 model CompanyGroup {
@@ -140,6 +149,53 @@ model UserCompany {
   company   Company @relation(fields: [companyId], references: [id])
 
   @@unique([userId, companyId])
+}
+
+model EcosystemApp {
+  id        Int      @id @default(autoincrement())
+  appKey    AppKey   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  companyEntitlements CompanyAppEntitlement[]
+  userGrants          UserAppGrant[]
+}
+
+model CompanyAppEntitlement {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  appId      Int
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company    Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  app        EcosystemApp @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, appId], name: "unique_company_app_entitlement")
+  @@index([companyId])
+  @@index([appId])
+}
+
+model UserAppGrant {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  companyId  Int
+  appId      Int
+  granted    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  app        EcosystemApp @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId, appId], name: "unique_user_company_app_grant")
+  @@index([userId])
+  @@index([companyId])
+  @@index([appId])
 }
 
 model FinancialAccount {
@@ -230,6 +286,7 @@ model FinancialTransaction {
   scheduledDate           DateTime?
   recurringTransactionId  Int?
   recurringTransaction    RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
+  occurrenceKey    String?              @unique
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 

@@ -1,13 +1,9 @@
-﻿import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { SSO_STORAGE_KEYS } from '@zenit/shared-users-core'
 
 const publicRoutes = ['/login']
-
-const excludedPaths = [
-  '/_next',
-  '/favicon.ico',
-  '/assets',
-]
+const excludedPaths = ['/_next', '/favicon.ico', '/assets']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -17,7 +13,7 @@ export function middleware(request: NextRequest) {
   }
 
   const isPublicRoute = publicRoutes.some(route => pathname === route)
-  const token = request.cookies.get('zenit_token')?.value
+  const token = request.cookies.get(SSO_STORAGE_KEYS.token)?.value
 
   if (!isPublicRoute && !token) {
     const url = new URL('/login', request.url)
@@ -33,7 +29,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|assets/).*)',
-  ],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|assets/).*)']
 }

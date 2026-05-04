@@ -16,6 +16,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { useToast } from '@/components/ui/ToastContext';
@@ -274,41 +275,51 @@ function FixedTransactionsPageInner() {
         ]}
       />
 
-      <div className="flex justify-between items-center mb-6 gap-3">
-        <h1 className="text-2xl font-semibold text-white">Transacoes Fixas</h1>
-        {showForm ? (
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={resetForm} disabled={saving} className="flex items-center gap-2">
-              <X size={16} />
-              Cancelar
-            </Button>
-            <Button variant="accent" onClick={handleSubmit} disabled={saving} className="flex items-center gap-2">
-              <Save size={16} />
-              {saving ? 'Salvando...' : editing ? 'Salvar Nova Versao' : 'Criar Fixa'}
-            </Button>
-          </div>
-        ) : (
-          <Button variant="accent" onClick={openCreateForm} className="flex items-center gap-2">
-            <Plus size={16} />
-            Nova Fixa
-          </Button>
-        )}
-      </div>
+      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-white">Transacoes Fixas</h1>
+          <InfoModalButton
+            modalTitle="Informações sobre transações fixas"
+            buttonLabel="Ver informações sobre transações fixas"
+          >
+            <p>
+              Transações fixas funcionam como templates mensais e são projetadas
+              automaticamente no período consultado.
+            </p>
+            <p>
+              Use a listagem para acompanhar as próximas competências e exiba as
+              inativas quando precisar revisar fixas canceladas.
+            </p>
+          </InfoModalButton>
+        </div>
 
-      <Card className="mb-6">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="text-sm text-gray-300 flex items-center gap-2">
-            <Repeat size={16} className="text-accent" />
-            Fixas sao templates mensais projetados automaticamente no periodo consultado.
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant={includeInactive ? 'accent' : 'outline'}
             onClick={() => setIncludeInactive((prev) => !prev)}
           >
             {includeInactive ? 'Mostrando inativas' : 'Mostrar inativas'}
           </Button>
+
+          {showForm ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={resetForm} disabled={saving} className="flex items-center gap-2">
+                <X size={16} />
+                Cancelar
+              </Button>
+              <Button variant="accent" onClick={handleSubmit} disabled={saving} className="flex items-center gap-2">
+                <Save size={16} />
+                {saving ? 'Salvando...' : editing ? 'Salvar Nova Versao' : 'Criar Fixa'}
+              </Button>
+            </div>
+          ) : (
+            <Button variant="accent" onClick={openCreateForm} className="flex items-center gap-2">
+              <Plus size={16} />
+              Nova Fixa
+            </Button>
+          )}
         </div>
-      </Card>
+      </div>
 
       {showForm && (
         <Card className="mb-6 border-2 border-accent/60">

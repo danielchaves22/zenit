@@ -83,6 +83,7 @@ export async function getTransactions(req: Request, res: Response) {
       endDate,
       includeVirtualFixed,
       type,
+      types,
       status,
       accountId,
       categoryId,
@@ -105,12 +106,14 @@ export async function getTransactions(req: Request, res: Response) {
         companyId
       );
 
+    const normalizedTypes = types ?? (type ? [type] : undefined);
+
     const result = await FinancialTransactionService.listTransactions({
       companyId,
       startDate,
       endDate,
       includeVirtualFixed,
-      type,
+      types: normalizedTypes,
       status,
       accountId,
       categoryId,

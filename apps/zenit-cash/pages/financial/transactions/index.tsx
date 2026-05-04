@@ -1,10 +1,12 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   ArrowUpDown,
   CheckCircle,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Clock,
   Edit2,
@@ -21,6 +23,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { MultiSelect } from '@/components/ui/MultiSelect';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
@@ -29,6 +32,10 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
 import { formatTransactionDescription } from '@/utils/transactions';
 
+type TransactionTypeFilter = 'INCOME' | 'EXPENSE' | 'TRANSFER';
+type TransactionStatusFilter = 'PENDING' | 'COMPLETED' | 'CANCELED';
+type PeriodPreset = 'CURRENT_MONTH' | 'CURRENT_WEEK';
+
 interface Transaction {
   id: number | null;
   description: string;
@@ -36,8 +43,8 @@ interface Transaction {
   date: string;
   dueDate?: string;
   effectiveDate?: string;
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
-  status: 'PENDING' | 'COMPLETED' | 'CANCELED';
+  type: TransactionTypeFilter;
+  status: TransactionStatusFilter;
   notes?: string;
   fromAccount?: { id: number; name: string };
   toAccount?: { id: number; name: string };
@@ -54,9 +61,7 @@ interface Transaction {
 }
 
 interface TransactionFilters {
-  startDate: string;
-  endDate: string;
-  type: string;
+  types: TransactionTypeFilter[];
   status: string;
   accountId: string;
   categoryId: string;
@@ -76,16 +81,65 @@ interface Category {
   type: string;
 }
 
-function getCurrentMonthFilters(): Pick<TransactionFilters, 'startDate' | 'endDate'> {
-  const now = new Date();
-  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const format = (date: Date) => date.toISOString().split('T')[0];
+const ALL_TRANSACTION_TYPES: TransactionTypeFilter[] = ['INCOME', 'EXPENSE', 'TRANSFER'];
+
+const TRANSACTION_TYPE_OPTIONS = [
+  { value: 'INCOME', label: 'Receita' },
+  { value: 'EXPENSE', label: 'Despesa' },
+  { value: 'TRANSFER', label: 'Transferencia' }
+];
+
+function formatDateForInput(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseInputDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function startOfWeek(date: Date): Date {
+  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const weekday = normalized.getDay();
+  const diff = weekday === 0 ? -6 : 1 - weekday;
+
+  normalized.setDate(normalized.getDate() + diff);
+  normalized.setHours(0, 0, 0, 0);
+
+  return normalized;
+}
+
+function getPeriodRange(preset: PeriodPreset, offset: number) {
+  const today = new Date();
+
+  if (preset === 'CURRENT_WEEK') {
+    const start = startOfWeek(today);
+    start.setDate(start.getDate() + offset * 7);
+
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+
+    return {
+      startDate: formatDateForInput(start),
+      endDate: formatDateForInput(end)
+    };
+  }
+
+  const start = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
 
   return {
-    startDate: format(firstDay),
-    endDate: format(lastDay)
+    startDate: formatDateForInput(start),
+    endDate: formatDateForInput(end)
   };
+}
+
+function formatPeriodSummary(startDate: string, endDate: string): string {
+  return `${parseInputDate(startDate).toLocaleDateString('pt-BR')} a ${parseInputDate(endDate).toLocaleDateString('pt-BR')}`;
 }
 
 export default function TransactionsListPage() {
@@ -99,26 +153,41 @@ export default function TransactionsListPage() {
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showOnlyMaterialized, setShowOnlyMaterialized] = useState(false);
   const [materializingVirtualKey, setMaterializingVirtualKey] = useState<string | null>(null);
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('CURRENT_MONTH');
+  const [periodOffset, setPeriodOffset] = useState(0);
 
   const [sortConfig, setSortConfig] = useState<{
     key: 'dueDate' | 'effectiveDate' | 'description';
     direction: 'asc' | 'desc';
   }>({ key: 'dueDate', direction: 'desc' });
 
-  const currentMonthDefaults = getCurrentMonthFilters();
-
   const [filters, setFilters] = useState<TransactionFilters>({
-    startDate: currentMonthDefaults.startDate,
-    endDate: currentMonthDefaults.endDate,
-    type: '',
+    types: [...ALL_TRANSACTION_TYPES],
     status: '',
     accountId: '',
     categoryId: '',
     search: ''
   });
+
+  const activePeriod = useMemo(
+    () => getPeriodRange(periodPreset, periodOffset),
+    [periodPreset, periodOffset]
+  );
+
+  const moreFiltersCount = useMemo(() => {
+    let count = 0;
+
+    if (filters.search.trim()) count += 1;
+    if (filters.status) count += 1;
+    if (filters.accountId) count += 1;
+    if (filters.categoryId) count += 1;
+    if (showOnlyMaterialized) count += 1;
+
+    return count;
+  }, [filters, showOnlyMaterialized]);
 
   useEffect(() => {
     void fetchAccounts();
@@ -127,7 +196,7 @@ export default function TransactionsListPage() {
 
   useEffect(() => {
     void fetchData();
-  }, [currentPage, filters, showOnlyMaterialized]);
+  }, [currentPage, filters, activePeriod, showOnlyMaterialized]);
 
   async function fetchData() {
     setLoading(true);
@@ -136,20 +205,34 @@ export default function TransactionsListPage() {
       const params = new URLSearchParams({
         page: currentPage.toString(),
         pageSize: '20',
-        startDate: filters.startDate,
-        endDate: filters.endDate,
-        includeVirtualFixed: (!showOnlyMaterialized).toString(),
-        ...Object.fromEntries(
-          Object.entries(filters).filter(([key, value]) => {
-            if (key === 'startDate' || key === 'endDate') {
-              return false;
-            }
-            return value !== '';
-          })
-        )
+        startDate: activePeriod.startDate,
+        endDate: activePeriod.endDate,
+        includeVirtualFixed: (!showOnlyMaterialized).toString()
       });
 
-      const response = await api.get(`/financial/transactions?${params}`);
+      if (filters.types.length === 0) {
+        params.set('types', '');
+      } else if (filters.types.length !== ALL_TRANSACTION_TYPES.length) {
+        filters.types.forEach((type) => params.append('types', type));
+      }
+
+      if (filters.status) {
+        params.set('status', filters.status);
+      }
+
+      if (filters.accountId) {
+        params.set('accountId', filters.accountId);
+      }
+
+      if (filters.categoryId) {
+        params.set('categoryId', filters.categoryId);
+      }
+
+      if (filters.search.trim()) {
+        params.set('search', filters.search.trim());
+      }
+
+      const response = await api.get(`/financial/transactions?${params.toString()}`);
       setTransactions(response.data.data || []);
       setTotalPages(response.data.pages || 1);
     } catch (error: any) {
@@ -177,6 +260,31 @@ export default function TransactionsListPage() {
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
     }
+  }
+
+  function updateFilters(patch: Partial<TransactionFilters>) {
+    setCurrentPage(1);
+    setFilters((prev) => ({ ...prev, ...patch }));
+  }
+
+  function resetFilters() {
+    setCurrentPage(1);
+    setPeriodPreset('CURRENT_MONTH');
+    setPeriodOffset(0);
+    setShowOnlyMaterialized(false);
+    setShowMoreFilters(false);
+    setFilters({
+      types: [...ALL_TRANSACTION_TYPES],
+      status: '',
+      accountId: '',
+      categoryId: '',
+      search: ''
+    });
+  }
+
+  function shiftPeriod(direction: -1 | 1) {
+    setCurrentPage(1);
+    setPeriodOffset((prev) => prev + direction);
   }
 
   async function handleDelete(transaction: Transaction) {
@@ -226,9 +334,10 @@ export default function TransactionsListPage() {
     setMaterializingVirtualKey(key);
 
     try {
-      const response = await api.post(`/financial/fixed-transactions/${transaction.fixedTemplateId}/materialize`, {
-        occurrenceDate
-      });
+      const response = await api.post(
+        `/financial/fixed-transactions/${transaction.fixedTemplateId}/materialize`,
+        { occurrenceDate }
+      );
 
       const materializedId = response.data?.transaction?.id;
       if (!materializedId) {
@@ -249,6 +358,7 @@ export default function TransactionsListPage() {
       if (prev.key === key) {
         return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
       }
+
       return { key, direction: 'desc' };
     });
   }
@@ -380,43 +490,32 @@ export default function TransactionsListPage() {
         ]}
       />
 
-      <div className="flex justify-between items-center mb-6 gap-2">
+      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <h1 className="text-2xl font-semibold text-white">Transacoes Financeiras</h1>
-        <div className="flex gap-2 flex-wrap justify-end">
-          <Button
-            variant={showOnlyMaterialized ? 'accent' : 'outline'}
-            onClick={() => {
-              setShowOnlyMaterialized((prev) => !prev);
-              setCurrentPage(1);
-            }}
-            className="flex items-center gap-2"
-          >
-            {showOnlyMaterialized ? 'Somente materializadas' : 'Incluindo projetadas'}
-          </Button>
 
-          <Button
-            variant="outline"
-            onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-2"
-          >
-            <Filter size={16} />
-            Filtros
-          </Button>
-
+        <div className="flex flex-wrap justify-end gap-2">
           <Link href="/financial/transactions/new?type=EXPENSE&locked=true">
-            <Button variant="outline" className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 border-red-600 text-red-300 hover:border-red-500 hover:bg-red-950/40 hover:text-red-200"
+            >
               <TrendingDown size={16} />
               Nova Despesa
             </Button>
           </Link>
+
           <Link href="/financial/transactions/new?type=INCOME&locked=true">
-            <Button variant="outline" className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 border-green-600 text-green-300 hover:border-green-500 hover:bg-green-950/40 hover:text-green-200"
+            >
               <TrendingUp size={16} />
               Nova Receita
             </Button>
           </Link>
+
           <Link href="/financial/transactions/new?type=TRANSFER&locked=true">
-            <Button variant="accent" className="flex items-center gap-2">
+            <Button variant="outline" className="flex items-center gap-2">
               <ArrowUpDown size={16} />
               Nova Transferencia
             </Button>
@@ -424,122 +523,159 @@ export default function TransactionsListPage() {
         </div>
       </div>
 
-      {showFilters && (
-        <Card className="mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            <Input
-              label="Buscar"
-              value={filters.search}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              placeholder="Descricao, observacoes..."
-            />
-
-            <Input
-              label="Data Inicial *"
-              type="date"
-              value={filters.startDate}
-              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-              className="mb-0"
-            />
-
-            <Input
-              label="Data Final *"
-              type="date"
-              value={filters.endDate}
-              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-              className="mb-0"
-            />
-
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">Tipo</label>
-              <select
-                value={filters.type}
-                onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
-              >
-                <option value="">Todos</option>
-                <option value="INCOME">Receita</option>
-                <option value="EXPENSE">Despesa</option>
-                <option value="TRANSFER">Transferencia</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">Status</label>
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
-              >
-                <option value="">Todos</option>
-                <option value="PENDING">Pendente</option>
-                <option value="COMPLETED">Concluida</option>
-                <option value="CANCELED">Cancelada</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">Conta</label>
-              <select
-                value={filters.accountId}
-                onChange={(e) => setFilters({ ...filters, accountId: e.target.value })}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
-              >
-                <option value="">Todas</option>
-                {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">Categoria</label>
-              <select
-                value={filters.categoryId}
-                onChange={(e) => setFilters({ ...filters, categoryId: e.target.value })}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
-              >
-                <option value="">Todas</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-end">
+      <Card className="mb-6">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)_auto]">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Periodo</label>
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                onClick={() => {
-                  const defaults = getCurrentMonthFilters();
-                  setFilters({
-                    startDate: defaults.startDate,
-                    endDate: defaults.endDate,
-                    type: '',
-                    status: '',
-                    accountId: '',
-                    categoryId: '',
-                    search: ''
-                  });
-                  setCurrentPage(1);
-                }}
-                className="px-6"
+                onClick={() => shiftPeriod(-1)}
+                className="flex items-center justify-center px-2.5"
               >
-                Limpar Filtros
+                <ChevronLeft size={16} />
+              </Button>
+
+              <select
+                value={periodPreset}
+                onChange={(event) => {
+                  setCurrentPage(1);
+                  setPeriodPreset(event.target.value as PeriodPreset);
+                  setPeriodOffset(0);
+                }}
+                className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+              >
+                <option value="CURRENT_MONTH">Mes atual</option>
+                <option value="CURRENT_WEEK">Semana atual</option>
+              </select>
+
+              <Button
+                variant="outline"
+                onClick={() => shiftPeriod(1)}
+                className="flex items-center justify-center px-2.5"
+              >
+                <ChevronRight size={16} />
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              {formatPeriodSummary(activePeriod.startDate, activePeriod.endDate)}
+            </p>
+          </div>
+
+          <MultiSelect
+            label="Tipo"
+            options={TRANSACTION_TYPE_OPTIONS}
+            values={filters.types}
+            onChange={(values) =>
+              updateFilters({ types: values as TransactionTypeFilter[] })
+            }
+            placeholder="Selecione os tipos"
+            className="mb-0"
+          />
+
+          <div className="flex items-end">
+            <Button
+              variant="outline"
+              onClick={() => setShowMoreFilters((prev) => !prev)}
+              className="flex w-full items-center justify-center gap-2 xl:w-auto"
+            >
+              <Filter size={16} />
+              {moreFiltersCount > 0 ? `Mais filtros (${moreFiltersCount})` : 'Mais filtros'}
+              {showMoreFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </Button>
+          </div>
+        </div>
+
+        {showMoreFilters && (
+          <div className="mt-6 border-t border-gray-700 pt-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <Input
+                label="Buscar"
+                value={filters.search}
+                onChange={(event) => updateFilters({ search: event.target.value })}
+                placeholder="Descricao, observacoes..."
+                className="mb-0 xl:col-span-2"
+              />
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">Status</label>
+                <select
+                  value={filters.status}
+                  onChange={(event) => updateFilters({ status: event.target.value })}
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+                >
+                  <option value="">Todos</option>
+                  <option value="PENDING">Pendente</option>
+                  <option value="COMPLETED">Concluida</option>
+                  <option value="CANCELED">Cancelada</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">Conta</label>
+                <select
+                  value={filters.accountId}
+                  onChange={(event) => updateFilters({ accountId: event.target.value })}
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+                >
+                  <option value="">Todas</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">Categoria</label>
+                <select
+                  value={filters.categoryId}
+                  onChange={(event) => updateFilters({ categoryId: event.target.value })}
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+                >
+                  <option value="">Todas</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">
+                  Exibicao
+                </label>
+                <Button
+                  variant={showOnlyMaterialized ? 'accent' : 'outline'}
+                  onClick={() => {
+                    setCurrentPage(1);
+                    setShowOnlyMaterialized((prev) => !prev);
+                  }}
+                  className="w-full md:w-auto"
+                >
+                  {showOnlyMaterialized ? 'Somente materializadas' : 'Incluindo projetadas'}
+                </Button>
+              </div>
+
+              <Button variant="outline" onClick={resetFilters}>
+                Limpar filtros
               </Button>
             </div>
           </div>
-        </Card>
-      )}
+        )}
+      </Card>
 
       <Card>
         {sortedTransactions.length === 0 ? (
-          <div className="text-center py-10">
-            <Receipt size={48} className="mx-auto text-gray-400 mb-4" />
-            <p className="text-gray-400 mb-4">Nenhuma transacao encontrada para o periodo selecionado</p>
+          <div className="py-10 text-center">
+            <Receipt size={48} className="mx-auto mb-4 text-gray-400" />
+            <p className="mb-4 text-gray-400">
+              Nenhuma transacao encontrada para o periodo selecionado
+            </p>
             <Link href="/financial/transactions/new">
               <Button variant="accent" className="inline-flex items-center gap-2">
                 <Plus size={16} />
@@ -551,36 +687,36 @@ export default function TransactionsListPage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="text-gray-400 bg-[#0f1419] uppercase text-xs">
+                <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                   <tr>
-                    <th className="px-4 py-3 text-center w-24">Acoes</th>
-                    <th className="px-2 py-3 text-left cursor-pointer" onClick={() => handleSort('dueDate')}>
+                    <th className="w-24 px-4 py-3 text-center">Acoes</th>
+                    <th className="cursor-pointer px-2 py-3 text-left" onClick={() => handleSort('dueDate')}>
                       Data Vencimento
                       {sortConfig.key === 'dueDate' && (
                         sortConfig.direction === 'asc'
-                          ? <ChevronUp size={12} className="inline ml-1" />
-                          : <ChevronDown size={12} className="inline ml-1" />
+                          ? <ChevronUp size={12} className="ml-1 inline" />
+                          : <ChevronDown size={12} className="ml-1 inline" />
                       )}
                     </th>
                     <th className="px-2 py-3 text-left">Tipo</th>
-                    <th className="px-4 py-3 text-left cursor-pointer" onClick={() => handleSort('description')}>
+                    <th className="cursor-pointer px-4 py-3 text-left" onClick={() => handleSort('description')}>
                       Descricao
                       {sortConfig.key === 'description' && (
                         sortConfig.direction === 'asc'
-                          ? <ChevronUp size={12} className="inline ml-1" />
-                          : <ChevronDown size={12} className="inline ml-1" />
+                          ? <ChevronUp size={12} className="ml-1 inline" />
+                          : <ChevronDown size={12} className="ml-1 inline" />
                       )}
                     </th>
                     <th className="px-4 py-3 text-right">Valor</th>
                     <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-left">Conta</th>
                     <th className="px-4 py-3 text-left">Categoria</th>
-                    <th className="px-4 py-3 text-center cursor-pointer" onClick={() => handleSort('effectiveDate')}>
+                    <th className="cursor-pointer px-4 py-3 text-center" onClick={() => handleSort('effectiveDate')}>
                       Data Pagamento
                       {sortConfig.key === 'effectiveDate' && (
                         sortConfig.direction === 'asc'
-                          ? <ChevronUp size={12} className="inline ml-1" />
-                          : <ChevronDown size={12} className="inline ml-1" />
+                          ? <ChevronUp size={12} className="ml-1 inline" />
+                          : <ChevronDown size={12} className="ml-1 inline" />
                       )}
                     </th>
                   </tr>
@@ -595,11 +731,11 @@ export default function TransactionsListPage() {
                         className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${transaction.isVirtual ? 'bg-sky-950/20' : ''}`}
                       >
                         <td className="px-4 py-3">
-                          <div className="flex items-center gap-1 justify-center">
+                          <div className="flex items-center justify-center gap-1">
                             {transaction.isVirtual ? (
                               <button
                                 onClick={() => handleMaterializeAndEdit(transaction)}
-                                className="p-1 text-gray-300 hover:text-accent transition-colors"
+                                className="p-1 text-gray-300 transition-colors hover:text-accent"
                                 title="Materializar e editar"
                                 disabled={isMaterializing}
                               >
@@ -614,7 +750,7 @@ export default function TransactionsListPage() {
                                 {transaction.id && (
                                   <Link href={`/financial/transactions/${transaction.id}`}>
                                     <button
-                                      className="p-1 text-gray-300 hover:text-accent transition-colors"
+                                      className="p-1 text-gray-300 transition-colors hover:text-accent"
                                       title="Editar"
                                     >
                                       <Edit2 size={14} />
@@ -624,7 +760,7 @@ export default function TransactionsListPage() {
                                 {transaction.id && transaction.status !== 'COMPLETED' && (
                                   <button
                                     onClick={() => handleDelete(transaction)}
-                                    className="p-1 text-gray-300 hover:text-red-400 transition-colors"
+                                    className="p-1 text-gray-300 transition-colors hover:text-red-400"
                                     title="Excluir"
                                   >
                                     <Trash2 size={14} />
@@ -652,25 +788,25 @@ export default function TransactionsListPage() {
 
                         <td className="px-4 py-3">
                           <div>
-                            <div className="font-medium text-white flex items-center gap-2">
+                            <div className="flex items-center gap-2 font-medium text-white">
                               {formatTransactionDescription(
                                 transaction.description,
                                 transaction.installmentNumber,
                                 transaction.totalInstallments
                               )}
                               {transaction.isVirtual && (
-                                <span className="px-2 py-0.5 bg-sky-900 text-sky-200 text-[10px] rounded-full uppercase">
+                                <span className="rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200">
                                   Virtual
                                 </span>
                               )}
                               {transaction.isFixed && !transaction.isVirtual && (
-                                <span className="px-2 py-0.5 bg-indigo-900 text-indigo-200 text-[10px] rounded-full uppercase">
+                                <span className="rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200">
                                   Fixa
                                 </span>
                               )}
                             </div>
                             {transaction.notes && (
-                              <div className="text-xs text-gray-400 mt-1">{transaction.notes}</div>
+                              <div className="mt-1 text-xs text-gray-400">{transaction.notes}</div>
                             )}
                           </div>
                         </td>
@@ -682,9 +818,9 @@ export default function TransactionsListPage() {
                         </td>
 
                         <td className="px-4 py-3 text-center">
-                          <div className="flex items-center gap-1 justify-center">
+                          <div className="flex items-center justify-center gap-1">
                             {getStatusIcon(transaction.status, transaction.isVirtual)}
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(transaction.status, transaction.isVirtual)}`}>
+                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(transaction.status, transaction.isVirtual)}`}>
                               {transaction.isVirtual
                                 ? 'Projetada'
                                 : transaction.status === 'COMPLETED'
@@ -703,7 +839,10 @@ export default function TransactionsListPage() {
                         <td className="px-4 py-3">
                           {transaction.category ? (
                             <div className="flex items-center gap-2">
-                              <div className="w-3 h-3 rounded-full" style={{ backgroundColor: transaction.category.color }} />
+                              <div
+                                className="h-3 w-3 rounded-full"
+                                style={{ backgroundColor: transaction.category.color }}
+                              />
                               <span className="text-sm text-gray-300">{transaction.category.name}</span>
                             </div>
                           ) : (
@@ -712,7 +851,7 @@ export default function TransactionsListPage() {
                         </td>
 
                         <td className="px-4 py-3">
-                          <div className="text-xs space-y-1">
+                          <div className="space-y-1 text-xs">
                             {transaction.effectiveDate && (
                               <div className="flex items-center gap-1 text-green-400">
                                 <CheckCircle size={10} />
@@ -730,8 +869,10 @@ export default function TransactionsListPage() {
             </div>
 
             {totalPages > 1 && (
-              <div className="flex justify-between items-center mt-6 pt-6 border-t border-gray-700">
-                <div className="text-sm text-gray-400">Pagina {currentPage} de {totalPages}</div>
+              <div className="mt-6 flex items-center justify-between border-t border-gray-700 pt-6">
+                <div className="text-sm text-gray-400">
+                  Pagina {currentPage} de {totalPages}
+                </div>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"

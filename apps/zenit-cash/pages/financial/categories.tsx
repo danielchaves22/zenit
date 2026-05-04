@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
+import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
@@ -219,6 +220,7 @@ function CategoriesPageInner() {
   // Separar categorias pai e filhas
   const parentCategories = filteredCategories.filter(cat => !cat.parentId);
   const childCategories = filteredCategories.filter(cat => cat.parentId);
+  const activeTypeLabel = activeTab === 'EXPENSE' ? 'despesas' : 'receitas';
 
   const getChildrenForParent = (parentId: number) => {
     return childCategories.filter(cat => cat.parentId === parentId);
@@ -232,10 +234,25 @@ function CategoriesPageInner() {
         { label: 'Categorias' }
       ]} />
 
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-white">Categorias Financeiras</h1>
+      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold text-white">Categorias Financeiras</h1>
+          <InfoModalButton
+            modalTitle="Informações sobre categorias"
+            buttonLabel="Ver informações sobre categorias financeiras"
+          >
+            <p>
+              Defina uma categoria padrão para {activeTypeLabel} para que ela seja
+              selecionada automaticamente em novos lançamentos.
+            </p>
+            <p>
+              Use categorias principais e subcategorias para organizar a listagem e
+              facilitar o preenchimento das movimentações.
+            </p>
+          </InfoModalButton>
+        </div>
         {showForm ? (
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Button
               type="button"
               variant="outline"
@@ -299,22 +316,6 @@ function CategoriesPageInner() {
             <TrendingUp size={16} />
             Receitas
           </button>
-          </div>
-        </Card>
-      )}
-
-      {/* Info sobre categoria padrão */}
-      {!showForm && (
-        <Card className="mb-6 bg-blue-900/20 border-blue-600">
-          <div className="flex items-start gap-3">
-            <Star size={20} className="text-blue-400 mt-0.5" />
-            <div>
-              <h3 className="font-medium text-blue-300 mb-1">Categoria Padrão</h3>
-              <p className="text-sm text-blue-200">
-                Defina uma categoria padrão para {activeTab === 'EXPENSE' ? 'despesas' : 'receitas'} 
-                que será automaticamente selecionada em novos lançamentos.
-              </p>
-            </div>
           </div>
         </Card>
       )}

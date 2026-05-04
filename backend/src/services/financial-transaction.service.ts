@@ -699,7 +699,7 @@ export default class FinancialTransactionService {
     startDate?: Date;
     endDate?: Date;
     includeVirtualFixed?: boolean;
-    type?: TransactionType;
+    types?: TransactionType[];
     status?: TransactionStatus;
     accountId?: number;
     categoryId?: number;
@@ -714,7 +714,7 @@ export default class FinancialTransactionService {
       startDate,
       endDate,
       includeVirtualFixed = true,
-      type,
+      types,
       status,
       accountId,
       categoryId,
@@ -729,14 +729,18 @@ export default class FinancialTransactionService {
       throw new Error('startDate e endDate sao obrigatorios para listar transacoes');
     }
 
+    if (types && types.length === 0) {
+      return { data: [], total: 0, pages: 1 };
+    }
+
     const normalizedSearch = search?.trim();
     const whereFilters: Prisma.FinancialTransactionWhereInput[] = [
       { companyId },
       { date: { gte: startDate, lte: endDate } }
     ];
 
-    if (type) {
-      whereFilters.push({ type });
+    if (types && types.length > 0) {
+      whereFilters.push({ type: { in: types } });
     }
 
     if (status) {
@@ -798,8 +802,10 @@ export default class FinancialTransactionService {
       return { data: paged, total, pages };
     }
 
+    const includesProjectableType = !types || types.some((transactionType) => transactionType !== TransactionType.TRANSFER);
+
     // Transacoes virtuais de fixas sempre sao PENDING e nunca TRANSFER.
-    if ((status && status !== TransactionStatus.PENDING) || type === TransactionType.TRANSFER) {
+    if ((status && status !== TransactionStatus.PENDING) || !includesProjectableType) {
       const sortedOnlyMaterialized = this.sortTransactionsForList(decoratedMaterialized);
       const total = sortedOnlyMaterialized.length;
       const pages = Math.ceil(total / pageSize) || 1;
@@ -863,7 +869,7 @@ export default class FinancialTransactionService {
       const endCursor = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
 
       for (const template of templates as any[]) {
-        if (type && template.type !== type) {
+        if (types && !types.includes(template.type)) {
           continue;
         }
 
@@ -930,7 +936,7 @@ export default class FinancialTransactionService {
                 };
 
                 if (this.matchesProjectedTransactionFilters(virtualTransaction, {
-                  type,
+                  types,
                   status,
                   accountId,
                   categoryId,
@@ -997,14 +1003,14 @@ export default class FinancialTransactionService {
       categoryId?: number | null;
     },
     filters: {
-      type?: TransactionType;
+      types?: TransactionType[];
       status?: TransactionStatus;
       accountId?: number;
       categoryId?: number;
       search?: string;
     }
   ): boolean {
-    if (filters.type && transaction.type !== filters.type) {
+    if (filters.types && !filters.types.includes(transaction.type)) {
       return false;
     }
 

@@ -1,13 +1,32 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
+
+const transactionTypeSchema = z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
+  errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
+});
+
+const transactionStatusSchema = z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
+  errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
+});
+
+const transactionTypesFilterSchema = z.preprocess((value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const values = Array.isArray(value) ? value : [value];
+
+  return values
+    .flatMap((item) => typeof item === 'string' ? item.split(',') : [])
+    .map((item) => item.trim())
+    .filter(Boolean);
+}, z.array(transactionTypeSchema));
 
 export const autocompleteQuerySchema = z.object({
   q: z.string()
     .min(3, 'Query deve ter pelo menos 3 caracteres')
     .max(100, 'Query deve ter no maximo 100 caracteres'),
 
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
-    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
-  }),
+  type: transactionTypeSchema,
 
   limit: z.coerce.number()
     .int('Limite deve ser um numero inteiro')
@@ -36,13 +55,9 @@ export const createTransactionSchema = z.object({
     errorMap: () => ({ message: 'Data de efetivacao deve ser valida' })
   }).nullable().optional(),
 
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
-    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
-  }),
+  type: transactionTypeSchema,
 
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
-    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
-  }).default('COMPLETED'),
+  status: transactionStatusSchema.default('COMPLETED'),
 
   notes: z.string()
     .max(1000, 'Observacoes devem ter no maximo 1000 caracteres')
@@ -111,13 +126,9 @@ export const updateTransactionSchema = z.object({
     errorMap: () => ({ message: 'Data de efetivacao deve ser valida' })
   }).nullable().optional(),
 
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
-    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
-  }).optional(),
+  type: transactionTypeSchema.optional(),
 
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
-    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
-  }).optional(),
+  status: transactionStatusSchema.optional(),
 
   notes: z.string()
     .max(1000, 'Observacoes devem ter no maximo 1000 caracteres')
@@ -169,13 +180,11 @@ export const listTransactionsSchema = z.object({
     .optional()
     .default(true),
 
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
-    errorMap: () => ({ message: 'Tipo deve ser: INCOME, EXPENSE ou TRANSFER' })
-  }).optional(),
+  type: transactionTypeSchema.optional(),
 
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
-    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
-  }).optional(),
+  types: transactionTypesFilterSchema.optional(),
+
+  status: transactionStatusSchema.optional(),
 
   accountId: z.coerce.number()
     .int('ID da conta deve ser um numero inteiro')
@@ -209,9 +218,7 @@ export const listTransactionsSchema = z.object({
 });
 
 export const updateTransactionStatusSchema = z.object({
-  status: z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
-    errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
-  })
+  status: transactionStatusSchema
 });
 
 export type AutocompleteQuery = z.infer<typeof autocompleteQuerySchema>;

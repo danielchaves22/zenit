@@ -34,7 +34,12 @@ import { formatTransactionDescription } from '@/utils/transactions';
 
 type TransactionTypeFilter = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatusFilter = 'PENDING' | 'COMPLETED' | 'CANCELED';
-type PeriodPreset = 'CURRENT_MONTH' | 'CURRENT_WEEK';
+type PeriodPreset = 'CURRENT_MONTH' | 'CURRENT_WEEK' | 'CUSTOM';
+
+interface PeriodRange {
+  startDate: string;
+  endDate: string;
+}
 
 interface Transaction {
   id: number | null;
@@ -113,7 +118,10 @@ function startOfWeek(date: Date): Date {
   return normalized;
 }
 
-function getPeriodRange(preset: PeriodPreset, offset: number) {
+function getPeriodRange(
+  preset: Exclude<PeriodPreset, 'CUSTOM'>,
+  offset: number
+): PeriodRange {
   const today = new Date();
 
   if (preset === 'CURRENT_WEEK') {
@@ -142,6 +150,44 @@ function formatPeriodSummary(startDate: string, endDate: string): string {
   return `${parseInputDate(startDate).toLocaleDateString('pt-BR')} a ${parseInputDate(endDate).toLocaleDateString('pt-BR')}`;
 }
 
+function formatMonthPeriodLabel(startDate: string): string {
+  return parseInputDate(startDate)
+    .toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    .replace(' de ', '/');
+}
+
+function getPeriodSelectLabel(preset: PeriodPreset, range: PeriodRange): string {
+  if (preset === 'CURRENT_WEEK') {
+    return `Semana: ${formatPeriodSummary(range.startDate, range.endDate)}`;
+  }
+
+  if (preset === 'CUSTOM') {
+    return 'Personalizado';
+  }
+
+  return `Mês: ${formatMonthPeriodLabel(range.startDate)}`;
+}
+
+function getPeriodOptionLabel(
+  optionPreset: PeriodPreset,
+  activePreset: PeriodPreset,
+  activeRange: PeriodRange
+): string {
+  if (optionPreset === activePreset) {
+    return getPeriodSelectLabel(activePreset, activeRange);
+  }
+
+  if (optionPreset === 'CURRENT_WEEK') {
+    return 'Semana atual';
+  }
+
+  if (optionPreset === 'CUSTOM') {
+    return 'Personalizado';
+  }
+
+  return 'Mês atual';
+}
+
 export default function TransactionsListPage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -158,6 +204,9 @@ export default function TransactionsListPage() {
   const [materializingVirtualKey, setMaterializingVirtualKey] = useState<string | null>(null);
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('CURRENT_MONTH');
   const [periodOffset, setPeriodOffset] = useState(0);
+  const [customPeriod, setCustomPeriod] = useState<PeriodRange>(() =>
+    getPeriodRange('CURRENT_MONTH', 0)
+  );
 
   const [sortConfig, setSortConfig] = useState<{
     key: 'dueDate' | 'effectiveDate' | 'description';
@@ -172,10 +221,29 @@ export default function TransactionsListPage() {
     search: ''
   });
 
+  const isCustomPeriod = periodPreset === 'CUSTOM';
   const activePeriod = useMemo(
-    () => getPeriodRange(periodPreset, periodOffset),
-    [periodPreset, periodOffset]
+    () =>
+      periodPreset === 'CUSTOM'
+        ? customPeriod
+        : getPeriodRange(periodPreset, periodOffset),
+    [customPeriod, periodOffset, periodPreset]
   );
+  const customPeriodError = useMemo(() => {
+    if (!isCustomPeriod) {
+      return '';
+    }
+
+    if (!customPeriod.startDate || !customPeriod.endDate) {
+      return 'Selecione a data inicial e final.';
+    }
+
+    if (customPeriod.startDate > customPeriod.endDate) {
+      return 'Data inicial deve ser anterior ou igual a data final.';
+    }
+
+    return '';
+  }, [customPeriod.endDate, customPeriod.startDate, isCustomPeriod]);
 
   const moreFiltersCount = useMemo(() => {
     let count = 0;
@@ -184,10 +252,9 @@ export default function TransactionsListPage() {
     if (filters.status) count += 1;
     if (filters.accountId) count += 1;
     if (filters.categoryId) count += 1;
-    if (showOnlyMaterialized) count += 1;
 
     return count;
-  }, [filters, showOnlyMaterialized]);
+  }, [filters]);
 
   useEffect(() => {
     void fetchAccounts();
@@ -195,10 +262,19 @@ export default function TransactionsListPage() {
   }, []);
 
   useEffect(() => {
+    if (isCustomPeriod && customPeriodError) {
+      return;
+    }
+
     void fetchData();
-  }, [currentPage, filters, activePeriod, showOnlyMaterialized]);
+  }, [activePeriod, currentPage, customPeriodError, filters, isCustomPeriod, showOnlyMaterialized]);
 
   async function fetchData() {
+    if (isCustomPeriod && customPeriodError) {
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -271,6 +347,7 @@ export default function TransactionsListPage() {
     setCurrentPage(1);
     setPeriodPreset('CURRENT_MONTH');
     setPeriodOffset(0);
+    setCustomPeriod(getPeriodRange('CURRENT_MONTH', 0));
     setShowOnlyMaterialized(false);
     setShowMoreFilters(false);
     setFilters({
@@ -283,8 +360,33 @@ export default function TransactionsListPage() {
   }
 
   function shiftPeriod(direction: -1 | 1) {
+    if (isCustomPeriod) {
+      return;
+    }
+
     setCurrentPage(1);
     setPeriodOffset((prev) => prev + direction);
+  }
+
+  function handlePeriodPresetChange(nextPreset: PeriodPreset) {
+    setCurrentPage(1);
+
+    if (nextPreset === 'CUSTOM') {
+      setCustomPeriod(activePeriod);
+      setPeriodPreset('CUSTOM');
+      return;
+    }
+
+    setPeriodPreset(nextPreset);
+    setPeriodOffset(0);
+  }
+
+  function handleCustomPeriodChange(field: keyof PeriodRange, value: string) {
+    setCurrentPage(1);
+    setCustomPeriod((prev) => ({
+      ...prev,
+      [field]: value
+    }));
   }
 
   async function handleDelete(transaction: Transaction) {
@@ -471,6 +573,12 @@ export default function TransactionsListPage() {
 
     return sorted;
   }, [transactions, sortConfig]);
+  const filterLabelClassName = 'mb-1 block text-sm font-medium text-gray-300';
+  const filterControlClassName =
+    'h-10 w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-sm text-white focus:border-accent focus:outline-none focus:ring';
+  const filterHeaderGridClass = isCustomPeriod
+    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.72fr)_auto_auto]'
+    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)_auto_auto]';
 
   if (loading && transactions.length === 0) {
     return (
@@ -524,60 +632,124 @@ export default function TransactionsListPage() {
       </div>
 
       <Card className="mb-6">
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)_auto]">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Periodo</label>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                onClick={() => shiftPeriod(-1)}
-                className="flex items-center justify-center px-2.5"
-              >
-                <ChevronLeft size={16} />
-              </Button>
+        <div className={filterHeaderGridClass}>
+          <div className="flex flex-col">
+            <label className={filterLabelClassName}>Periodo</label>
+            {isCustomPeriod ? (
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(180px,0.7fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                <select
+                  value={periodPreset}
+                  onChange={(event) =>
+                    handlePeriodPresetChange(event.target.value as PeriodPreset)
+                  }
+                  className={filterControlClassName}
+                >
+                  <option value="CURRENT_MONTH">
+                    {getPeriodOptionLabel('CURRENT_MONTH', periodPreset, activePeriod)}
+                  </option>
+                  <option value="CURRENT_WEEK">
+                    {getPeriodOptionLabel('CURRENT_WEEK', periodPreset, activePeriod)}
+                  </option>
+                  <option value="CUSTOM">
+                    {getPeriodOptionLabel('CUSTOM', periodPreset, activePeriod)}
+                  </option>
+                </select>
 
-              <select
-                value={periodPreset}
-                onChange={(event) => {
-                  setCurrentPage(1);
-                  setPeriodPreset(event.target.value as PeriodPreset);
-                  setPeriodOffset(0);
-                }}
-                className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
-              >
-                <option value="CURRENT_MONTH">Mes atual</option>
-                <option value="CURRENT_WEEK">Semana atual</option>
-              </select>
+                <input
+                  type="date"
+                  value={customPeriod.startDate}
+                  onChange={(event) =>
+                    handleCustomPeriodChange('startDate', event.target.value)
+                  }
+                  aria-label="Data inicial"
+                  className={filterControlClassName}
+                />
 
-              <Button
-                variant="outline"
-                onClick={() => shiftPeriod(1)}
-                className="flex items-center justify-center px-2.5"
-              >
-                <ChevronRight size={16} />
-              </Button>
-            </div>
-            <p className="mt-2 text-xs text-gray-400">
-              {formatPeriodSummary(activePeriod.startDate, activePeriod.endDate)}
-            </p>
+                <input
+                  type="date"
+                  value={customPeriod.endDate}
+                  onChange={(event) =>
+                    handleCustomPeriodChange('endDate', event.target.value)
+                  }
+                  aria-label="Data final"
+                  className={filterControlClassName}
+                />
+              </div>
+            ) : (
+              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => shiftPeriod(-1)}
+                  className="flex h-10 items-center justify-center px-2.5"
+                >
+                  <ChevronLeft size={16} />
+                </Button>
+
+                <select
+                  value={periodPreset}
+                  onChange={(event) =>
+                    handlePeriodPresetChange(event.target.value as PeriodPreset)
+                  }
+                  className={filterControlClassName}
+                >
+                  <option value="CURRENT_MONTH">
+                    {getPeriodOptionLabel('CURRENT_MONTH', periodPreset, activePeriod)}
+                  </option>
+                  <option value="CURRENT_WEEK">
+                    {getPeriodOptionLabel('CURRENT_WEEK', periodPreset, activePeriod)}
+                  </option>
+                  <option value="CUSTOM">
+                    {getPeriodOptionLabel('CUSTOM', periodPreset, activePeriod)}
+                  </option>
+                </select>
+
+                <Button
+                  variant="outline"
+                  onClick={() => shiftPeriod(1)}
+                  className="flex h-10 items-center justify-center px-2.5"
+                >
+                  <ChevronRight size={16} />
+                </Button>
+              </div>
+            )}
           </div>
 
-          <MultiSelect
-            label="Tipo"
-            options={TRANSACTION_TYPE_OPTIONS}
-            values={filters.types}
-            onChange={(values) =>
-              updateFilters({ types: values as TransactionTypeFilter[] })
-            }
-            placeholder="Selecione os tipos"
-            className="mb-0"
-          />
+          <div className={`flex flex-col ${isCustomPeriod ? 'xl:min-w-[240px]' : ''}`}>
+            <label className={filterLabelClassName}>Tipo</label>
+            <MultiSelect
+              options={TRANSACTION_TYPE_OPTIONS}
+              values={filters.types}
+              onChange={(values) =>
+                updateFilters({ types: values as TransactionTypeFilter[] })
+              }
+              placeholder="Selecione os tipos"
+              className="mb-0"
+              triggerClassName="h-10"
+            />
+          </div>
 
-          <div className="flex items-end">
+          <div className="flex flex-col">
+            <label className={filterLabelClassName}>Exibicao</label>
+            <Button
+              variant={showOnlyMaterialized ? 'accent' : 'outline'}
+              onClick={() => {
+                setCurrentPage(1);
+                setShowOnlyMaterialized((prev) => !prev);
+              }}
+              className="flex h-10 w-full items-center justify-center whitespace-nowrap px-3 xl:w-auto"
+            >
+              {showOnlyMaterialized ? 'Somente materializadas' : 'Incluindo projetadas'}
+            </Button>
+          </div>
+
+          <div className="flex flex-col">
+            <span className={`${filterLabelClassName} select-none text-transparent`}>
+              Acoes
+            </span>
             <Button
               variant="outline"
               onClick={() => setShowMoreFilters((prev) => !prev)}
-              className="flex w-full items-center justify-center gap-2 xl:w-auto"
+              className="flex h-10 w-full items-center justify-center gap-2 xl:w-auto"
             >
               <Filter size={16} />
               {moreFiltersCount > 0 ? `Mais filtros (${moreFiltersCount})` : 'Mais filtros'}
@@ -586,8 +758,12 @@ export default function TransactionsListPage() {
           </div>
         </div>
 
+        {isCustomPeriod && customPeriodError && (
+          <p className="mt-2 text-xs text-red-400">{customPeriodError}</p>
+        )}
+
         {showMoreFilters && (
-          <div className="mt-6 border-t border-gray-700 pt-6">
+          <div className="mt-4 border-t border-gray-700 pt-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
               <Input
                 label="Buscar"
@@ -644,23 +820,7 @@ export default function TransactionsListPage() {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">
-                  Exibicao
-                </label>
-                <Button
-                  variant={showOnlyMaterialized ? 'accent' : 'outline'}
-                  onClick={() => {
-                    setCurrentPage(1);
-                    setShowOnlyMaterialized((prev) => !prev);
-                  }}
-                  className="w-full md:w-auto"
-                >
-                  {showOnlyMaterialized ? 'Somente materializadas' : 'Incluindo projetadas'}
-                </Button>
-              </div>
-
+            <div className="mt-4 flex justify-end">
               <Button variant="outline" onClick={resetFilters}>
                 Limpar filtros
               </Button>

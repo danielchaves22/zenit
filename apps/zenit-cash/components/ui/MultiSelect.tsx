@@ -16,6 +16,7 @@ interface MultiSelectProps {
   disabled?: boolean;
   error?: string;
   className?: string;
+  triggerClassName?: string;
   required?: boolean;
 }
 
@@ -28,6 +29,7 @@ export function MultiSelect({
   disabled = false,
   error,
   className = '',
+  triggerClassName = '',
   required = false
 }: MultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -147,7 +149,7 @@ export function MultiSelect({
           onClick={() => !disabled && setIsOpen((prev) => !prev)}
           className={`flex w-full items-center justify-between gap-2 rounded border bg-background px-2 py-1.5 text-left text-sm text-white transition-colors focus:outline-none focus:ring focus:border-accent ${
             error ? 'border-red-500' : 'border-gray-700 hover:border-gray-600'
-          } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+          } ${disabled ? 'cursor-not-allowed opacity-60' : ''} ${triggerClassName}`}
         >
           <span className={selectedLabels.length === 0 ? 'text-gray-400' : 'text-white'}>
             {getButtonText()}

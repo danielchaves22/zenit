@@ -20,6 +20,11 @@ import {
   autocompleteQuerySchema
 } from '../validators/financial-transaction.validator';
 import {
+  getCreditCardInvoiceSchema,
+  listCreditCardInvoicesSchema,
+  payCreditCardInvoiceSchema
+} from '../validators/credit-card-invoice.validator';
+import {
   createFixedTransactionSchema,
   listFixedTransactionsSchema,
   materializeFixedTransactionSchema,
@@ -69,6 +74,12 @@ import {
   materializeFixedTransactionOccurrence,
   updateFixedTransaction
 } from '../controllers/fixed-transaction.controller';
+import {
+  getCreditCardInvoice,
+  listCreditCardInvoices,
+  listCreditCards,
+  payCreditCardInvoice
+} from '../controllers/credit-card-invoice.controller';
 
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 
@@ -86,6 +97,12 @@ router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_
 
 router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccount);
 router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount);
+
+// Credit cards and invoices
+router.get('/credit-cards', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listCreditCards);
+router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
+router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
+router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
 
 // Financial categories
 router.post('/categories', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(createCategorySchema), createCategory);

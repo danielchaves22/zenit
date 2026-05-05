@@ -35,6 +35,29 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Financeiro' },
     { label: 'Contas' }
   ],
+  '/financial/credit-cards': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Cartões e Faturas' }
+  ],
+  '/financial/credit-cards/new': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
+    { label: 'Novo Cartão' }
+  ],
+  '/financial/credit-cards/[accountId]': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
+    { label: 'Editar Cartão' }
+  ],
+  '/financial/credit-cards/[accountId]/invoices': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
+    { label: 'Faturas' }
+  ],
   '/financial/transactions': [
     { label: 'Dashboard', href: '/' },
     { label: 'Financeiro' },
@@ -45,6 +68,12 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Financeiro' },
     { label: 'Transações', href: '/financial/transactions' },
     { label: 'Nova Transação' }
+  ],
+  '/financial/transactions/new-credit-card-purchase': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Transações', href: '/financial/transactions' },
+    { label: 'Nova Compra no Cartão' }
   ],
   '/financial/categories': [
     { label: 'Dashboard', href: '/' },
@@ -175,7 +204,9 @@ export function SmartBreadcrumb({
       'admin': 'Administração',
       'dashboard': 'Dashboard',
       'accounts': 'Contas',
+      'credit-cards': 'Cartões e Faturas',
       'transactions': 'Transações',
+      'new-credit-card-purchase': 'Nova Compra no Cartão',
       'categories': 'Categorias',
       'reports': 'Relatórios',
       'users': 'Usuários',

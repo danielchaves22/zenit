@@ -3,8 +3,20 @@ import { logger } from '../utils/logger';
 import { parseDecimal } from '../utils/money';
 import cacheService from './cache.service';
 import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
+import {
+  addMonthsClamped,
+  CreditCardInvoiceReference,
+  resolveCreditCardInvoiceReference,
+  resolveCreditCardInvoiceStatus
+} from '../utils/credit-card';
+
+import { randomUUID } from 'crypto';
+import {
+  AccountType
+} from '@prisma/client';
 
 const prisma = new PrismaClient();
+type PurchaseScope = 'SINGLE' | 'PURCHASE';
 
 // ============================================
 // CRITICAL: FINANCIAL DATA INTEGRITY CLASS
@@ -30,7 +42,46 @@ export default class FinancialTransactionService {
     createdBy: number;
     tags?: string[];
     repeatTimes?: number;
+    installmentCount?: number;
   }): Promise<FinancialTransaction | FinancialTransaction[]> {
+    const installmentCount = data.installmentCount && data.installmentCount > 0
+      ? data.installmentCount
+      : 1;
+
+    if ((data.repeatTimes && data.repeatTimes > 0) && installmentCount > 1) {
+      throw new Error('Não é possível usar repetição e parcelamento ao mesmo tempo');
+    }
+
+    const fromAccount = data.fromAccountId
+      ? await prisma.financialAccount.findUnique({
+          where: { id: data.fromAccountId }
+        })
+      : null;
+
+    const isCreditCardPurchase =
+      data.type === TransactionType.EXPENSE &&
+      fromAccount?.type === AccountType.CREDIT_CARD;
+
+    if (installmentCount > 1 && !isCreditCardPurchase) {
+      throw new Error('Parcelamento está disponível apenas para despesas em cartão de crédito');
+    }
+
+    if (isCreditCardPurchase) {
+      if (!fromAccount) {
+        throw new Error('Conta de origem nao encontrada');
+      }
+
+      if (fromAccount.companyId !== data.companyId) {
+        throw new Error('Conta de origem nao pertence a empresa informada');
+      }
+
+      if (!fromAccount.statementClosingDay || !fromAccount.statementDueDay) {
+        throw new Error('Cartão de crédito sem fechamento e vencimento configurados');
+      }
+
+      return this.createCreditCardExpenseInstallments(data, fromAccount, installmentCount);
+    }
+
     const repeatTimes = data.repeatTimes && data.repeatTimes > 0 ? data.repeatTimes : 1;
     const baseData = { ...data } as any;
     const baseDescription = data.description;
@@ -38,6 +89,7 @@ export default class FinancialTransactionService {
     const baseDueDate = baseData.dueDate || null;
     const baseEffectiveDate = baseData.effectiveDate || null;
     delete baseData.repeatTimes;
+    delete baseData.installmentCount;
 
     const transactions: FinancialTransaction[] = [];
 
@@ -68,6 +120,64 @@ export default class FinancialTransactionService {
     return d;
   }
 
+  private static async createCreditCardExpenseInstallments(
+    data: {
+      description: string;
+      amount: number | string;
+      date: Date;
+      dueDate?: Date | null;
+      effectiveDate?: Date | null;
+      type: TransactionType;
+      status?: TransactionStatus;
+      notes?: string;
+      fromAccountId?: number | null;
+      toAccountId?: number | null;
+      categoryId?: number | null;
+      companyId: number;
+      createdBy: number;
+      tags?: string[];
+    },
+    cardAccount: {
+      id: number;
+      statementClosingDay: number | null;
+      statementDueDay: number | null;
+    },
+    installmentCount: number
+  ): Promise<FinancialTransaction | FinancialTransaction[]> {
+    const purchaseGroupId = randomUUID();
+    const purchaseDate = new Date(data.date);
+    const transactions: FinancialTransaction[] = [];
+
+    for (let i = 0; i < installmentCount; i++) {
+      const scheduledDate = addMonthsClamped(purchaseDate, i);
+      const invoiceReference = resolveCreditCardInvoiceReference(
+        scheduledDate,
+        cardAccount.statementClosingDay as number,
+        cardAccount.statementDueDay as number
+      );
+
+      const transaction = await this.createSingleTransaction({
+        ...data,
+        date: purchaseDate,
+        dueDate: invoiceReference.dueDate,
+        effectiveDate: purchaseDate,
+        status: TransactionStatus.COMPLETED,
+        installmentNumber: i + 1,
+        totalInstallments: installmentCount,
+        purchaseGroupId,
+        scheduledDate,
+        creditCardInvoiceReference: {
+          ...invoiceReference,
+          accountId: cardAccount.id
+        }
+      });
+
+      transactions.push(transaction);
+    }
+
+    return installmentCount === 1 ? transactions[0] : transactions;
+  }
+
   /**
    * CRITICAL: Creates financial transaction with ACID guarantees
    * Netflix-level reliability for financial operations
@@ -89,6 +199,9 @@ export default class FinancialTransactionService {
     tags?: string[];
     installmentNumber?: number | null;
     totalInstallments?: number | null;
+    purchaseGroupId?: string | null;
+    scheduledDate?: Date | null;
+    creditCardInvoiceReference?: (CreditCardInvoiceReference & { accountId: number }) | null;
   }): Promise<FinancialTransaction> {
 
     const startTime = Date.now();
@@ -180,7 +293,7 @@ export default class FinancialTransactionService {
       for (const accountId of accountsToLock) {
         try {
           const result = await tx.$queryRaw`
-            SELECT id, name, balance, "isActive", "companyId", "allowNegativeBalance"
+            SELECT id, name, balance, type, "isActive", "companyId", "allowNegativeBalance"
             FROM "FinancialAccount"
             WHERE id = ${accountId}
             FOR UPDATE NOWAIT
@@ -216,6 +329,14 @@ export default class FinancialTransactionService {
       if (data.status === 'COMPLETED') {
         await this.validateBusinessRules(data, parsedAmount, lockedAccounts);
       }
+
+      let creditCardInvoiceId: number | null = null;
+      if (data.creditCardInvoiceReference) {
+        creditCardInvoiceId = await this.ensureCreditCardInvoiceTx(
+          tx,
+          data.creditCardInvoiceReference
+        );
+      }
       
       // âœ… CRITICAL: Create transaction record FIRST (for audit trail)
       const transaction = await tx.financialTransaction.create({
@@ -230,9 +351,14 @@ export default class FinancialTransactionService {
           notes: data.notes,
           installmentNumber: data.installmentNumber ?? null,
           totalInstallments: data.totalInstallments ?? null,
+          purchaseGroupId: data.purchaseGroupId ?? null,
+          scheduledDate: data.scheduledDate ?? null,
           fromAccount: data.fromAccountId ? { connect: { id: data.fromAccountId } } : undefined,
           toAccount: data.toAccountId ? { connect: { id: data.toAccountId } } : undefined,
           category: data.categoryId ? { connect: { id: data.categoryId } } : undefined,
+          creditCardInvoice: creditCardInvoiceId
+            ? { connect: { id: creditCardInvoiceId } }
+            : undefined,
           company: { connect: { id: data.companyId } },
           createdByUser: { connect: { id: data.createdBy } },
           tags: data.tags && data.tags.length > 0 ? {
@@ -256,6 +382,10 @@ export default class FinancialTransactionService {
         
         // âœ… CRITICAL: Verify balance integrity AFTER update
         await this.verifyBalanceIntegrity(tx, accountsToLock);
+      }
+
+      if (creditCardInvoiceId) {
+        await this.syncCreditCardInvoiceTx(tx, creditCardInvoiceId);
       }
       
       // âœ… CRITICAL: Success audit log
@@ -448,6 +578,452 @@ export default class FinancialTransactionService {
     }
   }
 
+  private static async ensureCreditCardInvoiceTx(
+    tx: Prisma.TransactionClient,
+    reference: CreditCardInvoiceReference & { accountId: number }
+  ): Promise<number> {
+    const existingInvoice = await tx.creditCardInvoice.findUnique({
+      where: {
+        unique_credit_card_invoice_reference: {
+          accountId: reference.accountId,
+          referenceYear: reference.referenceYear,
+          referenceMonth: reference.referenceMonth
+        }
+      },
+      include: {
+        paymentTransaction: {
+          select: {
+            id: true,
+            status: true
+          }
+        }
+      }
+    });
+
+    if (existingInvoice?.paymentTransaction?.status === TransactionStatus.COMPLETED) {
+      throw new Error('Não é possível lançar compras em uma fatura já paga');
+    }
+
+    const invoiceStatus = resolveCreditCardInvoiceStatus(reference.closingDate, false);
+
+    if (existingInvoice) {
+      const updated = await tx.creditCardInvoice.update({
+        where: { id: existingInvoice.id },
+        data: {
+          closingDate: reference.closingDate,
+          dueDate: reference.dueDate,
+          status: existingInvoice.paymentTransactionId
+            ? existingInvoice.status
+            : invoiceStatus
+        }
+      });
+
+      return updated.id;
+    }
+
+    const created = await tx.creditCardInvoice.create({
+      data: {
+        accountId: reference.accountId,
+        referenceYear: reference.referenceYear,
+        referenceMonth: reference.referenceMonth,
+        closingDate: reference.closingDate,
+        dueDate: reference.dueDate,
+        status: invoiceStatus
+      }
+    });
+
+    return created.id;
+  }
+
+  private static async syncCreditCardInvoiceTx(
+    tx: Prisma.TransactionClient,
+    invoiceId: number
+  ): Promise<void> {
+    const invoice = await tx.creditCardInvoice.findUnique({
+      where: { id: invoiceId },
+      include: {
+        paymentTransaction: {
+          select: {
+            id: true,
+            status: true
+          }
+        }
+      }
+    });
+
+    if (!invoice) {
+      return;
+    }
+
+    const aggregate = await tx.financialTransaction.aggregate({
+      where: {
+        creditCardInvoiceId: invoiceId,
+        type: TransactionType.EXPENSE,
+        status: TransactionStatus.COMPLETED
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const totalAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
+    const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
+    const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
+
+    if (totalAmount.eq(0) && !paymentTransactionId) {
+      await tx.creditCardInvoice.delete({
+        where: { id: invoiceId }
+      });
+      return;
+    }
+
+    await tx.creditCardInvoice.update({
+      where: { id: invoiceId },
+      data: {
+        totalAmount,
+        paymentTransactionId,
+        status: resolveCreditCardInvoiceStatus(invoice.closingDate, hasCompletedPayment)
+      }
+    });
+  }
+
+  private static async syncCreditCardInvoicesTx(
+    tx: Prisma.TransactionClient,
+    invoiceIds: Array<number | null | undefined>
+  ): Promise<void> {
+    const uniqueInvoiceIds = Array.from(
+      new Set(invoiceIds.filter((invoiceId): invoiceId is number => typeof invoiceId === 'number'))
+    );
+
+    for (const invoiceId of uniqueInvoiceIds) {
+      await this.syncCreditCardInvoiceTx(tx, invoiceId);
+    }
+  }
+
+  private static async syncCreditCardInvoicesByPaymentTransactionTx(
+    tx: Prisma.TransactionClient,
+    transactionId: number
+  ): Promise<void> {
+    const invoices = await tx.creditCardInvoice.findMany({
+      where: {
+        paymentTransactionId: transactionId
+      },
+      select: {
+        id: true
+      }
+    });
+
+    await this.syncCreditCardInvoicesTx(tx, invoices.map((invoice) => invoice.id));
+  }
+
+  private static async getGroupedPurchaseTransactionsTx(
+    tx: Prisma.TransactionClient,
+    purchaseGroupId: string,
+    companyId: number
+  ) {
+    return tx.financialTransaction.findMany({
+      where: {
+        purchaseGroupId,
+        companyId
+      },
+      include: {
+        creditCardInvoice: {
+          include: {
+            paymentTransaction: {
+              select: {
+                id: true,
+                status: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: [
+        { installmentNumber: 'asc' },
+        { id: 'asc' }
+      ]
+    });
+  }
+
+  private static ensureGroupedPurchaseEditableFields(
+    data: Partial<{
+      description: string;
+      amount: number | string;
+      date: Date;
+      dueDate?: Date | null;
+      effectiveDate?: Date | null;
+      type: TransactionType;
+      status: TransactionStatus;
+      notes?: string;
+      fromAccountId?: number | null;
+      toAccountId?: number | null;
+      categoryId?: number | null;
+      tags?: string[];
+      installmentNumber?: number | null;
+      totalInstallments?: number | null;
+      purchaseScope?: PurchaseScope;
+    }>
+  ) {
+    const forbiddenKeys: Array<keyof typeof data> = [
+      'date',
+      'dueDate',
+      'effectiveDate',
+      'type',
+      'status',
+      'fromAccountId',
+      'toAccountId',
+      'installmentNumber',
+      'totalInstallments'
+    ];
+
+    const hasForbiddenChanges = forbiddenKeys.some((key) => data[key] !== undefined);
+    if (hasForbiddenChanges) {
+      throw new Error('Compras parceladas no cartão permitem editar apenas descrição, valor, categoria, tags e observações');
+    }
+  }
+
+  private static async assertGroupedPurchaseMutationAllowedTx(
+    tx: Prisma.TransactionClient,
+    purchaseGroupId: string,
+    companyId: number,
+    scope: PurchaseScope,
+    currentTransactionId: number
+  ) {
+    const groupedTransactions = await this.getGroupedPurchaseTransactionsTx(
+      tx,
+      purchaseGroupId,
+      companyId
+    );
+
+    if (groupedTransactions.length === 0) {
+      throw new Error('Compra parcelada nao encontrada');
+    }
+
+    const hasPaidInvoice = groupedTransactions.some(
+      (transaction) =>
+        transaction.creditCardInvoice?.paymentTransaction?.status === TransactionStatus.COMPLETED
+    );
+
+    if (scope === 'PURCHASE' && hasPaidInvoice) {
+      throw new Error('Não é possível alterar a compra inteira porque existe parcela em fatura paga');
+    }
+
+    if (scope === 'SINGLE') {
+      const currentTransaction = groupedTransactions.find(
+        (transaction) => transaction.id === currentTransactionId
+      );
+
+      if (!currentTransaction) {
+        throw new Error('Parcela nao encontrada na compra agrupada');
+      }
+
+      if (currentTransaction.creditCardInvoice?.paymentTransaction?.status === TransactionStatus.COMPLETED) {
+        throw new Error('Não é possível alterar parcela que pertence a fatura paga');
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const scheduledDate = new Date(
+        currentTransaction.scheduledDate ||
+          currentTransaction.dueDate ||
+          currentTransaction.date
+      );
+      scheduledDate.setHours(0, 0, 0, 0);
+
+      if (scheduledDate <= today) {
+        throw new Error('Ajustes individuais sao permitidos apenas para parcelas futuras e nao pagas');
+      }
+    }
+
+    return groupedTransactions;
+  }
+
+  private static async updateSingleTransactionRecordTx(
+    tx: Prisma.TransactionClient,
+    originalTxn: any,
+    data: Partial<{
+      description: string;
+      amount: number | string;
+      date: Date;
+      dueDate?: Date | null;
+      effectiveDate?: Date | null;
+      type: TransactionType;
+      status: TransactionStatus;
+      notes?: string;
+      fromAccountId?: number | null;
+      toAccountId?: number | null;
+      categoryId?: number | null;
+      tags?: string[];
+      installmentNumber?: number | null;
+      totalInstallments?: number | null;
+    }>,
+    companyId: number
+  ): Promise<FinancialTransaction> {
+    if (originalTxn.companyId !== companyId) {
+      throw new Error(`Transaction ${originalTxn.id} does not belong to company ${companyId}`);
+    }
+
+    const accountsToLock = new Set<number>();
+    if (originalTxn.fromAccountId) accountsToLock.add(originalTxn.fromAccountId);
+    if (originalTxn.toAccountId) accountsToLock.add(originalTxn.toAccountId);
+    if (data.fromAccountId) accountsToLock.add(data.fromAccountId);
+    if (data.toAccountId) accountsToLock.add(data.toAccountId);
+
+    const sortedAccountIds = Array.from(accountsToLock).sort((a, b) => a - b);
+
+    for (const accountId of sortedAccountIds) {
+      await tx.$queryRaw`
+        SELECT id FROM "FinancialAccount"
+        WHERE id = ${accountId}
+        FOR UPDATE NOWAIT
+      `;
+    }
+
+    if (originalTxn.status === 'COMPLETED') {
+      await this.reverseAccountBalancesAtomic(tx, {
+        type: originalTxn.type,
+        amount: originalTxn.amount,
+        fromAccountId: originalTxn.fromAccountId,
+        toAccountId: originalTxn.toAccountId
+      });
+    }
+
+    const updatedData: Prisma.FinancialTransactionUpdateInput = {};
+
+    if (data.description !== undefined) updatedData.description = data.description;
+    if (data.amount !== undefined) updatedData.amount = parseDecimal(data.amount);
+    if (data.date !== undefined) updatedData.date = data.date;
+    if (data.dueDate !== undefined) updatedData.dueDate = data.dueDate;
+    if (data.effectiveDate !== undefined) updatedData.effectiveDate = data.effectiveDate;
+    if (data.type !== undefined) updatedData.type = data.type;
+    if (data.status !== undefined) updatedData.status = data.status;
+    if (data.notes !== undefined) updatedData.notes = data.notes;
+    if (data.installmentNumber !== undefined) updatedData.installmentNumber = data.installmentNumber;
+    if (data.totalInstallments !== undefined) updatedData.totalInstallments = data.totalInstallments;
+    if (data.fromAccountId !== undefined) {
+      updatedData.fromAccount = data.fromAccountId
+        ? { connect: { id: data.fromAccountId } }
+        : { disconnect: true };
+    }
+    if (data.toAccountId !== undefined) {
+      updatedData.toAccount = data.toAccountId
+        ? { connect: { id: data.toAccountId } }
+        : { disconnect: true };
+    }
+    if (data.categoryId !== undefined) {
+      updatedData.category = data.categoryId
+        ? { connect: { id: data.categoryId } }
+        : { disconnect: true };
+    }
+    if (data.tags !== undefined) {
+      updatedData.tags = {
+        set: [],
+        ...(data.tags.length > 0
+          ? {
+              connectOrCreate: data.tags.map((tagName) => ({
+                where: {
+                  name_companyId: {
+                    name: tagName,
+                    companyId
+                  }
+                },
+                create: {
+                  name: tagName,
+                  company: {
+                    connect: { id: companyId }
+                  }
+                }
+              }))
+            }
+          : {})
+      };
+    }
+
+    const updated = await tx.financialTransaction.update({
+      where: { id: originalTxn.id },
+      data: updatedData
+    });
+
+    const newStatus = data.status ?? originalTxn.status;
+    if (newStatus === TransactionStatus.COMPLETED) {
+      await this.updateAccountBalancesAtomic(tx, {
+        transactionId: updated.id,
+        type: updated.type,
+        amount: updated.amount,
+        fromAccountId: updated.fromAccountId,
+        toAccountId: updated.toAccountId
+      });
+
+      await this.verifyBalanceIntegrity(tx, sortedAccountIds);
+    }
+
+    await this.syncCreditCardInvoicesTx(tx, [
+      originalTxn.creditCardInvoiceId,
+      updated.creditCardInvoiceId
+    ]);
+    await this.syncCreditCardInvoicesByPaymentTransactionTx(tx, updated.id);
+
+    return updated;
+  }
+
+  private static async deleteSingleTransactionRecordTx(
+    tx: Prisma.TransactionClient,
+    originalTxn: any,
+    companyId: number
+  ): Promise<void> {
+    if (originalTxn.companyId !== companyId) {
+      throw new Error(`Transaction ${originalTxn.id} does not belong to company ${companyId}`);
+    }
+
+    const accountsToLock = new Set<number>();
+    if (originalTxn.fromAccountId) accountsToLock.add(originalTxn.fromAccountId);
+    if (originalTxn.toAccountId) accountsToLock.add(originalTxn.toAccountId);
+
+    const sortedAccountIds = Array.from(accountsToLock).sort((a, b) => a - b);
+    for (const accountId of sortedAccountIds) {
+      await tx.$queryRaw`
+        SELECT id FROM "FinancialAccount"
+        WHERE id = ${accountId}
+        FOR UPDATE NOWAIT
+      `;
+    }
+
+    if (originalTxn.status === 'COMPLETED') {
+      await this.reverseAccountBalancesAtomic(tx, {
+        type: originalTxn.type,
+        amount: originalTxn.amount,
+        fromAccountId: originalTxn.fromAccountId,
+        toAccountId: originalTxn.toAccountId
+      });
+
+      await this.verifyBalanceIntegrity(tx, sortedAccountIds);
+    }
+
+    const paymentLinkedInvoiceIds = await tx.creditCardInvoice.findMany({
+      where: {
+        paymentTransactionId: originalTxn.id
+      },
+      select: {
+        id: true
+      }
+    });
+
+    await tx.$executeRaw`
+      DELETE FROM "_FinancialTagToFinancialTransaction" WHERE "B" = ${originalTxn.id}
+    `;
+
+    await tx.financialTransaction.delete({
+      where: { id: originalTxn.id }
+    });
+
+    await this.syncCreditCardInvoicesTx(tx, [originalTxn.creditCardInvoiceId]);
+    await this.syncCreditCardInvoicesTx(
+      tx,
+      paymentLinkedInvoiceIds.map((invoice) => invoice.id)
+    );
+  }
+
   /**
    * CRITICAL: Update transaction with same safety guarantees
    */
@@ -468,15 +1044,13 @@ export default class FinancialTransactionService {
       tags?: string[];
       installmentNumber?: number | null;
       totalInstallments?: number | null;
+      purchaseScope?: PurchaseScope;
     }>,
     companyId: number
   ): Promise<FinancialTransaction> {
-    
     const transactionId = `update_${id}_${Date.now()}`;
-    
-    return await prisma.$transaction(async (tx) => {
-      
-      // âœ… CRITICAL: Lock original transaction first
+
+    return prisma.$transaction(async (tx) => {
       const original = await tx.$queryRaw`
         SELECT * FROM "FinancialTransaction" 
         WHERE id = ${id} 
@@ -488,84 +1062,66 @@ export default class FinancialTransactionService {
       }
 
       const originalTxn = original[0];
-      
-      // âœ… CRITICAL: Company ownership verification
-      if (originalTxn.companyId !== companyId) {
-        throw new Error(`Transaction ${id} does not belong to company ${companyId}`);
-      }
+      const purchaseScope: PurchaseScope =
+        data.purchaseScope ??
+        (originalTxn.purchaseGroupId ? 'PURCHASE' : 'SINGLE');
 
-      // âœ… CRITICAL: Collect ALL accounts that need locking (old + new)
-      const accountsToLock = new Set<number>();
-      
-      if (originalTxn.fromAccountId) accountsToLock.add(originalTxn.fromAccountId);
-      if (originalTxn.toAccountId) accountsToLock.add(originalTxn.toAccountId);
-      if (data.fromAccountId) accountsToLock.add(data.fromAccountId);
-      if (data.toAccountId) accountsToLock.add(data.toAccountId);
-      
-      // âœ… CRITICAL: Acquire locks in deterministic order
-      const sortedAccountIds = Array.from(accountsToLock).sort((a, b) => a - b);
-      
-      for (const accountId of sortedAccountIds) {
-        await tx.$queryRaw`
-          SELECT id FROM "FinancialAccount" 
-          WHERE id = ${accountId} 
-          FOR UPDATE NOWAIT
-        `;
-      }
+      const { purchaseScope: _ignoredScope, ...updatePayload } = data;
 
-      // âœ… CRITICAL: If was COMPLETED, reverse the effects first
-      if (originalTxn.status === 'COMPLETED') {
-        await this.reverseAccountBalancesAtomic(tx, {
-          type: originalTxn.type,
-          amount: originalTxn.amount,
-          fromAccountId: originalTxn.fromAccountId,
-          toAccountId: originalTxn.toAccountId
-        });
-      }
+      let updatedTransaction: FinancialTransaction;
 
-      // âœ… CRITICAL: Update the transaction record
-      const updatedData: any = {};
-      if (data.description !== undefined) updatedData.description = data.description;
-      if (data.amount !== undefined) updatedData.amount = parseDecimal(data.amount);
-      if (data.date !== undefined) updatedData.date = data.date;
-      if (data.dueDate !== undefined) updatedData.dueDate = data.dueDate;
-      if (data.effectiveDate !== undefined) updatedData.effectiveDate = data.effectiveDate;
-      if (data.type !== undefined) updatedData.type = data.type;
-      if (data.status !== undefined) updatedData.status = data.status;
-      if (data.notes !== undefined) updatedData.notes = data.notes;
-      if (data.installmentNumber !== undefined) updatedData.installmentNumber = data.installmentNumber;
-      if (data.totalInstallments !== undefined) updatedData.totalInstallments = data.totalInstallments;
+      if (originalTxn.purchaseGroupId) {
+        this.ensureGroupedPurchaseEditableFields(data);
 
-      const updated = await tx.financialTransaction.update({
-        where: { id },
-        data: updatedData
-      });
+        const groupedTransactions = await this.assertGroupedPurchaseMutationAllowedTx(
+          tx,
+          originalTxn.purchaseGroupId,
+          companyId,
+          purchaseScope,
+          id
+        );
 
-      // âœ… CRITICAL: Apply new effects if COMPLETED
-      const newStatus = data.status || originalTxn.status;
-      if (newStatus === 'COMPLETED') {
-        await this.updateAccountBalancesAtomic(tx, {
-          transactionId: updated.id,
-          type: updated.type,
-          amount: updated.amount,
-          fromAccountId: updated.fromAccountId,
-          toAccountId: updated.toAccountId
-        });
-        
-        // âœ… CRITICAL: Verify integrity
-        await this.verifyBalanceIntegrity(tx, sortedAccountIds);
+        if (purchaseScope === 'PURCHASE') {
+          const updates = [];
+          for (const groupedTransaction of groupedTransactions) {
+            updates.push(
+              await this.updateSingleTransactionRecordTx(
+                tx,
+                groupedTransaction,
+                updatePayload,
+                companyId
+              )
+            );
+          }
+
+          updatedTransaction =
+            updates.find((transaction) => transaction.id === id) || updates[0];
+        } else {
+          updatedTransaction = await this.updateSingleTransactionRecordTx(
+            tx,
+            originalTxn,
+            updatePayload,
+            companyId
+          );
+        }
+      } else {
+        updatedTransaction = await this.updateSingleTransactionRecordTx(
+          tx,
+          originalTxn,
+          updatePayload,
+          companyId
+        );
       }
 
       logger.info('Financial transaction updated successfully', {
         transactionId,
         dbTransactionId: id,
         originalStatus: originalTxn.status,
-        newStatus,
-        accountsAffected: sortedAccountIds.length
+        newStatus: updatedTransaction.status,
+        purchaseScope
       });
 
-      return updated;
-      
+      return updatedTransaction;
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000
@@ -644,7 +1200,13 @@ export default class FinancialTransactionService {
   // EXISTING METHODS (UNCHANGED)
   // ============================================
 
-  static async deleteTransaction(id: number): Promise<void> {
+  static async deleteTransaction(
+    id: number,
+    options: {
+      companyId: number;
+      scope?: PurchaseScope;
+    }
+  ): Promise<void> {
     await prisma.$transaction(async (tx) => {
       const transaction = await tx.$queryRaw`
         SELECT * FROM "FinancialTransaction" WHERE id = ${id} FOR UPDATE NOWAIT
@@ -654,44 +1216,51 @@ export default class FinancialTransactionService {
         throw new Error(`Transaction ${id} not found`);
       }
 
-      const txn = transaction[0];
+      const originalTxn = transaction[0];
+      const scope: PurchaseScope =
+        options.scope ??
+        (originalTxn.purchaseGroupId ? 'PURCHASE' : 'SINGLE');
 
-      // Lock accounts
-      const accountsToLock = [];
-      if (txn.fromAccountId) accountsToLock.push(txn.fromAccountId);
-      if (txn.toAccountId) accountsToLock.push(txn.toAccountId);
-      
-      for (const accountId of accountsToLock.sort()) {
-        await tx.$queryRaw`SELECT id FROM "FinancialAccount" WHERE id = ${accountId} FOR UPDATE NOWAIT`;
+      if (originalTxn.purchaseGroupId) {
+        const groupedTransactions = await this.assertGroupedPurchaseMutationAllowedTx(
+          tx,
+          originalTxn.purchaseGroupId,
+          options.companyId,
+          scope,
+          id
+        );
+
+        if (scope === 'PURCHASE') {
+          for (const groupedTransaction of groupedTransactions) {
+            await this.deleteSingleTransactionRecordTx(
+              tx,
+              groupedTransaction,
+              options.companyId
+            );
+          }
+        } else {
+          await this.deleteSingleTransactionRecordTx(tx, originalTxn, options.companyId);
+        }
+      } else {
+        await this.deleteSingleTransactionRecordTx(tx, originalTxn, options.companyId);
       }
 
-      // Reverse if completed
-      if (txn.status === 'COMPLETED') {
-        await this.reverseAccountBalancesAtomic(tx, {
-          type: txn.type,
-          amount: txn.amount,
-          fromAccountId: txn.fromAccountId,
-          toAccountId: txn.toAccountId
-        });
-      }
-
-      // Remove tags
-      await tx.$executeRaw`
-        DELETE FROM "_FinancialTagToFinancialTransaction" WHERE "B" = ${id}
-      `;
-
-      // Delete transaction
-      await tx.financialTransaction.delete({ where: { id } });
-
-      logger.info('Financial transaction deleted successfully', { transactionId: id });
+      logger.info('Financial transaction deleted successfully', {
+        transactionId: id,
+        scope
+      });
     }, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000
     });
   }
 
-  static async updateTransactionStatus(id: number, status: TransactionStatus): Promise<FinancialTransaction> {
-    return this.updateTransaction(id, { status }, 0);
+  static async updateTransactionStatus(
+    id: number,
+    status: TransactionStatus,
+    companyId: number
+  ): Promise<FinancialTransaction> {
+    return this.updateTransaction(id, { status }, companyId);
   }
 
   static async listTransactions(params: {
@@ -781,6 +1350,15 @@ export default class FinancialTransactionService {
         category: { select: { id: true, name: true, color: true } },
         fromAccount: { select: { id: true, name: true } },
         toAccount: { select: { id: true, name: true } },
+        creditCardInvoice: {
+          select: {
+            id: true,
+            referenceYear: true,
+            referenceMonth: true,
+            dueDate: true,
+            status: true
+          }
+        },
         tags: { select: { id: true, name: true } },
         createdByUser: { select: { id: true, name: true } }
       }
@@ -804,7 +1382,7 @@ export default class FinancialTransactionService {
 
     const includesProjectableType = !types || types.some((transactionType) => transactionType !== TransactionType.TRANSFER);
 
-    // Transacoes virtuais de fixas sempre sao PENDING e nunca TRANSFER.
+    // Transações virtuais de fixas sempre são PENDING e nunca TRANSFER.
     if ((status && status !== TransactionStatus.PENDING) || !includesProjectableType) {
       const sortedOnlyMaterialized = this.sortTransactionsForList(decoratedMaterialized);
       const total = sortedOnlyMaterialized.length;
@@ -926,6 +1504,7 @@ export default class FinancialTransactionService {
                   category: template.category,
                   fromAccount: template.fromAccount,
                   toAccount: template.toAccount,
+                  creditCardInvoice: null,
                   createdByUser: { id: template.createdBy, name: 'Template Fixa' },
                   createdAt: occurrenceDate,
                   updatedAt: occurrenceDate,
@@ -1042,17 +1621,70 @@ export default class FinancialTransactionService {
     return true;
   }
 
-  static async getTransactionById(id: number): Promise<FinancialTransaction | null> {
-    return prisma.financialTransaction.findUnique({
+  static async getTransactionById(id: number): Promise<any | null> {
+    const transaction = await prisma.financialTransaction.findUnique({
       where: { id },
       include: {
         category: true,
         fromAccount: true,
         toAccount: true,
+        creditCardInvoice: {
+          include: {
+            paymentTransaction: {
+              select: {
+                id: true,
+                status: true
+              }
+            }
+          }
+        },
         tags: true,
         createdByUser: { select: { id: true, name: true, email: true } }
       }
     });
+
+    if (!transaction) {
+      return null;
+    }
+
+    if (!transaction.purchaseGroupId) {
+      return transaction;
+    }
+
+    const purchaseGroupTransactions = await prisma.financialTransaction.findMany({
+      where: {
+        purchaseGroupId: transaction.purchaseGroupId
+      },
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        installmentNumber: true,
+        totalInstallments: true,
+        dueDate: true,
+        scheduledDate: true,
+        status: true,
+        creditCardInvoice: {
+          select: {
+            id: true,
+            referenceYear: true,
+            referenceMonth: true,
+            dueDate: true,
+            status: true,
+            paymentTransactionId: true
+          }
+        }
+      },
+      orderBy: [
+        { installmentNumber: 'asc' },
+        { id: 'asc' }
+      ]
+    });
+
+    return {
+      ...transaction,
+      purchaseGroupTransactions
+    };
   }
 
   static async getFinancialSummary(
@@ -1093,7 +1725,8 @@ export default class FinancialTransactionService {
     // âœ… FILTRAR CONTAS POR PERMISSÃ•ES
     const accountWhere: any = { 
       companyId, 
-      isActive: true 
+      isActive: true,
+      type: { not: AccountType.CREDIT_CARD }
     };
     
     if (accessibleAccountIds && accessibleAccountIds.length > 0) {

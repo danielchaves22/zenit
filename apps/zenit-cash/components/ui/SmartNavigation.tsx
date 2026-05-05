@@ -21,6 +21,13 @@ interface NavigationItem {
 
 const quickNavigationItems: NavigationItem[] = [
   {
+    label: 'Nova Compra no Cartão',
+    href: '/financial/transactions/new-credit-card-purchase',
+    icon: <CreditCard size={16} />,
+    description: 'Registrar compra parcelada ou à vista no cartão',
+    category: 'financeiro'
+  },
+  {
     label: 'Nova Despesa',
     href: '/financial/transactions/new?type=EXPENSE&locked=true',
     icon: <TrendingDown size={16} />,
@@ -62,6 +69,20 @@ const quickNavigationItems: NavigationItem[] = [
     icon: <DollarSign size={20} />,
     description: 'Resumos e indicadores financeiros',
     category: 'financeiro'
+  },
+  {
+    label: 'Novo Cartão',
+    href: '/financial/credit-cards/new',
+    icon: <CreditCard size={16} />,
+    description: 'Cadastrar um novo cartão de crédito',
+    category: 'financeiro'
+  },
+  {
+    label: 'Cartões e Faturas',
+    href: '/financial/credit-cards',
+    icon: <CreditCard size={20} />,
+    description: 'Acompanhar limite, faturas e pagamentos',
+    category: 'financeiro'
   }
 ];
 
@@ -82,6 +103,13 @@ const navigationItems: NavigationItem[] = [
     href: '/financial/dashboard',
     icon: <DollarSign size={20} />,
     description: 'Resumos e indicadores financeiros',
+    category: 'financeiro'
+  },
+  {
+    label: 'Nova Compra no Cartão',
+    href: '/financial/transactions/new-credit-card-purchase',
+    icon: <CreditCard size={16} />,
+    description: 'Registrar compra parcelada ou à vista no cartão',
     category: 'financeiro'
   },
   {
@@ -125,7 +153,21 @@ const navigationItems: NavigationItem[] = [
     label: 'Contas Financeiras',
     href: '/financial/accounts',
     icon: <CreditCard size={20} />,
-    description: 'Gerenciar contas bancárias e cartões',
+    description: 'Gerenciar contas bancárias e caixa',
+    category: 'financeiro'
+  },
+  {
+    label: 'Novo Cartão',
+    href: '/financial/credit-cards/new',
+    icon: <CreditCard size={16} />,
+    description: 'Cadastrar um novo cartão de crédito',
+    category: 'financeiro'
+  },
+  {
+    label: 'Cartões e Faturas',
+    href: '/financial/credit-cards',
+    icon: <CreditCard size={20} />,
+    description: 'Acompanhar limite, faturas e pagamentos',
     category: 'financeiro'
   },
   {

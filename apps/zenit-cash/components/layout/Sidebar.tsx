@@ -142,6 +142,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       label: 'Transações',
       subItems: [
         { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
+        { label: 'Nova Compra no Cartão', href: '/financial/transactions/new-credit-card-purchase' },
         { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
         { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
         { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
@@ -166,6 +167,15 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       label: 'Contas',
       subItems: [
         { label: 'Contas', href: '/financial/accounts'},
+      ],
+      requiredPermission: 'FINANCIAL_ACCOUNTS'
+    },
+    {
+      icon: <CreditCard size={20} />,
+      label: 'Cartões',
+      subItems: [
+        { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
+        { label: 'Novo Cartão', href: '/financial/credit-cards/new' },
       ],
       requiredPermission: 'FINANCIAL_ACCOUNTS'
     },

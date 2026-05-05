@@ -9,6 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  CreditCard,
   Edit2,
   Filter,
   Loader2,
@@ -31,6 +32,7 @@ import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
 import { formatTransactionDescription } from '@/utils/transactions';
+import { getInvoiceReferenceLabel } from '@/utils/creditCards';
 
 type TransactionTypeFilter = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatusFilter = 'PENDING' | 'COMPLETED' | 'CANCELED';
@@ -59,6 +61,14 @@ interface Transaction {
   createdAt: string;
   installmentNumber?: number | null;
   totalInstallments?: number | null;
+  purchaseGroupId?: string | null;
+  creditCardInvoice?: {
+    id: number;
+    referenceYear: number;
+    referenceMonth: number;
+    dueDate?: string;
+    status: string;
+  } | null;
   isVirtual?: boolean;
   virtualKey?: string;
   fixedTemplateId?: number | null;
@@ -91,7 +101,7 @@ const ALL_TRANSACTION_TYPES: TransactionTypeFilter[] = ['INCOME', 'EXPENSE', 'TR
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'INCOME', label: 'Receita' },
   { value: 'EXPENSE', label: 'Despesa' },
-  { value: 'TRANSFER', label: 'Transferencia' }
+  { value: 'TRANSFER', label: 'Transferência' }
 ];
 
 function formatDateForInput(date: Date): string {
@@ -394,10 +404,14 @@ export default function TransactionsListPage() {
       return;
     }
 
+    const deletePurchase = Boolean(transaction.purchaseGroupId);
+
     confirmation.confirm(
       {
-        title: 'Confirmar Exclusao',
-        message: `Tem certeza que deseja excluir a transacao "${formatTransactionDescription(
+        title: 'Confirmar Exclusão',
+        message: `Tem certeza que deseja excluir ${
+          deletePurchase ? 'a compra inteira' : 'a transação'
+        } "${formatTransactionDescription(
           transaction.description,
           transaction.installmentNumber,
           transaction.totalInstallments
@@ -408,11 +422,13 @@ export default function TransactionsListPage() {
       },
       async () => {
         try {
-          await api.delete(`/financial/transactions/${transaction.id}`);
-          addToast('Transacao excluida com sucesso', 'success');
+          await api.delete(`/financial/transactions/${transaction.id}`, {
+            params: deletePurchase ? { scope: 'purchase' } : undefined
+          });
+          addToast('Transação excluída com sucesso', 'success');
           await fetchData();
         } catch (error: any) {
-          addToast(error.response?.data?.error || 'Erro ao excluir transacao', 'error');
+          addToast(error.response?.data?.error || 'Erro ao excluir transação', 'error');
           throw error;
         }
       }
@@ -421,7 +437,7 @@ export default function TransactionsListPage() {
 
   async function handleMaterializeAndEdit(transaction: Transaction) {
     if (!transaction.fixedTemplateId) {
-      addToast('Transacao virtual sem template associado', 'error');
+      addToast('Transação virtual sem template associado', 'error');
       return;
     }
 
@@ -443,13 +459,13 @@ export default function TransactionsListPage() {
 
       const materializedId = response.data?.transaction?.id;
       if (!materializedId) {
-        addToast('Nao foi possivel materializar a transacao virtual', 'error');
+        addToast('Não foi possível materializar a transação virtual', 'error');
         return;
       }
 
       router.push(`/financial/transactions/${materializedId}`);
     } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao materializar transacao virtual', 'error');
+      addToast(error.response?.data?.error || 'Erro ao materializar transação virtual', 'error');
     } finally {
       setMaterializingVirtualKey(null);
     }
@@ -582,26 +598,36 @@ export default function TransactionsListPage() {
 
   if (loading && transactions.length === 0) {
     return (
-      <DashboardLayout title="Transacoes">
-        <PageLoader message="Carregando transacoes..." />
+      <DashboardLayout title="Transações">
+        <PageLoader message="Carregando transações..." />
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout title="Transacoes">
+    <DashboardLayout title="Transações">
       <Breadcrumb
         items={[
-          { label: 'Inicio', href: '/' },
+          { label: 'Início', href: '/' },
           { label: 'Financeiro' },
-          { label: 'Transacoes' }
+          { label: 'Transações' }
         ]}
       />
 
       <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <h1 className="text-2xl font-semibold text-white">Transacoes Financeiras</h1>
+        <h1 className="text-2xl font-semibold text-white">Transações Financeiras</h1>
 
         <div className="flex flex-wrap justify-end gap-2">
+          <Link href="/financial/transactions/new-credit-card-purchase">
+            <Button
+              variant="outline"
+              className="flex items-center gap-2 border-purple-600 text-purple-300 hover:border-purple-500 hover:bg-purple-950/40 hover:text-purple-200"
+            >
+              <CreditCard size={16} />
+              Nova Compra no Cartão
+            </Button>
+          </Link>
+
           <Link href="/financial/transactions/new?type=EXPENSE&locked=true">
             <Button
               variant="outline"
@@ -625,7 +651,7 @@ export default function TransactionsListPage() {
           <Link href="/financial/transactions/new?type=TRANSFER&locked=true">
             <Button variant="outline" className="flex items-center gap-2">
               <ArrowUpDown size={16} />
-              Nova Transferencia
+              Nova Transferência
             </Button>
           </Link>
         </div>
@@ -744,7 +770,7 @@ export default function TransactionsListPage() {
 
           <div className="flex flex-col">
             <span className={`${filterLabelClassName} select-none text-transparent`}>
-              Acoes
+              Ações
             </span>
             <Button
               variant="outline"
@@ -769,7 +795,7 @@ export default function TransactionsListPage() {
                 label="Buscar"
                 value={filters.search}
                 onChange={(event) => updateFilters({ search: event.target.value })}
-                placeholder="Descricao, observacoes..."
+                placeholder="Descrição, observações..."
                 className="mb-0 xl:col-span-2"
               />
 
@@ -782,7 +808,7 @@ export default function TransactionsListPage() {
                 >
                   <option value="">Todos</option>
                   <option value="PENDING">Pendente</option>
-                  <option value="COMPLETED">Concluida</option>
+                  <option value="COMPLETED">Concluída</option>
                   <option value="CANCELED">Cancelada</option>
                 </select>
               </div>
@@ -834,14 +860,22 @@ export default function TransactionsListPage() {
           <div className="py-10 text-center">
             <Receipt size={48} className="mx-auto mb-4 text-gray-400" />
             <p className="mb-4 text-gray-400">
-              Nenhuma transacao encontrada para o periodo selecionado
+              Nenhuma transação encontrada para o período selecionado
             </p>
-            <Link href="/financial/transactions/new">
-              <Button variant="accent" className="inline-flex items-center gap-2">
-                <Plus size={16} />
-                Criar Primeira Transacao
-              </Button>
-            </Link>
+            <div className="flex justify-center gap-3">
+              <Link href="/financial/transactions/new-credit-card-purchase">
+                <Button variant="outline" className="inline-flex items-center gap-2">
+                  <CreditCard size={16} />
+                  Nova Compra no Cartão
+                </Button>
+              </Link>
+              <Link href="/financial/transactions/new">
+                <Button variant="accent" className="inline-flex items-center gap-2">
+                  <Plus size={16} />
+                  Criar Primeira Transação
+                </Button>
+              </Link>
+            </div>
           </div>
         ) : (
           <>
@@ -849,7 +883,7 @@ export default function TransactionsListPage() {
               <table className="w-full">
                 <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                   <tr>
-                    <th className="w-24 px-4 py-3 text-center">Acoes</th>
+                    <th className="w-24 px-4 py-3 text-center">Ações</th>
                     <th className="cursor-pointer px-2 py-3 text-left" onClick={() => handleSort('dueDate')}>
                       Data Vencimento
                       {sortConfig.key === 'dueDate' && (
@@ -860,7 +894,7 @@ export default function TransactionsListPage() {
                     </th>
                     <th className="px-2 py-3 text-left">Tipo</th>
                     <th className="cursor-pointer px-4 py-3 text-left" onClick={() => handleSort('description')}>
-                      Descricao
+                      Descrição
                       {sortConfig.key === 'description' && (
                         sortConfig.direction === 'asc'
                           ? <ChevronUp size={12} className="ml-1 inline" />
@@ -917,7 +951,7 @@ export default function TransactionsListPage() {
                                     </button>
                                   </Link>
                                 )}
-                                {transaction.id && transaction.status !== 'COMPLETED' && (
+                                {transaction.id && (transaction.status !== 'COMPLETED' || transaction.purchaseGroupId) && (
                                   <button
                                     onClick={() => handleDelete(transaction)}
                                     className="p-1 text-gray-300 transition-colors hover:text-red-400"
@@ -941,7 +975,7 @@ export default function TransactionsListPage() {
                                 ? 'Receita'
                                 : transaction.type === 'EXPENSE'
                                   ? 'Despesa'
-                                  : 'Transferencia'}
+                                  : 'Transferência'}
                             </span>
                           </div>
                         </td>
@@ -964,7 +998,33 @@ export default function TransactionsListPage() {
                                   Fixa
                                 </span>
                               )}
+                              {transaction.purchaseGroupId && (
+                                <span className="rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200">
+                                  Cartão
+                                </span>
+                              )}
+                              {transaction.creditCardInvoice && transaction.fromAccount?.id && (
+                                <Link
+                                  href={`/financial/credit-cards/${transaction.fromAccount.id}/invoices?invoiceId=${transaction.creditCardInvoice.id}`}
+                                  className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
+                                >
+                                  {`Fatura ${getInvoiceReferenceLabel(
+                                    transaction.creditCardInvoice.referenceYear,
+                                    transaction.creditCardInvoice.referenceMonth
+                                  )}`}
+                                </Link>
+                              )}
                             </div>
+                            {transaction.purchaseGroupId && transaction.id && (
+                              <div className="mt-1">
+                                <Link
+                                  href={`/financial/transactions/${transaction.id}`}
+                                  className="text-xs text-accent hover:text-accent-hover"
+                                >
+                                  Abrir compra agrupada
+                                </Link>
+                              </div>
+                            )}
                             {transaction.notes && (
                               <div className="mt-1 text-xs text-gray-400">{transaction.notes}</div>
                             )}
@@ -984,7 +1044,7 @@ export default function TransactionsListPage() {
                               {transaction.isVirtual
                                 ? 'Projetada'
                                 : transaction.status === 'COMPLETED'
-                                  ? 'Concluida'
+                                  ? 'Concluída'
                                   : transaction.status === 'PENDING'
                                     ? 'Pendente'
                                     : 'Cancelada'}
@@ -1031,7 +1091,7 @@ export default function TransactionsListPage() {
             {totalPages > 1 && (
               <div className="mt-6 flex items-center justify-between border-t border-gray-700 pt-6">
                 <div className="text-sm text-gray-400">
-                  Pagina {currentPage} de {totalPages}
+                  Página {currentPage} de {totalPages}
                 </div>
                 <div className="flex gap-2">
                   <Button
@@ -1046,7 +1106,7 @@ export default function TransactionsListPage() {
                     onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                     disabled={currentPage === totalPages}
                   >
-                    Proxima
+                    Próxima
                   </Button>
                 </div>
               </div>

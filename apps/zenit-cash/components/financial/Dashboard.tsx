@@ -230,9 +230,12 @@ export default function FinancialDashboard() {
             </div>
           </Card>
 
-          {/* Contas Financeiras */}
+          {/* Caixa e Disponibilidade */}
           <Card className="p-6">
-            <h3 className="text-lg font-medium text-gray-600 mb-4">Contas Financeiras</h3>
+            <h3 className="text-lg font-medium text-gray-600 mb-1">Caixa e Disponibilidade</h3>
+            <p className="mb-4 text-sm text-gray-400">
+              Cartões de crédito ficam fora deste saldo consolidado.
+            </p>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="text-gray-400 bg-elevated uppercase text-xs">

@@ -30,7 +30,10 @@ export async function createAccount(req: Request, res: Response) {
       initialBalance,
       accountNumber,
       bankName,
-      allowNegativeBalance
+      allowNegativeBalance,
+      creditLimit,
+      statementClosingDay,
+      statementDueDay
     } = req.body;
 
     const account = await FinancialAccountService.createAccount({
@@ -40,6 +43,9 @@ export async function createAccount(req: Request, res: Response) {
       accountNumber,
       bankName,
       allowNegativeBalance,
+      creditLimit,
+      statementClosingDay,
+      statementDueDay,
       companyId
     });
 
@@ -150,7 +156,10 @@ export async function updateAccount(req: Request, res: Response) {
       accountNumber,
       bankName,
       isActive,
-      allowNegativeBalance
+      allowNegativeBalance,
+      creditLimit,
+      statementClosingDay,
+      statementDueDay
     } = req.body;
     const updatedAccount = await FinancialAccountService.updateAccount(id, {
       name,
@@ -158,7 +167,10 @@ export async function updateAccount(req: Request, res: Response) {
       accountNumber,
       bankName,
       isActive,
-      allowNegativeBalance
+      allowNegativeBalance,
+      creditLimit,
+      statementClosingDay,
+      statementDueDay
     });
 
     return res.status(200).json(updatedAccount);

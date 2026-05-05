@@ -114,7 +114,11 @@ export function getAllowedRoutes(userRole: UserRole | null): string[] {
   allowedRoutes.push(
     '/financial/dashboard',
     '/financial/accounts', 
+    '/financial/credit-cards',
+    '/financial/credit-cards/*',
+    '/financial/credit-cards/new',
     '/financial/transactions',
+    '/financial/transactions/new-credit-card-purchase',
     '/financial/fixed-transactions',
     '/financial/categories',
     '/financial/reports/*'

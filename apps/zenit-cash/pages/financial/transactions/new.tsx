@@ -40,6 +40,7 @@ export default function NewTransactionPage() {
         mode="create"
         initialType={initialType}
         isTypeLocked={isTypeLocked}
+        createFlow="standard"
       />
     </DashboardLayout>
   );

@@ -40,6 +40,12 @@ enum TransactionStatus {
   CANCELED
 }
 
+enum CreditCardInvoiceStatus {
+  OPEN
+  CLOSED
+  PAID
+}
+
 enum RecurringFrequency {
   DAILY
   WEEKLY
@@ -205,6 +211,9 @@ model FinancialAccount {
   balance           Decimal            @db.Decimal(15, 2) @default(0)
   accountNumber     String?
   bankName          String?
+  creditLimit       Decimal?            @db.Decimal(15, 2)
+  statementClosingDay Int?
+  statementDueDay   Int?
   isActive          Boolean            @default(true)
   isDefault         Boolean            @default(false)
   allowNegativeBalance Boolean         @default(false)
@@ -218,6 +227,7 @@ model FinancialAccount {
   // Relações
   outgoingTransactions FinancialTransaction[] @relation("FromAccount")
   incomingTransactions FinancialTransaction[] @relation("ToAccount")
+  creditCardInvoices   CreditCardInvoice[]
   userAccess            UserFinancialAccountAccess[]
 
   @@unique([name, companyId])
@@ -268,6 +278,7 @@ model FinancialTransaction {
   // ✅ CONTROLE DE PARCELAS
   installmentNumber  Int?
   totalInstallments  Int?
+  purchaseGroupId    String?
   
   type            TransactionType
   status          TransactionStatus    @default(COMPLETED) // ✅ MUDANÇA: padrão COMPLETED
@@ -278,10 +289,13 @@ model FinancialTransaction {
   toAccount       FinancialAccount?    @relation("ToAccount", fields: [toAccountId], references: [id])
   categoryId      Int?
   category        FinancialCategory?   @relation(fields: [categoryId], references: [id])
+  creditCardInvoiceId Int?
+  creditCardInvoice   CreditCardInvoice? @relation("InvoiceTransactions", fields: [creditCardInvoiceId], references: [id], onDelete: SetNull)
   companyId       Int
   company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy       Int
   createdByUser   User                 @relation(fields: [createdBy], references: [id])
+  paidInvoice     CreditCardInvoice?   @relation("InvoicePaymentTransaction")
   tags            FinancialTag[]
   scheduledDate           DateTime?
   recurringTransactionId  Int?
@@ -296,11 +310,34 @@ model FinancialTransaction {
   @@index([toAccountId])
   @@index([categoryId])
   @@index([date])
+  @@index([purchaseGroupId])
+  @@index([creditCardInvoiceId])
   
   // ✅ NOVOS ÍNDICES PARA PERFORMANCE
   @@index([dueDate, status])                              // Relatórios de inadimplência
   @@index([effectiveDate])                               // Conciliação bancária
   @@index([companyId, effectiveDate, status])           // Relatórios financeiros
+}
+
+model CreditCardInvoice {
+  id                   Int                     @id @default(autoincrement())
+  accountId            Int
+  account              FinancialAccount        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  referenceYear        Int
+  referenceMonth       Int
+  closingDate          DateTime
+  dueDate              DateTime
+  status               CreditCardInvoiceStatus @default(OPEN)
+  totalAmount          Decimal                 @db.Decimal(15, 2) @default(0)
+  paymentTransactionId Int?                    @unique
+  paymentTransaction   FinancialTransaction?   @relation("InvoicePaymentTransaction", fields: [paymentTransactionId], references: [id], onDelete: SetNull)
+  transactions         FinancialTransaction[]  @relation("InvoiceTransactions")
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  @@unique([accountId, referenceYear, referenceMonth], name: "unique_credit_card_invoice_reference")
+  @@index([accountId, dueDate])
+  @@index([status, dueDate])
 }
 
 model RecurringTransaction {

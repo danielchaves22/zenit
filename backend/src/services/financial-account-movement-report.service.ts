@@ -1,5 +1,5 @@
 // backend/src/services/financial-account-movement-report.service.ts
-import { PrismaClient } from '@prisma/client';
+import { AccountType, PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import PDFGeneratorService from './pdf-generator.service';
 import ExcelGeneratorService from './excel-generator.service';
@@ -67,16 +67,17 @@ export default class FinancialAccountMovementReportService {
       groupBy
     });
 
-    // Verificar se as contas pertencem à empresa
-    const accountsCount = await prisma.financialAccount.count({
+    const selectedAccounts = await prisma.financialAccount.findMany({
       where: {
         id: { in: financialAccountIds },
-        companyId
-      }
+        companyId,
+        type: { not: AccountType.CREDIT_CARD }
+      },
+      select: { id: true }
     });
 
-    if (accountsCount !== financialAccountIds.length) {
-      throw new Error('Uma ou mais contas financeiras não pertencem à empresa');
+    if (selectedAccounts.length !== financialAccountIds.length) {
+      throw new Error('O relatorio considera apenas contas de caixa/disponibilidade da empresa');
     }
 
     // Buscar todas as transações do período para as contas selecionadas

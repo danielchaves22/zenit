@@ -1,23 +1,50 @@
-// frontend/components/financial/TransactionForm.tsx - COM DATAS DE VENCIMENTO E EFETIVAÇÃO
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
-import { AutocompleteInput } from '@/components/ui/AutoCompleteInput'; // ✅ IMPORT DO AUTOCOMPLETE
+import { AutocompleteInput } from '@/components/ui/AutoCompleteInput';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
-import { ArrowLeft, Save, X, Trash2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp,
+  CreditCard,
+  Save,
+  Trash2,
+  X
+} from 'lucide-react';
 import api from '@/lib/api';
 import { formatTransactionDescription } from '@/utils/transactions';
 import { useAuth } from '@/contexts/AuthContext';
+import {
+  buildCreditCardInvoicePreview,
+  formatInvoiceDate,
+  getAvailableCreditLimit,
+  getInvoiceDisplayStatus,
+  getInvoiceDisplayStatusClasses,
+  getInvoiceDisplayStatusLabel,
+  getInvoiceReferenceLabel,
+  getUsedCreditLimit
+} from '@/utils/creditCards';
+
+type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
+type TransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED';
+type PurchaseScope = 'SINGLE' | 'PURCHASE';
+type CreateFlow = 'standard' | 'credit-card-purchase';
 
 interface Account {
   id: number;
   name: string;
   type: string;
+  balance?: string;
+  creditLimit?: string | null;
+  statementClosingDay?: number | null;
+  statementDueDay?: number | null;
   isDefault: boolean;
   isActive: boolean;
 }
@@ -30,6 +57,27 @@ interface Category {
   isDefault: boolean;
 }
 
+interface InvoiceSummary {
+  id: number;
+  referenceYear: number;
+  referenceMonth: number;
+  dueDate?: string | null;
+  status: string;
+  paymentTransactionId?: number | null;
+}
+
+interface PurchaseGroupTransaction {
+  id: number;
+  description: string;
+  amount: string;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
+  dueDate?: string;
+  scheduledDate?: string;
+  status: TransactionStatus;
+  creditCardInvoice?: InvoiceSummary | null;
+}
+
 interface Transaction {
   id: number;
   description: string;
@@ -37,18 +85,21 @@ interface Transaction {
   date: string;
   dueDate?: string;
   effectiveDate?: string;
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
-  status: 'PENDING' | 'COMPLETED' | 'CANCELED';
+  type: TransactionKind;
+  status: TransactionStatus;
   notes?: string;
-  fromAccount?: { id: number; name: string };
-  toAccount?: { id: number; name: string };
+  repeatTimes?: number | null;
+  fromAccount?: { id: number; name: string; type?: string };
+  toAccount?: { id: number; name: string; type?: string };
   category?: { id: number; name: string; color: string };
   tags: { id: number; name: string }[];
   installmentNumber?: number | null;
   totalInstallments?: number | null;
+  purchaseGroupId?: string | null;
+  creditCardInvoice?: InvoiceSummary | null;
+  purchaseGroupTransactions?: PurchaseGroupTransaction[];
 }
 
-// ✅ INTERFACE PARA SUGESTÕES DE AUTOCOMPLETE
 interface AutocompleteSuggestion {
   description: string;
   frequency: number;
@@ -57,11 +108,57 @@ interface AutocompleteSuggestion {
 interface TransactionFormProps {
   mode: 'create' | 'edit';
   transactionId?: string;
-  initialType?: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  initialType?: TransactionKind;
   isTypeLocked?: boolean;
+  createFlow?: CreateFlow;
+  defaultCreditCardId?: string | null;
   onSuccess?: () => void;
   onCancel?: () => void;
   onTransactionLoaded?: (transaction: Transaction) => void;
+}
+
+function getTodayValue() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function formatCurrency(value: string | number) {
+  const amount = typeof value === 'number' ? value : Number(value || 0);
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(Number.isNaN(amount) ? 0 : amount);
+}
+
+function toInputDate(value?: string | null) {
+  if (!value) {
+    return '';
+  }
+
+  return new Date(value).toISOString().split('T')[0];
+}
+
+function isFutureInstallment(transaction?: PurchaseGroupTransaction | null) {
+  if (!transaction) {
+    return false;
+  }
+
+  const invoicePaid = Boolean(transaction.creditCardInvoice?.paymentTransactionId);
+  if (invoicePaid) {
+    return false;
+  }
+
+  const referenceDate = transaction.scheduledDate || transaction.dueDate;
+  if (!referenceDate) {
+    return false;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const scheduledDate = new Date(referenceDate);
+  scheduledDate.setHours(0, 0, 0, 0);
+
+  return scheduledDate > today;
 }
 
 export default function TransactionForm({
@@ -69,6 +166,8 @@ export default function TransactionForm({
   transactionId,
   initialType = 'EXPENSE',
   isTypeLocked = false,
+  createFlow = 'standard',
+  defaultCreditCardId = null,
   onSuccess,
   onCancel,
   onTransactionLoaded
@@ -78,7 +177,7 @@ export default function TransactionForm({
   const confirmation = useConfirmation();
   const { userRole } = useAuth();
   const isSuperuser = userRole === 'SUPERUSER';
-  
+
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -87,47 +186,121 @@ export default function TransactionForm({
   const [defaultsLoaded, setDefaultsLoaded] = useState(false);
   const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
   const [formMode, setFormMode] = useState<'simple' | 'detailed'>('detailed');
-
+  const [isInvoicePreviewExpanded, setIsInvoicePreviewExpanded] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
-  
+
   const [formData, setFormData] = useState({
     description: '',
     amount: '0.00',
-    date: new Date().toISOString().split('T')[0],
-    dueDate: new Date().toISOString().split('T')[0],
-    effectiveDate: new Date().toISOString().split('T')[0],
+    date: getTodayValue(),
+    dueDate: getTodayValue(),
+    effectiveDate: getTodayValue(),
     type: initialType,
-    status: 'COMPLETED',
+    status: 'COMPLETED' as TransactionStatus,
     notes: '',
     fromAccountId: '',
     toAccountId: '',
     categoryId: '',
     tags: '',
-    repeatTimes: ''
+    repeatTimes: '',
+    installmentCount: '1',
+    purchaseScope: 'PURCHASE' as PurchaseScope
   });
 
   const [isRecurring, setIsRecurring] = useState(false);
+  const isCreditCardPurchaseFlow = mode === 'create' && createFlow === 'credit-card-purchase';
 
-  // Verificar se o formulário deve estar somente leitura
-  const isReadOnly = mode === 'edit' && transaction?.status === 'COMPLETED';
-  const showActions = !isReadOnly || isSuperuser;
-  const actionDisabled = saving || (isReadOnly && !isSuperuser);
-  const statusDisabled = saving || (isReadOnly && !isSuperuser);
+  const selectedFromAccount = useMemo(
+    () => accounts.find((account) => account.id.toString() === formData.fromAccountId) || null,
+    [accounts, formData.fromAccountId]
+  );
+  const selectedToAccount = useMemo(
+    () => accounts.find((account) => account.id.toString() === formData.toAccountId) || null,
+    [accounts, formData.toAccountId]
+  );
+
+  const availableFromAccounts = useMemo(() => {
+    if (mode === 'edit') {
+      return accounts;
+    }
+
+    if (isCreditCardPurchaseFlow) {
+      return accounts.filter((account) => account.type === 'CREDIT_CARD' && account.isActive);
+    }
+
+    return accounts.filter((account) => account.type !== 'CREDIT_CARD' && account.isActive);
+  }, [accounts, isCreditCardPurchaseFlow, mode]);
+
+  const availableToAccounts = useMemo(() => {
+    if (mode === 'edit') {
+      return accounts;
+    }
+
+    return accounts.filter((account) => account.type !== 'CREDIT_CARD' && account.isActive);
+  }, [accounts, mode]);
+
+  const isCreditCardExpense =
+    formData.type === 'EXPENSE' &&
+    selectedFromAccount?.type === 'CREDIT_CARD' &&
+    isCreditCardPurchaseFlow;
+
+  const installmentCountValue = Math.max(Number(formData.installmentCount || 1), 1);
+  const amountValue = Number(formData.amount || 0) || 0;
+  const totalCommittedAmount = isCreditCardExpense
+    ? amountValue * installmentCountValue
+    : amountValue;
+
+  const availableLimit = isCreditCardExpense ? getAvailableCreditLimit(selectedFromAccount) : null;
+  const projectedAvailableLimit = availableLimit === null ? null : availableLimit - totalCommittedAmount;
+  const projectedUsedLimit = isCreditCardExpense
+    ? getUsedCreditLimit(selectedFromAccount) + totalCommittedAmount
+    : 0;
+  const invoicePreview = useMemo(
+    () => buildCreditCardInvoicePreview(selectedFromAccount, formData.date, installmentCountValue),
+    [formData.date, installmentCountValue, selectedFromAccount]
+  );
+
+  const purchaseGroupTransactions = transaction?.purchaseGroupTransactions || [];
+  const isGroupedCreditCardPurchase = Boolean(transaction?.purchaseGroupId);
+  const isCreditCardContext = isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
+  const currentGroupTransaction = purchaseGroupTransactions.find((item) => item.id === transaction?.id) || null;
+  const hasPaidInvoiceInGroup = purchaseGroupTransactions.some((item) => Boolean(item.creditCardInvoice?.paymentTransactionId));
+  const canEditPurchaseScope = isGroupedCreditCardPurchase && !hasPaidInvoiceInGroup;
+  const canEditSingleScope = isGroupedCreditCardPurchase && isFutureInstallment(currentGroupTransaction);
+  const activePurchaseScope = isGroupedCreditCardPurchase ? formData.purchaseScope : 'SINGLE';
+  const currentScopeBlocked =
+    isGroupedCreditCardPurchase &&
+    ((activePurchaseScope === 'PURCHASE' && !canEditPurchaseScope) ||
+      (activePurchaseScope === 'SINGLE' && !canEditSingleScope));
+  const isCompletedReadOnly =
+    mode === 'edit' &&
+    transaction?.status === 'COMPLETED' &&
+    !transaction?.purchaseGroupId;
+  const isReadOnly = currentScopeBlocked || (isCompletedReadOnly && !isSuperuser);
+  const showActions = isGroupedCreditCardPurchase ? true : !isCompletedReadOnly || isSuperuser;
+  const actionDisabled = saving || isReadOnly;
   const isPending = formData.status === 'PENDING';
   const isSimpleMode = formMode === 'simple';
   const isCompleted = formData.status === 'COMPLETED';
+  const showCreditCardPurchasePreview = mode === 'create' && isCreditCardPurchaseFlow;
   const completionHint = isCompleted
     ? formData.effectiveDate
       ? `(efetivada em ${new Date(formData.effectiveDate).toLocaleDateString('pt-BR')})`
       : '(efetivada hoje)'
     : '(pendente)';
 
+  const accountFieldsDisabled = saving || isReadOnly || isGroupedCreditCardPurchase;
+  const statusDisabled = saving || isReadOnly || isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
+  const dueDateDisabled = saving || isReadOnly || isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
+  const effectiveDateDisabled = saving || isPending || isReadOnly || isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
+  const transactionDateDisabled = saving || isReadOnly || isGroupedCreditCardPurchase;
+
   useEffect(() => {
-    fetchAccounts();
-    fetchCategories();
+    void fetchAccounts();
+    void fetchCategories();
 
     if (mode === 'edit' && transactionId) {
-      fetchTransaction();
+      void fetchTransaction();
     }
   }, [mode, transactionId]);
 
@@ -142,7 +315,6 @@ export default function TransactionForm({
     }
   }, []);
 
-  // Auto-foco no campo de valor para transações novas
   useEffect(() => {
     if (mode === 'create' && shouldFocusAmount && !loading) {
       const amountInput = document.getElementById('amount');
@@ -153,28 +325,99 @@ export default function TransactionForm({
         }, 100);
       }
     }
-  }, [mode, shouldFocusAmount, loading]);
+  }, [loading, mode, shouldFocusAmount]);
 
-  // Auto-selecionar valores padrão quando os dados estiverem carregados
   useEffect(() => {
     if (mode === 'create' && !defaultsLoaded && accounts.length > 0 && categories.length > 0) {
       autoSelectDefaults();
       setDefaultsLoaded(true);
     }
-  }, [mode, accounts, categories, defaultsLoaded, formData.type]);
+  }, [accounts, categories, defaultsLoaded, mode, formData.type]);
 
-  // ✅ FUNÇÃO PARA BUSCAR SUGESTÕES DE AUTOCOMPLETE FILTRADA POR TIPO
+  useEffect(() => {
+    if (!isGroupedCreditCardPurchase) {
+      return;
+    }
+
+    setFormData((prev) => {
+      const nextScope: PurchaseScope = canEditPurchaseScope
+        ? 'PURCHASE'
+        : canEditSingleScope
+          ? 'SINGLE'
+          : prev.purchaseScope;
+
+      if (prev.purchaseScope === nextScope) {
+        return prev;
+      }
+
+      return { ...prev, purchaseScope: nextScope };
+    });
+  }, [canEditPurchaseScope, canEditSingleScope, isGroupedCreditCardPurchase]);
+
+  useEffect(() => {
+    if (!isCreditCardPurchaseFlow) {
+      return;
+    }
+
+    setIsRecurring(false);
+    setFormData((prev) => ({
+      ...prev,
+      type: 'EXPENSE',
+      status: 'COMPLETED',
+      repeatTimes: '',
+      effectiveDate: prev.date || getTodayValue()
+    }));
+  }, [isCreditCardPurchaseFlow]);
+
+  useEffect(() => {
+    if (!isCreditCardPurchaseFlow) {
+      return;
+    }
+
+    setFormData((prev) => {
+      if (prev.effectiveDate === prev.date) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        effectiveDate: prev.date
+      };
+    });
+  }, [formData.date, isCreditCardPurchaseFlow]);
+
+  useEffect(() => {
+    if (!isCreditCardPurchaseFlow || !defaultCreditCardId || accounts.length === 0 || formData.fromAccountId) {
+      return;
+    }
+
+    const requestedCard = accounts.find(
+      (account) =>
+        account.id.toString() === defaultCreditCardId &&
+        account.type === 'CREDIT_CARD' &&
+        account.isActive
+    );
+
+    if (!requestedCard) {
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      fromAccountId: requestedCard.id.toString()
+    }));
+  }, [accounts, defaultCreditCardId, formData.fromAccountId, isCreditCardPurchaseFlow]);
+
   const fetchAutocompleteSuggestions = async (query: string): Promise<AutocompleteSuggestion[]> => {
     if (query.length < 3) {
       return [];
     }
 
     try {
-      // ✅ INCLUIR O TIPO DE TRANSAÇÃO NA REQUISIÇÃO
       const response = await api.get('/financial/transactions/autocomplete', {
-        params: { 
+        params: {
           q: query,
-          type: formData.type // ✅ PASSAR O TIPO ATUAL DO FORMULÁRIO
+          type: formData.type
         }
       });
       return response.data.suggestions || [];
@@ -185,30 +428,36 @@ export default function TransactionForm({
   };
 
   async function fetchTransaction() {
-    if (!transactionId) return;
-    
+    if (!transactionId) {
+      return;
+    }
+
     try {
       const response = await api.get(`/financial/transactions/${transactionId}`);
-      const txn = response.data;
-      
+      const txn = response.data as Transaction;
+
       setTransaction(txn);
       if (onTransactionLoaded) {
         onTransactionLoaded(txn);
       }
+
+      setIsRecurring(Boolean(txn.repeatTimes && txn.repeatTimes > 0));
       setFormData({
         description: txn.description,
         amount: txn.amount,
-        date: new Date(txn.date).toISOString().split('T')[0],
-        dueDate: txn.dueDate ? new Date(txn.dueDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        effectiveDate: txn.effectiveDate ? new Date(txn.effectiveDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        date: toInputDate(txn.date) || getTodayValue(),
+        dueDate: toInputDate(txn.dueDate) || getTodayValue(),
+        effectiveDate: toInputDate(txn.effectiveDate) || getTodayValue(),
         type: txn.type,
         status: txn.status,
         notes: txn.notes || '',
         fromAccountId: txn.fromAccount?.id.toString() || '',
         toAccountId: txn.toAccount?.id.toString() || '',
         categoryId: txn.category?.id.toString() || '',
-        tags: txn.tags.map((t: any) => t.name).join(', '),
-        repeatTimes: txn.repeatTimes?.toString() || ''
+        tags: txn.tags.map((tag) => tag.name).join(', '),
+        repeatTimes: txn.repeatTimes?.toString() || '',
+        installmentCount: txn.totalInstallments?.toString() || '1',
+        purchaseScope: 'PURCHASE'
       });
     } catch (error: any) {
       console.error('Erro ao carregar transação:', error);
@@ -222,7 +471,7 @@ export default function TransactionForm({
   async function fetchAccounts() {
     try {
       const response = await api.get('/financial/accounts');
-      setAccounts(response.data);
+      setAccounts(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
       addToast('Erro ao carregar contas', 'error');
@@ -232,7 +481,7 @@ export default function TransactionForm({
   async function fetchCategories() {
     try {
       const response = await api.get('/financial/categories');
-      setCategories(response.data);
+      setCategories(response.data || []);
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
       addToast('Erro ao carregar categorias', 'error');
@@ -242,185 +491,240 @@ export default function TransactionForm({
   function autoSelectDefaults() {
     const updates: Partial<typeof formData> = {};
 
-    // Auto-selecionar conta padrão
     if (!formData.fromAccountId && !formData.toAccountId) {
-      const defaultAccount = accounts.find(acc => acc.isDefault && acc.isActive);
-      if (defaultAccount) {
-        if (formData.type === 'EXPENSE') {
-          updates.fromAccountId = defaultAccount.id.toString();
-        } else if (formData.type === 'INCOME') {
-          updates.toAccountId = defaultAccount.id.toString();
+      if (isCreditCardPurchaseFlow) {
+        const requestedCard = defaultCreditCardId
+          ? accounts.find(
+              (account) =>
+                account.id.toString() === defaultCreditCardId &&
+                account.type === 'CREDIT_CARD' &&
+                account.isActive
+            )
+          : null;
+        const fallbackCard = accounts.find(
+          (account) => account.type === 'CREDIT_CARD' && account.isActive
+        );
+        const nextCard = requestedCard || fallbackCard;
+
+        if (nextCard) {
+          updates.fromAccountId = nextCard.id.toString();
         }
       } else {
-        // Se não há conta padrão, usar a primeira conta ativa
-        const firstActiveAccount = accounts.find(acc => acc.isActive);
-        if (firstActiveAccount) {
+        const defaultAccount = accounts.find(
+          (account) => account.isDefault && account.isActive && account.type !== 'CREDIT_CARD'
+        );
+        const fallbackAccount = accounts.find(
+          (account) => account.isActive && account.type !== 'CREDIT_CARD'
+        );
+        const nextAccount = defaultAccount || fallbackAccount;
+
+        if (nextAccount) {
           if (formData.type === 'EXPENSE') {
-            updates.fromAccountId = firstActiveAccount.id.toString();
+            updates.fromAccountId = nextAccount.id.toString();
           } else if (formData.type === 'INCOME') {
-            updates.toAccountId = firstActiveAccount.id.toString();
+            updates.toAccountId = nextAccount.id.toString();
           }
         }
       }
     }
 
-    // Auto-selecionar categoria padrão
     if (!formData.categoryId && formData.type !== 'TRANSFER') {
-      const defaultCategory = categories.find(cat => 
-        cat.isDefault && cat.type === formData.type
+      const defaultCategory = categories.find(
+        (category) => category.isDefault && category.type === formData.type
       );
-      if (defaultCategory) {
-        updates.categoryId = defaultCategory.id.toString();
-      } else {
-        // Se não há categoria padrão, usar a primeira categoria do tipo
-        const firstCategoryOfType = categories.find(cat => cat.type === formData.type);
-        if (firstCategoryOfType) {
-          updates.categoryId = firstCategoryOfType.id.toString();
-        }
+      const fallbackCategory = categories.find((category) => category.type === formData.type);
+      const nextCategory = defaultCategory || fallbackCategory;
+
+      if (nextCategory) {
+        updates.categoryId = nextCategory.id.toString();
       }
     }
 
-    // Garantir que as datas estejam sempre preenchidas
-    if (!formData.dueDate) {
-      updates.dueDate = new Date().toISOString().split('T')[0];
+    if (!formData.date) {
+      updates.date = getTodayValue();
     }
+
+    if (!formData.dueDate) {
+      updates.dueDate = getTodayValue();
+    }
+
     if (!formData.effectiveDate) {
-      updates.effectiveDate = new Date().toISOString().split('T')[0];
+      updates.effectiveDate = getTodayValue();
     }
 
     if (Object.keys(updates).length > 0) {
-      setFormData(prev => ({ ...prev, ...updates }));
+      setFormData((prev) => ({ ...prev, ...updates }));
     }
   }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    
-    // Tratamento especial para o tipo de transação
+  const handleChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value } = event.target;
+
     if (name === 'type' && !isTypeLocked) {
-      const newType = value;
-      
-      // Resetar contas de acordo com o tipo
-      if (newType === 'EXPENSE') {
-        setFormData(prev => ({ ...prev, type: newType, toAccountId: '' }));
-      } else if (newType === 'INCOME') {
-        setFormData(prev => ({ ...prev, type: newType, fromAccountId: '' }));
-      } else {
-        setFormData(prev => ({ ...prev, type: newType as 'INCOME' | 'EXPENSE' | 'TRANSFER' }));
-      }
-      
-      // Auto-selecionar categoria padrão do novo tipo
-      const defaultCategory = categories.find(cat => 
-        cat.isDefault && cat.type === newType
-      );
-      if (defaultCategory) {
-        setFormData(prev => ({ ...prev, categoryId: defaultCategory.id.toString() }));
-      } else {
-        // Se não há padrão, usar primeira categoria do tipo
-        const firstCategoryOfType = categories.filter(c => c.type === newType);
-        if (firstCategoryOfType.length > 0) {
-          setFormData(prev => ({ ...prev, categoryId: firstCategoryOfType[0].id.toString() }));
-        } else {
-          setFormData(prev => ({ ...prev, categoryId: '' }));
-        }
-      }
-    } else {
-      setFormData(prev => {
-        const updated: any = { ...prev, [name]: value };
+      const nextType = value as TransactionKind;
 
-        if (name === 'status') {
-          if (value === 'PENDING') {
-            updated.effectiveDate = '';
-          } else if (!prev.effectiveDate) {
-            updated.effectiveDate = new Date().toISOString().split('T')[0];
-          }
-        }
+      setFormData((prev) => {
+        const nextState = {
+          ...prev,
+          type: nextType,
+          fromAccountId: nextType === 'INCOME' ? '' : prev.fromAccountId,
+          toAccountId: nextType === 'EXPENSE' ? '' : prev.toAccountId,
+          repeatTimes: nextType === 'TRANSFER' ? '' : prev.repeatTimes
+        };
 
-        return updated;
+        return nextState;
       });
+
+      const defaultCategory = categories.find(
+        (category) => category.isDefault && category.type === nextType
+      );
+      const fallbackCategory = categories.find((category) => category.type === nextType);
+      const nextCategory = defaultCategory || fallbackCategory;
+
+      setFormData((prev) => ({
+        ...prev,
+        categoryId: nextCategory ? nextCategory.id.toString() : ''
+      }));
+
+      return;
     }
+
+    setFormData((prev) => {
+      const updated = { ...prev, [name]: value };
+
+      if (name === 'status') {
+        if (value === 'PENDING') {
+          updated.effectiveDate = '';
+        } else if (!prev.effectiveDate) {
+          updated.effectiveDate = getTodayValue();
+        }
+      }
+
+      if (name === 'date' && isCreditCardPurchaseFlow) {
+        updated.effectiveDate = value;
+      }
+
+      return updated;
+    });
   };
 
-  // ✅ HANDLER PARA MUDANÇA NA DESCRIÇÃO (AUTOCOMPLETE)
   const handleDescriptionChange = (value: string) => {
-    setFormData(prev => ({ ...prev, description: value }));
+    setFormData((prev) => ({ ...prev, description: value }));
   };
 
-  // ✅ HANDLER PARA SELEÇÃO DE SUGESTÃO
   const handleSuggestionSelect = (description: string) => {
-    // Opcional: Adicionar lógica adicional quando uma sugestão é selecionada
-    // Por exemplo, analisar a descrição e sugerir categoria baseada no histórico
-    console.log('Sugestão selecionada:', description);
+    console.log('Sugestao selecionada:', description);
   };
 
   const handleAmountChange = (value: string) => {
-    setFormData(prev => ({ ...prev, amount: value }));
+    setFormData((prev) => ({ ...prev, amount: value }));
   };
 
-  const handleFormModeChange = (modeToSet: 'simple' | 'detailed') => {
+  const handleFormModeChange = (nextMode: 'simple' | 'detailed') => {
     if (saving) {
       return;
     }
 
-    setFormMode(modeToSet);
+    setFormMode(nextMode);
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('transactionFormMode', modeToSet);
+      localStorage.setItem('transactionFormMode', nextMode);
     }
   };
 
   const handleRecurringChange = (checked: boolean) => {
     setIsRecurring(checked);
     if (!checked) {
-      setFormData(prev => ({ ...prev, repeatTimes: '' }));
+      setFormData((prev) => ({ ...prev, repeatTimes: '' }));
     }
   };
 
   const handleSimpleStatusChange = (checked: boolean) => {
-    setFormData(prev => {
-      const today = new Date().toISOString().split('T')[0];
+    setFormData((prev) => {
+      const today = getTodayValue();
       return {
         ...prev,
         status: checked ? 'COMPLETED' : 'PENDING',
-        effectiveDate: checked ? (prev.effectiveDate || today) : '',
+        effectiveDate: checked ? (prev.effectiveDate || today) : ''
       };
     });
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handlePurchaseScopeChange = (scope: PurchaseScope) => {
+    setFormData((prev) => ({ ...prev, purchaseScope: scope }));
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (mode === 'create' && isCreditCardPurchaseFlow && selectedFromAccount?.type !== 'CREDIT_CARD') {
+      addToast('Selecione um cartão de crédito para registrar a compra', 'error');
+      return;
+    }
+
+    if (mode === 'create' && !isCreditCardPurchaseFlow && selectedFromAccount?.type === 'CREDIT_CARD') {
+      addToast('Use a tela de compra no cartão para lançamentos em cartão de crédito', 'error');
+      return;
+    }
+
+    if (mode === 'create' && !isCreditCardPurchaseFlow && selectedToAccount?.type === 'CREDIT_CARD') {
+      addToast('Operações com cartão devem ser feitas na área de cartões e faturas', 'error');
+      return;
+    }
+
+    if (mode === 'create' && isCreditCardPurchaseFlow && !selectedFromAccount?.statementClosingDay) {
+      addToast('Configure o fechamento e vencimento do cartão antes de lançar a compra', 'error');
+      return;
+    }
+
+    if (mode === 'create' && isCreditCardPurchaseFlow && installmentCountValue < 1) {
+      addToast('Quantidade de parcelas deve ser maior que zero', 'error');
+      return;
+    }
+
     setSaving(true);
-    
+
     try {
-      // Preparar dados para envio
-      const payload = {
+      const payload: Record<string, unknown> = {
         ...formData,
         amount: parseFloat(formData.amount),
         date: new Date(formData.date).toISOString(),
         dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
         effectiveDate: formData.effectiveDate ? new Date(formData.effectiveDate).toISOString() : null,
-        fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId) : null,
-        toAccountId: formData.toAccountId ? parseInt(formData.toAccountId) : null,
-        categoryId: formData.categoryId ? parseInt(formData.categoryId) : null,
-        tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        repeatTimes: isRecurring ? Number(formData.repeatTimes || 0) : 0
+        fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId, 10) : null,
+        toAccountId: formData.toAccountId ? parseInt(formData.toAccountId, 10) : null,
+        categoryId: formData.categoryId ? parseInt(formData.categoryId, 10) : null,
+        tags: formData.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+        repeatTimes: !isCreditCardPurchaseFlow && isRecurring ? Number(formData.repeatTimes || 0) : 0
       };
-      
+
+      if (mode === 'edit' && transaction?.purchaseGroupId) {
+        payload.purchaseScope = formData.purchaseScope;
+      }
+
+      delete payload.installmentCount;
+      if (mode === 'create' && isCreditCardPurchaseFlow) {
+        payload.installmentCount = installmentCountValue;
+      }
+
       if (mode === 'create') {
         await api.post('/financial/transactions', payload);
-        addToast('Transação criada com sucesso', 'success');
+        addToast(
+          isCreditCardPurchaseFlow ? 'Compra no cartão registrada com sucesso' : 'Transação criada com sucesso',
+          'success'
+        );
       } else {
         await api.put(`/financial/transactions/${transactionId}`, payload);
         addToast('Transação atualizada com sucesso', 'success');
       }
-      
-      // Callback de sucesso ou redirecionamento padrão
+
       if (onSuccess) {
         onSuccess();
       } else {
         router.push('/financial/transactions');
       }
-      
     } catch (error: any) {
       console.error('Erro ao salvar transação:', error);
       addToast(
@@ -433,12 +737,17 @@ export default function TransactionForm({
   };
 
   const handleDelete = () => {
-    if (!transaction) return;
-    
+    if (!transaction) {
+      return;
+    }
+
+    const isPurchaseDelete = transaction.purchaseGroupId && formData.purchaseScope === 'PURCHASE';
+    const scopeLabel = isPurchaseDelete ? 'a compra inteira' : 'esta parcela';
+
     confirmation.confirm(
       {
         title: 'Confirmar Exclusão',
-        message: `Tem certeza que deseja excluir a transação "${formatTransactionDescription(
+        message: `Tem certeza que deseja excluir ${scopeLabel} "${formatTransactionDescription(
           transaction.description,
           transaction.installmentNumber,
           transaction.totalInstallments
@@ -449,9 +758,14 @@ export default function TransactionForm({
       },
       async () => {
         try {
-          await api.delete(`/financial/transactions/${transactionId}`);
+          await api.delete(`/financial/transactions/${transactionId}`, {
+            params: transaction.purchaseGroupId
+              ? { scope: formData.purchaseScope.toLowerCase() }
+              : undefined
+          });
+
           addToast('Transação excluída com sucesso', 'success');
-          
+
           if (onSuccess) {
             onSuccess();
           } else {
@@ -485,41 +799,57 @@ export default function TransactionForm({
         return 'Carregando transação...';
       }
 
-      const descriptionForDisplay = formData.description || transaction?.description || 'Transação';
-
       return formatTransactionDescription(
-        descriptionForDisplay,
+        formData.description || transaction?.description || 'Transação',
         transaction?.installmentNumber,
         transaction?.totalInstallments
       );
     }
 
-    const baseLabel = 'Nova';
+    if (isCreditCardPurchaseFlow) {
+      return installmentCountValue > 1 ? 'Nova Compra Parcelada no Cartão' : 'Nova Compra no Cartão';
+    }
+
     switch (formData.type) {
       case 'INCOME':
-        return `${baseLabel} Receita`;
+        return 'Nova Receita';
       case 'EXPENSE':
-        return `${baseLabel} Despesa`;
+        return 'Nova Despesa';
       case 'TRANSFER':
-        return `${baseLabel} Transferência`;
+        return 'Nova Transferência';
       default:
-        return `${baseLabel} Transação`;
+        return 'Nova Transação';
     }
   };
-
-  // Encontrar categorias e contas padrão para exibir informação visual
-  const defaultAccount = accounts.find(acc => acc.isDefault);
-  const defaultCategory = categories.find(cat => cat.isDefault && cat.type === formData.type);
 
   const saveButtonLabel = saving
     ? 'Salvando...'
     : mode === 'create'
-      ? 'Criar Transação'
+      ? isCreditCardPurchaseFlow
+        ? 'Registrar Compra'
+        : 'Criar Transação'
       : 'Salvar Alterações';
+
+  const scopeMessage = currentScopeBlocked
+    ? activePurchaseScope === 'PURCHASE'
+      ? 'A compra inteira não pode mais ser alterada porque existe parcela em fatura paga.'
+      : 'Ajustes individuais só são permitidos para parcelas futuras e não pagas.'
+    : activePurchaseScope === 'PURCHASE'
+      ? 'As alterações serão aplicadas em todas as parcelas desta compra.'
+      : 'As alterações serão aplicadas apenas nesta parcela futura.';
+  const previewSummaryLabel = invoicePreview.length === 0
+    ? 'Configure um cartão com fechamento e vencimento para ver a previsão.'
+    : installmentCountValue === 1
+      ? `1 fatura impactada - limite após a compra: ${
+          projectedAvailableLimit === null ? 'não configurado' : formatCurrency(projectedAvailableLimit)
+        }`
+      : `${installmentCountValue} parcelas em ${invoicePreview.length} faturas - limite após a compra: ${
+          projectedAvailableLimit === null ? 'não configurado' : formatCurrency(projectedAvailableLimit)
+        }`;
 
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
@@ -531,11 +861,11 @@ export default function TransactionForm({
             Voltar
           </Button>
           <h1 className="text-2xl font-semibold text-white">{getHeaderLabel()}</h1>
-          <div className="flex items-center gap-2 ml-4">
+          <div className="ml-4 flex items-center gap-2">
             <button
               type="button"
               onClick={() => handleFormModeChange('simple')}
-              className={`px-3 py-1.5 rounded border text-sm font-semibold transition-colors ${
+              className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
                 isSimpleMode
                   ? 'border-accent bg-accent text-white'
                   : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
@@ -548,7 +878,7 @@ export default function TransactionForm({
             <button
               type="button"
               onClick={() => handleFormModeChange('detailed')}
-              className={`px-3 py-1.5 rounded border text-sm font-semibold transition-colors ${
+              className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
                 !isSimpleMode
                   ? 'border-accent bg-accent text-white'
                   : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
@@ -562,7 +892,6 @@ export default function TransactionForm({
         </div>
 
         <div className="flex items-center gap-3">
-
           {showActions && (
             <>
               <Button
@@ -591,7 +920,7 @@ export default function TransactionForm({
                   variant="danger"
                   onClick={handleDelete}
                   className="flex items-center gap-2"
-                  disabled={saving || isReadOnly}
+                  disabled={actionDisabled}
                 >
                   <Trash2 size={16} />
                   Excluir
@@ -603,18 +932,12 @@ export default function TransactionForm({
       </div>
 
       <Card>
-        <form
-          ref={formRef}
-          id="transaction-form"
-          onSubmit={handleSubmit}
-          className="space-y-6"
-        >
-          {/* Primeira linha: Valor e recorrência */}
-          <div className="flex items-center gap-4">
+        <form ref={formRef} id="transaction-form" onSubmit={handleSubmit} className="space-y-6">
+          <div className="flex flex-wrap items-start gap-4">
             <div>
               <CurrencyInput
                 id="amount"
-                label="Valor *"
+                label={isCreditCardPurchaseFlow && installmentCountValue > 1 ? 'Valor da Parcela *' : 'Valor *'}
                 value={formData.amount}
                 onChange={handleAmountChange}
                 required
@@ -623,30 +946,45 @@ export default function TransactionForm({
                 inputClassName="py-4 text-2xl"
               />
             </div>
+
             {mode === 'edit' &&
               transaction?.totalInstallments !== undefined &&
               transaction?.totalInstallments !== null &&
               transaction.totalInstallments > 1 && (
                 <div className="flex flex-col">
-                  <span className="px-4 py-2 rounded-md bg-blue-900/70 border border-blue-500 text-blue-100 font-semibold uppercase tracking-wide">
+                  <span className="rounded-md border border-blue-500 bg-blue-900/70 px-4 py-2 font-semibold uppercase tracking-wide text-blue-100">
                     {`Parcela ${transaction.installmentNumber ?? 1} de ${transaction.totalInstallments}`}
                   </span>
                 </div>
               )}
-            {mode === 'create' && (
+
+            {mode === 'create' && isCreditCardPurchaseFlow ? (
+              <div className="w-36">
+                <Input
+                  id="installmentCount"
+                  name="installmentCount"
+                  type="number"
+                  min="1"
+                  label="Parcelas"
+                  value={formData.installmentCount}
+                  onChange={handleChange}
+                  disabled={saving || isReadOnly}
+                />
+              </div>
+            ) : mode === 'create' ? (
               <>
-                <div className="flex items-center h-full">
+                <div className="flex items-center pt-8">
                   <span className="mr-2 text-sm text-gray-300">Recorrente</span>
-                  <label htmlFor="isRecurring" className="inline-flex items-center cursor-pointer relative">
+                  <label htmlFor="isRecurring" className="relative inline-flex cursor-pointer items-center">
                     <input
                       id="isRecurring"
                       type="checkbox"
                       checked={isRecurring}
-                      onChange={(e) => handleRecurringChange(e.target.checked)}
-                      className="sr-only peer"
+                      onChange={(event) => handleRecurringChange(event.target.checked)}
+                      className="peer sr-only"
                     />
-                    <div className="w-10 h-5 bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-success peer-checked:bg-success transition-colors"></div>
-                    <div className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                    <div className="h-5 w-10 rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                    <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
                   </label>
                 </div>
                 {isRecurring && (
@@ -664,12 +1002,11 @@ export default function TransactionForm({
                   </div>
                 )}
               </>
-            )}
+            ) : null}
           </div>
 
-          {/* Segunda linha: Descrição */}
           <div>
-            <div className="flex items-center gap-3 mb-2">
+            <div className="mb-2 flex items-center gap-3">
               <label className="block text-sm font-medium text-gray-300" htmlFor="description">
                 Descrição *
               </label>
@@ -692,36 +1029,44 @@ export default function TransactionForm({
             />
           </div>
 
-          {/* Terceira linha: Contas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {mode === 'create' && isCreditCardPurchaseFlow && availableFromAccounts.length === 0 && (
+            <div className="rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-3 text-sm text-yellow-200">
+              Nenhum cartão ativo disponível. Cadastre um cartão em Cartões e Faturas antes de registrar a compra.
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {(formData.type === 'EXPENSE' || formData.type === 'TRANSFER') && (
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="fromAccountId">
-                  Conta de Origem *
+                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="fromAccountId">
+                  {isCreditCardPurchaseFlow ? 'Cartão *' : 'Conta de Origem *'}
                 </label>
                 <select
                   id="fromAccountId"
                   name="fromAccountId"
                   value={formData.fromAccountId}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
                   required
-                  disabled={saving || isReadOnly}
+                  disabled={accountFieldsDisabled}
                 >
-                  <option value="">Selecione uma conta</option>
-                  {accounts.map(account => (
+                  <option value="">
+                    {isCreditCardPurchaseFlow ? 'Selecione um cartão' : 'Selecione uma conta'}
+                  </option>
+                  {availableFromAccounts.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name}
-                      {account.isDefault && ' ⭐'}
+                      {account.type === 'CREDIT_CARD' ? ' (cartão)' : ''}
+                      {account.isDefault ? ' ⭐' : ''}
                     </option>
                   ))}
                 </select>
               </div>
             )}
-            
+
             {(formData.type === 'INCOME' || formData.type === 'TRANSFER') && (
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="toAccountId">
+                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="toAccountId">
                   Conta de Destino *
                 </label>
                 <select
@@ -729,24 +1074,24 @@ export default function TransactionForm({
                   name="toAccountId"
                   value={formData.toAccountId}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
                   required
-                  disabled={saving || isReadOnly}
+                  disabled={accountFieldsDisabled}
                 >
                   <option value="">Selecione uma conta</option>
-                  {accounts.map(account => (
+                  {availableToAccounts.map((account) => (
                     <option key={account.id} value={account.id}>
                       {account.name}
-                      {account.isDefault && ' ⭐'}
+                      {account.isDefault ? ' ⭐' : ''}
                     </option>
                   ))}
                 </select>
               </div>
             )}
-            
+
             {formData.type !== 'TRANSFER' && (
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="categoryId">
+                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="categoryId">
                   Categoria
                 </label>
                 <select
@@ -754,125 +1099,240 @@ export default function TransactionForm({
                   name="categoryId"
                   value={formData.categoryId}
                   onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
                   disabled={saving || isReadOnly}
                 >
                   <option value="">Sem categoria</option>
                   {categories
-                    .filter(category => category.type === formData.type)
-                    .map(category => (
+                    .filter((category) => category.type === formData.type)
+                    .map((category) => (
                       <option key={category.id} value={category.id}>
                         {category.name}
-                        {category.isDefault && ' ⭐'}
+                        {category.isDefault ? ' ⭐' : ''}
                       </option>
-                    ))
-                  }
+                    ))}
                 </select>
               </div>
             )}
           </div>
 
-          {/* Quarta linha: Status e Datas */}
-          <input type="hidden" name="date" value={formData.date} readOnly />
-          {isSimpleMode ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
-                    Data de Vencimento
-                  </label>
-                  <span className="text-xs text-gray-400">Padrão: data de hoje</span>
+          {isGroupedCreditCardPurchase && (
+            <div className="rounded-xl border border-blue-700/50 bg-blue-950/20 p-5">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <div className="font-medium text-white">Escopo da alteração</div>
+                  <div className="mt-1 text-sm text-gray-300">{scopeMessage}</div>
                 </div>
-                <input
-                  id="dueDate"
-                  name="dueDate"
-                  type="date"
-                  value={formData.dueDate}
-                  onChange={handleChange}
-                  disabled={saving || isReadOnly}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
-                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handlePurchaseScopeChange('PURCHASE')}
+                    disabled={saving || !canEditPurchaseScope}
+                    className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
+                      formData.purchaseScope === 'PURCHASE'
+                        ? 'border-accent bg-accent text-white'
+                        : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
+                    }`}
+                  >
+                    Compra inteira
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePurchaseScopeChange('SINGLE')}
+                    disabled={saving || !canEditSingleScope}
+                    className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
+                      formData.purchaseScope === 'SINGLE'
+                        ? 'border-accent bg-accent text-white'
+                        : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
+                    }`}
+                  >
+                    Parcela atual
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col justify-center gap-2">
-                <span className="text-sm font-medium text-gray-300">Transação concluída</span>
-                <label className="inline-flex items-center cursor-pointer relative w-12 h-6">
-                  <input
-                    type="checkbox"
-                    checked={isCompleted}
-                    onChange={(e) => handleSimpleStatusChange(e.target.checked)}
-                    className="sr-only peer"
-                    disabled={statusDisabled}
-                  />
-                  <div className="w-full h-full bg-gray-700 rounded-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-success peer-checked:bg-success transition-colors"></div>
-                  <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6"></div>
-                </label>
-                <span className="text-xs text-gray-400">{completionHint}</span>
+
+              {currentScopeBlocked && (
+                <div className="mb-4 flex items-start gap-2 rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-3 text-sm text-yellow-200">
+                  <AlertTriangle size={16} className="mt-0.5" />
+                  <span>{scopeMessage}</span>
+                </div>
+              )}
+
+              <div className="overflow-hidden rounded-lg border border-gray-700">
+                <table className="w-full">
+                  <thead className="bg-[#0f1419] text-left text-xs uppercase text-gray-400">
+                    <tr>
+                      <th className="px-3 py-2">Parcela</th>
+                      <th className="px-3 py-2">Valor</th>
+                      <th className="px-3 py-2">Fatura</th>
+                      <th className="px-3 py-2">Vencimento</th>
+                      <th className="px-3 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {purchaseGroupTransactions.map((item) => {
+                      const invoiceStatus = item.creditCardInvoice
+                        ? getInvoiceDisplayStatus(item.creditCardInvoice.status, item.creditCardInvoice.dueDate)
+                        : 'OPEN';
+
+                      return (
+                        <tr key={item.id} className={`border-t border-gray-700 text-sm text-gray-300 ${item.id === transaction?.id ? 'bg-blue-900/20' : ''}`}>
+                          <td className="px-3 py-2">
+                            {item.installmentNumber ?? 1}
+                            {item.totalInstallments ? ` / ${item.totalInstallments}` : ''}
+                          </td>
+                          <td className="px-3 py-2">{formatCurrency(item.amount)}</td>
+                          <td className="px-3 py-2">
+                            {item.creditCardInvoice
+                              ? getInvoiceReferenceLabel(item.creditCardInvoice.referenceYear, item.creditCardInvoice.referenceMonth)
+                              : '-'}
+                          </td>
+                          <td className="px-3 py-2">{item.dueDate ? new Date(item.dueDate).toLocaleDateString('pt-BR') : '-'}</td>
+                          <td className="px-3 py-2">
+                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${getInvoiceDisplayStatusClasses(invoiceStatus)}`}>
+                              {getInvoiceDisplayStatusLabel(invoiceStatus)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          )}
+
+          {isSimpleMode ? (
+            <div className={`grid grid-cols-1 gap-6 ${isCreditCardPurchaseFlow ? 'md:grid-cols-1' : 'md:grid-cols-3'}`}>
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="status">
-                  Status *
+                <label className="mb-2 block text-sm font-medium text-gray-300" htmlFor="date">
+                  {isCreditCardContext ? 'Data da Compra' : 'Data da Competência'}
                 </label>
-                <select
-                  id="status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
-                  required
-                  disabled={statusDisabled}
-                >
-                  <option value="PENDING">Pendente</option>
-                  <option value="COMPLETED">Concluída</option>
-                  <option value="CANCELED">Cancelada</option>
-                </select>
-              </div>
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
-                    Data de Vencimento
-                  </label>
-                  <span className="text-xs text-gray-400">
-                    Para transações pendentes
-                  </span>
-                </div>
                 <input
-                  id="dueDate"
-                  name="dueDate"
+                  id="date"
+                  name="date"
                   type="date"
-                  value={formData.dueDate}
+                  value={formData.date}
                   onChange={handleChange}
-                  disabled={saving || isReadOnly}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  disabled={transactionDateDisabled}
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
                 />
               </div>
+              {!isCreditCardPurchaseFlow && (
+                <>
+                  <div>
+                    <div className="mb-2 flex items-center gap-3">
+                      <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                        {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                      </label>
+                    </div>
+                    <input
+                      id="dueDate"
+                      name="dueDate"
+                      type="date"
+                      value={formData.dueDate}
+                      onChange={handleChange}
+                      disabled={dueDateDisabled}
+                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    />
+                  </div>
+                  <div className="flex flex-col justify-center gap-2">
+                    <span className="text-sm font-medium text-gray-300">Transação concluída</span>
+                    <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        checked={isCompleted}
+                        onChange={(event) => handleSimpleStatusChange(event.target.checked)}
+                        className="peer sr-only"
+                        disabled={statusDisabled}
+                      />
+                      <div className="h-full w-full rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-6" />
+                    </label>
+                    <span className="text-xs text-gray-400">{completionHint}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className={`grid grid-cols-1 gap-6 ${isCreditCardPurchaseFlow ? 'md:grid-cols-1' : 'md:grid-cols-4'}`}>
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <label className="block text-sm font-medium text-gray-300" htmlFor="effectiveDate">
-                    Data de Efetivação
-                  </label>
-                  <span className="text-xs text-gray-400">
-                    Quando a transação foi efetivada
-                  </span>
-                </div>
+                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="date">
+                  {isCreditCardContext ? 'Data da Compra *' : 'Data da Competência *'}
+                </label>
                 <input
-                  id="effectiveDate"
-                  name="effectiveDate"
+                  id="date"
+                  name="date"
                   type="date"
-                  value={formData.effectiveDate}
+                  value={formData.date}
                   onChange={handleChange}
-                  disabled={saving || isPending || isReadOnly}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  disabled={transactionDateDisabled}
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
                 />
               </div>
+              {!isCreditCardPurchaseFlow && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="status">
+                      Status *
+                    </label>
+                    <select
+                      id="status"
+                      name="status"
+                      value={formData.status}
+                      onChange={handleChange}
+                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                      required
+                      disabled={statusDisabled}
+                    >
+                      <option value="PENDING">Pendente</option>
+                      <option value="COMPLETED">Concluída</option>
+                      <option value="CANCELED">Cancelada</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                      {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                    </label>
+                    <input
+                      id="dueDate"
+                      name="dueDate"
+                      type="date"
+                      value={formData.dueDate}
+                      onChange={handleChange}
+                      disabled={dueDateDisabled}
+                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="effectiveDate">
+                      Data de Efetivação
+                    </label>
+                    <input
+                      id="effectiveDate"
+                      name="effectiveDate"
+                      type="date"
+                      value={formData.effectiveDate}
+                      onChange={handleChange}
+                      disabled={effectiveDateDisabled}
+                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {isCreditCardContext && (
+            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
+              {isCreditCardPurchaseFlow
+                ? 'A compra no cartão entra com status e data de efetivação preenchidos automaticamente. Expanda o painel final para conferir limite e previsão das faturas.'
+                : 'A data da compra controla a competência da despesa. O vencimento e a efetivação da fatura são calculados automaticamente pelo cartão.'}
             </div>
           )}
 
           {!isSimpleMode && (
             <>
-              {/* Quinta linha: Tags */}
               <div>
                 <Input
                   id="tags"
@@ -885,10 +1345,9 @@ export default function TransactionForm({
                 />
               </div>
 
-              {/* Sexta linha: Observações */}
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor="notes">
-                  Observações
+                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="notes">
+                  Observacoes
                 </label>
                 <textarea
                   id="notes"
@@ -896,7 +1355,7 @@ export default function TransactionForm({
                   value={formData.notes}
                   onChange={handleChange}
                   rows={4}
-                  className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-blue-500"
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
                   placeholder="Informações adicionais sobre a transação..."
                   disabled={saving || isReadOnly}
                 />
@@ -904,8 +1363,97 @@ export default function TransactionForm({
             </>
           )}
 
+          {showCreditCardPurchasePreview && (
+            <div className="rounded-xl border border-purple-700/50 bg-purple-950/20">
+              <button
+                type="button"
+                onClick={() => setIsInvoicePreviewExpanded((prev) => !prev)}
+                className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
+              >
+                <div className="flex items-start gap-3">
+                  <CreditCard size={18} className="mt-0.5 text-purple-300" />
+                  <div>
+                    <div className="font-medium text-white">Detalhes do cartão e previsão de faturas</div>
+                    <div className="mt-1 text-sm text-gray-300">{previewSummaryLabel}</div>
+                  </div>
+                </div>
+                <span className="mt-0.5 text-purple-200">
+                  {isInvoicePreviewExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                </span>
+              </button>
+
+              {isInvoicePreviewExpanded && (
+                <div className="space-y-4 border-t border-purple-700/40 px-5 pb-5 pt-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-400">Limite atual</div>
+                      <div className="mt-1 text-lg font-semibold text-white">
+                        {availableLimit === null ? 'Não configurado' : formatCurrency(availableLimit)}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-400">Compra total no limite</div>
+                      <div className="mt-1 text-lg font-semibold text-white">{formatCurrency(totalCommittedAmount)}</div>
+                      {installmentCountValue > 1 && (
+                        <div className="mt-1 text-xs text-gray-400">
+                          {formatCurrency(amountValue)} por parcela
+                        </div>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-400">Limite após compra</div>
+                      <div className={`mt-1 text-lg font-semibold ${projectedAvailableLimit !== null && projectedAvailableLimit < 0 ? 'text-orange-300' : 'text-white'}`}>
+                        {projectedAvailableLimit === null ? 'Não configurado' : formatCurrency(projectedAvailableLimit)}
+                      </div>
+                      <div className="mt-1 text-xs text-gray-400">
+                        Usado após compra: {formatCurrency(projectedUsedLimit)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {projectedAvailableLimit !== null && projectedAvailableLimit < 0 && (
+                    <div className="rounded-lg border border-orange-700/60 bg-orange-900/20 p-3 text-sm text-orange-200">
+                      O limite disponível ficará negativo após esta compra. O lançamento ainda pode ser salvo.
+                    </div>
+                  )}
+
+                  <div className="overflow-hidden rounded-lg border border-gray-700">
+                    <table className="w-full">
+                      <thead className="bg-[#0f1419] text-left text-xs uppercase text-gray-400">
+                        <tr>
+                          <th className="px-3 py-2">Parcela</th>
+                          <th className="px-3 py-2">Fatura</th>
+                          <th className="px-3 py-2">Fechamento</th>
+                          <th className="px-3 py-2">Vencimento</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {invoicePreview.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-3 py-4 text-sm text-gray-400">
+                              Selecione um cartão com fechamento e vencimento configurados para visualizar a previsão.
+                            </td>
+                          </tr>
+                        ) : (
+                          invoicePreview.map((item) => (
+                            <tr key={`${item.referenceYear}-${item.referenceMonth}-${item.installmentNumber}`} className="border-t border-gray-700 text-sm text-gray-300">
+                              <td className="px-3 py-2">{item.installmentNumber}</td>
+                              <td className="px-3 py-2">{getInvoiceReferenceLabel(item.referenceYear, item.referenceMonth)}</td>
+                              <td className="px-3 py-2">{formatInvoiceDate(new Date(item.closingDate))}</td>
+                              <td className="px-3 py-2">{formatInvoiceDate(new Date(item.dueDate))}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {showActions && (
-            <div className="flex justify-end gap-4 pt-6 border-t border-gray-700">
+            <div className="flex justify-end gap-4 border-t border-gray-700 pt-6">
               <Button
                 type="button"
                 variant="outline"
@@ -923,12 +1471,7 @@ export default function TransactionForm({
                 className="flex items-center gap-2"
               >
                 <Save size={16} />
-                {saving
-                  ? 'Salvando...'
-                  : mode === 'create'
-                    ? 'Criar Transação'
-                    : 'Salvar Alterações'
-                }
+                {saveButtonLabel}
               </Button>
             </div>
           )}

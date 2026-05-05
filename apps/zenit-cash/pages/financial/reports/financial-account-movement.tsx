@@ -27,6 +27,7 @@ const robotoCondensed = Roboto_Condensed({
 interface FinancialAccount {
   id: number;
   name: string;
+  type?: string;
 }
 
 interface Category {
@@ -89,7 +90,11 @@ export default function FinancialMovementReport() {
   async function fetchFinancialAccounts() {
     try {
       const response = await api.get('/financial/accounts');
-      setFinancialAccounts(response.data.filter((acc: any) => acc.isActive !== false));
+      setFinancialAccounts(
+        response.data.filter(
+          (acc: any) => acc.isActive !== false && acc.type !== 'CREDIT_CARD'
+        )
+      );
     } catch (error) {
       addToast('Erro ao carregar contas financeiras', 'error');
     }
@@ -97,7 +102,7 @@ export default function FinancialMovementReport() {
 
   async function generateReport() {
     if (filters.financialAccountIds.length === 0) {
-      addToast('Selecione pelo menos uma conta financeira', 'error');
+      addToast('Selecione pelo menos uma conta de caixa/disponibilidade', 'error');
       return;
     }
 
@@ -430,8 +435,11 @@ export default function FinancialMovementReport() {
           {/* Seleção de Contas Financeiras */}
           <div className="mt-4">
             <label className="block text-sm font-medium mb-2 text-gray-300">
-              Contas Financeiras ({filters.financialAccountIds.length} selecionadas)
+              Contas de Caixa e Disponibilidade ({filters.financialAccountIds.length} selecionadas)
             </label>
+            <p className="mb-3 text-xs text-gray-400">
+              Cartões de crédito não entram neste relatório. O impacto no caixa aparece na transferência usada para pagar a fatura.
+            </p>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {financialAccounts.map(account => (
                 <label

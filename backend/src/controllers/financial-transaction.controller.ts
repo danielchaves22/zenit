@@ -38,7 +38,8 @@ export async function createTransaction(req: Request, res: Response) {
       toAccountId,
       categoryId,
       tags,
-      repeatTimes
+      repeatTimes,
+      installmentCount
     } = req.body;
 
     const transaction = await FinancialTransactionService.createTransaction({
@@ -56,7 +57,8 @@ export async function createTransaction(req: Request, res: Response) {
       companyId,
       createdBy: userId,
       tags,
-      repeatTimes
+      repeatTimes,
+      installmentCount
     });
 
     return res.status(201).json(transaction);
@@ -100,11 +102,13 @@ export async function getTransactions(req: Request, res: Response) {
       );
 
     const accessibleAccountIds =
-      await UserFinancialAccountAccessService.getUserAccessibleAccounts(
-        userId,
-        role,
-        companyId
-      );
+      role === 'ADMIN' || role === 'SUPERUSER'
+        ? undefined
+        : await UserFinancialAccountAccessService.getUserAccessibleAccounts(
+            userId,
+            role,
+            companyId
+          );
 
     const normalizedTypes = types ?? (type ? [type] : undefined);
 
@@ -201,7 +205,8 @@ export async function updateTransaction(req: Request, res: Response) {
       fromAccountId,
       toAccountId,
       categoryId,
-      tags
+      tags,
+      purchaseScope
     } = req.body;
 
     const updateData = {
@@ -216,7 +221,8 @@ export async function updateTransaction(req: Request, res: Response) {
       fromAccountId,
       toAccountId,
       categoryId,
-      tags
+      tags,
+      purchaseScope
     };
     const updatedTransaction = await FinancialTransactionService.updateTransaction(
       id,
@@ -260,7 +266,8 @@ export async function updateTransactionStatus(req: Request, res: Response) {
     const { status } = req.body;
     const updatedTransaction = await FinancialTransactionService.updateTransactionStatus(
       id,
-      status
+      status,
+      companyId
     );
 
     return res.status(200).json(updatedTransaction);
@@ -296,7 +303,16 @@ export async function deleteTransaction(req: Request, res: Response) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    await FinancialTransactionService.deleteTransaction(id);
+    const scope =
+      req.query.scope === 'purchase'
+        ? 'PURCHASE'
+        : req.query.scope === 'single'
+          ? 'SINGLE'
+          : undefined;
+    await FinancialTransactionService.deleteTransaction(id, {
+      companyId,
+      scope
+    });
     return res.status(204).send();
   } catch (error: any) {
     logger.error(`Erro ao excluir transaÃ§Ã£o financeira:`, error);
@@ -336,11 +352,13 @@ export async function getFinancialSummary(req: Request, res: Response) {
     }
 
     const accessibleAccountIds =
-      await UserFinancialAccountAccessService.getUserAccessibleAccounts(
-        userId,
-        role,
-        companyId
-      );
+      role === 'ADMIN' || role === 'SUPERUSER'
+        ? undefined
+        : await UserFinancialAccountAccessService.getUserAccessibleAccounts(
+            userId,
+            role,
+            companyId
+          );
 
     const summary = await FinancialTransactionService.getFinancialSummary(
       companyId,

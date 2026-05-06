@@ -1,4 +1,3 @@
-// frontend/components/ui/SmartBreadcrumb.tsx - BREADCRUMB INTELIGENTE COM PERMISSÕES
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -19,13 +18,9 @@ interface SmartBreadcrumbProps {
   className?: string;
 }
 
-// ✅ MAPEAMENTO DE ROTAS PARA BREADCRUMBS AUTOMÁTICOS
 const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
-  '/': [
-    { label: 'Dashboard', href: '/', icon: <Home size={14} /> }
-  ],
-  
-  // Financeiro
+  '/': [{ label: 'Dashboard', href: '/', icon: <Home size={14} /> }],
+
   '/financial/dashboard': [
     { label: 'Dashboard', href: '/' },
     { label: 'Dashboard Financeiro' }
@@ -34,6 +29,18 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Dashboard', href: '/' },
     { label: 'Financeiro' },
     { label: 'Contas' }
+  ],
+  '/financial/accounts/new': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Contas', href: '/financial/accounts' },
+    { label: 'Nova Conta' }
+  ],
+  '/financial/accounts/[id]': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Contas', href: '/financial/accounts' },
+    { label: 'Editar Conta' }
   ],
   '/financial/credit-cards': [
     { label: 'Dashboard', href: '/' },
@@ -80,6 +87,35 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Financeiro' },
     { label: 'Categorias' }
   ],
+  '/financial/categories/new': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Categorias', href: '/financial/categories' },
+    { label: 'Nova Categoria' }
+  ],
+  '/financial/categories/[id]': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Categorias', href: '/financial/categories' },
+    { label: 'Editar Categoria' }
+  ],
+  '/financial/fixed-transactions': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Transações Fixas' }
+  ],
+  '/financial/fixed-transactions/new': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Transações Fixas', href: '/financial/fixed-transactions' },
+    { label: 'Nova Fixa' }
+  ],
+  '/financial/fixed-transactions/[id]': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Transações Fixas', href: '/financial/fixed-transactions' },
+    { label: 'Editar Fixa' }
+  ],
   '/financial/reports': [
     { label: 'Dashboard', href: '/' },
     { label: 'Financeiro' },
@@ -91,12 +127,23 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Relatórios', href: '/financial/reports' },
     { label: 'Movimentação de Contas' }
   ],
-  
-  // Administração
+
   '/admin/users': [
     { label: 'Dashboard', href: '/' },
     { label: 'Administração' },
     { label: 'Usuários' }
+  ],
+  '/admin/users/new': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Administração' },
+    { label: 'Usuários', href: '/admin/users' },
+    { label: 'Novo Usuário' }
+  ],
+  '/admin/users/[id]': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Administração' },
+    { label: 'Usuários', href: '/admin/users' },
+    { label: 'Editar Usuário' }
   ],
   '/admin/companies': [
     { label: 'Dashboard', href: '/' },
@@ -108,8 +155,7 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Administração' },
     { label: 'Configurações' }
   ],
-  
-  // Perfil
+
   '/profile': [
     { label: 'Dashboard', href: '/' },
     { label: 'Meu Perfil' }
@@ -126,101 +172,85 @@ export function SmartBreadcrumb({
   const router = useRouter();
   const { hasPermission } = usePermissions();
 
-  // ✅ GERAR BREADCRUMBS AUTOMATICAMENTE SE NÃO FORNECIDOS
   const breadcrumbItems = items || generateAutoBreadcrumbs(router.pathname, router.query);
 
-  // ✅ FILTRAR ITENS COM BASE EM PERMISSÕES
   const filteredItems = breadcrumbItems
-    .filter(item => {
-      // Se não tem href, sempre mostrar (é um item final)
+    .filter((item) => {
       if (!item.href) return true;
-      
-      // Verificar permissões para links
       return checkLinkPermission(item.href);
     })
     .slice(0, maxItems);
 
-  // ✅ VERIFICAR SE UM LINK É ACESSÍVEL
   function checkLinkPermission(href: string): boolean {
-    // Rotas sempre permitidas
     const alwaysAllowed = ['/', '/profile'];
     if (alwaysAllowed.includes(href)) return true;
-    
-    // Verificar permissões específicas
+
     if (href.startsWith('/admin/companies')) {
       return hasPermission({ allowedRoles: ['ADMIN'] });
     }
     if (href.startsWith('/admin')) {
       return hasPermission({ requiredRole: 'SUPERUSER' });
     }
-    
-    // Financeiro é permitido para todos
     if (href.startsWith('/financial')) {
       return true;
     }
-    
-    return true; // Default: permitir
+
+    return true;
   }
 
-  // ✅ GERAR BREADCRUMBS AUTOMÁTICOS
   function generateAutoBreadcrumbs(pathname: string, query: any): BreadcrumbItem[] {
-    // Tentar match exato primeiro
     if (routeToBreadcrumb[pathname]) {
       return [...routeToBreadcrumb[pathname]];
     }
-    
-    // Verificar dynamic routes
+
     for (const [route, breadcrumb] of Object.entries(routeToBreadcrumb)) {
       if (route.includes('[') && pathname.match(route.replace(/\[.*?\]/g, '[^/]+'))) {
         return [...breadcrumb];
       }
     }
-    
-    // Tentar construir baseado na estrutura da URL
+
     const segments = pathname.split('/').filter(Boolean);
-    const items: BreadcrumbItem[] = [{ label: 'Dashboard', href: '/' }];
-    
+    const generatedItems: BreadcrumbItem[] = [{ label: 'Dashboard', href: '/' }];
+
     let currentPath = '';
-    for (let i = 0; i < segments.length; i++) {
-      currentPath += `/${segments[i]}`;
-      const isLast = i === segments.length - 1;
-      
-      // Mapear segmentos para labels amigáveis
-      const label = getSegmentLabel(segments[i], currentPath);
-      
-      items.push({
+    for (let index = 0; index < segments.length; index += 1) {
+      currentPath += `/${segments[index]}`;
+      const isLast = index === segments.length - 1;
+      const label = getSegmentLabel(segments[index]);
+
+      generatedItems.push({
         label,
         href: isLast ? undefined : currentPath
       });
     }
-    
-    return items;
+
+    return generatedItems;
   }
 
-  // ✅ CONVERTER SEGMENTOS DE URL EM LABELS AMIGÁVEIS
-  function getSegmentLabel(segment: string, fullPath: string): string {
+  function getSegmentLabel(segment: string): string {
     const labelMap: Record<string, string> = {
-      'financial': 'Financeiro',
-      'admin': 'Administração',
-      'dashboard': 'Dashboard',
-      'accounts': 'Contas',
+      financial: 'Financeiro',
+      admin: 'Administração',
+      dashboard: 'Dashboard',
+      accounts: 'Contas',
       'credit-cards': 'Cartões e Faturas',
-      'transactions': 'Transações',
+      transactions: 'Transações',
+      'fixed-transactions': 'Transações Fixas',
       'new-credit-card-purchase': 'Nova Compra no Cartão',
-      'categories': 'Categorias',
-      'reports': 'Relatórios',
-      'users': 'Usuários',
-      'companies': 'Empresas',
-      'settings': 'Configurações',
-      'new': 'Novo',
-      'edit': 'Editar',
-      'profile': 'Meu Perfil',
+      categories: 'Categorias',
+      reports: 'Relatórios',
+      users: 'Usuários',
+      companies: 'Empresas',
+      settings: 'Configurações',
+      new: 'Novo',
+      edit: 'Editar',
+      profile: 'Meu Perfil',
       'financial-account-movement': 'Movimentação de Contas',
-      'cashflow': 'Fluxo de Caixa',
-      'income': 'DRE',
-      'balance': 'Balancete'
+      cashflow: 'Fluxo de Caixa',
+      income: 'DRE',
+      balance: 'Balancete'
     };
-    
+
     return labelMap[segment] || segment.charAt(0).toUpperCase() + segment.slice(1);
   }
 
@@ -229,30 +259,30 @@ export function SmartBreadcrumb({
   }
 
   return (
-    <nav className={`flex items-center text-sm text-gray-400 mb-4 ${className}`} aria-label="Breadcrumb">
+    <nav
+      className={`mb-4 flex items-center text-sm text-gray-400 ${className}`}
+      aria-label="Breadcrumb"
+    >
       <ol className="flex items-center space-x-1">
         {filteredItems.map((item, index) => (
           <li key={index} className="flex items-center">
-            {index > 0 && (
-              <ChevronRight size={14} className="mx-2 text-gray-500" />
-            )}
-            
+            {index > 0 && <ChevronRight size={14} className="mx-2 text-gray-500" />}
+
             {item.href ? (
-              <Link 
+              <Link
                 href={item.href}
-                className="flex items-center gap-1 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50 rounded px-1 py-0.5"
+                className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:text-white focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50"
               >
                 {item.icon}
                 <span>{item.label}</span>
               </Link>
             ) : (
-              <span className="flex items-center gap-1 text-gray-300 font-medium">
+              <span className="flex items-center gap-1 font-medium text-gray-300">
                 {item.icon}
                 <span>{item.label}</span>
               </span>
             )}
-            
-            {/* ✅ INDICADOR DE PERMISSÃO NEGADA */}
+
             {showPermissionWarnings && item.href && !checkLinkPermission(item.href) && (
               <span className="ml-1 text-red-400" title="Acesso restrito">
                 <Lock size={12} />
@@ -261,10 +291,12 @@ export function SmartBreadcrumb({
           </li>
         ))}
       </ol>
-      
-      {/* ✅ INDICADOR DE TRUNCAMENTO */}
+
       {breadcrumbItems.length > maxItems && (
-        <span className="ml-2 text-gray-500" title={`${breadcrumbItems.length - maxItems} itens ocultos`}>
+        <span
+          className="ml-2 text-gray-500"
+          title={`${breadcrumbItems.length - maxItems} itens ocultos`}
+        >
           (+{breadcrumbItems.length - maxItems})
         </span>
       )}
@@ -272,10 +304,9 @@ export function SmartBreadcrumb({
   );
 }
 
-// ✅ BREADCRUMB SIMPLES PARA CASOS ESPECÍFICOS
 export function SimpleBreadcrumb({ items }: { items: BreadcrumbItem[] }) {
   return (
-    <SmartBreadcrumb 
+    <SmartBreadcrumb
       items={items}
       showPermissionWarnings={false}
       maxItems={10}
@@ -284,24 +315,22 @@ export function SimpleBreadcrumb({ items }: { items: BreadcrumbItem[] }) {
   );
 }
 
-// ✅ BREADCRUMB PARA PÁGINAS FINANCEIRAS
 export function FinancialBreadcrumb({ currentPage }: { currentPage: string }) {
   const items: BreadcrumbItem[] = [
     { label: 'Dashboard', href: '/', icon: <Home size={14} /> },
     { label: 'Financeiro' },
     { label: currentPage }
   ];
-  
+
   return <SmartBreadcrumb items={items} showHome={false} />;
 }
 
-// ✅ BREADCRUMB PARA PÁGINAS ADMINISTRATIVAS
 export function AdminBreadcrumb({ currentPage }: { currentPage: string }) {
   const items: BreadcrumbItem[] = [
     { label: 'Dashboard', href: '/', icon: <Home size={14} /> },
     { label: 'Administração' },
     { label: currentPage }
   ];
-  
+
   return <SmartBreadcrumb items={items} showHome={false} />;
 }

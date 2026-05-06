@@ -5,6 +5,7 @@ import {
   TransactionStatus,
   TransactionType
 } from '@prisma/client';
+import { CreditCardInvoiceSettlementType } from '@prisma/client';
 import FinancialTransactionService from './financial-transaction.service';
 import { getDerivedInvoiceStatus, resolveCreditCardInvoiceStatus } from '../utils/credit-card';
 
@@ -22,6 +23,22 @@ function normalizeMoney(value: Prisma.Decimal | number | string | null | undefin
   return Number(value);
 }
 
+function resolveTransferSettledAt(invoice: {
+  dueDate: Date;
+  settledAt?: Date | null;
+  paymentTransaction?: {
+    effectiveDate?: Date | null;
+    date?: Date | null;
+  } | null;
+}) {
+  return (
+    invoice.paymentTransaction?.effectiveDate ||
+    invoice.paymentTransaction?.date ||
+    invoice.settledAt ||
+    invoice.dueDate
+  );
+}
+
 export default class CreditCardInvoiceService {
   private static async syncInvoice(invoiceId: number) {
     const invoice = await prisma.creditCardInvoice.findUnique({
@@ -30,7 +47,9 @@ export default class CreditCardInvoiceService {
         paymentTransaction: {
           select: {
             id: true,
-            status: true
+            status: true,
+            effectiveDate: true,
+            date: true
           }
         }
       }
@@ -40,34 +59,60 @@ export default class CreditCardInvoiceService {
       return null;
     }
 
-    const aggregate = await prisma.financialTransaction.aggregate({
-      where: {
-        creditCardInvoiceId: invoiceId,
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED
-      },
-      _sum: {
-        amount: true
-      }
-    });
+    const [aggregate, externalSettlementCount] = await Promise.all([
+      prisma.financialTransaction.aggregate({
+        where: {
+          creditCardInvoiceId: invoiceId,
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED
+        },
+        _sum: {
+          amount: true
+        }
+      }),
+      prisma.financialTransaction.count({
+        where: {
+          creditCardInvoiceId: invoiceId,
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED,
+          isExternalCreditCardSettlement: true
+        }
+      })
+    ]);
 
     const totalAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
     const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
     const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
+    const hasExternalSettlements = externalSettlementCount > 0;
 
-    if (totalAmount.eq(0) && !paymentTransactionId) {
+    if (totalAmount.eq(0) && !paymentTransactionId && !hasExternalSettlements) {
       await prisma.creditCardInvoice.delete({
         where: { id: invoiceId }
       });
       return null;
     }
 
+    const settlementType = hasCompletedPayment
+      ? CreditCardInvoiceSettlementType.TRANSFER
+      : hasExternalSettlements
+        ? CreditCardInvoiceSettlementType.EXTERNAL
+        : null;
+    const settledAt = hasCompletedPayment
+      ? resolveTransferSettledAt(invoice)
+      : settlementType === CreditCardInvoiceSettlementType.EXTERNAL
+        ? invoice.settledAt || invoice.dueDate
+        : null;
+
     return prisma.creditCardInvoice.update({
       where: { id: invoiceId },
       data: {
         totalAmount,
         paymentTransactionId,
-        status: resolveCreditCardInvoiceStatus(invoice.closingDate, hasCompletedPayment)
+        status: settlementType
+          ? CreditCardInvoiceStatus.PAID
+          : resolveCreditCardInvoiceStatus(invoice.closingDate, false),
+        settlementType,
+        settledAt
       },
       include: {
         account: true,
@@ -123,7 +168,9 @@ export default class CreditCardInvoiceService {
       const nextInvoice = await prisma.creditCardInvoice.findFirst({
         where: {
           accountId: card.id,
-          paymentTransactionId: null
+          status: {
+            not: CreditCardInvoiceStatus.PAID
+          }
         },
         orderBy: [
           { dueDate: 'asc' },
@@ -191,10 +238,42 @@ export default class CreditCardInvoiceService {
       ]
     });
 
+    const externalSettlements = invoices.length === 0
+      ? []
+      : await prisma.financialTransaction.groupBy({
+          by: ['creditCardInvoiceId'],
+          where: {
+            creditCardInvoiceId: {
+              in: invoices.map((invoice) => invoice.id)
+            },
+            type: TransactionType.EXPENSE,
+            status: TransactionStatus.COMPLETED,
+            isExternalCreditCardSettlement: true
+          },
+          _sum: {
+            amount: true
+          },
+          _count: {
+            _all: true
+          }
+        });
+
+    const externalSettlementMap = new Map(
+      externalSettlements.map((item) => [
+        item.creditCardInvoiceId,
+        {
+          amount: item._sum.amount?.toString() || '0',
+          count: item._count._all
+        }
+      ])
+    );
+
     return invoices.map((invoice) => ({
       ...invoice,
       displayStatus: getDerivedInvoiceStatus(invoice.status, invoice.dueDate),
-      itemCount: invoice._count.transactions
+      itemCount: invoice._count.transactions,
+      externalSettledAmount: externalSettlementMap.get(invoice.id)?.amount || '0',
+      hasExternalSettlements: (externalSettlementMap.get(invoice.id)?.count || 0) > 0
     }));
   }
 
@@ -251,9 +330,15 @@ export default class CreditCardInvoiceService {
       return null;
     }
 
+    const externalSettledAmount = invoice.transactions
+      .filter((transaction) => transaction.isExternalCreditCardSettlement)
+      .reduce((sum, transaction) => sum.plus(transaction.amount), new Prisma.Decimal(0));
+
     return {
       ...invoice,
-      displayStatus: getDerivedInvoiceStatus(invoice.status, invoice.dueDate)
+      displayStatus: getDerivedInvoiceStatus(invoice.status, invoice.dueDate),
+      externalSettledAmount: externalSettledAmount.toString(),
+      hasExternalSettlements: externalSettledAmount.gt(0)
     };
   }
 
@@ -271,7 +356,7 @@ export default class CreditCardInvoiceService {
       throw new Error('Fatura nao encontrada');
     }
 
-    if (invoice.status === CreditCardInvoiceStatus.PAID && invoice.paymentTransactionId) {
+    if (invoice.status === CreditCardInvoiceStatus.PAID) {
       throw new Error('Fatura ja esta paga');
     }
 
@@ -309,7 +394,9 @@ export default class CreditCardInvoiceService {
       where: { id: invoice.id },
       data: {
         paymentTransactionId: createdPayment.id,
-        status: CreditCardInvoiceStatus.PAID
+        status: CreditCardInvoiceStatus.PAID,
+        settlementType: CreditCardInvoiceSettlementType.TRANSFER,
+        settledAt: paymentDate
       }
     });
 

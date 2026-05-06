@@ -15,6 +15,7 @@ import {
   getAvailableCreditLimit,
   getInvoiceDisplayStatusClasses,
   getInvoiceDisplayStatusLabel,
+  getInvoiceSettlementLabel,
   getInvoiceReferenceLabel,
   getUsedCreditLimit
 } from '@/utils/creditCards';
@@ -41,7 +42,11 @@ interface CreditCardInvoiceListItem {
   totalAmount: string;
   status: string;
   displayStatus?: string;
+  settlementType?: string | null;
+  settledAt?: string | null;
   itemCount: number;
+  externalSettledAmount?: string;
+  hasExternalSettlements?: boolean;
   paymentTransaction?: PaymentTransaction | null;
 }
 
@@ -63,6 +68,7 @@ interface InvoiceTransactionItem {
   installmentNumber?: number | null;
   totalInstallments?: number | null;
   dueDate?: string | null;
+  isExternalCreditCardSettlement?: boolean;
   category?: {
     id: number;
     name: string;
@@ -117,6 +123,12 @@ function InvoicesPageInner() {
   const usedLimit = useMemo(
     () => (card ? getUsedCreditLimit(card) : 0),
     [card]
+  );
+  const invoiceSettlementLabel = invoiceDetail
+    ? getInvoiceSettlementLabel(invoiceDetail.settlementType)
+    : null;
+  const invoiceHasExternalSettlements = Boolean(
+    invoiceDetail?.hasExternalSettlements && Number(invoiceDetail.externalSettledAmount || 0) > 0
   );
 
   useEffect(() => {
@@ -373,6 +385,11 @@ function InvoicesPageInner() {
                             <div className="mt-1 text-lg font-semibold text-white">
                               {formatCurrency(invoice.totalAmount)}
                             </div>
+                            {invoice.hasExternalSettlements && Number(invoice.externalSettledAmount || 0) > 0 && (
+                              <div className="mt-1 text-xs text-amber-300">
+                                {`${formatCurrency(invoice.externalSettledAmount || 0)} liquidado fora do sistema`}
+                              </div>
+                            )}
                           </div>
                           <div className="text-right text-xs text-gray-400">
                             {invoice.itemCount} item{invoice.itemCount === 1 ? '' : 's'}
@@ -431,7 +448,8 @@ function InvoicesPageInner() {
                   </div>
 
                   {invoiceDetail.paymentTransaction ? (
-                    <div className="rounded-xl border border-green-700/50 bg-green-900/10 p-4">
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-green-700/50 bg-green-900/10 p-4">
                       <div className="text-sm font-medium text-white">Pagamento registrado</div>
                       <div className="mt-2 text-sm text-gray-300">
                         {invoiceDetail.paymentTransaction.fromAccount?.name || 'Conta não identificada'} •{' '}
@@ -440,6 +458,31 @@ function InvoicesPageInner() {
                           ? new Date(invoiceDetail.paymentTransaction.effectiveDate).toLocaleDateString('pt-BR')
                           : '-'}
                       </div>
+                    </div>
+                      {invoiceHasExternalSettlements && (
+                        <div className="rounded-xl border border-amber-700/50 bg-amber-900/10 p-4">
+                          <div className="text-sm font-medium text-white">Complemento historico</div>
+                          <div className="mt-2 text-sm text-gray-300">
+                            {`${formatCurrency(invoiceDetail.externalSettledAmount || 0)} liquidado fora do sistema`}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : invoiceDetail.status === 'PAID' ? (
+                    <div className="rounded-xl border border-amber-700/50 bg-amber-900/10 p-4">
+                      <div className="text-sm font-medium text-white">
+                        {invoiceSettlementLabel || 'Fatura liquidada fora do sistema'}
+                      </div>
+                      <div className="mt-2 text-sm text-gray-300">
+                        {invoiceDetail.settledAt
+                          ? `Liquidada em ${new Date(invoiceDetail.settledAt).toLocaleDateString('pt-BR')}`
+                          : 'Liquidacao historica sem transferencia registrada'}
+                      </div>
+                      {invoiceHasExternalSettlements && (
+                        <div className="mt-2 text-sm text-amber-200">
+                          {`${formatCurrency(invoiceDetail.externalSettledAmount || 0)} em itens historicos`}
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="rounded-xl border border-blue-700/50 bg-blue-900/10 p-4">
@@ -542,6 +585,11 @@ function InvoicesPageInner() {
                                     transaction.totalInstallments
                                   )}
                                 </div>
+                                {transaction.isExternalCreditCardSettlement && (
+                                  <div className="mt-1 text-xs text-amber-300">
+                                    Liquidada fora do sistema
+                                  </div>
+                                )}
                                 <Link
                                   href={`/financial/transactions/${transaction.id}`}
                                   className="mt-1 inline-block text-xs text-accent hover:text-accent-hover"

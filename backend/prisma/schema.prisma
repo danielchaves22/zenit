@@ -46,6 +46,11 @@ enum CreditCardInvoiceStatus {
   PAID
 }
 
+enum CreditCardInvoiceSettlementType {
+  TRANSFER
+  EXTERNAL
+}
+
 enum RecurringFrequency {
   DAILY
   WEEKLY
@@ -291,6 +296,7 @@ model FinancialTransaction {
   category        FinancialCategory?   @relation(fields: [categoryId], references: [id])
   creditCardInvoiceId Int?
   creditCardInvoice   CreditCardInvoice? @relation("InvoiceTransactions", fields: [creditCardInvoiceId], references: [id], onDelete: SetNull)
+  isExternalCreditCardSettlement Boolean @default(false)
   companyId       Int
   company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   createdBy       Int
@@ -328,6 +334,8 @@ model CreditCardInvoice {
   closingDate          DateTime
   dueDate              DateTime
   status               CreditCardInvoiceStatus @default(OPEN)
+  settlementType       CreditCardInvoiceSettlementType?
+  settledAt            DateTime?
   totalAmount          Decimal                 @db.Decimal(15, 2) @default(0)
   paymentTransactionId Int?                    @unique
   paymentTransaction   FinancialTransaction?   @relation("InvoicePaymentTransaction", fields: [paymentTransactionId], references: [id], onDelete: SetNull)

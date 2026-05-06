@@ -15,6 +15,8 @@ export interface CreditCardInvoicePreview {
   dueDate: string;
 }
 
+export type CreditCardInvoiceSettlementType = 'TRANSFER' | 'EXTERNAL';
+
 function clampDay(year: number, monthIndex: number, day: number) {
   const lastDay = new Date(year, monthIndex + 1, 0).getDate();
   return Math.min(Math.max(day, 1), lastDay);
@@ -153,5 +155,16 @@ export function getInvoiceDisplayStatusClasses(status: string) {
     case 'OPEN':
     default:
       return 'bg-blue-900/30 text-blue-300 border border-blue-700';
+  }
+}
+
+export function getInvoiceSettlementLabel(settlementType?: string | null) {
+  switch (settlementType) {
+    case 'TRANSFER':
+      return 'Paga por transferencia';
+    case 'EXTERNAL':
+      return 'Liquidada fora do sistema';
+    default:
+      return null;
   }
 }

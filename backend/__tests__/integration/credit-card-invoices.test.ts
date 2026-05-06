@@ -3,6 +3,10 @@ import bcrypt from 'bcrypt';
 import { AppKey, PrismaClient } from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
+import {
+  addMonthsClamped,
+  resolveCreditCardInvoiceReference
+} from '../../src/utils/credit-card';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -37,6 +41,11 @@ describe('Credit card invoices', () => {
 
     expect(response.status).toBe(201);
     return response.body;
+  };
+
+  const buildMonthDate = (monthOffset: number, day: number) => {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, day, 12, 0, 0, 0));
   };
 
   beforeAll(async () => {
@@ -334,5 +343,138 @@ describe('Credit card invoices', () => {
 
     expect(Number(payerAccountAfterDelete?.balance)).toBe(5000);
     expect(Number(cardAccountAfterDelete?.balance)).toBe(-350);
+  });
+
+  it('creates retroactive card purchases with historical installments settled externally', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = buildMonthDate(-1, 5);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const installmentPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Retroativa Parcelada',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        installmentCount: 3
+      });
+
+    expect(installmentPurchase.status).toBe(201);
+    expect(Array.isArray(installmentPurchase.body)).toBe(true);
+    expect(installmentPurchase.body).toHaveLength(3);
+
+    const references = [0, 1, 2].map((index) =>
+      resolveCreditCardInvoiceReference(addMonthsClamped(purchaseDate, index), 10, 15)
+    );
+    const expectedExternalInstallments = references.filter(
+      (reference) => reference.dueDate.getTime() < today.getTime()
+    ).length;
+    const expectedBalanceImpactInstallments = 3 - expectedExternalInstallments;
+
+    expect(
+      installmentPurchase.body.filter((transaction: any) => transaction.isExternalCreditCardSettlement).length
+    ).toBe(expectedExternalInstallments);
+
+    const cardsResponse = await request(app)
+      .get('/api/financial/credit-cards')
+      .set(authHeaders());
+
+    expect(cardsResponse.status).toBe(200);
+    expect(cardsResponse.body[0].usedLimit).toBe(expectedBalanceImpactInstallments * 100);
+    expect(cardsResponse.body[0].availableLimit).toBe(1000 - expectedBalanceImpactInstallments * 100);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    expect(invoicesResponse.status).toBe(200);
+    expect(
+      invoicesResponse.body.filter(
+        (invoice: any) =>
+          invoice.status === 'PAID' && invoice.settlementType === 'EXTERNAL'
+      )
+    ).toHaveLength(expectedExternalInstallments);
+  });
+
+  it('adds purchases to an already paid invoice as external historical settlements', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
+
+    const firstPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Base Fatura Paga',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(firstPurchase.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
+    expect(mayInvoice).toBeTruthy();
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        paymentDate: '2099-05-14T12:00:00.000Z'
+      });
+
+    expect(paymentResponse.status).toBe(200);
+    expect(paymentResponse.body.status).toBe('PAID');
+
+    const retroactivePurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Retroativa em Fatura Paga',
+        amount: 40,
+        date: '2099-05-06T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(retroactivePurchase.status).toBe(201);
+    expect(retroactivePurchase.body.isExternalCreditCardSettlement).toBe(true);
+
+    const invoiceDetail = await request(app)
+      .get(`/api/financial/credit-card-invoices/${mayInvoice.id}`)
+      .set(authHeaders());
+
+    expect(invoiceDetail.status).toBe(200);
+    expect(invoiceDetail.body.status).toBe('PAID');
+    expect(invoiceDetail.body.settlementType).toBe('TRANSFER');
+    expect(invoiceDetail.body.paymentTransaction).toBeTruthy();
+    expect(invoiceDetail.body.totalAmount).toBe('140');
+    expect(invoiceDetail.body.externalSettledAmount).toBe('40');
+    expect(
+      invoiceDetail.body.transactions.some((transaction: any) => transaction.isExternalCreditCardSettlement)
+    ).toBe(true);
+
+    const cardsAfterRetroactivePurchase = await request(app)
+      .get('/api/financial/credit-cards')
+      .set(authHeaders());
+
+    expect(cardsAfterRetroactivePurchase.status).toBe(200);
+    expect(cardsAfterRetroactivePurchase.body[0].usedLimit).toBe(0);
+    expect(cardsAfterRetroactivePurchase.body[0].availableLimit).toBe(1000);
   });
 });

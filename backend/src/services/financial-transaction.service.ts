@@ -4,6 +4,10 @@ import { parseDecimal } from '../utils/money';
 import cacheService from './cache.service';
 import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
 import {
+  CreditCardInvoiceStatus,
+  CreditCardInvoiceSettlementType
+} from '@prisma/client';
+import {
   addMonthsClamped,
   CreditCardInvoiceReference,
   resolveCreditCardInvoiceReference,
@@ -17,6 +21,10 @@ import {
 
 const prisma = new PrismaClient();
 type PurchaseScope = 'SINGLE' | 'PURCHASE';
+type CreditCardInvoiceReferenceInput = CreditCardInvoiceReference & {
+  accountId: number;
+  allowExternalSettlement?: boolean;
+};
 
 // ============================================
 // CRITICAL: FINANCIAL DATA INTEGRITY CLASS
@@ -146,6 +154,8 @@ export default class FinancialTransactionService {
   ): Promise<FinancialTransaction | FinancialTransaction[]> {
     const purchaseGroupId = randomUUID();
     const purchaseDate = new Date(data.date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const transactions: FinancialTransaction[] = [];
 
     for (let i = 0; i < installmentCount; i++) {
@@ -168,7 +178,8 @@ export default class FinancialTransactionService {
         scheduledDate,
         creditCardInvoiceReference: {
           ...invoiceReference,
-          accountId: cardAccount.id
+          accountId: cardAccount.id,
+          allowExternalSettlement: invoiceReference.dueDate.getTime() < today.getTime()
         }
       });
 
@@ -201,7 +212,7 @@ export default class FinancialTransactionService {
     totalInstallments?: number | null;
     purchaseGroupId?: string | null;
     scheduledDate?: Date | null;
-    creditCardInvoiceReference?: (CreditCardInvoiceReference & { accountId: number }) | null;
+    creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
   }): Promise<FinancialTransaction> {
 
     const startTime = Date.now();
@@ -331,11 +342,14 @@ export default class FinancialTransactionService {
       }
 
       let creditCardInvoiceId: number | null = null;
+      let isExternalCreditCardSettlement = false;
       if (data.creditCardInvoiceReference) {
-        creditCardInvoiceId = await this.ensureCreditCardInvoiceTx(
+        const ensuredInvoice = await this.ensureCreditCardInvoiceTx(
           tx,
           data.creditCardInvoiceReference
         );
+        creditCardInvoiceId = ensuredInvoice.invoiceId;
+        isExternalCreditCardSettlement = ensuredInvoice.isExternalSettlement;
       }
       
       // âœ… CRITICAL: Create transaction record FIRST (for audit trail)
@@ -359,6 +373,7 @@ export default class FinancialTransactionService {
           creditCardInvoice: creditCardInvoiceId
             ? { connect: { id: creditCardInvoiceId } }
             : undefined,
+          isExternalCreditCardSettlement,
           company: { connect: { id: data.companyId } },
           createdByUser: { connect: { id: data.createdBy } },
           tags: data.tags && data.tags.length > 0 ? {
@@ -371,7 +386,7 @@ export default class FinancialTransactionService {
       });
       
       // âœ… CRITICAL: Update account balances ATOMICALLY
-      if (data.status === 'COMPLETED') {
+      if (data.status === 'COMPLETED' && !isExternalCreditCardSettlement) {
         await this.updateAccountBalancesAtomic(tx, {
           transactionId: transaction.id,
           type: data.type,
@@ -578,10 +593,46 @@ export default class FinancialTransactionService {
     }
   }
 
+  private static isCreditCardInvoicePaid(invoice?: {
+    status: CreditCardInvoiceStatus;
+    settlementType?: CreditCardInvoiceSettlementType | null;
+    paymentTransaction?: {
+      status: TransactionStatus;
+      effectiveDate?: Date | null;
+      date?: Date | null;
+    } | null;
+  } | null): boolean {
+    if (!invoice) {
+      return false;
+    }
+
+    return (
+      invoice.status === CreditCardInvoiceStatus.PAID ||
+      invoice.paymentTransaction?.status === TransactionStatus.COMPLETED ||
+      invoice.settlementType === CreditCardInvoiceSettlementType.EXTERNAL
+    );
+  }
+
+  private static resolveCreditCardTransferSettledAt(invoice: {
+    dueDate: Date;
+    settledAt?: Date | null;
+    paymentTransaction?: {
+      effectiveDate?: Date | null;
+      date?: Date | null;
+    } | null;
+  }): Date {
+    return (
+      invoice.paymentTransaction?.effectiveDate ||
+      invoice.paymentTransaction?.date ||
+      invoice.settledAt ||
+      invoice.dueDate
+    );
+  }
+
   private static async ensureCreditCardInvoiceTx(
     tx: Prisma.TransactionClient,
-    reference: CreditCardInvoiceReference & { accountId: number }
-  ): Promise<number> {
+    reference: CreditCardInvoiceReferenceInput
+  ): Promise<{ invoiceId: number; isExternalSettlement: boolean }> {
     const existingInvoice = await tx.creditCardInvoice.findUnique({
       where: {
         unique_credit_card_invoice_reference: {
@@ -594,31 +645,48 @@ export default class FinancialTransactionService {
         paymentTransaction: {
           select: {
             id: true,
-            status: true
+            status: true,
+            effectiveDate: true,
+            date: true
           }
         }
       }
     });
 
-    if (existingInvoice?.paymentTransaction?.status === TransactionStatus.COMPLETED) {
-      throw new Error('Não é possível lançar compras em uma fatura já paga');
-    }
-
     const invoiceStatus = resolveCreditCardInvoiceStatus(reference.closingDate, false);
+    const invoiceIsPaid = this.isCreditCardInvoicePaid(existingInvoice);
+    const isExternalSettlement =
+      invoiceIsPaid || (!existingInvoice && Boolean(reference.allowExternalSettlement));
 
     if (existingInvoice) {
+      const hasCompletedPayment =
+        existingInvoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
+      const settlementType = hasCompletedPayment
+        ? CreditCardInvoiceSettlementType.TRANSFER
+        : existingInvoice.settlementType === CreditCardInvoiceSettlementType.EXTERNAL ||
+            existingInvoice.status === CreditCardInvoiceStatus.PAID
+          ? CreditCardInvoiceSettlementType.EXTERNAL
+          : null;
+      const settledAt = hasCompletedPayment
+        ? this.resolveCreditCardTransferSettledAt(existingInvoice)
+        : settlementType === CreditCardInvoiceSettlementType.EXTERNAL
+          ? existingInvoice.settledAt || reference.dueDate
+          : null;
       const updated = await tx.creditCardInvoice.update({
         where: { id: existingInvoice.id },
         data: {
           closingDate: reference.closingDate,
           dueDate: reference.dueDate,
-          status: existingInvoice.paymentTransactionId
-            ? existingInvoice.status
-            : invoiceStatus
+          status: invoiceIsPaid ? CreditCardInvoiceStatus.PAID : invoiceStatus,
+          settlementType,
+          settledAt
         }
       });
 
-      return updated.id;
+      return {
+        invoiceId: updated.id,
+        isExternalSettlement
+      };
     }
 
     const created = await tx.creditCardInvoice.create({
@@ -628,11 +696,18 @@ export default class FinancialTransactionService {
         referenceMonth: reference.referenceMonth,
         closingDate: reference.closingDate,
         dueDate: reference.dueDate,
-        status: invoiceStatus
+        status: isExternalSettlement ? CreditCardInvoiceStatus.PAID : invoiceStatus,
+        settlementType: isExternalSettlement
+          ? CreditCardInvoiceSettlementType.EXTERNAL
+          : null,
+        settledAt: isExternalSettlement ? reference.dueDate : null
       }
     });
 
-    return created.id;
+    return {
+      invoiceId: created.id,
+      isExternalSettlement
+    };
   }
 
   private static async syncCreditCardInvoiceTx(
@@ -645,7 +720,9 @@ export default class FinancialTransactionService {
         paymentTransaction: {
           select: {
             id: true,
-            status: true
+            status: true,
+            effectiveDate: true,
+            date: true
           }
         }
       }
@@ -655,34 +732,60 @@ export default class FinancialTransactionService {
       return;
     }
 
-    const aggregate = await tx.financialTransaction.aggregate({
-      where: {
-        creditCardInvoiceId: invoiceId,
-        type: TransactionType.EXPENSE,
-        status: TransactionStatus.COMPLETED
-      },
-      _sum: {
-        amount: true
-      }
-    });
+    const [aggregate, externalSettlementCount] = await Promise.all([
+      tx.financialTransaction.aggregate({
+        where: {
+          creditCardInvoiceId: invoiceId,
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED
+        },
+        _sum: {
+          amount: true
+        }
+      }),
+      tx.financialTransaction.count({
+        where: {
+          creditCardInvoiceId: invoiceId,
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED,
+          isExternalCreditCardSettlement: true
+        }
+      })
+    ]);
 
     const totalAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
     const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
     const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
+    const hasExternalSettlements = externalSettlementCount > 0;
 
-    if (totalAmount.eq(0) && !paymentTransactionId) {
+    if (totalAmount.eq(0) && !paymentTransactionId && !hasExternalSettlements) {
       await tx.creditCardInvoice.delete({
         where: { id: invoiceId }
       });
       return;
     }
 
+    const settlementType = hasCompletedPayment
+      ? CreditCardInvoiceSettlementType.TRANSFER
+      : hasExternalSettlements
+        ? CreditCardInvoiceSettlementType.EXTERNAL
+        : null;
+    const settledAt = hasCompletedPayment
+      ? this.resolveCreditCardTransferSettledAt(invoice)
+      : settlementType === CreditCardInvoiceSettlementType.EXTERNAL
+        ? invoice.settledAt || invoice.dueDate
+        : null;
+
     await tx.creditCardInvoice.update({
       where: { id: invoiceId },
       data: {
         totalAmount,
         paymentTransactionId,
-        status: resolveCreditCardInvoiceStatus(invoice.closingDate, hasCompletedPayment)
+        status: settlementType
+          ? CreditCardInvoiceStatus.PAID
+          : resolveCreditCardInvoiceStatus(invoice.closingDate, false),
+        settlementType,
+        settledAt
       }
     });
   }
@@ -801,7 +904,7 @@ export default class FinancialTransactionService {
 
     const hasPaidInvoice = groupedTransactions.some(
       (transaction) =>
-        transaction.creditCardInvoice?.paymentTransaction?.status === TransactionStatus.COMPLETED
+        transaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID
     );
 
     if (scope === 'PURCHASE' && hasPaidInvoice) {
@@ -817,7 +920,7 @@ export default class FinancialTransactionService {
         throw new Error('Parcela nao encontrada na compra agrupada');
       }
 
-      if (currentTransaction.creditCardInvoice?.paymentTransaction?.status === TransactionStatus.COMPLETED) {
+      if (currentTransaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID) {
         throw new Error('Não é possível alterar parcela que pertence a fatura paga');
       }
 
@@ -880,7 +983,7 @@ export default class FinancialTransactionService {
       `;
     }
 
-    if (originalTxn.status === 'COMPLETED') {
+    if (originalTxn.status === 'COMPLETED' && !originalTxn.isExternalCreditCardSettlement) {
       await this.reverseAccountBalancesAtomic(tx, {
         type: originalTxn.type,
         amount: originalTxn.amount,
@@ -946,7 +1049,7 @@ export default class FinancialTransactionService {
     });
 
     const newStatus = data.status ?? originalTxn.status;
-    if (newStatus === TransactionStatus.COMPLETED) {
+    if (newStatus === TransactionStatus.COMPLETED && !updated.isExternalCreditCardSettlement) {
       await this.updateAccountBalancesAtomic(tx, {
         transactionId: updated.id,
         type: updated.type,
@@ -989,7 +1092,7 @@ export default class FinancialTransactionService {
       `;
     }
 
-    if (originalTxn.status === 'COMPLETED') {
+    if (originalTxn.status === 'COMPLETED' && !originalTxn.isExternalCreditCardSettlement) {
       await this.reverseAccountBalancesAtomic(tx, {
         type: originalTxn.type,
         amount: originalTxn.amount,
@@ -1356,7 +1459,8 @@ export default class FinancialTransactionService {
             referenceYear: true,
             referenceMonth: true,
             dueDate: true,
-            status: true
+            status: true,
+            settlementType: true
           }
         },
         tags: { select: { id: true, name: true } },
@@ -1664,6 +1768,7 @@ export default class FinancialTransactionService {
         dueDate: true,
         scheduledDate: true,
         status: true,
+        isExternalCreditCardSettlement: true,
         creditCardInvoice: {
           select: {
             id: true,
@@ -1671,7 +1776,8 @@ export default class FinancialTransactionService {
             referenceMonth: true,
             dueDate: true,
             status: true,
-            paymentTransactionId: true
+            paymentTransactionId: true,
+            settlementType: true
           }
         }
       },

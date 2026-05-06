@@ -63,7 +63,18 @@ interface InvoiceSummary {
   referenceMonth: number;
   dueDate?: string | null;
   status: string;
+  settlementType?: string | null;
   paymentTransactionId?: number | null;
+}
+
+interface CreditCardInvoicePreviewStatus {
+  id: number;
+  referenceYear: number;
+  referenceMonth: number;
+  dueDate: string;
+  status: string;
+  displayStatus?: string;
+  settlementType?: string | null;
 }
 
 interface PurchaseGroupTransaction {
@@ -75,6 +86,7 @@ interface PurchaseGroupTransaction {
   dueDate?: string;
   scheduledDate?: string;
   status: TransactionStatus;
+  isExternalCreditCardSettlement?: boolean;
   creditCardInvoice?: InvoiceSummary | null;
 }
 
@@ -142,7 +154,7 @@ function isFutureInstallment(transaction?: PurchaseGroupTransaction | null) {
     return false;
   }
 
-  const invoicePaid = Boolean(transaction.creditCardInvoice?.paymentTransactionId);
+  const invoicePaid = transaction.creditCardInvoice?.status === 'PAID';
   if (invoicePaid) {
     return false;
   }
@@ -187,6 +199,7 @@ export default function TransactionForm({
   const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
   const [formMode, setFormMode] = useState<'simple' | 'detailed'>('detailed');
   const [isInvoicePreviewExpanded, setIsInvoicePreviewExpanded] = useState(false);
+  const [existingCreditCardInvoices, setExistingCreditCardInvoices] = useState<CreditCardInvoicePreviewStatus[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
 
   const [formData, setFormData] = useState({
@@ -249,22 +262,65 @@ export default function TransactionForm({
   const totalCommittedAmount = isCreditCardExpense
     ? amountValue * installmentCountValue
     : amountValue;
-
-  const availableLimit = isCreditCardExpense ? getAvailableCreditLimit(selectedFromAccount) : null;
-  const projectedAvailableLimit = availableLimit === null ? null : availableLimit - totalCommittedAmount;
-  const projectedUsedLimit = isCreditCardExpense
-    ? getUsedCreditLimit(selectedFromAccount) + totalCommittedAmount
-    : 0;
   const invoicePreview = useMemo(
     () => buildCreditCardInvoicePreview(selectedFromAccount, formData.date, installmentCountValue),
     [formData.date, installmentCountValue, selectedFromAccount]
   );
+  const existingCreditCardInvoicesByReference = useMemo(() => {
+    return new Map(
+      existingCreditCardInvoices.map((invoice) => [
+        `${invoice.referenceYear}-${invoice.referenceMonth}`,
+        invoice
+      ])
+    );
+  }, [existingCreditCardInvoices]);
+  const resolvedInvoicePreview = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return invoicePreview.map((item) => {
+      const referenceLabel = getInvoiceReferenceLabel(item.referenceYear, item.referenceMonth);
+      const existingInvoice =
+        existingCreditCardInvoicesByReference.get(`${item.referenceYear}-${item.referenceMonth}`) || null;
+      const dueDate = new Date(item.dueDate);
+      const shouldSettleExternally = existingInvoice
+        ? existingInvoice.status === 'PAID'
+        : dueDate.getTime() < today.getTime();
+
+      return {
+        ...item,
+        existingInvoice,
+        shouldSettleExternally,
+        destinationLabel: shouldSettleExternally
+          ? existingInvoice?.status === 'PAID'
+            ? `Fatura ${referenceLabel} ja paga - liquidada fora do sistema`
+            : 'Historica liquidada fora do sistema'
+          : `Entrara na fatura ${referenceLabel}`
+      };
+    });
+  }, [existingCreditCardInvoicesByReference, invoicePreview]);
+  const currentLimitImpactAmount = isCreditCardExpense
+    ? amountValue * resolvedInvoicePreview.filter((item) => !item.shouldSettleExternally).length
+    : amountValue;
+  const currentLimitImpactInstallmentCount = resolvedInvoicePreview.filter(
+    (item) => !item.shouldSettleExternally
+  ).length;
+  const impactedInvoicesCount = new Set(
+    resolvedInvoicePreview
+      .filter((item) => !item.shouldSettleExternally)
+      .map((item) => `${item.referenceYear}-${item.referenceMonth}`)
+  ).size;
+  const availableLimit = isCreditCardExpense ? getAvailableCreditLimit(selectedFromAccount) : null;
+  const projectedAvailableLimit = availableLimit === null ? null : availableLimit - currentLimitImpactAmount;
+  const projectedUsedLimit = isCreditCardExpense
+    ? getUsedCreditLimit(selectedFromAccount) + currentLimitImpactAmount
+    : 0;
 
   const purchaseGroupTransactions = transaction?.purchaseGroupTransactions || [];
   const isGroupedCreditCardPurchase = Boolean(transaction?.purchaseGroupId);
   const isCreditCardContext = isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
   const currentGroupTransaction = purchaseGroupTransactions.find((item) => item.id === transaction?.id) || null;
-  const hasPaidInvoiceInGroup = purchaseGroupTransactions.some((item) => Boolean(item.creditCardInvoice?.paymentTransactionId));
+  const hasPaidInvoiceInGroup = purchaseGroupTransactions.some((item) => item.creditCardInvoice?.status === 'PAID');
   const canEditPurchaseScope = isGroupedCreditCardPurchase && !hasPaidInvoiceInGroup;
   const canEditSingleScope = isGroupedCreditCardPurchase && isFutureInstallment(currentGroupTransaction);
   const activePurchaseScope = isGroupedCreditCardPurchase ? formData.purchaseScope : 'SINGLE';
@@ -408,6 +464,15 @@ export default function TransactionForm({
     }));
   }, [accounts, defaultCreditCardId, formData.fromAccountId, isCreditCardPurchaseFlow]);
 
+  useEffect(() => {
+    if (!isCreditCardPurchaseFlow || !selectedFromAccount || selectedFromAccount.type !== 'CREDIT_CARD') {
+      setExistingCreditCardInvoices([]);
+      return;
+    }
+
+    void fetchCreditCardInvoices(selectedFromAccount.id);
+  }, [isCreditCardPurchaseFlow, selectedFromAccount?.id, selectedFromAccount?.type]);
+
   const fetchAutocompleteSuggestions = async (query: string): Promise<AutocompleteSuggestion[]> => {
     if (query.length < 3) {
       return [];
@@ -426,6 +491,16 @@ export default function TransactionForm({
       return [];
     }
   };
+
+  async function fetchCreditCardInvoices(accountId: number) {
+    try {
+      const response = await api.get(`/financial/credit-cards/${accountId}/invoices`);
+      setExistingCreditCardInvoices(response.data || []);
+    } catch (error: any) {
+      setExistingCreditCardInvoices([]);
+      addToast(error.response?.data?.error || 'Erro ao carregar previsao de faturas do cartao', 'error');
+    }
+  }
 
   async function fetchTransaction() {
     if (!transactionId) {
@@ -837,7 +912,8 @@ export default function TransactionForm({
     : activePurchaseScope === 'PURCHASE'
       ? 'As alterações serão aplicadas em todas as parcelas desta compra.'
       : 'As alterações serão aplicadas apenas nesta parcela futura.';
-  const previewSummaryLabel = invoicePreview.length === 0
+  const externalInstallmentsCount = resolvedInvoicePreview.filter((item) => item.shouldSettleExternally).length;
+  const previewSummaryLabelLegacy = invoicePreview.length === 0
     ? 'Configure um cartão com fechamento e vencimento para ver a previsão.'
     : installmentCountValue === 1
       ? `1 fatura impactada - limite após a compra: ${
@@ -846,6 +922,17 @@ export default function TransactionForm({
       : `${installmentCountValue} parcelas em ${invoicePreview.length} faturas - limite após a compra: ${
           projectedAvailableLimit === null ? 'não configurado' : formatCurrency(projectedAvailableLimit)
         }`;
+  const previewSummaryLabel = resolvedInvoicePreview.length === 0
+    ? previewSummaryLabelLegacy
+    : impactedInvoicesCount === 0
+      ? `${externalInstallmentsCount} parcela${externalInstallmentsCount === 1 ? '' : 's'} historica${externalInstallmentsCount === 1 ? '' : 's'} sem impacto no limite atual`
+      : impactedInvoicesCount === 1
+        ? `1 fatura impactada - limite apos a compra: ${
+            projectedAvailableLimit === null ? 'nao configurado' : formatCurrency(projectedAvailableLimit)
+          }`
+        : `${impactedInvoicesCount} faturas impactadas - limite apos a compra: ${
+            projectedAvailableLimit === null ? 'nao configurado' : formatCurrency(projectedAvailableLimit)
+          }`;
 
   return (
     <>
@@ -1384,7 +1471,7 @@ export default function TransactionForm({
 
               {isInvoicePreviewExpanded && (
                 <div className="space-y-4 border-t border-purple-700/40 px-5 pb-5 pt-4">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                     <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
                       <div className="text-xs uppercase tracking-wide text-gray-400">Limite atual</div>
                       <div className="mt-1 text-lg font-semibold text-white">
@@ -1392,13 +1479,20 @@ export default function TransactionForm({
                       </div>
                     </div>
                     <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
-                      <div className="text-xs uppercase tracking-wide text-gray-400">Compra total no limite</div>
+                      <div className="text-xs uppercase tracking-wide text-gray-400">Compra total</div>
                       <div className="mt-1 text-lg font-semibold text-white">{formatCurrency(totalCommittedAmount)}</div>
                       {installmentCountValue > 1 && (
                         <div className="mt-1 text-xs text-gray-400">
                           {formatCurrency(amountValue)} por parcela
                         </div>
                       )}
+                    </div>
+                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
+                      <div className="text-xs uppercase tracking-wide text-gray-400">Impacto atual no limite</div>
+                      <div className="mt-1 text-lg font-semibold text-white">{formatCurrency(currentLimitImpactAmount)}</div>
+                      <div className="mt-1 text-xs text-gray-400">
+                        {currentLimitImpactInstallmentCount} parcela{currentLimitImpactInstallmentCount === 1 ? '' : 's'} impactando o saldo atual
+                      </div>
                     </div>
                     <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
                       <div className="text-xs uppercase tracking-wide text-gray-400">Limite após compra</div>
@@ -1425,22 +1519,32 @@ export default function TransactionForm({
                           <th className="px-3 py-2">Fatura</th>
                           <th className="px-3 py-2">Fechamento</th>
                           <th className="px-3 py-2">Vencimento</th>
+                          <th className="px-3 py-2">Destino</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {invoicePreview.length === 0 ? (
+                        {resolvedInvoicePreview.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="px-3 py-4 text-sm text-gray-400">
+                            <td colSpan={5} className="px-3 py-4 text-sm text-gray-400">
                               Selecione um cartão com fechamento e vencimento configurados para visualizar a previsão.
                             </td>
                           </tr>
                         ) : (
-                          invoicePreview.map((item) => (
+                          resolvedInvoicePreview.map((item) => (
                             <tr key={`${item.referenceYear}-${item.referenceMonth}-${item.installmentNumber}`} className="border-t border-gray-700 text-sm text-gray-300">
                               <td className="px-3 py-2">{item.installmentNumber}</td>
                               <td className="px-3 py-2">{getInvoiceReferenceLabel(item.referenceYear, item.referenceMonth)}</td>
                               <td className="px-3 py-2">{formatInvoiceDate(new Date(item.closingDate))}</td>
                               <td className="px-3 py-2">{formatInvoiceDate(new Date(item.dueDate))}</td>
+                              <td className="px-3 py-2">
+                                <span className={`rounded-full px-2 py-1 text-xs font-medium ${
+                                  item.shouldSettleExternally
+                                    ? 'border border-amber-700 bg-amber-900/20 text-amber-200'
+                                    : 'border border-blue-700 bg-blue-900/20 text-blue-200'
+                                }`}>
+                                  {item.destinationLabel}
+                                </span>
+                              </td>
                             </tr>
                           ))
                         )}

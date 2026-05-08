@@ -30,12 +30,15 @@ import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
+import CategorySelect from '@/components/financial/CategorySelect';
 import api from '@/lib/api';
+import { formatAccountDisplayName } from '@/utils/accounts';
 import { formatTransactionDescription } from '@/utils/transactions';
 import { getInvoiceReferenceLabel } from '@/utils/creditCards';
 
 type TransactionTypeFilter = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatusFilter = 'PENDING' | 'COMPLETED' | 'CANCELED';
+type TransactionDateFieldFilter = 'dueDate' | 'date' | 'effectiveDate' | 'createdAt';
 type PeriodPreset = 'CURRENT_MONTH' | 'CURRENT_WEEK' | 'CUSTOM';
 
 interface PeriodRange {
@@ -53,9 +56,9 @@ interface Transaction {
   type: TransactionTypeFilter;
   status: TransactionStatusFilter;
   notes?: string;
-  fromAccount?: { id: number; name: string };
-  toAccount?: { id: number; name: string };
-  category?: { id: number; name: string; color: string };
+  fromAccount?: { id: number; name: string; type?: string };
+  toAccount?: { id: number; name: string; type?: string };
+  category?: { id: number; name: string; color: string; icon?: string };
   tags: { id: number; name: string }[];
   createdByUser: { id: number; name: string };
   createdAt: string;
@@ -63,7 +66,7 @@ interface Transaction {
   totalInstallments?: number | null;
   purchaseGroupId?: string | null;
   creditCardInvoice?: {
-    id: number;
+    id?: number;
     referenceYear: number;
     referenceMonth: number;
     dueDate?: string;
@@ -73,6 +76,15 @@ interface Transaction {
   virtualKey?: string;
   fixedTemplateId?: number | null;
   isFixed?: boolean;
+  isProjected?: boolean;
+  hasProjectedTransactions?: boolean;
+  isCreditCardInvoiceSummary?: boolean;
+  invoiceNavigation?: {
+    accountId: number;
+    invoiceKey: string;
+  };
+  itemsSubtotal?: string;
+  fixedSubtotal?: string;
 }
 
 interface TransactionFilters {
@@ -81,6 +93,11 @@ interface TransactionFilters {
   accountId: string;
   categoryId: string;
   search: string;
+}
+
+interface TransactionSummary {
+  incomeTotal: string;
+  expenseTotal: string;
 }
 
 interface Account {
@@ -94,14 +111,27 @@ interface Category {
   name: string;
   color: string;
   type: string;
+  icon?: string;
+  isDefault?: boolean;
 }
 
 const ALL_TRANSACTION_TYPES: TransactionTypeFilter[] = ['INCOME', 'EXPENSE', 'TRANSFER'];
+const DEFAULT_DATE_FIELD: TransactionDateFieldFilter = 'dueDate';
 
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'INCOME', label: 'Receita' },
   { value: 'EXPENSE', label: 'Despesa' },
   { value: 'TRANSFER', label: 'Transferência' }
+];
+
+const TRANSACTION_DATE_FIELD_OPTIONS: Array<{
+  value: TransactionDateFieldFilter;
+  label: string;
+}> = [
+  { value: 'dueDate', label: 'Data de vencimento' },
+  { value: 'date', label: 'Data da transação' },
+  { value: 'effectiveDate', label: 'Data de pagamento' },
+  { value: 'createdAt', label: 'Data de criação' }
 ];
 
 function formatDateForInput(date: Date): string {
@@ -198,6 +228,31 @@ function getPeriodOptionLabel(
   return 'Mês atual';
 }
 
+function buildInvoiceKeyFromReference(referenceYear: number, referenceMonth: number): string {
+  return `projection:${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
+}
+
+function getTransactionInvoiceHref(
+  transaction: Pick<Transaction, 'fromAccount' | 'creditCardInvoice' | 'invoiceNavigation'>
+): string | null {
+  if (transaction.invoiceNavigation) {
+    return `/financial/credit-cards/${transaction.invoiceNavigation.accountId}/invoices?invoiceKey=${encodeURIComponent(transaction.invoiceNavigation.invoiceKey)}`;
+  }
+
+  if (!transaction.creditCardInvoice || !transaction.fromAccount?.id) {
+    return null;
+  }
+
+  const invoiceKey = transaction.creditCardInvoice.id
+    ? `invoice:${transaction.creditCardInvoice.id}`
+    : buildInvoiceKeyFromReference(
+        transaction.creditCardInvoice.referenceYear,
+        transaction.creditCardInvoice.referenceMonth
+      );
+
+  return `/financial/credit-cards/${transaction.fromAccount.id}/invoices?invoiceKey=${encodeURIComponent(invoiceKey)}`;
+}
+
 export default function TransactionsListPage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -206,12 +261,17 @@ export default function TransactionsListPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [summary, setSummary] = useState<TransactionSummary>({
+    incomeTotal: '0',
+    expenseTotal: '0'
+  });
   const [loading, setLoading] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showOnlyMaterialized, setShowOnlyMaterialized] = useState(false);
   const [materializingVirtualKey, setMaterializingVirtualKey] = useState<string | null>(null);
+  const [dateField, setDateField] = useState<TransactionDateFieldFilter>(DEFAULT_DATE_FIELD);
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('CURRENT_MONTH');
   const [periodOffset, setPeriodOffset] = useState(0);
   const [customPeriod, setCustomPeriod] = useState<PeriodRange>(() =>
@@ -265,6 +325,25 @@ export default function TransactionsListPage() {
 
     return count;
   }, [filters]);
+  const projectedSavings = useMemo(
+    () => Number(summary.incomeTotal || 0) - Number(summary.expenseTotal || 0),
+    [summary]
+  );
+  const projectedSavingsCardClass = projectedSavings > 0
+    ? 'border-emerald-900/60 bg-emerald-950/25'
+    : projectedSavings < 0
+      ? 'border-red-900/60 bg-red-950/25'
+      : 'border-slate-700 bg-slate-900/40';
+  const projectedSavingsTextClass = projectedSavings > 0
+    ? 'text-emerald-300'
+    : projectedSavings < 0
+      ? 'text-red-300'
+      : 'text-slate-200';
+  const projectedSavingsLabelClass = projectedSavings > 0
+    ? 'text-emerald-200/80'
+    : projectedSavings < 0
+      ? 'text-red-200/80'
+      : 'text-slate-300/80';
 
   useEffect(() => {
     void fetchAccounts();
@@ -277,7 +356,7 @@ export default function TransactionsListPage() {
     }
 
     void fetchData();
-  }, [activePeriod, currentPage, customPeriodError, filters, isCustomPeriod, showOnlyMaterialized]);
+  }, [activePeriod, currentPage, customPeriodError, dateField, filters, isCustomPeriod, showOnlyMaterialized]);
 
   async function fetchData() {
     if (isCustomPeriod && customPeriodError) {
@@ -293,6 +372,7 @@ export default function TransactionsListPage() {
         pageSize: '20',
         startDate: activePeriod.startDate,
         endDate: activePeriod.endDate,
+        dateField,
         includeVirtualFixed: (!showOnlyMaterialized).toString()
       });
 
@@ -321,6 +401,10 @@ export default function TransactionsListPage() {
       const response = await api.get(`/financial/transactions?${params.toString()}`);
       setTransactions(response.data.data || []);
       setTotalPages(response.data.pages || 1);
+      setSummary({
+        incomeTotal: response.data.summary?.incomeTotal || '0',
+        expenseTotal: response.data.summary?.expenseTotal || '0'
+      });
     } catch (error: any) {
       const fallback = 'Erro ao carregar transacoes';
       const message = error.response?.data?.error || fallback;
@@ -355,6 +439,7 @@ export default function TransactionsListPage() {
 
   function resetFilters() {
     setCurrentPage(1);
+    setDateField(DEFAULT_DATE_FIELD);
     setPeriodPreset('CURRENT_MONTH');
     setPeriodOffset(0);
     setCustomPeriod(getPeriodRange('CURRENT_MONTH', 0));
@@ -397,6 +482,11 @@ export default function TransactionsListPage() {
       ...prev,
       [field]: value
     }));
+  }
+
+  function handleDateFieldChange(nextField: TransactionDateFieldFilter) {
+    setCurrentPage(1);
+    setDateField(nextField);
   }
 
   async function handleDelete(transaction: Transaction) {
@@ -592,9 +682,11 @@ export default function TransactionsListPage() {
   const filterLabelClassName = 'mb-1 block text-sm font-medium text-gray-300';
   const filterControlClassName =
     'h-10 w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-sm text-white focus:border-accent focus:outline-none focus:ring';
+  const compactCreateButtonClass =
+    'flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-sm';
   const filterHeaderGridClass = isCustomPeriod
-    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(240px,0.72fr)_auto_auto]'
-    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)_auto_auto]';
+    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.72fr)_auto_auto]'
+    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_auto_auto]';
 
   if (loading && transactions.length === 0) {
     return (
@@ -614,16 +706,45 @@ export default function TransactionsListPage() {
         ]}
       />
 
-      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className="mb-6 grid grid-cols-1 gap-3 xl:grid-cols-[auto_1fr_auto] xl:items-center">
         <h1 className="text-2xl font-semibold text-white">Transações Financeiras</h1>
+
+        <div className="flex flex-wrap gap-3 xl:justify-center">
+          <div className="min-w-[150px] rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-red-200/80">
+              Despesas
+            </div>
+            <div className="mt-1 text-lg font-semibold text-red-300">
+              {formatCurrency(summary.expenseTotal)}
+            </div>
+          </div>
+
+          <div className="min-w-[150px] rounded-lg border border-green-900/60 bg-green-950/25 px-3 py-2">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-green-200/80">
+              Receitas
+            </div>
+            <div className="mt-1 text-lg font-semibold text-green-300">
+              {formatCurrency(summary.incomeTotal)}
+            </div>
+          </div>
+
+          <div className={`min-w-[150px] rounded-lg border px-3 py-2 ${projectedSavingsCardClass}`}>
+            <div className={`text-[11px] font-medium uppercase tracking-wide ${projectedSavingsLabelClass}`}>
+              Economia projetada
+            </div>
+            <div className={`mt-1 text-lg font-semibold ${projectedSavingsTextClass}`}>
+              {formatCurrency(projectedSavings)}
+            </div>
+          </div>
+        </div>
 
         <div className="flex flex-wrap justify-end gap-2">
           <Link href="/financial/transactions/new-credit-card-purchase">
             <Button
               variant="outline"
-              className="flex items-center gap-2 border-purple-600 text-purple-300 hover:border-purple-500 hover:bg-purple-950/40 hover:text-purple-200"
+              className={`${compactCreateButtonClass} border-purple-600 text-purple-300 hover:border-purple-500 hover:bg-purple-950/40 hover:text-purple-200`}
             >
-              <CreditCard size={16} />
+              <CreditCard size={15} />
               Nova Compra no Cartão
             </Button>
           </Link>
@@ -631,9 +752,9 @@ export default function TransactionsListPage() {
           <Link href="/financial/transactions/new?type=EXPENSE&locked=true">
             <Button
               variant="outline"
-              className="flex items-center gap-2 border-red-600 text-red-300 hover:border-red-500 hover:bg-red-950/40 hover:text-red-200"
+              className={`${compactCreateButtonClass} border-red-600 text-red-300 hover:border-red-500 hover:bg-red-950/40 hover:text-red-200`}
             >
-              <TrendingDown size={16} />
+              <TrendingDown size={15} />
               Nova Despesa
             </Button>
           </Link>
@@ -641,16 +762,16 @@ export default function TransactionsListPage() {
           <Link href="/financial/transactions/new?type=INCOME&locked=true">
             <Button
               variant="outline"
-              className="flex items-center gap-2 border-green-600 text-green-300 hover:border-green-500 hover:bg-green-950/40 hover:text-green-200"
+              className={`${compactCreateButtonClass} border-green-600 text-green-300 hover:border-green-500 hover:bg-green-950/40 hover:text-green-200`}
             >
-              <TrendingUp size={16} />
+              <TrendingUp size={15} />
               Nova Receita
             </Button>
           </Link>
 
           <Link href="/financial/transactions/new?type=TRANSFER&locked=true">
-            <Button variant="outline" className="flex items-center gap-2">
-              <ArrowUpDown size={16} />
+            <Button variant="outline" className={compactCreateButtonClass}>
+              <ArrowUpDown size={15} />
               Nova Transferência
             </Button>
           </Link>
@@ -662,7 +783,22 @@ export default function TransactionsListPage() {
           <div className="flex flex-col">
             <label className={filterLabelClassName}>Periodo</label>
             {isCustomPeriod ? (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(180px,0.7fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(200px,0.95fr)_minmax(180px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                <select
+                  value={dateField}
+                  onChange={(event) =>
+                    handleDateFieldChange(event.target.value as TransactionDateFieldFilter)
+                  }
+                  aria-label="Campo de data"
+                  className={filterControlClassName}
+                >
+                  {TRANSACTION_DATE_FIELD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
                 <select
                   value={periodPreset}
                   onChange={(event) =>
@@ -702,7 +838,22 @@ export default function TransactionsListPage() {
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-2">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(200px,0.95fr)_auto_minmax(0,1fr)_auto]">
+                <select
+                  value={dateField}
+                  onChange={(event) =>
+                    handleDateFieldChange(event.target.value as TransactionDateFieldFilter)
+                  }
+                  aria-label="Campo de data"
+                  className={filterControlClassName}
+                >
+                  {TRANSACTION_DATE_FIELD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
                 <Button
                   variant="outline"
                   onClick={() => shiftPeriod(-1)}
@@ -823,26 +974,21 @@ export default function TransactionsListPage() {
                   <option value="">Todas</option>
                   {accounts.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name}
+                      {formatAccountDisplayName(account)}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Categoria</label>
-                <select
+                <CategorySelect
+                  label="Categoria"
+                  categories={categories}
                   value={filters.categoryId}
-                  onChange={(event) => updateFilters({ categoryId: event.target.value })}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
-                >
-                  <option value="">Todas</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(categoryId) => updateFilters({ categoryId })}
+                  placeholder="Todas"
+                  emptyLabel="Todas"
+                />
               </div>
             </div>
 
@@ -915,21 +1061,37 @@ export default function TransactionsListPage() {
                     </th>
                   </tr>
                 </thead>
-                <tbody>
-                  {sortedTransactions.map((transaction) => {
-                    const isMaterializing = materializingVirtualKey === (transaction.virtualKey || '');
-
-                    return (
-                      <tr
-                        key={transaction.virtualKey || transaction.id || `${transaction.description}-${transaction.date}`}
-                        className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${transaction.isVirtual ? 'bg-sky-950/20' : ''}`}
-                      >
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-1">
-                            {transaction.isVirtual ? (
-                              <button
-                                onClick={() => handleMaterializeAndEdit(transaction)}
-                                className="p-1 text-gray-300 transition-colors hover:text-accent"
+	                <tbody>
+	                  {sortedTransactions.map((transaction) => {
+	                    const isMaterializing = materializingVirtualKey === (transaction.virtualKey || '');
+	                    const isProjectedLike = Boolean(transaction.isVirtual || transaction.isProjected);
+	                    const invoiceHref = getTransactionInvoiceHref(transaction);
+	                    const rowKey =
+	                      transaction.virtualKey ||
+	                      transaction.invoiceNavigation?.invoiceKey ||
+	                      transaction.id ||
+	                      `${transaction.description}-${transaction.date}`;
+	
+	                    return (
+	                      <tr
+	                        key={rowKey}
+	                        className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${isProjectedLike ? 'bg-sky-950/20' : ''}`}
+	                      >
+	                        <td className="px-4 py-3">
+	                          <div className="flex items-center justify-center gap-1">
+	                            {transaction.isCreditCardInvoiceSummary && invoiceHref ? (
+	                              <Link href={invoiceHref}>
+	                                <button
+	                                  className="p-1 text-gray-300 transition-colors hover:text-accent"
+	                                  title="Abrir fatura"
+	                                >
+	                                  <CreditCard size={14} />
+	                                </button>
+	                              </Link>
+	                            ) : transaction.isVirtual ? (
+	                              <button
+	                                onClick={() => handleMaterializeAndEdit(transaction)}
+	                                className="p-1 text-gray-300 transition-colors hover:text-accent"
                                 title="Materializar e editar"
                                 disabled={isMaterializing}
                               >
@@ -983,37 +1145,44 @@ export default function TransactionsListPage() {
                         <td className="px-4 py-3">
                           <div>
                             <div className="flex items-center gap-2 font-medium text-white">
-                              {formatTransactionDescription(
-                                transaction.description,
-                                transaction.installmentNumber,
-                                transaction.totalInstallments
-                              )}
-                              {transaction.isVirtual && (
-                                <span className="rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200">
-                                  Virtual
-                                </span>
-                              )}
-                              {transaction.isFixed && !transaction.isVirtual && (
+	                              {formatTransactionDescription(
+	                                transaction.description,
+	                                transaction.installmentNumber,
+	                                transaction.totalInstallments
+	                              )}
+	                              {transaction.isCreditCardInvoiceSummary && (
+	                                <span className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200">
+	                                  Fatura
+	                                </span>
+	                              )}
+	                              {transaction.isFixed && (
                                 <span className="rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200">
                                   Fixa
                                 </span>
                               )}
-                              {transaction.purchaseGroupId && (
+	                              {(transaction.purchaseGroupId || transaction.creditCardInvoice || transaction.isCreditCardInvoiceSummary) && (
                                 <span className="rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200">
                                   Cartão
                                 </span>
-                              )}
-                              {transaction.creditCardInvoice && transaction.fromAccount?.id && (
-                                <Link
-                                  href={`/financial/credit-cards/${transaction.fromAccount.id}/invoices?invoiceId=${transaction.creditCardInvoice.id}`}
-                                  className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
-                                >
-                                  {`Fatura ${getInvoiceReferenceLabel(
-                                    transaction.creditCardInvoice.referenceYear,
-                                    transaction.creditCardInvoice.referenceMonth
-                                  )}`}
-                                </Link>
-                              )}
+	                              )}
+	                              {transaction.hasProjectedTransactions && !transaction.isProjected && (
+	                                <span className="rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200">
+	                                  Com fixas
+	                                </span>
+	                              )}
+	                              {transaction.creditCardInvoice && transaction.fromAccount?.id && !transaction.isCreditCardInvoiceSummary && (
+	                                invoiceHref ? (
+	                                  <Link
+	                                    href={invoiceHref}
+	                                    className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
+	                                  >
+                                    {`Fatura ${getInvoiceReferenceLabel(
+                                      transaction.creditCardInvoice.referenceYear,
+                                      transaction.creditCardInvoice.referenceMonth
+                                    )}`}
+                                  </Link>
+	                                ) : null
+	                              )}
                             </div>
                             {transaction.purchaseGroupId && transaction.id && (
                               <div className="mt-1">
@@ -1039,11 +1208,11 @@ export default function TransactionsListPage() {
 
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
-                            {getStatusIcon(transaction.status, transaction.isVirtual)}
-                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(transaction.status, transaction.isVirtual)}`}>
-                              {transaction.isVirtual
-                                ? 'Projetada'
-                                : transaction.status === 'COMPLETED'
+	                            {getStatusIcon(transaction.status, isProjectedLike)}
+	                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(transaction.status, isProjectedLike)}`}>
+	                              {isProjectedLike
+	                                ? 'Projetada'
+	                                : transaction.status === 'COMPLETED'
                                   ? 'Concluída'
                                   : transaction.status === 'PENDING'
                                     ? 'Pendente'
@@ -1053,7 +1222,7 @@ export default function TransactionsListPage() {
                         </td>
 
                         <td className="px-4 py-3 text-gray-300">
-                          {transaction.fromAccount?.name || transaction.toAccount?.name || '-'}
+                          {formatAccountDisplayName(transaction.fromAccount || transaction.toAccount)}
                         </td>
 
                         <td className="px-4 py-3">

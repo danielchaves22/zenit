@@ -235,7 +235,7 @@ model FinancialAccount {
   creditCardInvoices   CreditCardInvoice[]
   userAccess            UserFinancialAccountAccess[]
 
-  @@unique([name, companyId])
+  @@unique([name, type, companyId])
   @@index([companyId])
   @@index([companyId, isDefault]) // ✅ ÍNDICE OTIMIZADO
 }
@@ -245,6 +245,7 @@ model FinancialCategory {
   name            String
   type            TransactionType      @default(EXPENSE)
   color           String               @default("#6366F1")
+  icon            String               @default("tag")
   isDefault       Boolean              @default(false)  // ✅ NOVO CAMPO
   parentId        Int?
   parent          FinancialCategory?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
@@ -260,7 +261,6 @@ model FinancialCategory {
   recurringTransactions RecurringTransaction[]
 
   @@unique([name, parentId, companyId])
-  @@unique([companyId, type, isDefault], name: "unique_default_category_per_company_type") // ✅ CONSTRAINT
   @@index([companyId])
   @@index([parentId])
   @@index([companyId, type, isDefault]) // ✅ ÍNDICE OTIMIZADO

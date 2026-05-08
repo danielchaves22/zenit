@@ -1,4 +1,5 @@
 ﻿import {
+  AccountType,
   Prisma,
   PrismaClient,
   RecurringFrequency,
@@ -14,9 +15,50 @@ const prisma = new PrismaClient();
 const SUPPORTED_FIXED_TYPES: TransactionType[] = [TransactionType.INCOME, TransactionType.EXPENSE];
 
 type FixedTemplateWithRelations = RecurringTransaction & {
-  fromAccount: { id: number; name: string } | null;
-  toAccount: { id: number; name: string } | null;
+  fromAccount: {
+    id: number;
+    name: string;
+    type?: string;
+    statementClosingDay?: number | null;
+    statementDueDay?: number | null;
+  } | null;
+  toAccount: {
+    id: number;
+    name: string;
+    type?: string;
+    statementClosingDay?: number | null;
+    statementDueDay?: number | null;
+  } | null;
   category: { id: number; name: string; color: string } | null;
+};
+
+type FixedAccountSelection = {
+  id: number;
+  type?: string | null;
+  statementClosingDay?: number | null;
+  statementDueDay?: number | null;
+};
+
+type FixedTemplateOccurrenceLike = {
+  id?: number;
+  type: TransactionType;
+  dayOfMonth?: number | null;
+  fromAccountId?: number | null;
+  toAccountId?: number | null;
+  startDate?: Date;
+  endDate?: Date | null;
+  fromAccount?: {
+    id: number;
+    type?: string | null;
+    statementClosingDay?: number | null;
+    statementDueDay?: number | null;
+  } | null;
+  toAccount?: {
+    id: number;
+    type?: string | null;
+    statementClosingDay?: number | null;
+    statementDueDay?: number | null;
+  } | null;
 };
 
 function startOfDay(date: Date): Date {
@@ -63,29 +105,156 @@ function ensureTypeAccountConsistency(type: TransactionType, fromAccountId?: num
     throw new Error('Transacao fixa suporta apenas INCOME ou EXPENSE');
   }
 
-  if (type === TransactionType.INCOME && !toAccountId) {
-    throw new Error('Transacao fixa de receita exige conta de destino');
+  if (type === TransactionType.INCOME && fromAccountId) {
+    throw new Error('Transacao fixa de receita nao pode ter conta de origem');
   }
 
-  if (type === TransactionType.EXPENSE && !fromAccountId) {
-    throw new Error('Transacao fixa de despesa exige conta de origem');
+  if (type === TransactionType.EXPENSE && toAccountId) {
+    throw new Error('Transacao fixa de despesa nao pode ter conta de destino');
   }
 }
 
-function computeNextDueDate(baseDate: Date, dayOfMonth: number): Date {
-  const normalizedBase = startOfDay(baseDate);
-  const sameMonthCandidate = buildMonthOccurrenceDate(
-    normalizedBase.getFullYear(),
-    normalizedBase.getMonth(),
-    dayOfMonth
+function ensureCreditCardFixedSupport(params: {
+  type: TransactionType;
+  fromAccountType?: string | null;
+  toAccountType?: string | null;
+}): void {
+  if (
+    params.type === TransactionType.INCOME &&
+    params.toAccountType === AccountType.CREDIT_CARD
+  ) {
+    throw new Error('Transacao fixa de receita nao pode usar conta de cartao de credito');
+  }
+}
+
+function isCreditCardFixedExpenseTemplate(template: Pick<FixedTemplateOccurrenceLike, 'type' | 'fromAccount'>): boolean {
+  return (
+    template.type === TransactionType.EXPENSE &&
+    template.fromAccount?.type === AccountType.CREDIT_CARD
   );
+}
+
+function resolveOccurrenceDayOfMonth(
+  template: Pick<FixedTemplateOccurrenceLike, 'type' | 'dayOfMonth' | 'fromAccount'>
+): number {
+  if (isCreditCardFixedExpenseTemplate(template)) {
+    const closingDay = template.fromAccount?.statementClosingDay;
+
+    if (!closingDay) {
+      throw new Error('Cartao de credito da transacao fixa precisa ter dia de fechamento configurado');
+    }
+
+    return closingDay;
+  }
+
+  if (!template.dayOfMonth) {
+    throw new Error('Dia do vencimento e obrigatorio para transacao fixa fora do cartao');
+  }
+
+  return template.dayOfMonth;
+}
+
+function buildOccurrenceDateForMonth(
+  template: Pick<FixedTemplateOccurrenceLike, 'type' | 'dayOfMonth' | 'fromAccount'>,
+  year: number,
+  monthIndex: number
+): Date {
+  return buildMonthOccurrenceDate(year, monthIndex, resolveOccurrenceDayOfMonth(template));
+}
+
+function resolveOccurrenceDateForReference(
+  template: Pick<FixedTemplateOccurrenceLike, 'type' | 'dayOfMonth' | 'fromAccount'>,
+  referenceDate: Date
+): Date {
+  return buildOccurrenceDateForMonth(template, referenceDate.getFullYear(), referenceDate.getMonth());
+}
+
+async function resolveFixedAccounts(params: {
+  companyId: number;
+  fromAccountId?: number | null;
+  toAccountId?: number | null;
+}): Promise<{
+  fromAccount: FixedAccountSelection | null;
+  toAccount: FixedAccountSelection | null;
+}> {
+  const accountIds = [params.fromAccountId, params.toAccountId].filter(
+    (accountId): accountId is number => !!accountId
+  );
+
+  if (accountIds.length === 0) {
+    return {
+      fromAccount: null,
+      toAccount: null
+    };
+  }
+
+  const accounts = await prisma.financialAccount.findMany({
+    where: {
+      companyId: params.companyId,
+      id: { in: accountIds }
+    },
+    select: {
+      id: true,
+      type: true,
+      statementClosingDay: true,
+      statementDueDay: true
+    }
+  });
+
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+
+  if (params.fromAccountId && !accountById.has(params.fromAccountId)) {
+    throw new Error('Conta de origem nao encontrada');
+  }
+
+  if (params.toAccountId && !accountById.has(params.toAccountId)) {
+    throw new Error('Conta de destino nao encontrada');
+  }
+
+  return {
+    fromAccount: params.fromAccountId ? accountById.get(params.fromAccountId) ?? null : null,
+    toAccount: params.toAccountId ? accountById.get(params.toAccountId) ?? null : null
+  };
+}
+
+function ensureFixedScheduleConfiguration(params: {
+  type: TransactionType;
+  dayOfMonth?: number | null;
+  fromAccount: FixedAccountSelection | null;
+  toAccount: FixedAccountSelection | null;
+}): void {
+  ensureCreditCardFixedSupport({
+    type: params.type,
+    fromAccountType: params.fromAccount?.type ?? null,
+    toAccountType: params.toAccount?.type ?? null
+  });
+
+  if (params.type === TransactionType.EXPENSE && params.fromAccount?.type === AccountType.CREDIT_CARD) {
+    if (!params.fromAccount.statementClosingDay || !params.fromAccount.statementDueDay) {
+      throw new Error('Cartao de credito da transacao fixa precisa ter fechamento e vencimento configurados');
+    }
+
+    return;
+  }
+
+  if (!params.dayOfMonth || params.dayOfMonth < 1 || params.dayOfMonth > 31) {
+    throw new Error('Dia do vencimento e obrigatorio para transacao fixa fora do cartao');
+  }
+}
+
+function computeNextDueDate(
+  baseDate: Date,
+  template: Pick<FixedTemplateOccurrenceLike, 'type' | 'dayOfMonth' | 'fromAccount'>
+): Date {
+  const normalizedBase = startOfDay(baseDate);
+  const sameMonthCandidate = resolveOccurrenceDateForReference(template, normalizedBase);
 
   if (sameMonthCandidate >= normalizedBase) {
     return sameMonthCandidate;
   }
 
   const nextMonth = new Date(normalizedBase.getFullYear(), normalizedBase.getMonth() + 1, 1);
-  return buildMonthOccurrenceDate(nextMonth.getFullYear(), nextMonth.getMonth(), dayOfMonth);
+  return buildOccurrenceDateForMonth(template, nextMonth.getFullYear(), nextMonth.getMonth());
 }
 
 export default class FixedTransactionService {
@@ -93,7 +262,7 @@ export default class FixedTransactionService {
     description: string;
     amount: number | string;
     type: TransactionType;
-    dayOfMonth: number;
+    dayOfMonth?: number | null;
     startDate?: Date;
     endDate?: Date | null;
     notes?: string;
@@ -111,6 +280,22 @@ export default class FixedTransactionService {
     }
 
     ensureTypeAccountConsistency(data.type, data.fromAccountId, data.toAccountId);
+    const accounts = await resolveFixedAccounts({
+      companyId: data.companyId,
+      fromAccountId: data.fromAccountId,
+      toAccountId: data.toAccountId
+    });
+
+    ensureFixedScheduleConfiguration({
+      type: data.type,
+      dayOfMonth: data.dayOfMonth,
+      ...accounts
+    });
+
+    const resolvedDayOfMonth =
+      data.type === TransactionType.EXPENSE && accounts.fromAccount?.type === AccountType.CREDIT_CARD
+        ? null
+        : data.dayOfMonth ?? null;
 
     const created = await prisma.recurringTransaction.create({
       data: {
@@ -118,11 +303,15 @@ export default class FixedTransactionService {
         amount: parseDecimal(data.amount),
         type: data.type,
         frequency: RecurringFrequency.MONTHLY,
-        dayOfMonth: data.dayOfMonth,
+        dayOfMonth: resolvedDayOfMonth,
         dayOfWeek: null,
         startDate,
         endDate,
-        nextDueDate: computeNextDueDate(startDate, data.dayOfMonth),
+        nextDueDate: computeNextDueDate(startDate, {
+          type: data.type,
+          dayOfMonth: resolvedDayOfMonth,
+          fromAccount: accounts.fromAccount
+        }),
         isActive: true,
         notes: data.notes,
         fromAccountId: data.fromAccountId ?? null,
@@ -132,8 +321,24 @@ export default class FixedTransactionService {
         createdBy: data.createdBy
       },
       include: {
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
         category: { select: { id: true, name: true, color: true } }
       }
     });
@@ -162,8 +367,24 @@ export default class FixedTransactionService {
         ...(includeInactive ? {} : { isActive: true })
       },
       include: {
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
         category: { select: { id: true, name: true, color: true } }
       },
       orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }]
@@ -179,8 +400,24 @@ export default class FixedTransactionService {
         type: { in: SUPPORTED_FIXED_TYPES }
       },
       include: {
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
         category: { select: { id: true, name: true, color: true } }
       }
     });
@@ -192,7 +429,7 @@ export default class FixedTransactionService {
       description: string;
       amount: number | string;
       type: TransactionType;
-      dayOfMonth: number;
+      dayOfMonth: number | null;
       notes?: string;
       fromAccountId?: number | null;
       toAccountId?: number | null;
@@ -208,6 +445,26 @@ export default class FixedTransactionService {
         companyId,
         frequency: RecurringFrequency.MONTHLY,
         type: { in: SUPPORTED_FIXED_TYPES }
+      },
+      include: {
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        }
       }
     });
 
@@ -218,8 +475,25 @@ export default class FixedTransactionService {
     const nextType = (data.type ?? existing.type) as TransactionType;
     const nextFromAccountId = data.fromAccountId !== undefined ? data.fromAccountId : existing.fromAccountId;
     const nextToAccountId = data.toAccountId !== undefined ? data.toAccountId : existing.toAccountId;
+    const nextAccounts = await resolveFixedAccounts({
+      companyId,
+      fromAccountId: nextFromAccountId,
+      toAccountId: nextToAccountId
+    });
+    const nextDayOfMonth =
+      data.dayOfMonth !== undefined ? data.dayOfMonth : existing.dayOfMonth;
 
     ensureTypeAccountConsistency(nextType, nextFromAccountId, nextToAccountId);
+    ensureFixedScheduleConfiguration({
+      type: nextType,
+      dayOfMonth: nextDayOfMonth,
+      ...nextAccounts
+    });
+
+    const resolvedDayOfMonth =
+      nextType === TransactionType.EXPENSE && nextAccounts.fromAccount?.type === AccountType.CREDIT_CARD
+        ? null
+        : nextDayOfMonth ?? null;
 
     const now = new Date();
     const currentMonthEnd = endOfMonth(now);
@@ -249,11 +523,15 @@ export default class FixedTransactionService {
           amount: data.amount !== undefined ? parseDecimal(data.amount) : existing.amount,
           type: nextType,
           frequency: RecurringFrequency.MONTHLY,
-          dayOfMonth: data.dayOfMonth ?? existing.dayOfMonth,
+          dayOfMonth: resolvedDayOfMonth,
           dayOfWeek: null,
           startDate: nextCompetenceStart,
           endDate: requestedEndDate,
-          nextDueDate: computeNextDueDate(nextCompetenceStart, data.dayOfMonth ?? existing.dayOfMonth ?? 1),
+          nextDueDate: computeNextDueDate(nextCompetenceStart, {
+            type: nextType,
+            dayOfMonth: resolvedDayOfMonth,
+            fromAccount: nextAccounts.fromAccount
+          }),
           isActive: data.isActive ?? true,
           notes: data.notes !== undefined ? data.notes : existing.notes,
           fromAccountId: nextFromAccountId ?? null,
@@ -263,8 +541,24 @@ export default class FixedTransactionService {
           createdBy: existing.createdBy
         },
         include: {
-          fromAccount: { select: { id: true, name: true } },
-          toAccount: { select: { id: true, name: true } },
+          fromAccount: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              statementClosingDay: true,
+              statementDueDay: true
+            }
+          },
+          toAccount: {
+            select: {
+              id: true,
+              name: true,
+              type: true,
+              statementClosingDay: true,
+              statementDueDay: true
+            }
+          },
           category: { select: { id: true, name: true, color: true } }
         }
       });
@@ -302,10 +596,82 @@ export default class FixedTransactionService {
         endDate: existing.endDate && existing.endDate < today ? existing.endDate : today
       },
       include: {
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
         category: { select: { id: true, name: true, color: true } }
       }
+    });
+  }
+
+  static async getMaterializedTransactionCounts(
+    templateIds: number[],
+    companyId: number
+  ): Promise<Map<number, number>> {
+    if (templateIds.length === 0) {
+      return new Map();
+    }
+
+    const counts = await prisma.financialTransaction.groupBy({
+      by: ['recurringTransactionId'],
+      where: {
+        companyId,
+        recurringTransactionId: { in: templateIds }
+      },
+      _count: {
+        recurringTransactionId: true
+      }
+    });
+
+    return new Map(
+      counts
+        .filter((item) => item.recurringTransactionId !== null)
+        .map((item) => [item.recurringTransactionId as number, item._count.recurringTransactionId])
+    );
+  }
+
+  static async deleteFixedTransaction(id: number, companyId: number): Promise<void> {
+    const existing = await prisma.recurringTransaction.findFirst({
+      where: {
+        id,
+        companyId,
+        frequency: RecurringFrequency.MONTHLY,
+        type: { in: SUPPORTED_FIXED_TYPES }
+      }
+    });
+
+    if (!existing) {
+      throw new Error('Transacao fixa nao encontrada');
+    }
+
+    const materializedCount = await prisma.financialTransaction.count({
+      where: {
+        companyId,
+        recurringTransactionId: id
+      }
+    });
+
+    if (materializedCount > 0) {
+      throw new Error('Nao e possivel excluir transacao fixa com ocorrencias materializadas');
+    }
+
+    await prisma.recurringTransaction.delete({
+      where: { id }
     });
   }
 
@@ -317,17 +683,18 @@ export default class FixedTransactionService {
   }): Promise<FixedTemplateWithRelations[]> {
     const { companyId, rangeStart, rangeEnd, accessibleAccountIds } = params;
 
-    if (accessibleAccountIds && accessibleAccountIds.length === 0) {
-      return [];
-    }
-
     const accountRestriction = accessibleAccountIds && accessibleAccountIds.length > 0
       ? {
           OR: [
+            { fromAccountId: null, toAccountId: null },
             { type: TransactionType.INCOME, toAccountId: { in: accessibleAccountIds } },
             { type: TransactionType.EXPENSE, fromAccountId: { in: accessibleAccountIds } }
           ]
         }
+      : accessibleAccountIds
+        ? {
+            OR: [{ fromAccountId: null, toAccountId: null }]
+          }
       : {};
 
     return prisma.recurringTransaction.findMany({
@@ -344,8 +711,24 @@ export default class FixedTransactionService {
         ...accountRestriction
       },
       include: {
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
         category: { select: { id: true, name: true, color: true } }
       }
     });
@@ -358,7 +741,7 @@ export default class FixedTransactionService {
     userId: number;
   }): Promise<{ transaction: any; created: boolean }> {
     const { templateId, companyId, userId } = params;
-    const occurrenceDate = startOfDay(params.occurrenceDate);
+    const requestedOccurrenceDate = startOfDay(params.occurrenceDate);
 
     const template = await prisma.recurringTransaction.findFirst({
       where: {
@@ -368,8 +751,24 @@ export default class FixedTransactionService {
         type: { in: SUPPORTED_FIXED_TYPES }
       },
       include: {
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
         category: { select: { id: true, name: true, color: true } }
       }
     });
@@ -377,6 +776,8 @@ export default class FixedTransactionService {
     if (!template) {
       throw new Error('Template de transacao fixa nao encontrado');
     }
+
+    const occurrenceDate = resolveOccurrenceDateForReference(template, requestedOccurrenceDate);
 
     if (!template.isActive) {
       throw new Error('Template de transacao fixa inativo');
@@ -390,7 +791,26 @@ export default class FixedTransactionService {
       throw new Error('Ocorrencia posterior ao fim do template');
     }
 
-    ensureTypeAccountConsistency(template.type, template.fromAccountId, template.toAccountId);
+    ensureFixedScheduleConfiguration({
+      type: template.type,
+      dayOfMonth: template.dayOfMonth,
+      fromAccount: template.fromAccount
+        ? {
+            id: template.fromAccount.id,
+            type: template.fromAccount.type ?? undefined,
+            statementClosingDay: template.fromAccount.statementClosingDay,
+            statementDueDay: template.fromAccount.statementDueDay
+          }
+        : null,
+      toAccount: template.toAccount
+        ? {
+            id: template.toAccount.id,
+            type: template.toAccount.type ?? undefined,
+            statementClosingDay: template.toAccount.statementClosingDay,
+            statementDueDay: template.toAccount.statementDueDay
+          }
+        : null
+    });
 
     const occurrenceKey = buildOccurrenceKeyValue(template.id, occurrenceDate);
 
@@ -413,38 +833,66 @@ export default class FixedTransactionService {
     }
 
     try {
-      const created = await prisma.financialTransaction.create({
-        data: {
-          description: template.description,
-          amount: parseDecimal(template.amount),
-          date: occurrenceDate,
-          dueDate: occurrenceDate,
-          effectiveDate: null,
-          type: template.type,
-          status: TransactionStatus.PENDING,
-          notes: template.notes,
-          fromAccountId: template.fromAccountId,
-          toAccountId: template.toAccountId,
-          categoryId: template.categoryId,
+      const { default: FinancialTransactionService } = await import('./financial-transaction.service');
+      const isCreditCardFixedExpense = isCreditCardFixedExpenseTemplate(template);
+
+      const createdResult = await FinancialTransactionService.createTransaction({
+        description: template.description,
+        amount: template.amount.toString(),
+        date: occurrenceDate,
+        dueDate: occurrenceDate,
+        effectiveDate: isCreditCardFixedExpense ? occurrenceDate : null,
+        type: template.type,
+        status: isCreditCardFixedExpense ? TransactionStatus.COMPLETED : TransactionStatus.PENDING,
+        notes: template.notes ?? undefined,
+        fromAccountId: template.fromAccountId,
+        toAccountId: template.toAccountId,
+        categoryId: template.categoryId,
+        companyId,
+        createdBy: userId,
+        recurringTransactionId: template.id,
+        occurrenceKey,
+        allowMissingAccount: true
+      });
+
+      if (Array.isArray(createdResult)) {
+        throw new Error('Materializacao de transacao fixa retornou mais de uma transacao');
+      }
+
+      const created = await prisma.financialTransaction.findFirst({
+        where: {
           companyId,
-          createdBy: userId,
-          recurringTransactionId: template.id,
           occurrenceKey
         },
         include: {
           category: { select: { id: true, name: true, color: true } },
-          fromAccount: { select: { id: true, name: true } },
-          toAccount: { select: { id: true, name: true } },
+          fromAccount: { select: { id: true, name: true, type: true } },
+          toAccount: { select: { id: true, name: true, type: true } },
+          creditCardInvoice: {
+            select: {
+              id: true,
+              referenceYear: true,
+              referenceMonth: true,
+              dueDate: true,
+              status: true,
+              settlementType: true
+            }
+          },
           tags: { select: { id: true, name: true } },
           createdByUser: { select: { id: true, name: true } }
         }
       });
 
+      if (!created) {
+        throw new Error('Nao foi possivel localizar a ocorrencia materializada');
+      }
+
       logger.info('Fixed transaction occurrence materialized', {
         templateId,
         occurrenceKey,
         companyId,
-        transactionId: created.id
+        transactionId: created.id,
+        materializedTransactionId: createdResult.id
       });
 
       return { transaction: created, created: true };
@@ -491,18 +939,23 @@ export default class FixedTransactionService {
         id: true,
         companyId: true,
         createdBy: true,
-        dayOfMonth: true
+        type: true,
+        dayOfMonth: true,
+        fromAccount: {
+          select: {
+            id: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        }
       }
     });
 
     let createdCount = 0;
 
     for (const template of templates) {
-      const expectedDate = buildMonthOccurrenceDate(
-        today.getFullYear(),
-        today.getMonth(),
-        template.dayOfMonth ?? 1
-      );
+      const expectedDate = resolveOccurrenceDateForReference(template, today);
 
       if (expectedDate.getDate() !== today.getDate()) {
         continue;
@@ -526,8 +979,23 @@ export default class FixedTransactionService {
     };
   }
 
-  static buildVirtualDateForMonth(year: number, monthIndex: number, dayOfMonth: number): Date {
-    return buildMonthOccurrenceDate(year, monthIndex, dayOfMonth);
+  static isCreditCardFixedExpenseTemplate(template: Pick<FixedTemplateOccurrenceLike, 'type' | 'fromAccount'>): boolean {
+    return isCreditCardFixedExpenseTemplate(template);
+  }
+
+  static buildVirtualDateForMonth(
+    template: Pick<FixedTemplateOccurrenceLike, 'type' | 'dayOfMonth' | 'fromAccount'>,
+    year: number,
+    monthIndex: number
+  ): Date {
+    return buildOccurrenceDateForMonth(template, year, monthIndex);
+  }
+
+  static resolveOccurrenceDateForReference(
+    template: Pick<FixedTemplateOccurrenceLike, 'type' | 'dayOfMonth' | 'fromAccount'>,
+    referenceDate: Date
+  ): Date {
+    return resolveOccurrenceDateForReference(template, referenceDate);
   }
 
   static buildOccurrenceKey(templateId: number, occurrenceDate: Date): string {

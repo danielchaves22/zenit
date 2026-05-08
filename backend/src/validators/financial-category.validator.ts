@@ -1,36 +1,50 @@
 import { z } from 'zod';
+import { CATEGORY_ICON_NAMES, DEFAULT_CATEGORY_ICON } from '../constants/category-icons';
 
-// Regex para validar cores hexadecimais
 const colorRegex = /^#([0-9A-F]{3}){1,2}$/i;
 
-// Schema para criar categoria financeira
 export const createCategorySchema = z.object({
   name: z.string().min(2, { message: 'Nome deve ter pelo menos 2 caracteres' }),
   type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER'], {
     errorMap: () => ({ message: 'Tipo deve ser INCOME, EXPENSE ou TRANSFER' })
   }),
-  color: z.string().regex(colorRegex, { message: 'Cor deve ser um valor hexadecimal válido (ex: #FF5500)' }).default('#6366F1'),
+  color: z
+    .string()
+    .regex(colorRegex, {
+      message: 'Cor deve ser um valor hexadecimal valido (ex: #FF5500)'
+    })
+    .default('#6366F1'),
+  icon: z.enum(CATEGORY_ICON_NAMES).default(DEFAULT_CATEGORY_ICON),
   parentId: z.number().optional().nullable(),
-  accountingCode: z.string().optional(),
+  accountingCode: z.string().optional()
 });
 
-// Schema para atualizar categoria financeira
-export const updateCategorySchema = z.object({
-  name: z.string().min(2, { message: 'Nome deve ter pelo menos 2 caracteres' }).optional(),
-  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional(),
-  color: z.string().regex(colorRegex, { message: 'Cor deve ser um valor hexadecimal válido (ex: #FF5500)' }).optional(),
-  parentId: z.number().optional().nullable(),
-  accountingCode: z.string().optional().nullable(),
-}).refine(data => Object.keys(data).length > 0, {
-  message: 'Pelo menos um campo deve ser fornecido para atualização'
-});
+export const updateCategorySchema = z
+  .object({
+    name: z.string().min(2, { message: 'Nome deve ter pelo menos 2 caracteres' }).optional(),
+    type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional(),
+    color: z
+      .string()
+      .regex(colorRegex, {
+        message: 'Cor deve ser um valor hexadecimal valido (ex: #FF5500)'
+      })
+      .optional(),
+    icon: z.enum(CATEGORY_ICON_NAMES).optional(),
+    parentId: z.number().optional().nullable(),
+    accountingCode: z.string().optional().nullable()
+  })
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'Pelo menos um campo deve ser fornecido para atualizacao'
+  });
 
-// Schema para filtros na listagem de categorias
 export const listCategoriesSchema = z.object({
   type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).optional(),
-  parentId: z.string().optional().transform(val => {
-    if (val === 'null') return null;
-    return val ? Number(val) : undefined;
+  parentId: z.string().optional().transform((value) => {
+    if (value === 'null') {
+      return null;
+    }
+
+    return value ? Number(value) : undefined;
   }),
-  search: z.string().optional(),
+  search: z.string().optional()
 });

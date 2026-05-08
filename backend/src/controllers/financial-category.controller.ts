@@ -25,7 +25,7 @@ function getUserContext(req: Request): { companyId: number; userId: number } {
 export async function createCategory(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { name, type, color, parentId, accountingCode } = req.body;
+    const { name, type, color, icon, parentId, accountingCode } = req.body;
 
     // Se parentId for fornecido, verificar se existe e pertence à mesma empresa
     if (parentId) {
@@ -63,6 +63,7 @@ export async function createCategory(req: Request, res: Response) {
         name,
         type,
         color,
+        icon: icon || 'tag',
         // ✅ USAR CONNECT QUANDO parentId EXISTE, SENÃO OMITIR
         ...(parentId && { parent: { connect: { id: parentId } } }),
         accountingCode: accountingCode || null, // ✅ TRATAR STRING VAZIA
@@ -143,7 +144,7 @@ export async function getCategoryById(req: Request, res: Response) {
       include: {
         parent: { select: { id: true, name: true } },
         children: {
-          select: { id: true, name: true, type: true, color: true }
+          select: { id: true, name: true, type: true, color: true, icon: true }
         }
       }
     });
@@ -178,7 +179,7 @@ export async function updateCategory(req: Request, res: Response) {
     }
 
     const { companyId } = getUserContext(req);
-    const { name, type, color, parentId, accountingCode } = req.body;
+    const { name, type, color, icon, parentId, accountingCode } = req.body;
 
     // Verificar se a categoria existe e pertence à empresa
     const existingCategory = await prisma.financialCategory.findUnique({
@@ -247,6 +248,7 @@ export async function updateCategory(req: Request, res: Response) {
         name,
         type,
         color,
+        icon,
         // ✅ LÓGICA CORRETA PARA PARENT
         ...(parentId !== undefined && {
           parent: parentId ? { connect: { id: parentId } } : { disconnect: true }

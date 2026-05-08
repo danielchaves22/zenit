@@ -1,0 +1,40 @@
+export const DEFAULT_CATEGORY_ICON = 'tag' as const;
+
+export const CATEGORY_ICON_NAMES = [
+  'dumbbell',
+  'droplets',
+  'utensilsCrossed',
+  'creditCard',
+  'wallet',
+  'fuel',
+  'handCoins',
+  'tag',
+  'shoppingCart',
+  'receipt',
+  'graduationCap',
+  'lightbulb',
+  'building2',
+  'trophy',
+  'banknote',
+  'partyPopper',
+  'landmark',
+  'trendingUp',
+  'gamepad2',
+  'wrench',
+  'home',
+  'music',
+  'pawPrint',
+  'gift',
+  'package',
+  'badgeDollarSign',
+  'piggyBank',
+  'heartPulse',
+  'tv',
+  'smartphone',
+  'briefcaseBusiness',
+  'car',
+  'plane',
+  'shirt'
+] as const;
+
+export type CategoryIconName = (typeof CATEGORY_ICON_NAMES)[number];

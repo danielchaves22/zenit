@@ -14,6 +14,7 @@ describe('Fixed transactions virtualization and materialization', () => {
   let userId: number;
   let token: string;
   let expenseAccountId: number;
+  let creditCardAccountId: number;
   let expenseCategoryId: number;
 
   const now = new Date();
@@ -29,6 +30,13 @@ describe('Fixed transactions virtualization and materialization', () => {
     const month = now.getMonth() + monthOffset;
     const lastDay = new Date(year, month + 1, 0).getDate();
     return new Date(year, month, Math.min(dayOfMonth, lastDay), 12, 0, 0, 0);
+  };
+
+  const toDateOnly = (date: Date) => {
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const authHeaders = () => ({
@@ -120,6 +128,20 @@ describe('Fixed transactions virtualization and materialization', () => {
       }
     });
     expenseAccountId = account.id;
+
+    const creditCardAccount = await prisma.financialAccount.create({
+      data: {
+        name: 'Fixed Test Credit Card',
+        type: 'CREDIT_CARD',
+        balance: 0,
+        allowNegativeBalance: true,
+        creditLimit: 5000,
+        statementClosingDay: 10,
+        statementDueDay: 15,
+        companyId
+      }
+    });
+    creditCardAccountId = creditCardAccount.id;
 
     const category = await prisma.financialCategory.create({
       data: {
@@ -214,6 +236,618 @@ describe('Fixed transactions virtualization and materialization', () => {
 
     expect(foundManual).toBeDefined();
     expect(foundVirtual).toBeDefined();
+  });
+
+  it('calculates period expense summary without inflating consolidated card invoice amounts', async () => {
+    const purchaseDate = buildOccurrenceDate(8, 5);
+    const dueDate = buildOccurrenceDate(8, 15);
+
+    const regularExpenseResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Regular Expense Summary',
+        amount: 119.9,
+        date: purchaseDate.toISOString(),
+        dueDate: dueDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'PENDING',
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(regularExpenseResponse.status).toBe(201);
+
+    const invoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: creditCardAccountId,
+        referenceYear: dueDate.getFullYear(),
+        referenceMonth: dueDate.getMonth() + 1,
+        closingDate: buildOccurrenceDate(8, 10),
+        dueDate,
+        status: 'OPEN',
+        totalAmount: 235.21
+      }
+    });
+
+    await prisma.financialTransaction.create({
+      data: {
+        description: 'Credit Card Expense Summary',
+        amount: 235.21,
+        date: purchaseDate,
+        dueDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: creditCardAccountId,
+        categoryId: expenseCategoryId,
+        creditCardInvoiceId: invoice.id,
+        companyId,
+        createdBy: userId,
+        effectiveDate: purchaseDate
+      }
+    });
+
+    const { start, end } = monthBounds(8);
+    const listResponse = await listTransactions(start, end, {
+      dateField: 'dueDate'
+    });
+
+    expect(listResponse.status).toBe(200);
+    expect(Number(listResponse.body.summary.expenseTotal)).toBeCloseTo(355.11, 5);
+
+    const invoiceSummary = listResponse.body.data.find(
+      (item: any) => item.isCreditCardInvoiceSummary === true && item.creditCardInvoice?.id === invoice.id
+    );
+    expect(invoiceSummary).toBeDefined();
+    expect(Number(invoiceSummary.amount)).toBeCloseTo(235.21, 5);
+  });
+
+  it('can hide credit card materialized transactions from the list', async () => {
+    const purchaseDate = buildOccurrenceDate(1, 5);
+
+    const checkingResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Checking Expense Visible',
+        amount: 55,
+        date: purchaseDate.toISOString(),
+        dueDate: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'PENDING',
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(checkingResponse.status).toBe(201);
+
+    const invoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: creditCardAccountId,
+        referenceYear: purchaseDate.getFullYear(),
+        referenceMonth: purchaseDate.getMonth() + 1,
+        closingDate: buildOccurrenceDate(1, 10),
+        dueDate: buildOccurrenceDate(1, 15),
+        status: 'OPEN'
+      }
+    });
+
+    const creditCardTransaction = await prisma.financialTransaction.create({
+      data: {
+        description: 'Credit Card Expense Hidden',
+        amount: 120,
+        date: purchaseDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: creditCardAccountId,
+        categoryId: expenseCategoryId,
+        creditCardInvoiceId: invoice.id,
+        companyId,
+        createdBy: userId,
+        effectiveDate: purchaseDate
+      }
+    });
+
+    await prisma.creditCardInvoice.update({
+      where: { id: invoice.id },
+      data: { totalAmount: 120 }
+    });
+
+    const creditCardResponse = {
+      status: 201,
+      body: {
+        id: creditCardTransaction.id
+      }
+    };
+
+    expect(creditCardResponse.status).toBe(201);
+	    expect(creditCardTransaction.creditCardInvoiceId).toBe(invoice.id);
+	    expect(creditCardTransaction.fromAccountId).toBe(creditCardAccountId);
+	    expect(creditCardTransaction.companyId).toBe(companyId);
+	
+	    const { start, end } = monthBounds(1);
+	    const visibleResponse = await listTransactions(start, end, {
+	      dateField: 'date',
+	      includeCreditCardTransactions: true
+	    });
+	
+	    expect(visibleResponse.status).toBe(200);
+	    expect(visibleResponse.body.data.some((item: any) => item.id === creditCardResponse.body.id)).toBe(false);
+	    expect(
+	      visibleResponse.body.data.some(
+	        (item: any) =>
+	          item.isCreditCardInvoiceSummary === true &&
+	          item.creditCardInvoice?.id === invoice.id &&
+	          Number(item.amount) === 120
+	      )
+	    ).toBe(true);
+
+	    const hiddenResponse = await listTransactions(start, end, {
+	      dateField: 'date',
+	      includeCreditCardTransactions: false
+	    });
+
+    expect(hiddenResponse.status).toBe(200);
+    expect(hiddenResponse.body.data.some((item: any) => item.id === checkingResponse.body.id)).toBe(true);
+    expect(hiddenResponse.body.data.some((item: any) => item.id === creditCardResponse.body.id)).toBe(false);
+  });
+
+  it('can hide projected fixed transactions linked to credit card accounts', async () => {
+    const regularFixedResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Projected Regular Fixed',
+        amount: 44.3,
+        type: 'EXPENSE',
+        dayOfMonth: 6,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(regularFixedResponse.status).toBe(201);
+    const regularFixedTemplateId = regularFixedResponse.body.id;
+
+    const creditCardFixedResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Projected Credit Card Fixed',
+        amount: 77.9,
+        type: 'EXPENSE',
+        dayOfMonth: 8,
+        fromAccountId: creditCardAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(creditCardFixedResponse.status).toBe(201);
+    const fixedTemplateId = creditCardFixedResponse.body.id;
+
+    const { start, end } = monthBounds(1);
+
+	    const visibleResponse = await listTransactions(start, end, {
+	      includeCreditCardTransactions: true
+	    });
+	    expect(visibleResponse.status).toBe(200);
+	    const projectedInvoiceSummary = visibleResponse.body.data.find(
+	      (item: any) =>
+	        item.isCreditCardInvoiceSummary === true &&
+	        item.fromAccount?.id === creditCardAccountId &&
+	        Number(item.fixedSubtotal) === 77.9
+	    );
+	    expect(projectedInvoiceSummary).toBeDefined();
+	    expect(Number(projectedInvoiceSummary.fixedSubtotal)).toBeCloseTo(77.9, 5);
+	    expect(Number(projectedInvoiceSummary.amount)).toBeGreaterThanOrEqual(77.9);
+	    expect(projectedInvoiceSummary.hasProjectedTransactions).toBe(true);
+
+	    const hiddenResponse = await listTransactions(start, end, {
+	      includeCreditCardTransactions: false
+	    });
+	    expect(hiddenResponse.status).toBe(200);
+	    expect(
+	      hiddenResponse.body.data.find(
+	        (item: any) => item.isCreditCardInvoiceSummary === true && item.fromAccount?.id === creditCardAccountId
+	      )
+	    ).toBeUndefined();
+    expect(
+      hiddenResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === regularFixedTemplateId && item.isVirtual === true
+      )
+    ).toBeDefined();
+  });
+
+  it('allows fixed transactions without account', async () => {
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Fixed Without Account',
+        amount: 31.7,
+        type: 'EXPENSE',
+        dayOfMonth: 9,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.fromAccountId).toBeNull();
+
+    const { start, end } = monthBounds(1);
+    const listResponse = await listTransactions(start, end);
+    expect(listResponse.status).toBe(200);
+    expect(
+      listResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === createResponse.body.id && item.isVirtual === true
+      )
+    ).toBeDefined();
+  });
+
+  it('rejects fixed incomes linked to credit card accounts', async () => {
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Invalid Credit Card Income',
+        amount: 19.5,
+        type: 'INCOME',
+        dayOfMonth: 7,
+        toAccountId: creditCardAccountId
+      });
+
+    expect(createResponse.status).toBe(400);
+    expect(createResponse.body.error).toMatch(/cartao de credito/i);
+  });
+
+  it('ignores legacy fixed incomes linked to credit card accounts', async () => {
+    const legacyOccurrenceDate = buildOccurrenceDate(1, 7);
+    const legacyTemplate = await prisma.recurringTransaction.create({
+      data: {
+        description: 'Legacy Credit Card Income',
+        amount: 13.9,
+        type: 'INCOME',
+        frequency: 'MONTHLY',
+        dayOfMonth: 7,
+        dayOfWeek: null,
+        startDate: monthBounds(0).start,
+        endDate: null,
+        nextDueDate: legacyOccurrenceDate,
+        isActive: true,
+        notes: null,
+        fromAccountId: null,
+        toAccountId: creditCardAccountId,
+        categoryId: null,
+        companyId,
+        createdBy: userId
+      }
+    });
+
+    const { start, end } = monthBounds(1);
+    const listResponse = await listTransactions(start, end, {
+      includeCreditCardTransactions: true
+    });
+
+    expect(listResponse.status).toBe(200);
+    expect(
+      listResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === legacyTemplate.id && item.isVirtual === true
+      )
+    ).toBeUndefined();
+
+    const materializeResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${legacyTemplate.id}/materialize`)
+      .set(authHeaders())
+      .send({
+        occurrenceDate: legacyOccurrenceDate.toISOString()
+      });
+
+    expect(materializeResponse.status).toBe(400);
+    expect(materializeResponse.body.error).toMatch(/cartao de credito/i);
+  });
+
+  it('materializes fixed credit card expenses as recurring card purchases', async () => {
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Recurring Card Subscription',
+        amount: 52.4,
+        type: 'EXPENSE',
+        fromAccountId: creditCardAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+    const templateId = createResponse.body.id;
+    expect(createResponse.body.dayOfMonth).toBeNull();
+    const occurrenceDate = buildOccurrenceDate(1, 10);
+
+    const materializeResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${templateId}/materialize`)
+      .set(authHeaders())
+      .send({
+        occurrenceDate: occurrenceDate.toISOString()
+      });
+
+    expect(materializeResponse.status).toBe(201);
+    expect(materializeResponse.body.created).toBe(true);
+    expect(materializeResponse.body.transaction.recurringTransactionId).toBe(templateId);
+    expect(materializeResponse.body.transaction.occurrenceKey).toBe(
+      buildOccurrenceKeyValue(templateId, new Date(occurrenceDate))
+    );
+    expect(materializeResponse.body.transaction.purchaseGroupId).toBeTruthy();
+    expect(materializeResponse.body.transaction.creditCardInvoice).toBeTruthy();
+    expect(materializeResponse.body.transaction.fromAccountId).toBe(creditCardAccountId);
+    expect(materializeResponse.body.transaction.status).toBe('COMPLETED');
+
+    const { start, end } = monthBounds(1);
+    const hiddenResponse = await listTransactions(start, end, {
+      includeCreditCardTransactions: false
+    });
+    expect(hiddenResponse.status).toBe(200);
+    expect(
+      hiddenResponse.body.data.some(
+        (item: any) => item.id === materializeResponse.body.transaction.id
+      )
+    ).toBe(false);
+  });
+
+  it('rejects non-card fixed expenses without dayOfMonth', async () => {
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Missing Day Non Card',
+        amount: 35,
+        type: 'EXPENSE',
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(400);
+    expect(createResponse.body.error).toMatch(/Dia do vencimento/i);
+  });
+
+  it('allows deleting an account linked only to fixed transactions without movements', async () => {
+    const removableAccount = await prisma.financialAccount.create({
+      data: {
+        name: `Removable Fixed Account ${Date.now()}`,
+        type: 'CHECKING',
+        balance: 0,
+        allowNegativeBalance: true,
+        companyId
+      }
+    });
+
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Fixed Linked To Removable Account',
+        amount: 21,
+        type: 'EXPENSE',
+        dayOfMonth: 12,
+        fromAccountId: removableAccount.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+    const fixedTemplateId = createResponse.body.id;
+
+    const deleteResponse = await request(app)
+      .delete(`/api/financial/accounts/${removableAccount.id}`)
+      .set(authHeaders());
+
+    expect(deleteResponse.status).toBe(204);
+
+    const deletedAccount = await prisma.financialAccount.findUnique({
+      where: { id: removableAccount.id }
+    });
+    expect(deletedAccount).toBeNull();
+
+    const template = await prisma.recurringTransaction.findUnique({
+      where: { id: fixedTemplateId }
+    });
+    expect(template).not.toBeNull();
+    expect(template?.fromAccountId).toBeNull();
+  });
+
+  it('allows deleting fixed templates without materialized transactions', async () => {
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Deletable Fixed Template',
+        amount: 29,
+        type: 'EXPENSE',
+        dayOfMonth: 14,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+    const templateId = createResponse.body.id;
+
+    const listResponse = await request(app)
+      .get('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .query({ includeInactive: true });
+
+    expect(listResponse.status).toBe(200);
+    const listedTemplate = listResponse.body.find((item: any) => item.id === templateId);
+    expect(listedTemplate?.canDelete).toBe(true);
+    expect(listedTemplate?.materializedTransactionCount).toBe(0);
+
+    const deleteResponse = await request(app)
+      .delete(`/api/financial/fixed-transactions/${templateId}`)
+      .set(authHeaders());
+
+    expect(deleteResponse.status).toBe(204);
+
+    const deletedTemplate = await prisma.recurringTransaction.findUnique({
+      where: { id: templateId }
+    });
+    expect(deletedTemplate).toBeNull();
+  });
+
+  it('does not allow deleting fixed templates with materialized transactions', async () => {
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Non Deletable Fixed Template',
+        amount: 63,
+        type: 'EXPENSE',
+        dayOfMonth: 16,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+    const templateId = createResponse.body.id;
+
+    const occurrenceDate = buildOccurrenceDate(1, 16);
+    const materializeResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${templateId}/materialize`)
+      .set(authHeaders())
+      .send({
+        occurrenceDate: occurrenceDate.toISOString()
+      });
+
+    expect(materializeResponse.status).toBe(201);
+
+    const listResponse = await request(app)
+      .get('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .query({ includeInactive: true });
+
+    expect(listResponse.status).toBe(200);
+    const listedTemplate = listResponse.body.find((item: any) => item.id === templateId);
+    expect(listedTemplate?.canDelete).toBe(false);
+    expect(listedTemplate?.materializedTransactionCount).toBe(1);
+
+    const deleteResponse = await request(app)
+      .delete(`/api/financial/fixed-transactions/${templateId}`)
+      .set(authHeaders());
+
+    expect(deleteResponse.status).toBe(400);
+    expect(deleteResponse.body.error).toMatch(/ocorrencias materializadas/i);
+
+    const existingTemplate = await prisma.recurringTransaction.findUnique({
+      where: { id: templateId }
+    });
+    expect(existingTemplate).not.toBeNull();
+  });
+
+  it('filters materialized transactions by the selected date field', async () => {
+    const { start, end } = monthBounds(1);
+    const dueDate = buildOccurrenceDate(1, 18);
+    const transactionDate = new Date(
+      dueDate.getFullYear(),
+      dueDate.getMonth() - 1,
+      dueDate.getDate(),
+      12,
+      0,
+      0,
+      0
+    );
+
+    const createResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Date Field Materialized Filter',
+        amount: 87.4,
+        date: transactionDate.toISOString(),
+        dueDate: dueDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'PENDING',
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+
+    const dueDateResponse = await listTransactions(start, end, { dateField: 'dueDate' });
+    expect(dueDateResponse.status).toBe(200);
+    expect(dueDateResponse.body.data.some((item: any) => item.id === createResponse.body.id)).toBe(true);
+
+    const transactionDateResponse = await listTransactions(start, end, { dateField: 'date' });
+    expect(transactionDateResponse.status).toBe(200);
+    expect(transactionDateResponse.body.data.some((item: any) => item.id === createResponse.body.id)).toBe(false);
+  });
+
+  it('does not include projected fixed transactions when filtering by creation or payment date', async () => {
+    const fixedResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Projected Date Field Filter',
+        amount: 118.2,
+        type: 'EXPENSE',
+        dayOfMonth: 11,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(fixedResponse.status).toBe(201);
+    const fixedTemplateId = fixedResponse.body.id;
+
+    const { start, end } = monthBounds(1);
+
+    const dueDateResponse = await listTransactions(start, end, { dateField: 'dueDate' });
+    expect(dueDateResponse.status).toBe(200);
+    expect(
+      dueDateResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === fixedTemplateId && item.isVirtual === true
+      )
+    ).toBeDefined();
+
+    const createdAtResponse = await listTransactions(start, end, { dateField: 'createdAt' });
+    expect(createdAtResponse.status).toBe(200);
+    expect(
+      createdAtResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === fixedTemplateId && item.isVirtual === true
+      )
+    ).toBeUndefined();
+
+    const effectiveDateResponse = await listTransactions(start, end, { dateField: 'effectiveDate' });
+    expect(effectiveDateResponse.status).toBe(200);
+    expect(
+      effectiveDateResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === fixedTemplateId && item.isVirtual === true
+      )
+    ).toBeUndefined();
+  });
+
+  it('treats creation date filters as whole-day ranges', async () => {
+    const transactionDate = new Date();
+
+    const createResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Created At Whole Day Filter',
+        amount: 42,
+        date: transactionDate.toISOString(),
+        dueDate: transactionDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'PENDING',
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+
+    const listResponse = await request(app)
+      .get('/api/financial/transactions')
+      .set(authHeaders())
+      .query({
+        startDate: toDateOnly(transactionDate),
+        endDate: toDateOnly(transactionDate),
+        dateField: 'createdAt'
+      });
+
+    expect(listResponse.status).toBe(200);
+    expect(listResponse.body.data.some((item: any) => item.id === createResponse.body.id)).toBe(true);
   });
 
   it('does not create virtual duplicate when competence already has materialized occurrence', async () => {

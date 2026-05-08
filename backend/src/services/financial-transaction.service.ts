@@ -21,9 +21,79 @@ import {
 
 const prisma = new PrismaClient();
 type PurchaseScope = 'SINGLE' | 'PURCHASE';
+type TransactionListDateField = 'dueDate' | 'date' | 'effectiveDate' | 'createdAt';
 type CreditCardInvoiceReferenceInput = CreditCardInvoiceReference & {
   accountId: number;
   allowExternalSettlement?: boolean;
+};
+type CreditCardInvoiceSummaryDateField = Extract<TransactionListDateField, 'dueDate' | 'date'>;
+
+type CreditCardInvoiceSummaryRow = {
+  id: number | null;
+  description: string;
+  amount: string;
+  date: Date;
+  dueDate: Date;
+  effectiveDate: Date | null;
+  type: TransactionType;
+  status: TransactionStatus;
+  notes: null;
+  fromAccount: {
+    id: number;
+    name: string;
+    type: string;
+  };
+  toAccount: null;
+  category: null;
+  tags: [];
+  createdByUser: {
+    id: number;
+    name: string;
+  };
+  createdAt: Date;
+  installmentNumber: null;
+  totalInstallments: null;
+  purchaseGroupId: null;
+  creditCardInvoice: {
+    id?: number;
+    referenceYear: number;
+    referenceMonth: number;
+    dueDate: Date;
+    status: string;
+  };
+  isVirtual: false;
+  virtualKey?: undefined;
+  fixedTemplateId: null;
+  isFixed: false;
+  isProjected: boolean;
+  hasProjectedTransactions: boolean;
+  isCreditCardInvoiceSummary: true;
+  invoiceNavigation: {
+    accountId: number;
+    invoiceKey: string;
+  };
+  itemsSubtotal: string;
+  fixedSubtotal: string;
+};
+
+type CreditCardProjectedInvoiceSummaryGroup = {
+  account: {
+    id: number;
+    name: string;
+    type: string;
+  };
+  referenceYear: number;
+  referenceMonth: number;
+  closingDate: Date;
+  dueDate: Date;
+  invoiceStatus: CreditCardInvoiceStatus;
+  fixedSubtotal: Prisma.Decimal;
+  hasProjectedTransactions: boolean;
+};
+
+type TransactionListSummary = {
+  incomeTotal: string;
+  expenseTotal: string;
 };
 
 // ============================================
@@ -51,6 +121,9 @@ export default class FinancialTransactionService {
     tags?: string[];
     repeatTimes?: number;
     installmentCount?: number;
+    recurringTransactionId?: number | null;
+    occurrenceKey?: string | null;
+    allowMissingAccount?: boolean;
   }): Promise<FinancialTransaction | FinancialTransaction[]> {
     const installmentCount = data.installmentCount && data.installmentCount > 0
       ? data.installmentCount
@@ -144,6 +217,9 @@ export default class FinancialTransactionService {
       companyId: number;
       createdBy: number;
       tags?: string[];
+      recurringTransactionId?: number | null;
+      occurrenceKey?: string | null;
+      allowMissingAccount?: boolean;
     },
     cardAccount: {
       id: number;
@@ -176,6 +252,9 @@ export default class FinancialTransactionService {
         totalInstallments: installmentCount,
         purchaseGroupId,
         scheduledDate,
+        recurringTransactionId: data.recurringTransactionId ?? null,
+        occurrenceKey: data.occurrenceKey ?? null,
+        allowMissingAccount: data.allowMissingAccount ?? false,
         creditCardInvoiceReference: {
           ...invoiceReference,
           accountId: cardAccount.id,
@@ -212,6 +291,9 @@ export default class FinancialTransactionService {
     totalInstallments?: number | null;
     purchaseGroupId?: string | null;
     scheduledDate?: Date | null;
+    recurringTransactionId?: number | null;
+    occurrenceKey?: string | null;
+    allowMissingAccount?: boolean;
     creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
   }): Promise<FinancialTransaction> {
 
@@ -228,7 +310,12 @@ export default class FinancialTransactionService {
     });
 
     // âœ… CRITICAL: Input validation BEFORE any DB operation
-    this.validateTransactionData(data.type, data.fromAccountId, data.toAccountId);
+    this.validateTransactionData(
+      data.type,
+      data.fromAccountId,
+      data.toAccountId,
+      data.allowMissingAccount ?? false
+    );
     const parsedAmount = parseDecimal(data.amount);
 
     if (parsedAmount.lte(0)) {
@@ -370,6 +457,10 @@ export default class FinancialTransactionService {
           fromAccount: data.fromAccountId ? { connect: { id: data.fromAccountId } } : undefined,
           toAccount: data.toAccountId ? { connect: { id: data.toAccountId } } : undefined,
           category: data.categoryId ? { connect: { id: data.categoryId } } : undefined,
+          recurringTransaction: data.recurringTransactionId
+            ? { connect: { id: data.recurringTransactionId } }
+            : undefined,
+          occurrenceKey: data.occurrenceKey ?? null,
           creditCardInvoice: creditCardInvoiceId
             ? { connect: { id: creditCardInvoiceId } }
             : undefined,
@@ -1284,12 +1375,13 @@ export default class FinancialTransactionService {
   private static validateTransactionData(
     type: TransactionType,
     fromAccountId?: number | null,
-    toAccountId?: number | null
+    toAccountId?: number | null,
+    allowMissingAccount = false
   ): void {
-    if (type === 'INCOME' && !toAccountId) {
+    if (type === 'INCOME' && !toAccountId && !allowMissingAccount) {
       throw new Error('Income transactions require destination account');
     }
-    if (type === 'EXPENSE' && !fromAccountId) {
+    if (type === 'EXPENSE' && !fromAccountId && !allowMissingAccount) {
       throw new Error('Expense transactions require source account');
     }
     if (type === 'TRANSFER') {
@@ -1370,6 +1462,8 @@ export default class FinancialTransactionService {
     companyId: number;
     startDate?: Date;
     endDate?: Date;
+    dateField?: TransactionListDateField;
+    includeCreditCardTransactions?: boolean;
     includeVirtualFixed?: boolean;
     types?: TransactionType[];
     status?: TransactionStatus;
@@ -1380,11 +1474,13 @@ export default class FinancialTransactionService {
     pageSize?: number;
     accessFilter?: any;
     accessibleAccountIds?: number[];
-  }): Promise<{ data: any[]; total: number; pages: number }> {
+  }): Promise<{ data: any[]; total: number; pages: number; summary: TransactionListSummary }> {
     const {
       companyId,
       startDate,
       endDate,
+      dateField = 'date',
+      includeCreditCardTransactions = true,
       includeVirtualFixed = true,
       types,
       status,
@@ -1402,13 +1498,31 @@ export default class FinancialTransactionService {
     }
 
     if (types && types.length === 0) {
-      return { data: [], total: 0, pages: 1 };
+      return {
+        data: [],
+        total: 0,
+        pages: 1,
+        summary: {
+          incomeTotal: '0',
+          expenseTotal: '0'
+        }
+      };
     }
 
+    const normalizedStartDate = this.startOfDay(startDate);
+    const normalizedEndDate = this.endOfDay(endDate);
     const normalizedSearch = search?.trim();
+    const includesExpenseType = !types || types.includes(TransactionType.EXPENSE);
+    const projectedDateField = this.getProjectedDateField(dateField);
+    const shouldSummarizeCreditCardInvoices =
+      includeCreditCardTransactions &&
+      includesExpenseType &&
+      projectedDateField !== null;
+    const shouldExcludeCreditCardItemsFromMaterialized =
+      !includeCreditCardTransactions || shouldSummarizeCreditCardInvoices;
     const whereFilters: Prisma.FinancialTransactionWhereInput[] = [
       { companyId },
-      { date: { gte: startDate, lte: endDate } }
+      this.buildListDateWhere(dateField, normalizedStartDate, normalizedEndDate)
     ];
 
     if (types && types.length > 0) {
@@ -1445,14 +1559,18 @@ export default class FinancialTransactionService {
       whereFilters.push(accessFilter);
     }
 
+    if (shouldExcludeCreditCardItemsFromMaterialized) {
+      whereFilters.push({ creditCardInvoiceId: null });
+    }
+
     const where: Prisma.FinancialTransactionWhereInput = { AND: whereFilters };
 
     const materialized = await prisma.financialTransaction.findMany({
       where,
       include: {
         category: { select: { id: true, name: true, color: true } },
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
+        fromAccount: { select: { id: true, name: true, type: true } },
+        toAccount: { select: { id: true, name: true, type: true } },
         creditCardInvoice: {
           select: {
             id: true,
@@ -1475,35 +1593,67 @@ export default class FinancialTransactionService {
       fixedTemplateId: transaction.recurringTransactionId ?? null,
       virtualKey: undefined
     }));
+    const visibleMaterialized = decoratedMaterialized;
+
+    const buildResult = async (paramsForResult?: {
+      virtualTransactions?: any[];
+      allProjectedCreditCardVirtuals?: any[];
+      matchingProjectedCreditCardVirtuals?: any[];
+      includeProjected?: boolean;
+    }) => {
+      const virtualTransactions = paramsForResult?.virtualTransactions ?? [];
+      const invoiceSummaryRows = shouldSummarizeCreditCardInvoices
+        ? await this.buildCreditCardInvoiceSummaryRows({
+            companyId,
+            startDate: normalizedStartDate,
+            endDate: normalizedEndDate,
+            dateField: projectedDateField as CreditCardInvoiceSummaryDateField,
+            includeProjected: paramsForResult?.includeProjected ?? false,
+            status,
+            accountId,
+            categoryId,
+            search: normalizedSearch,
+            accessibleAccountIds,
+            projectedTransactions: paramsForResult?.allProjectedCreditCardVirtuals ?? [],
+            matchingProjectedTransactions: paramsForResult?.matchingProjectedCreditCardVirtuals ?? []
+          })
+        : [];
+
+      const merged = [...visibleMaterialized, ...virtualTransactions, ...invoiceSummaryRows];
+      const sorted = this.sortTransactionsForList(merged);
+      const total = sorted.length;
+      const pages = Math.ceil(total / pageSize) || 1;
+      const data = sorted.slice((page - 1) * pageSize, page * pageSize);
+
+      return {
+        data,
+        total,
+        pages,
+        summary: this.buildTransactionListSummary(merged)
+      };
+    };
 
     if (!includeVirtualFixed) {
-      const sortedOnlyMaterialized = this.sortTransactionsForList(decoratedMaterialized);
-      const total = sortedOnlyMaterialized.length;
-      const pages = Math.ceil(total / pageSize) || 1;
-      const paged = sortedOnlyMaterialized.slice((page - 1) * pageSize, page * pageSize);
-      return { data: paged, total, pages };
+      return buildResult();
     }
 
-    const includesProjectableType = !types || types.some((transactionType) => transactionType !== TransactionType.TRANSFER);
+    const includesProjectableType =
+      !types || types.some((transactionType) => transactionType !== TransactionType.TRANSFER);
 
     // Transações virtuais de fixas sempre são PENDING e nunca TRANSFER.
-    if ((status && status !== TransactionStatus.PENDING) || !includesProjectableType) {
-      const sortedOnlyMaterialized = this.sortTransactionsForList(decoratedMaterialized);
-      const total = sortedOnlyMaterialized.length;
-      const pages = Math.ceil(total / pageSize) || 1;
-      const paged = sortedOnlyMaterialized.slice((page - 1) * pageSize, page * pageSize);
-      return { data: paged, total, pages };
+    if (!projectedDateField || (status && status !== TransactionStatus.PENDING) || !includesProjectableType) {
+      return buildResult();
     }
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const projectionStart = startDate > todayStart ? startDate : todayStart;
+    const projectionStart = normalizedStartDate > todayStart ? normalizedStartDate : todayStart;
 
     const existingOccurrenceKeys = new Set<string>();
     const existingOccurrenceWhereFilters: Prisma.FinancialTransactionWhereInput[] = [
       { companyId },
-      { date: { gte: projectionStart, lte: endDate } },
+      this.buildListDateWhere(projectedDateField, projectionStart, normalizedEndDate),
       { recurringTransactionId: { not: null } }
     ];
 
@@ -1511,7 +1661,7 @@ export default class FinancialTransactionService {
       existingOccurrenceWhereFilters.push(accessFilter);
     }
 
-    const existingOccurrences = projectionStart <= endDate
+    const existingOccurrences = projectionStart <= normalizedEndDate
       ? await prisma.financialTransaction.findMany({
           where: { AND: existingOccurrenceWhereFilters },
           select: {
@@ -1538,20 +1688,26 @@ export default class FinancialTransactionService {
     }
 
     const virtualTransactions: any[] = [];
+    const allProjectedCreditCardVirtuals: any[] = [];
+    const matchingProjectedCreditCardVirtuals: any[] = [];
 
-    if (projectionStart <= endDate) {
+    if (projectionStart <= normalizedEndDate) {
       const templates = await FixedTransactionService.getTemplatesForProjection({
         companyId,
         rangeStart: projectionStart,
-        rangeEnd: endDate,
+        rangeEnd: normalizedEndDate,
         accessibleAccountIds
       });
 
       const startCursor = new Date(projectionStart.getFullYear(), projectionStart.getMonth(), 1);
-      const endCursor = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+      const endCursor = new Date(normalizedEndDate.getFullYear(), normalizedEndDate.getMonth(), 1);
 
       for (const template of templates as any[]) {
         if (types && !types.includes(template.type)) {
+          continue;
+        }
+
+        if (this.isUnsupportedFixedCreditCardTemplate(template)) {
           continue;
         }
 
@@ -1577,54 +1733,40 @@ export default class FinancialTransactionService {
 
         while (cursor <= endCursor) {
           const occurrenceDate = FixedTransactionService.buildVirtualDateForMonth(
+            template,
             cursor.getFullYear(),
-            cursor.getMonth(),
-            template.dayOfMonth || 1
+            cursor.getMonth()
           );
 
-          if (occurrenceDate >= projectionStart && occurrenceDate <= endDate) {
-            if (template.startDate <= occurrenceDate && (!template.endDate || template.endDate >= occurrenceDate)) {
-              const occurrenceKey = buildOccurrenceKeyValue(template.id, occurrenceDate);
+          if (template.startDate <= occurrenceDate && (!template.endDate || template.endDate >= occurrenceDate)) {
+            const occurrenceKey = buildOccurrenceKeyValue(template.id, occurrenceDate);
 
-              if (!existingOccurrenceKeys.has(occurrenceKey)) {
-                const virtualTransaction = {
-                  id: null,
-                  description: template.description,
-                  amount: template.amount,
-                  date: occurrenceDate,
-                  dueDate: occurrenceDate,
-                  effectiveDate: null,
-                  type: template.type,
-                  status: TransactionStatus.PENDING,
-                  notes: template.notes,
-                  fromAccountId: template.fromAccountId,
-                  toAccountId: template.toAccountId,
-                  categoryId: template.categoryId,
-                  recurringTransactionId: template.id,
-                  occurrenceKey,
-                  installmentNumber: null,
-                  totalInstallments: null,
-                  tags: [],
-                  category: template.category,
-                  fromAccount: template.fromAccount,
-                  toAccount: template.toAccount,
-                  creditCardInvoice: null,
-                  createdByUser: { id: template.createdBy, name: 'Template Fixa' },
-                  createdAt: occurrenceDate,
-                  updatedAt: occurrenceDate,
-                  isVirtual: true,
-                  virtualKey: occurrenceKey,
-                  fixedTemplateId: template.id,
-                  isFixed: true
-                };
+            if (!existingOccurrenceKeys.has(occurrenceKey)) {
+              const virtualTransaction = this.buildProjectedVirtualTransaction(template, occurrenceDate);
+              const projectedComparisonDate =
+                projectedDateField === 'dueDate' ? virtualTransaction.dueDate : virtualTransaction.date;
 
-                if (this.matchesProjectedTransactionFilters(virtualTransaction, {
+              if (projectedComparisonDate >= projectionStart && projectedComparisonDate <= normalizedEndDate) {
+                const isCreditCardVirtual = this.isCreditCardRelatedTransactionForList(virtualTransaction);
+                const matchesProjectedFilters = this.matchesProjectedTransactionFilters(virtualTransaction, {
                   types,
                   status,
                   accountId,
                   categoryId,
                   search: normalizedSearch
-                })) {
+                });
+
+                if (isCreditCardVirtual) {
+                  if (shouldSummarizeCreditCardInvoices) {
+                    allProjectedCreditCardVirtuals.push(virtualTransaction);
+
+                    if (matchesProjectedFilters) {
+                      matchingProjectedCreditCardVirtuals.push(virtualTransaction);
+                    }
+                  } else if (includeCreditCardTransactions && matchesProjectedFilters) {
+                    virtualTransactions.push(virtualTransaction);
+                  }
+                } else if (matchesProjectedFilters) {
                   virtualTransactions.push(virtualTransaction);
                 }
               }
@@ -1636,14 +1778,460 @@ export default class FinancialTransactionService {
       }
     }
 
-    const merged = [...decoratedMaterialized, ...virtualTransactions];
-    const sorted = this.sortTransactionsForList(merged);
+    return buildResult({
+      virtualTransactions,
+      allProjectedCreditCardVirtuals,
+      matchingProjectedCreditCardVirtuals,
+      includeProjected: true
+    });
+  }
 
-    const total = sorted.length;
-    const pages = Math.ceil(total / pageSize) || 1;
-    const data = sorted.slice((page - 1) * pageSize, page * pageSize);
+  private static async buildCreditCardInvoiceSummaryRows(params: {
+    companyId: number;
+    startDate: Date;
+    endDate: Date;
+    dateField: CreditCardInvoiceSummaryDateField;
+    includeProjected: boolean;
+    status?: TransactionStatus;
+    accountId?: number;
+    categoryId?: number;
+    search?: string;
+    accessibleAccountIds?: number[];
+    projectedTransactions: any[];
+    matchingProjectedTransactions: any[];
+  }): Promise<CreditCardInvoiceSummaryRow[]> {
+    const {
+      companyId,
+      startDate,
+      endDate,
+      dateField,
+      includeProjected,
+      status,
+      accountId,
+      categoryId,
+      search,
+      accessibleAccountIds,
+      projectedTransactions,
+      matchingProjectedTransactions
+    } = params;
 
-    return { data, total, pages };
+    if (status === TransactionStatus.CANCELED) {
+      return [];
+    }
+
+    if (accessibleAccountIds && accessibleAccountIds.length === 0) {
+      return [];
+    }
+
+    const accountWhere: Prisma.FinancialAccountWhereInput = {
+      companyId,
+      type: AccountType.CREDIT_CARD,
+      ...(accessibleAccountIds ? { id: { in: accessibleAccountIds } } : {})
+    };
+
+    const invoiceDateWhere =
+      dateField === 'dueDate'
+        ? { dueDate: { gte: startDate, lte: endDate } }
+        : { closingDate: { gte: startDate, lte: endDate } };
+
+    const normalizedSearch = search?.toLowerCase() ?? '';
+    const hasItemLevelFilters = Boolean(categoryId || normalizedSearch);
+
+    const [realInvoices, matchingRealTransactions] = await Promise.all([
+      prisma.creditCardInvoice.findMany({
+        where: {
+          ...invoiceDateWhere,
+          ...(accountId ? { accountId } : {}),
+          account: accountWhere
+        },
+        include: {
+          account: {
+            select: {
+              id: true,
+              name: true,
+              type: true
+            }
+          },
+          paymentTransaction: {
+            select: {
+              status: true,
+              effectiveDate: true,
+              date: true
+            }
+          }
+        }
+      }),
+      hasItemLevelFilters
+        ? prisma.financialTransaction.findMany({
+            where: {
+              companyId,
+              type: TransactionType.EXPENSE,
+              creditCardInvoiceId: { not: null },
+              ...(categoryId ? { categoryId } : {}),
+              ...(normalizedSearch
+                ? {
+                    OR: [
+                      { description: { contains: normalizedSearch, mode: 'insensitive' } },
+                      { notes: { contains: normalizedSearch, mode: 'insensitive' } }
+                    ]
+                  }
+                : {}),
+              creditCardInvoice: {
+                is: {
+                  ...invoiceDateWhere,
+                  ...(accountId ? { accountId } : {}),
+                  account: accountWhere
+                }
+              }
+            },
+            select: {
+              creditCardInvoiceId: true
+            }
+          })
+        : Promise.resolve([])
+    ]);
+
+    const matchingRealInvoiceIds = new Set(
+      matchingRealTransactions
+        .map((transaction) => transaction.creditCardInvoiceId)
+        .filter((invoiceId): invoiceId is number => typeof invoiceId === 'number')
+    );
+    const projectedGroups: Map<string, CreditCardProjectedInvoiceSummaryGroup> = includeProjected
+      ? this.groupProjectedCreditCardInvoiceSummaries(projectedTransactions)
+      : new Map<string, CreditCardProjectedInvoiceSummaryGroup>();
+    const matchingProjectedKeys = includeProjected
+      ? new Set(this.groupProjectedCreditCardInvoiceSummaries(matchingProjectedTransactions).keys())
+      : new Set<string>();
+    const rows: CreditCardInvoiceSummaryRow[] = [];
+    const emittedKeys = new Set<string>();
+
+    for (const invoice of realInvoices) {
+      const summaryKey = this.buildCreditCardInvoiceSummaryKey(
+        invoice.accountId,
+        invoice.referenceYear,
+        invoice.referenceMonth
+      );
+      const projectedGroup = projectedGroups.get(summaryKey);
+      const summaryDescription = this.buildCreditCardInvoiceSummaryDescription(
+        invoice.account.name,
+        invoice.referenceYear,
+        invoice.referenceMonth
+      );
+      const matchesSummarySearch =
+        !!normalizedSearch && summaryDescription.toLowerCase().includes(normalizedSearch);
+
+      if (
+        hasItemLevelFilters &&
+        !matchingRealInvoiceIds.has(invoice.id) &&
+        !matchingProjectedKeys.has(summaryKey) &&
+        !matchesSummarySearch
+      ) {
+        continue;
+      }
+
+      if (!this.matchesCreditCardInvoiceSummaryStatus(status, invoice.status)) {
+        continue;
+      }
+
+      rows.push(
+        this.buildCreditCardInvoiceSummaryRow({
+          summaryKey,
+          account: invoice.account,
+          referenceYear: invoice.referenceYear,
+          referenceMonth: invoice.referenceMonth,
+          closingDate: invoice.closingDate,
+          dueDate: invoice.dueDate,
+          invoiceStatus: invoice.status,
+          settledAt: this.resolveCreditCardInvoiceSummaryEffectiveDate(invoice),
+          realInvoiceId: invoice.id,
+          realItemsSubtotal: invoice.totalAmount,
+          projectedGroup,
+          isProjected: false
+        })
+      );
+      emittedKeys.add(summaryKey);
+    }
+
+    if (!includeProjected) {
+      return rows;
+    }
+
+    for (const [summaryKey, projectedGroup] of projectedGroups.entries()) {
+      if (emittedKeys.has(summaryKey)) {
+        continue;
+      }
+
+      const summaryDescription = this.buildCreditCardInvoiceSummaryDescription(
+        projectedGroup.account.name,
+        projectedGroup.referenceYear,
+        projectedGroup.referenceMonth
+      );
+      const matchesSummarySearch =
+        !!normalizedSearch && summaryDescription.toLowerCase().includes(normalizedSearch);
+
+      if (hasItemLevelFilters && !matchingProjectedKeys.has(summaryKey) && !matchesSummarySearch) {
+        continue;
+      }
+
+      if (!this.matchesCreditCardInvoiceSummaryStatus(status, projectedGroup.invoiceStatus)) {
+        continue;
+      }
+
+      rows.push(
+        this.buildCreditCardInvoiceSummaryRow({
+          summaryKey,
+          account: projectedGroup.account,
+          referenceYear: projectedGroup.referenceYear,
+          referenceMonth: projectedGroup.referenceMonth,
+          closingDate: projectedGroup.closingDate,
+          dueDate: projectedGroup.dueDate,
+          invoiceStatus: projectedGroup.invoiceStatus,
+          settledAt: null,
+          realInvoiceId: null,
+          realItemsSubtotal: new Prisma.Decimal(0),
+          projectedGroup,
+          isProjected: true
+        })
+      );
+    }
+
+    return rows;
+  }
+
+  private static buildCreditCardInvoiceSummaryKey(
+    accountId: number,
+    referenceYear: number,
+    referenceMonth: number
+  ): string {
+    return `${accountId}:${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
+  }
+
+  private static buildCreditCardInvoiceSummaryDescription(
+    accountName: string,
+    referenceYear: number,
+    referenceMonth: number
+  ): string {
+    return `Fatura ${accountName} ${String(referenceMonth).padStart(2, '0')}/${referenceYear}`;
+  }
+
+  private static groupProjectedCreditCardInvoiceSummaries(
+    projectedTransactions: any[]
+  ): Map<string, CreditCardProjectedInvoiceSummaryGroup> {
+    const grouped = new Map<string, CreditCardProjectedInvoiceSummaryGroup>();
+
+    for (const transaction of projectedTransactions) {
+      const account = transaction.fromAccount;
+      const invoice = transaction.creditCardInvoice;
+
+      if (!account?.id || !invoice?.referenceYear || !invoice?.referenceMonth || !invoice?.dueDate) {
+        continue;
+      }
+
+      const summaryKey = this.buildCreditCardInvoiceSummaryKey(
+        account.id,
+        invoice.referenceYear,
+        invoice.referenceMonth
+      );
+
+      const current = grouped.get(summaryKey);
+      const amount = parseDecimal(transaction.amount);
+      const closingDate = new Date(transaction.date);
+      const dueDate = new Date(invoice.dueDate);
+
+      if (current) {
+        current.fixedSubtotal = current.fixedSubtotal.plus(amount);
+        continue;
+      }
+
+      grouped.set(summaryKey, {
+        account: {
+          id: account.id,
+          name: account.name,
+          type: account.type
+        },
+        referenceYear: invoice.referenceYear,
+        referenceMonth: invoice.referenceMonth,
+        closingDate,
+        dueDate,
+        invoiceStatus: invoice.status,
+        fixedSubtotal: amount,
+        hasProjectedTransactions: true
+      });
+    }
+
+    return grouped;
+  }
+
+  private static matchesCreditCardInvoiceSummaryStatus(
+    requestedStatus: TransactionStatus | undefined,
+    invoiceStatus: CreditCardInvoiceStatus
+  ): boolean {
+    if (!requestedStatus) {
+      return true;
+    }
+
+    if (requestedStatus === TransactionStatus.CANCELED) {
+      return false;
+    }
+
+    const summaryStatus = invoiceStatus === CreditCardInvoiceStatus.PAID
+      ? TransactionStatus.COMPLETED
+      : TransactionStatus.PENDING;
+
+    return requestedStatus === summaryStatus;
+  }
+
+  private static resolveCreditCardInvoiceSummaryEffectiveDate(invoice: {
+    paymentTransaction?: {
+      effectiveDate?: Date | null;
+      date?: Date | null;
+    } | null;
+    settledAt?: Date | null;
+  }): Date | null {
+    return invoice.paymentTransaction?.effectiveDate ||
+      invoice.paymentTransaction?.date ||
+      invoice.settledAt ||
+      null;
+  }
+
+  private static buildCreditCardInvoiceSummaryRow(params: {
+    summaryKey: string;
+    account: {
+      id: number;
+      name: string;
+      type: string;
+    };
+    referenceYear: number;
+    referenceMonth: number;
+    closingDate: Date;
+    dueDate: Date;
+    invoiceStatus: CreditCardInvoiceStatus;
+    settledAt: Date | null;
+    realInvoiceId: number | null;
+    realItemsSubtotal: Prisma.Decimal | number | string;
+    projectedGroup?: {
+      fixedSubtotal: Prisma.Decimal;
+      hasProjectedTransactions: boolean;
+    };
+    isProjected: boolean;
+  }): CreditCardInvoiceSummaryRow {
+    const realItemsSubtotal = parseDecimal(params.realItemsSubtotal);
+    const fixedSubtotal = params.projectedGroup?.fixedSubtotal ?? new Prisma.Decimal(0);
+    const totalAmount = realItemsSubtotal.plus(fixedSubtotal);
+    const status = params.invoiceStatus === CreditCardInvoiceStatus.PAID
+      ? TransactionStatus.COMPLETED
+      : TransactionStatus.PENDING;
+    const invoiceKey = params.realInvoiceId
+      ? `invoice:${params.realInvoiceId}`
+      : `projection:${String(params.referenceYear)}-${String(params.referenceMonth).padStart(2, '0')}`;
+
+    return {
+      id: params.realInvoiceId,
+      description: this.buildCreditCardInvoiceSummaryDescription(
+        params.account.name,
+        params.referenceYear,
+        params.referenceMonth
+      ),
+      amount: totalAmount.toString(),
+      date: params.closingDate,
+      dueDate: params.dueDate,
+      effectiveDate: params.settledAt,
+      type: TransactionType.EXPENSE,
+      status,
+      notes: null,
+      fromAccount: params.account,
+      toAccount: null,
+      category: null,
+      tags: [],
+      createdByUser: { id: 0, name: 'Sistema' },
+      createdAt: params.dueDate,
+      installmentNumber: null,
+      totalInstallments: null,
+      purchaseGroupId: null,
+      creditCardInvoice: {
+        ...(params.realInvoiceId ? { id: params.realInvoiceId } : {}),
+        referenceYear: params.referenceYear,
+        referenceMonth: params.referenceMonth,
+        dueDate: params.dueDate,
+        status: params.invoiceStatus
+      },
+      isVirtual: false,
+      virtualKey: undefined,
+      fixedTemplateId: null,
+      isFixed: false,
+      isProjected: params.isProjected,
+      hasProjectedTransactions: params.projectedGroup?.hasProjectedTransactions ?? false,
+      isCreditCardInvoiceSummary: true,
+      invoiceNavigation: {
+        accountId: params.account.id,
+        invoiceKey
+      },
+      itemsSubtotal: realItemsSubtotal.toString(),
+      fixedSubtotal: fixedSubtotal.toString()
+    };
+  }
+
+  private static buildTransactionListSummary(transactions: Array<{
+    type?: TransactionType;
+    amount?: Prisma.Decimal | string | number | null;
+  }>): TransactionListSummary {
+    let incomeTotal = new Prisma.Decimal(0);
+    let expenseTotal = new Prisma.Decimal(0);
+
+    for (const transaction of transactions) {
+      if (transaction.type !== TransactionType.INCOME && transaction.type !== TransactionType.EXPENSE) {
+        continue;
+      }
+
+      const amount = this.parseTransactionListSummaryAmount(transaction.amount);
+
+      if (transaction.type === TransactionType.INCOME) {
+        incomeTotal = incomeTotal.plus(amount);
+      } else {
+        expenseTotal = expenseTotal.plus(amount);
+      }
+    }
+
+    return {
+      incomeTotal: incomeTotal.toString(),
+      expenseTotal: expenseTotal.toString()
+    };
+  }
+
+  private static parseTransactionListSummaryAmount(
+    value: Prisma.Decimal | string | number | null | undefined
+  ): Prisma.Decimal {
+    if (value === null || value === undefined) {
+      return new Prisma.Decimal(0);
+    }
+
+    if (value instanceof Prisma.Decimal) {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return new Prisma.Decimal(value);
+    }
+
+    const compactValue = value.trim().replace(/[^\d,.-]/g, '');
+
+    if (!compactValue) {
+      return new Prisma.Decimal(0);
+    }
+
+    const hasComma = compactValue.includes(',');
+    const hasDot = compactValue.includes('.');
+    let normalizedValue = compactValue;
+
+    if (hasComma && hasDot) {
+      normalizedValue = compactValue.lastIndexOf(',') > compactValue.lastIndexOf('.')
+        ? compactValue.replace(/\./g, '').replace(',', '.')
+        : compactValue.replace(/,/g, '');
+    } else if (hasComma) {
+      normalizedValue = compactValue.replace(',', '.');
+    }
+
+    return new Prisma.Decimal(normalizedValue);
   }
 
   private static sortTransactionsForList(transactions: any[]): any[] {
@@ -1673,6 +2261,128 @@ export default class FinancialTransactionService {
       const bId = typeof b?.id === 'number' ? b.id : 0;
       return bId - aId;
     });
+  }
+
+  private static buildListDateWhere(
+    dateField: TransactionListDateField,
+    startDate: Date,
+    endDate: Date
+  ): Prisma.FinancialTransactionWhereInput {
+    switch (dateField) {
+      case 'dueDate':
+        return { dueDate: { gte: startDate, lte: endDate } };
+      case 'effectiveDate':
+        return { effectiveDate: { gte: startDate, lte: endDate } };
+      case 'createdAt':
+        return { createdAt: { gte: startDate, lte: endDate } };
+      case 'date':
+      default:
+        return { date: { gte: startDate, lte: endDate } };
+    }
+  }
+
+  private static isCreditCardRelatedTransactionForList(transaction: {
+    creditCardInvoiceId?: number | null;
+    creditCardInvoice?: {
+      id?: number | null;
+      referenceYear?: number;
+      referenceMonth?: number;
+      dueDate?: Date | string | null;
+      status?: string | null;
+    } | null;
+  }): boolean {
+    if (transaction.creditCardInvoiceId || transaction.creditCardInvoice) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private static isUnsupportedFixedCreditCardTemplate(template: {
+    type?: TransactionType;
+    toAccount?: { type?: string | null } | null;
+  }): boolean {
+    return (
+      template.type === TransactionType.INCOME &&
+      template.toAccount?.type === AccountType.CREDIT_CARD
+    );
+  }
+
+  private static buildProjectedVirtualTransaction(template: any, occurrenceDate: Date) {
+    const isCreditCardFixedExpense =
+      template.type === TransactionType.EXPENSE &&
+      template.fromAccount?.type === AccountType.CREDIT_CARD &&
+      template.fromAccount?.statementClosingDay &&
+      template.fromAccount?.statementDueDay;
+
+    const invoiceReference = isCreditCardFixedExpense
+      ? resolveCreditCardInvoiceReference(
+          occurrenceDate,
+          template.fromAccount.statementClosingDay,
+          template.fromAccount.statementDueDay
+        )
+      : null;
+
+    return {
+      id: null,
+      description: template.description,
+      amount: template.amount,
+      date: occurrenceDate,
+      dueDate: invoiceReference?.dueDate ?? occurrenceDate,
+      effectiveDate: null,
+      type: template.type,
+      status: TransactionStatus.PENDING,
+      notes: template.notes,
+      fromAccountId: template.fromAccountId,
+      toAccountId: template.toAccountId,
+      categoryId: template.categoryId,
+      recurringTransactionId: template.id,
+      occurrenceKey: buildOccurrenceKeyValue(template.id, occurrenceDate),
+      installmentNumber: null,
+      totalInstallments: null,
+      tags: [],
+      category: template.category,
+      fromAccount: template.fromAccount,
+      toAccount: template.toAccount,
+      creditCardInvoice: invoiceReference
+        ? {
+            referenceYear: invoiceReference.referenceYear,
+            referenceMonth: invoiceReference.referenceMonth,
+            dueDate: invoiceReference.dueDate,
+            status: resolveCreditCardInvoiceStatus(invoiceReference.closingDate, false),
+            settlementType: null
+          }
+        : null,
+      createdByUser: { id: template.createdBy, name: 'Template Fixa' },
+      createdAt: occurrenceDate,
+      updatedAt: occurrenceDate,
+      isVirtual: true,
+      virtualKey: buildOccurrenceKeyValue(template.id, occurrenceDate),
+      fixedTemplateId: template.id,
+      isFixed: true
+    };
+  }
+
+  private static getProjectedDateField(
+    dateField: TransactionListDateField
+  ): Extract<TransactionListDateField, 'dueDate' | 'date'> | null {
+    if (dateField === 'dueDate' || dateField === 'date') {
+      return dateField;
+    }
+
+    return null;
+  }
+
+  private static startOfDay(date: Date): Date {
+    const normalizedDate = new Date(date);
+    normalizedDate.setHours(0, 0, 0, 0);
+    return normalizedDate;
+  }
+
+  private static endOfDay(date: Date): Date {
+    const normalizedDate = new Date(date);
+    normalizedDate.setHours(23, 59, 59, 999);
+    return normalizedDate;
   }
 
   private static matchesProjectedTransactionFilters(

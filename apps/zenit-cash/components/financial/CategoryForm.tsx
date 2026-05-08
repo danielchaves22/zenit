@@ -6,13 +6,21 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
+import CategoryIconPicker from '@/components/financial/CategoryIconPicker';
+import CategorySelect from '@/components/financial/CategorySelect';
 import api from '@/lib/api';
+import {
+  CategoryIcon,
+  DEFAULT_CATEGORY_ICON,
+  getCategoryIconLabel
+} from '@/utils/categoryIcons';
 
 interface Category {
   id: number;
   name: string;
   type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   color: string;
+  icon: string;
   isDefault: boolean;
   parentId?: number;
   parent?: { id: number; name: string };
@@ -49,6 +57,7 @@ export default function CategoryForm({
     name: '',
     type: normalizeCategoryType(initialType),
     color: '#6366F1',
+    icon: DEFAULT_CATEGORY_ICON,
     parentId: '',
     accountingCode: ''
   });
@@ -71,7 +80,7 @@ export default function CategoryForm({
         );
 
         if (!category) {
-          addToast('Categoria não encontrada', 'error');
+          addToast('Categoria nao encontrada', 'error');
           handleCancel();
           return;
         }
@@ -81,6 +90,7 @@ export default function CategoryForm({
           name: category.name,
           type: normalizeCategoryType(category.type),
           color: category.color,
+          icon: category.icon || DEFAULT_CATEGORY_ICON,
           parentId: category.parentId?.toString() || '',
           accountingCode: category.accountingCode || ''
         });
@@ -90,6 +100,7 @@ export default function CategoryForm({
           name: '',
           type: normalizeCategoryType(initialType),
           color: '#6366F1',
+          icon: DEFAULT_CATEGORY_ICON,
           parentId: '',
           accountingCode: ''
         });
@@ -122,7 +133,7 @@ export default function CategoryForm({
     event.preventDefault();
 
     if (!formData.name.trim()) {
-      addToast('Nome da categoria é obrigatório', 'error');
+      addToast('Nome da categoria e obrigatorio', 'error');
       return;
     }
 
@@ -208,11 +219,7 @@ export default function CategoryForm({
             className="flex items-center gap-2"
           >
             <Save size={16} />
-            {saving
-              ? 'Salvando...'
-              : mode === 'create'
-                ? 'Criar Categoria'
-                : 'Salvar Alterações'}
+            {saving ? 'Salvando...' : mode === 'create' ? 'Criar Categoria' : 'Salvar Alteracoes'}
           </Button>
         </div>
       </div>
@@ -228,7 +235,7 @@ export default function CategoryForm({
                   setFormData((prev) => ({ ...prev, name: event.target.value }))
                 }
                 required
-                placeholder="Ex: Alimentação, Vendas, Marketing..."
+                placeholder="Ex: Alimentacao, Vendas, Marketing..."
                 disabled={saving}
               />
 
@@ -252,7 +259,7 @@ export default function CategoryForm({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-300">Cor</label>
                 <div className="flex items-center gap-2">
@@ -277,29 +284,8 @@ export default function CategoryForm({
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">
-                  Categoria Pai (opcional)
-                </label>
-                <select
-                  value={formData.parentId}
-                  onChange={(event) =>
-                    setFormData((prev) => ({ ...prev, parentId: event.target.value }))
-                  }
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
-                  disabled={saving}
-                >
-                  <option value="">Nenhuma (categoria principal)</option>
-                  {availableParentCategories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <Input
-                label="Código Contábil (opcional)"
+                label="Codigo Contabil (opcional)"
                 value={formData.accountingCode}
                 onChange={(event) =>
                   setFormData((prev) => ({
@@ -312,6 +298,23 @@ export default function CategoryForm({
                 disabled={saving}
               />
             </div>
+
+            <CategorySelect
+              label="Categoria Pai (opcional)"
+              categories={availableParentCategories}
+              value={formData.parentId}
+              onChange={(parentId) => setFormData((prev) => ({ ...prev, parentId }))}
+              placeholder="Nenhuma (categoria principal)"
+              emptyLabel="Nenhuma (categoria principal)"
+              disabled={saving}
+            />
+
+            <CategoryIconPicker
+              value={formData.icon}
+              onChange={(icon) => setFormData((prev) => ({ ...prev, icon }))}
+              color={formData.color}
+              disabled={saving}
+            />
           </form>
         </Card>
 
@@ -320,20 +323,20 @@ export default function CategoryForm({
             <div>
               <div className="text-sm font-medium text-white">Resumo</div>
               <div className="mt-1 text-sm text-gray-400">
-                Categorias ajudam a classificar lançamentos e podem ser definidas como padrão na
+                Categorias ajudam a classificar lancamentos e podem ser definidas como padrao na
                 listagem.
               </div>
             </div>
 
             <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Pré-visualização</div>
+              <div className="text-xs uppercase tracking-wide text-gray-400">Pre-visualizacao</div>
               <div className="mt-3 flex items-center gap-3">
-                <div
-                  className="h-4 w-4 rounded-full border border-white/60"
-                  style={{ backgroundColor: formData.color }}
-                />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-[#0f1419]">
+                  <CategoryIcon icon={formData.icon} size={18} color={formData.color} />
+                </div>
                 <div className="text-white">
                   {formData.name.trim() || 'Nome da categoria'}
+                  <div className="text-xs text-gray-400">{getCategoryIconLabel(formData.icon)}</div>
                 </div>
               </div>
             </div>
@@ -343,7 +346,7 @@ export default function CategoryForm({
               <div className="mt-2 text-sm text-gray-300">
                 {formData.parentId
                   ? 'Subcategoria vinculada a uma categoria principal.'
-                  : 'Categoria principal, disponível para receber subcategorias.'}
+                  : 'Categoria principal, disponivel para receber subcategorias.'}
               </div>
             </div>
           </div>

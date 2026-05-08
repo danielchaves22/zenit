@@ -4,6 +4,7 @@ import { useToast } from '@/components/ui/ToastContext';
 import { useAccountPermissions } from '@/hooks/useAccountPermissions';
 import { CreditCard, Check, Users, AlertCircle } from 'lucide-react';
 import api from '@/lib/api';
+import { formatAccountDisplayName } from '@/utils/accounts';
 
 interface Account {
   id: number;
@@ -211,7 +212,7 @@ export default function AccountPermissionsManager({
                       <div className="flex items-center gap-2">
                         <CreditCard size={14} className="text-blue-400 flex-shrink-0" />
                         <span className="text-sm font-medium text-white truncate">
-                          {account.name}
+                          {formatAccountDisplayName(account)}
                         </span>
                         {isSelected && (
                           <Check size={14} className="text-accent flex-shrink-0" />

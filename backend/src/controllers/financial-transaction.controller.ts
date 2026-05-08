@@ -83,6 +83,8 @@ export async function getTransactions(req: Request, res: Response) {
     const {
       startDate,
       endDate,
+      dateField,
+      includeCreditCardTransactions,
       includeVirtualFixed,
       type,
       types,
@@ -116,6 +118,8 @@ export async function getTransactions(req: Request, res: Response) {
       companyId,
       startDate,
       endDate,
+      dateField,
+      includeCreditCardTransactions,
       includeVirtualFixed,
       types: normalizedTypes,
       status,

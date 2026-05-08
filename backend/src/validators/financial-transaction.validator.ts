@@ -12,6 +12,12 @@ const purchaseScopeSchema = z.enum(['SINGLE', 'PURCHASE'], {
   errorMap: () => ({ message: 'Escopo deve ser SINGLE ou PURCHASE' })
 });
 
+const transactionListDateFieldSchema = z.enum(['dueDate', 'date', 'effectiveDate', 'createdAt'], {
+  errorMap: () => ({
+    message: 'Campo de data deve ser: dueDate, date, effectiveDate ou createdAt'
+  })
+});
+
 const transactionTypesFilterSchema = z.preprocess((value) => {
   if (value === undefined) {
     return undefined;
@@ -24,6 +30,31 @@ const transactionTypesFilterSchema = z.preprocess((value) => {
     .map((item) => item.trim())
     .filter(Boolean);
 }, z.array(transactionTypeSchema));
+
+function parseDateFilterValue(value: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  return new Date(value);
+}
+
+const booleanQuerySchema = z.preprocess((value) => {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === 'true') {
+      return true;
+    }
+
+    if (normalized === 'false') {
+      return false;
+    }
+  }
+
+  return value;
+}, z.boolean());
 
 export const autocompleteQuerySchema = z.object({
   q: z.string()
@@ -186,7 +217,7 @@ export const listTransactionsSchema = z.object({
     .refine((value) => !Number.isNaN(Date.parse(value)), {
       message: 'Data inicial deve ser valida'
     })
-    .transform((value) => new Date(value)),
+    .transform((value) => parseDateFilterValue(value)),
 
   endDate: z.string({
     required_error: 'Data final e obrigatoria',
@@ -195,9 +226,17 @@ export const listTransactionsSchema = z.object({
     .refine((value) => !Number.isNaN(Date.parse(value)), {
       message: 'Data final deve ser valida'
     })
-    .transform((value) => new Date(value)),
+    .transform((value) => parseDateFilterValue(value)),
 
-  includeVirtualFixed: z.coerce.boolean()
+  dateField: transactionListDateFieldSchema
+    .optional()
+    .default('date'),
+
+  includeCreditCardTransactions: booleanQuerySchema
+    .optional()
+    .default(true),
+
+  includeVirtualFixed: booleanQuerySchema
     .optional()
     .default(true),
 

@@ -253,14 +253,16 @@ export default class UserFinancialAccountAccessService {
   ): Promise<any> {
     const accessibleAccountIds = await this.getUserAccessibleAccounts(userId, userRole, companyId);
 
-    // Se não tem acesso a nenhuma conta, retorna filtro impossível
-    if (accessibleAccountIds.length === 0) {
-      return { id: -1 }; // Filtro que nunca vai retornar resultados
-    }
-
     // Filtro para transações que envolvem contas acessíveis
+    // ou não possuem conta associada.
     return {
       OR: [
+        {
+          AND: [
+            { fromAccountId: null },
+            { toAccountId: null }
+          ]
+        },
         { fromAccountId: { in: accessibleAccountIds } },
         { toAccountId: { in: accessibleAccountIds } }
       ]

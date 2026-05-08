@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { FaFilePdf, FaFileExcel } from 'react-icons/fa';
 import api from '@/lib/api';
+import { formatAccountDisplayName } from '@/utils/accounts';
 import { formatTransactionDescription } from '@/utils/transactions';
 import { Roboto_Condensed } from 'next/font/google';
 
@@ -464,7 +465,9 @@ export default function FinancialMovementReport() {
                     }}
                     className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
                   />
-                  <span className="text-sm text-white truncate">{account.name}</span>
+                  <span className="text-sm text-white truncate">
+                    {formatAccountDisplayName(account)}
+                  </span>
                 </label>
               ))}
             </div>

@@ -87,6 +87,31 @@ export async function getCreditCardInvoice(req: Request, res: Response) {
   }
 }
 
+export async function getProjectedCreditCardInvoice(req: Request, res: Response) {
+  try {
+    const { companyId } = getUserContext(req);
+    const accountId = Number(req.params.accountId);
+    const projectionKey = String(req.params.projectionKey);
+
+    const invoice = await CreditCardInvoiceService.getProjectedInvoiceByKey({
+      accountId,
+      projectionKey,
+      companyId
+    });
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Fatura projetada não encontrada' });
+    }
+
+    return res.status(200).json(invoice);
+  } catch (error: any) {
+    logger.error('Erro ao obter detalhe da fatura projetada:', error);
+    return res.status(500).json({
+      error: error.message || 'Erro ao obter detalhe da fatura projetada'
+    });
+  }
+}
+
 export async function payCreditCardInvoice(req: Request, res: Response) {
   try {
     const { companyId, userId, role } = getUserContext(req);

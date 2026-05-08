@@ -6,6 +6,7 @@ import {
   Edit2,
   Plus,
   Repeat,
+  Trash2,
   TrendingDown,
   TrendingUp
 } from 'lucide-react';
@@ -19,13 +20,14 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import { useToast } from '@/components/ui/ToastContext';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import api from '@/lib/api';
+import { formatAccountDisplayName } from '@/utils/accounts';
 
 interface FixedTransaction {
   id: number;
   description: string;
   amount: string;
   type: 'INCOME' | 'EXPENSE';
-  dayOfMonth: number;
+  dayOfMonth: number | null;
   startDate: string;
   endDate?: string | null;
   nextDueDate: string;
@@ -34,9 +36,11 @@ interface FixedTransaction {
   fromAccountId?: number | null;
   toAccountId?: number | null;
   categoryId?: number | null;
-  fromAccount?: { id: number; name: string } | null;
-  toAccount?: { id: number; name: string } | null;
+  fromAccount?: { id: number; name: string; type?: string } | null;
+  toAccount?: { id: number; name: string; type?: string } | null;
   category?: { id: number; name: string; color: string } | null;
+  materializedTransactionCount?: number;
+  canDelete?: boolean;
 }
 
 function FixedTransactionsPageInner() {
@@ -88,6 +92,28 @@ function FixedTransactionsPageInner() {
     );
   }
 
+  async function handleDeleteFixed(item: FixedTransaction) {
+    confirmation.confirm(
+      {
+        title: 'Excluir Transação Fixa',
+        message: `Deseja excluir a transação fixa "${item.description}"? Essa ação remove o template permanentemente.`,
+        confirmText: 'Excluir Fixa',
+        cancelText: 'Voltar',
+        type: 'danger'
+      },
+      async () => {
+        try {
+          await api.delete(`/financial/fixed-transactions/${item.id}`);
+          addToast('Transação fixa excluída', 'success');
+          await fetchFixedTransactions();
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao excluir transação fixa', 'error');
+          throw error;
+        }
+      }
+    );
+  }
+
   function formatCurrency(value: string | number): string {
     const num = typeof value === 'string' ? Number(value) : value;
     return new Intl.NumberFormat('pt-BR', {
@@ -99,6 +125,14 @@ function FixedTransactionsPageInner() {
   function formatDate(date?: string | null): string {
     if (!date) return '-';
     return new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+  }
+
+  function formatCompetenceLabel(item: FixedTransaction): string {
+    if (item.type === 'EXPENSE' && item.fromAccount?.type === 'CREDIT_CARD') {
+      return 'Fechamento';
+    }
+
+    return `Dia ${item.dayOfMonth ?? '-'}`;
   }
 
   return (
@@ -200,6 +234,15 @@ function FixedTransactionsPageInner() {
                             <Ban size={14} />
                           </button>
                         )}
+                        {item.canDelete && (
+                          <button
+                            onClick={() => void handleDeleteFixed(item)}
+                            className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                            title="Excluir"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 font-medium text-white">{item.description}</td>
@@ -222,9 +265,11 @@ function FixedTransactionsPageInner() {
                     <td className="px-4 py-3 text-right text-white">
                       {formatCurrency(item.amount)}
                     </td>
-                    <td className="px-4 py-3 text-center text-gray-300">Dia {item.dayOfMonth}</td>
+                    <td className="px-4 py-3 text-center text-gray-300">
+                      {formatCompetenceLabel(item)}
+                    </td>
                     <td className="px-4 py-3 text-gray-300">
-                      {item.fromAccount?.name || item.toAccount?.name || '-'}
+                      {formatAccountDisplayName(item.fromAccount || item.toAccount)}
                     </td>
                     <td className="px-4 py-3 text-gray-300">{item.category?.name || '-'}</td>
                     <td className="px-4 py-3 text-gray-300">

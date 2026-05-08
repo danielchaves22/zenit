@@ -22,12 +22,14 @@ import {
   TrendingUp
 } from 'lucide-react';
 import api from '@/lib/api';
+import { CategoryIcon } from '@/utils/categoryIcons';
 
 interface Category {
   id: number;
   name: string;
   type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   color: string;
+  icon: string;
   isDefault: boolean;
   parentId?: number;
   parent?: { id: number; name: string };
@@ -335,10 +337,9 @@ function CategoriesPageInner() {
 
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div
-                            className="h-4 w-4 rounded-full border-2 border-white"
-                            style={{ backgroundColor: category.color }}
-                          />
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[#0f1419]">
+                            <CategoryIcon icon={category.icon} size={16} color={category.color} />
+                          </div>
                           <div>
                             <div className="flex items-center gap-2 font-medium text-white">
                               {category.name}
@@ -409,10 +410,9 @@ function CategoriesPageInner() {
 
                         <td className="px-4 py-3">
                           <div className="ml-6 flex items-center gap-3">
-                            <div
-                              className="h-3 w-3 rounded-full"
-                              style={{ backgroundColor: child.color }}
-                            />
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-[#0f1419]">
+                              <CategoryIcon icon={child.icon} size={14} color={child.color} />
+                            </div>
                             <div>
                               <div className="flex items-center gap-2 text-white">
                                 {child.name}
@@ -484,10 +484,9 @@ function CategoriesPageInner() {
 
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div
-                            className="h-4 w-4 rounded-full"
-                            style={{ backgroundColor: orphan.color }}
-                          />
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-[#0f1419]">
+                            <CategoryIcon icon={orphan.icon} size={16} color={orphan.color} />
+                          </div>
                           <div>
                             <div className="flex items-center gap-2 text-white">
                               {orphan.name}

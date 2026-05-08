@@ -52,6 +52,28 @@ async function ensureTemplateAccountAccess(
   }
 }
 
+async function attachDeletionMetadata<
+  T extends { id: number }
+>(templates: T[], companyId: number): Promise<Array<T & {
+  materializedTransactionCount: number;
+  canDelete: boolean;
+}>> {
+  const countsByTemplateId = await FixedTransactionService.getMaterializedTransactionCounts(
+    templates.map((template) => template.id),
+    companyId
+  );
+
+  return templates.map((template) => {
+    const materializedTransactionCount = countsByTemplateId.get(template.id) ?? 0;
+
+    return {
+      ...template,
+      materializedTransactionCount,
+      canDelete: materializedTransactionCount === 0
+    };
+  });
+}
+
 export async function createFixedTransaction(req: Request, res: Response) {
   try {
     const { companyId, userId } = getUserContext(req);
@@ -82,7 +104,7 @@ export async function listFixedTransactions(req: Request, res: Response) {
     });
 
     if (role === 'ADMIN' || role === 'SUPERUSER') {
-      return res.status(200).json(templates);
+      return res.status(200).json(await attachDeletionMetadata(templates, companyId));
     }
 
     const accessibleAccountIds = await UserFinancialAccountAccessService.getUserAccessibleAccounts(
@@ -93,17 +115,17 @@ export async function listFixedTransactions(req: Request, res: Response) {
 
     const filtered = templates.filter((template) => {
       if (template.type === TransactionType.EXPENSE) {
-        return !!template.fromAccountId && accessibleAccountIds.includes(template.fromAccountId);
+        return !template.fromAccountId || accessibleAccountIds.includes(template.fromAccountId);
       }
 
       if (template.type === TransactionType.INCOME) {
-        return !!template.toAccountId && accessibleAccountIds.includes(template.toAccountId);
+        return !template.toAccountId || accessibleAccountIds.includes(template.toAccountId);
       }
 
       return false;
     });
 
-    return res.status(200).json(filtered);
+    return res.status(200).json(await attachDeletionMetadata(filtered, companyId));
   } catch (error: any) {
     logger.error('Erro ao listar transacoes fixas', { error: error.message, stack: error.stack });
     return res.status(500).json({ error: 'Erro ao listar transacoes fixas' });
@@ -205,5 +227,29 @@ export async function materializeFixedTransactionOccurrence(req: Request, res: R
   } catch (error: any) {
     logger.error('Erro ao materializar ocorrencia de transacao fixa', { error: error.message, stack: error.stack });
     return res.status(400).json({ error: error.message || 'Erro ao materializar ocorrencia da transacao fixa' });
+  }
+}
+
+export async function deleteFixedTransaction(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
+    }
+
+    const { companyId, role, userId } = getUserContext(req);
+
+    const existing = await FixedTransactionService.getFixedTransactionById(id, companyId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Transacao fixa nao encontrada' });
+    }
+
+    await ensureTemplateAccountAccess(userId, role, companyId, existing);
+
+    await FixedTransactionService.deleteFixedTransaction(id, companyId);
+    return res.status(204).send();
+  } catch (error: any) {
+    logger.error('Erro ao excluir transacao fixa', { error: error.message, stack: error.stack });
+    return res.status(400).json({ error: error.message || 'Erro ao excluir transacao fixa' });
   }
 }

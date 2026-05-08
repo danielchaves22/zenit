@@ -8,6 +8,7 @@ import { AutocompleteInput } from '@/components/ui/AutoCompleteInput';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import CategorySelect from '@/components/financial/CategorySelect';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -20,6 +21,7 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import { formatTransactionDescription } from '@/utils/transactions';
+import { formatAccountDisplayName } from '@/utils/accounts';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   buildCreditCardInvoicePreview,
@@ -54,6 +56,7 @@ interface Category {
   name: string;
   type: string;
   color: string;
+  icon?: string;
   isDefault: boolean;
 }
 
@@ -103,7 +106,7 @@ interface Transaction {
   repeatTimes?: number | null;
   fromAccount?: { id: number; name: string; type?: string };
   toAccount?: { id: number; name: string; type?: string };
-  category?: { id: number; name: string; color: string };
+  category?: { id: number; name: string; color: string; icon?: string };
   tags: { id: number; name: string }[];
   installmentNumber?: number | null;
   totalInstallments?: number | null;
@@ -339,6 +342,10 @@ export default function TransactionForm({
   const isSimpleMode = formMode === 'simple';
   const isCompleted = formData.status === 'COMPLETED';
   const showCreditCardPurchasePreview = mode === 'create' && isCreditCardPurchaseFlow;
+  const shouldRedirectToCreditCardInvoices =
+    formData.type === 'EXPENSE' &&
+    selectedFromAccount?.type === 'CREDIT_CARD' &&
+    Boolean(formData.fromAccountId);
   const completionHint = isCompleted
     ? formData.effectiveDate
       ? `(efetivada em ${new Date(formData.effectiveDate).toLocaleDateString('pt-BR')})`
@@ -498,7 +505,7 @@ export default function TransactionForm({
       setExistingCreditCardInvoices(response.data || []);
     } catch (error: any) {
       setExistingCreditCardInvoices([]);
-      addToast(error.response?.data?.error || 'Erro ao carregar previsao de faturas do cartao', 'error');
+      addToast(error.response?.data?.error || 'Erro ao carregar previsão de faturas do cartão', 'error');
     }
   }
 
@@ -690,7 +697,7 @@ export default function TransactionForm({
   };
 
   const handleSuggestionSelect = (description: string) => {
-    console.log('Sugestao selecionada:', description);
+    console.log('Sugestão selecionada:', description);
   };
 
   const handleAmountChange = (value: string) => {
@@ -797,6 +804,8 @@ export default function TransactionForm({
 
       if (onSuccess) {
         onSuccess();
+      } else if (shouldRedirectToCreditCardInvoices) {
+        router.push(`/financial/credit-cards/${formData.fromAccountId}/invoices`);
       } else {
         router.push('/financial/transactions');
       }
@@ -925,13 +934,13 @@ export default function TransactionForm({
   const previewSummaryLabel = resolvedInvoicePreview.length === 0
     ? previewSummaryLabelLegacy
     : impactedInvoicesCount === 0
-      ? `${externalInstallmentsCount} parcela${externalInstallmentsCount === 1 ? '' : 's'} historica${externalInstallmentsCount === 1 ? '' : 's'} sem impacto no limite atual`
+      ? `${externalInstallmentsCount} parcela${externalInstallmentsCount === 1 ? '' : 's'} histórica${externalInstallmentsCount === 1 ? '' : 's'} sem impacto no limite atual`
       : impactedInvoicesCount === 1
-        ? `1 fatura impactada - limite apos a compra: ${
-            projectedAvailableLimit === null ? 'nao configurado' : formatCurrency(projectedAvailableLimit)
+        ? `1 fatura impactada - limite após a compra: ${
+            projectedAvailableLimit === null ? 'não configurado' : formatCurrency(projectedAvailableLimit)
           }`
-        : `${impactedInvoicesCount} faturas impactadas - limite apos a compra: ${
-            projectedAvailableLimit === null ? 'nao configurado' : formatCurrency(projectedAvailableLimit)
+        : `${impactedInvoicesCount} faturas impactadas - limite após a compra: ${
+            projectedAvailableLimit === null ? 'não configurado' : formatCurrency(projectedAvailableLimit)
           }`;
 
   return (
@@ -1142,8 +1151,7 @@ export default function TransactionForm({
                   </option>
                   {availableFromAccounts.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name}
-                      {account.type === 'CREDIT_CARD' ? ' (cartão)' : ''}
+                      {formatAccountDisplayName(account)}
                       {account.isDefault ? ' ⭐' : ''}
                     </option>
                   ))}
@@ -1168,7 +1176,7 @@ export default function TransactionForm({
                   <option value="">Selecione uma conta</option>
                   {availableToAccounts.map((account) => (
                     <option key={account.id} value={account.id}>
-                      {account.name}
+                      {formatAccountDisplayName(account)}
                       {account.isDefault ? ' ⭐' : ''}
                     </option>
                   ))}
@@ -1178,27 +1186,17 @@ export default function TransactionForm({
 
             {formData.type !== 'TRANSFER' && (
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="categoryId">
-                  Categoria
-                </label>
-                <select
-                  id="categoryId"
-                  name="categoryId"
+                <CategorySelect
+                  label="Categoria"
+                  categories={categories.filter((category) => category.type === formData.type)}
                   value={formData.categoryId}
-                  onChange={handleChange}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  onChange={(categoryId) =>
+                    setFormData((prev) => ({ ...prev, categoryId }))
+                  }
+                  placeholder="Sem categoria"
+                  emptyLabel="Sem categoria"
                   disabled={saving || isReadOnly}
-                >
-                  <option value="">Sem categoria</option>
-                  {categories
-                    .filter((category) => category.type === formData.type)
-                    .map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                        {category.isDefault ? ' ⭐' : ''}
-                      </option>
-                    ))}
-                </select>
+                />
               </div>
             )}
           </div>
@@ -1434,7 +1432,7 @@ export default function TransactionForm({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="notes">
-                  Observacoes
+                  Observações
                 </label>
                 <textarea
                   id="notes"

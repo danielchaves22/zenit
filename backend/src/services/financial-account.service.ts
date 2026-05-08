@@ -5,6 +5,18 @@ import { parseDecimal } from '../utils/money';
 
 const prisma = new PrismaClient();
 
+function getAccountTypeLabel(type: AccountType): string {
+  const labels: Record<AccountType, string> = {
+    CHECKING: 'conta corrente',
+    SAVINGS: 'poupanca',
+    CREDIT_CARD: 'cartao de credito',
+    INVESTMENT: 'investimento',
+    CASH: 'dinheiro'
+  };
+
+  return labels[type];
+}
+
 function normalizeCreditCardConfig(
   type: AccountType,
   creditLimit?: number | string | null,
@@ -24,16 +36,20 @@ function normalizeCreditCardConfig(
       ? null
       : Number(creditLimit);
 
-  if (normalizedCreditLimit === null || Number.isNaN(normalizedCreditLimit) || normalizedCreditLimit <= 0) {
-    throw new Error('Cartões de crédito exigem limite maior que zero');
+  if (
+    normalizedCreditLimit === null ||
+    Number.isNaN(normalizedCreditLimit) ||
+    normalizedCreditLimit <= 0
+  ) {
+    throw new Error('Cartoes de credito exigem limite maior que zero');
   }
 
   if (!statementClosingDay || statementClosingDay < 1 || statementClosingDay > 31) {
-    throw new Error('Cartões de crédito exigem dia de fechamento entre 1 e 31');
+    throw new Error('Cartoes de credito exigem dia de fechamento entre 1 e 31');
   }
 
   if (!statementDueDay || statementDueDay < 1 || statementDueDay > 31) {
-    throw new Error('Cartões de crédito exigem dia de vencimento entre 1 e 31');
+    throw new Error('Cartoes de credito exigem dia de vencimento entre 1 e 31');
   }
 
   return {
@@ -49,14 +65,14 @@ function ensureNegativeBalancePolicy(
   nextAllowNegativeBalance: boolean
 ) {
   if (nextType === 'CREDIT_CARD' && nextAllowNegativeBalance === false) {
-    throw new Error('Cartões de crédito devem permitir saldo negativo');
+    throw new Error('Cartoes de credito devem permitir saldo negativo');
   }
 
   if (nextAllowNegativeBalance === false && currentAccount.allowNegativeBalance === true) {
     const currentBalance = parseDecimal(currentAccount.balance);
     if (currentBalance.lt(0)) {
       throw new Error(
-        `Não é possível desabilitar saldo negativo. Saldo atual: ${currentBalance.toFixed(2)}. Regularize o saldo primeiro.`
+        `Nao e possivel desabilitar saldo negativo. Saldo atual: ${currentBalance.toFixed(2)}. Regularize o saldo primeiro.`
       );
     }
   }
@@ -88,17 +104,14 @@ export default class FinancialAccountService {
       companyId
     } = data;
 
-    const existingAccount = await prisma.financialAccount.findUnique({
-      where: {
-        name_companyId: {
-          name,
-          companyId
-        }
-      }
+    const existingAccount = await prisma.financialAccount.findFirst({
+      where: { name, type, companyId }
     });
 
     if (existingAccount) {
-      throw new Error(`Já existe uma conta com o nome "${name}" nesta empresa`);
+      throw new Error(
+        `Ja existe uma ${getAccountTypeLabel(type)} com o nome "${name}" nesta empresa`
+      );
     }
 
     const finalAllowNegativeBalance = type === 'CREDIT_CARD' ? true : allowNegativeBalance;
@@ -146,7 +159,7 @@ export default class FinancialAccountService {
     });
 
     if (!account) {
-      throw new Error(`Conta financeira ID ${id} não encontrada`);
+      throw new Error(`Conta financeira ID ${id} nao encontrada`);
     }
 
     const nextType = data.type ?? account.type;
@@ -157,25 +170,32 @@ export default class FinancialAccountService {
 
     ensureNegativeBalancePolicy(account, nextType, nextAllowNegativeBalance);
 
-    if (data.name && data.name !== account.name) {
-      const existingAccount = await prisma.financialAccount.findUnique({
+    if (
+      (data.name && data.name !== account.name) ||
+      (data.type && data.type !== account.type)
+    ) {
+      const existingAccount = await prisma.financialAccount.findFirst({
         where: {
-          name_companyId: {
-            name: data.name,
-            companyId: account.companyId
-          }
+          name: data.name ?? account.name,
+          type: nextType,
+          companyId: account.companyId,
+          id: { not: id }
         }
       });
 
       if (existingAccount) {
-        throw new Error(`Já existe uma conta com o nome "${data.name}" nesta empresa`);
+        throw new Error(
+          `Ja existe uma ${getAccountTypeLabel(nextType)} com o nome "${data.name ?? account.name}" nesta empresa`
+        );
       }
     }
 
     const creditCardConfig = normalizeCreditCardConfig(
       nextType,
       data.creditLimit !== undefined ? data.creditLimit : account.creditLimit?.toString() ?? null,
-      data.statementClosingDay !== undefined ? data.statementClosingDay : account.statementClosingDay,
+      data.statementClosingDay !== undefined
+        ? data.statementClosingDay
+        : account.statementClosingDay,
       data.statementDueDay !== undefined ? data.statementDueDay : account.statementDueDay
     );
 
@@ -237,7 +257,7 @@ export default class FinancialAccountService {
 
     return prisma.financialAccount.findMany({
       where,
-      orderBy: { name: 'asc' }
+      orderBy: [{ name: 'asc' }, { type: 'asc' }]
     });
   }
 
@@ -270,12 +290,24 @@ export default class FinancialAccountService {
 
     if (transactionCount > 0) {
       throw new Error(
-        `Não é possível excluir a conta pois existem ${transactionCount} transações associadas. Considere inativá-la.`
+        `Nao e possivel excluir a conta pois existem ${transactionCount} transacoes associadas. Considere inativa-la.`
       );
     }
 
-    await prisma.financialAccount.delete({
-      where: { id }
+    await prisma.$transaction(async (tx) => {
+      await tx.recurringTransaction.updateMany({
+        where: { fromAccountId: id },
+        data: { fromAccountId: null }
+      });
+
+      await tx.recurringTransaction.updateMany({
+        where: { toAccountId: id },
+        data: { toAccountId: null }
+      });
+
+      await tx.financialAccount.delete({
+        where: { id }
+      });
     });
   }
 
@@ -291,7 +323,7 @@ export default class FinancialAccountService {
       });
 
       if (!account) {
-        throw new Error(`Conta financeira ID ${accountId} não encontrada`);
+        throw new Error(`Conta financeira ID ${accountId} nao encontrada`);
       }
 
       const currentBalance = Number(account.balance);
@@ -313,8 +345,10 @@ export default class FinancialAccountService {
           type: transactionType,
           status: 'COMPLETED',
           notes: `Ajuste manual. Saldo anterior: ${currentBalance}, Novo saldo: ${targetBalance}`,
-          fromAccount: transactionType === 'EXPENSE' ? { connect: { id: accountId } } : undefined,
-          toAccount: transactionType === 'INCOME' ? { connect: { id: accountId } } : undefined,
+          fromAccount:
+            transactionType === 'EXPENSE' ? { connect: { id: accountId } } : undefined,
+          toAccount:
+            transactionType === 'INCOME' ? { connect: { id: accountId } } : undefined,
           company: { connect: { id: account.companyId } },
           createdByUser: { connect: { id: userId } }
         }
@@ -338,7 +372,7 @@ export default class FinancialAccountService {
       });
 
       if (!account) {
-        throw new Error('Conta não encontrada ou não pertence à empresa');
+        throw new Error('Conta nao encontrada ou nao pertence a empresa');
       }
 
       ensureNegativeBalancePolicy(account, account.type, allowNegativeBalance);

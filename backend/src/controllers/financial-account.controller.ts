@@ -3,24 +3,35 @@ import FinancialAccountService from '../services/financial-account.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import { logger } from '../utils/logger';
 
-/**
- * Função helper simplificada: extrai o único companyId e userId do token
- */
-function getUserContext(req: Request): { companyId: number; userId: number } {
-  // @ts-ignore - O middleware já validou a existência desses valores
-  const { companyId, userId } = req.user;
-  
-  if (!companyId) {
-    throw new Error('Contexto de empresa não encontrado');
+function isAccountValidationError(message?: string): boolean {
+  if (!message) {
+    return false;
   }
-  
+
+  return ['Ja existe', 'Nao e possivel', 'Cartoes de credito'].some((fragment) =>
+    message.includes(fragment)
+  );
+}
+
+function isAccountDeleteConflict(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+
+  return message.includes('transacoes associadas');
+}
+
+function getUserContext(req: Request): { companyId: number; userId: number } {
+  // @ts-ignore auth middleware already injects these values
+  const { companyId, userId } = req.user;
+
+  if (!companyId) {
+    throw new Error('Contexto de empresa nao encontrado');
+  }
+
   return { companyId, userId };
 }
 
-/**
- * POST /api/financial/accounts
- * Cria uma nova conta financeira
- */
 export async function createAccount(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
@@ -52,20 +63,16 @@ export async function createAccount(req: Request, res: Response) {
     return res.status(201).json(account);
   } catch (error: any) {
     logger.error('Erro ao criar conta financeira:', error);
-    return res.status(error.message.includes('já existe') ? 400 : 500).json({
+    return res.status(isAccountValidationError(error.message) ? 400 : 500).json({
       error: error.message || 'Erro ao criar conta financeira'
     });
   }
 }
 
-/**
- * GET /api/financial/accounts
- * Lista contas financeiras com filtros opcionais
- */
 export async function getAccounts(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    // @ts-ignore - auth middleware adiciona
+    // @ts-ignore auth middleware injects these values
     const { userId, role } = req.user;
     const { type, isActive, search, allowNegativeBalance } = req.query;
 
@@ -97,23 +104,18 @@ export async function getAccounts(req: Request, res: Response) {
   }
 }
 
-/**
- * GET /api/financial/accounts/:id
- * Obtém uma conta financeira pelo ID
- */
 export async function getAccountById(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
     }
 
     const account = await FinancialAccountService.getAccountById(id);
     if (!account) {
-      return res.status(404).json({ error: 'Conta financeira não encontrada' });
+      return res.status(404).json({ error: 'Conta financeira nao encontrada' });
     }
 
-    // Verifica se a conta pertence à empresa do usuário
     const { companyId } = getUserContext(req);
     if (account.companyId !== companyId) {
       return res.status(403).json({ error: 'Acesso negado' });
@@ -121,28 +123,23 @@ export async function getAccountById(req: Request, res: Response) {
 
     return res.status(200).json(account);
   } catch (error) {
-    logger.error(`Erro ao buscar conta financeira:`, error);
+    logger.error('Erro ao buscar conta financeira:', error);
     return res.status(500).json({
       error: 'Erro ao buscar conta financeira'
     });
   }
 }
 
-/**
- * PUT /api/financial/accounts/:id
- * Atualiza uma conta financeira
- */
 export async function updateAccount(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
     }
 
-    // Verificar se a conta existe e pertence à empresa do usuário
     const existingAccount = await FinancialAccountService.getAccountById(id);
     if (!existingAccount) {
-      return res.status(404).json({ error: 'Conta financeira não encontrada' });
+      return res.status(404).json({ error: 'Conta financeira nao encontrada' });
     }
 
     const { companyId } = getUserContext(req);
@@ -161,6 +158,7 @@ export async function updateAccount(req: Request, res: Response) {
       statementClosingDay,
       statementDueDay
     } = req.body;
+
     const updatedAccount = await FinancialAccountService.updateAccount(id, {
       name,
       type,
@@ -175,28 +173,23 @@ export async function updateAccount(req: Request, res: Response) {
 
     return res.status(200).json(updatedAccount);
   } catch (error: any) {
-    logger.error(`Erro ao atualizar conta financeira:`, error);
-    return res.status(error.message.includes('já existe') ? 400 : 500).json({
+    logger.error('Erro ao atualizar conta financeira:', error);
+    return res.status(isAccountValidationError(error.message) ? 400 : 500).json({
       error: error.message || 'Erro ao atualizar conta financeira'
     });
   }
 }
 
-/**
- * DELETE /api/financial/accounts/:id
- * Exclui uma conta financeira (se não tiver transações)
- */
 export async function deleteAccount(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
     }
 
-    // Verificar se a conta existe e pertence à empresa do usuário
     const existingAccount = await FinancialAccountService.getAccountById(id);
     if (!existingAccount) {
-      return res.status(404).json({ error: 'Conta financeira não encontrada' });
+      return res.status(404).json({ error: 'Conta financeira nao encontrada' });
     }
 
     const { companyId } = getUserContext(req);
@@ -207,28 +200,23 @@ export async function deleteAccount(req: Request, res: Response) {
     await FinancialAccountService.deleteAccount(id);
     return res.status(204).send();
   } catch (error: any) {
-    logger.error(`Erro ao excluir conta financeira:`, error);
-    return res.status(error.message.includes('transações') ? 400 : 500).json({
+    logger.error('Erro ao excluir conta financeira:', error);
+    return res.status(isAccountDeleteConflict(error.message) ? 400 : 500).json({
       error: error.message || 'Erro ao excluir conta financeira'
     });
   }
 }
 
-/**
- * POST /api/financial/accounts/:id/adjust-balance
- * Ajusta o saldo de uma conta (operação administrativa)
- */
 export async function adjustBalance(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
     }
 
-    // Verificar se a conta existe e pertence à empresa do usuário
     const existingAccount = await FinancialAccountService.getAccountById(id);
     if (!existingAccount) {
-      return res.status(404).json({ error: 'Conta financeira não encontrada' });
+      return res.status(404).json({ error: 'Conta financeira nao encontrada' });
     }
 
     const { companyId, userId } = getUserContext(req);
@@ -238,8 +226,8 @@ export async function adjustBalance(req: Request, res: Response) {
 
     const { newBalance, reason } = req.body;
     if (newBalance === undefined || !reason) {
-      return res.status(400).json({ 
-        error: 'Novo saldo e motivo do ajuste são obrigatórios' 
+      return res.status(400).json({
+        error: 'Novo saldo e motivo do ajuste sao obrigatorios'
       });
     }
 
@@ -252,7 +240,7 @@ export async function adjustBalance(req: Request, res: Response) {
 
     return res.status(200).json(updatedAccount);
   } catch (error: any) {
-    logger.error(`Erro ao ajustar saldo:`, error);
+    logger.error('Erro ao ajustar saldo:', error);
     return res.status(500).json({
       error: error.message || 'Erro ao ajustar saldo da conta'
     });

@@ -1,0 +1,2 @@
+ALTER TABLE "FinancialCategory"
+ADD COLUMN IF NOT EXISTS "icon" TEXT NOT NULL DEFAULT 'tag';

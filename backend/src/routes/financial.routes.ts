@@ -21,6 +21,7 @@ import {
 } from '../validators/financial-transaction.validator';
 import {
   getCreditCardInvoiceSchema,
+  getProjectedCreditCardInvoiceSchema,
   listCreditCardInvoicesSchema,
   payCreditCardInvoiceSchema
 } from '../validators/credit-card-invoice.validator';
@@ -70,12 +71,14 @@ import {
 import {
   cancelFixedTransaction,
   createFixedTransaction,
+  deleteFixedTransaction,
   listFixedTransactions,
   materializeFixedTransactionOccurrence,
   updateFixedTransaction
 } from '../controllers/fixed-transaction.controller';
 import {
   getCreditCardInvoice,
+  getProjectedCreditCardInvoice,
   listCreditCardInvoices,
   listCreditCards,
   payCreditCardInvoice
@@ -101,6 +104,7 @@ router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultA
 // Credit cards and invoices
 router.get('/credit-cards', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listCreditCards);
 router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
+router.get('/credit-cards/:accountId/invoices/projected/:projectionKey', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(getProjectedCreditCardInvoiceSchema), getProjectedCreditCardInvoice);
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
 router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
 
@@ -129,6 +133,7 @@ router.delete('/transactions/:id', deleteTransaction);
 router.post('/fixed-transactions', requireTransactionAccountAccess(), validate(createFixedTransactionSchema), createFixedTransaction);
 router.get('/fixed-transactions', validate(listFixedTransactionsSchema), listFixedTransactions);
 router.put('/fixed-transactions/:id', validate(updateFixedTransactionSchema), updateFixedTransaction);
+router.delete('/fixed-transactions/:id', deleteFixedTransaction);
 router.patch('/fixed-transactions/:id/cancel', cancelFixedTransaction);
 router.post('/fixed-transactions/:id/materialize', validate(materializeFixedTransactionSchema), materializeFixedTransactionOccurrence);
 

@@ -166,6 +166,65 @@ describe('Credit card invoices', () => {
     expect(card.statementDueDay).toBe(15);
   });
 
+  it('allows the same account name across different account types', async () => {
+    const sharedName = `Conta Duplicada por Tipo ${Date.now()}`;
+
+    const checkingResponse = await request(app)
+      .post('/api/financial/accounts')
+      .set(authHeaders())
+      .send({
+        name: sharedName,
+        type: 'CHECKING',
+        initialBalance: 0
+      });
+
+    expect(checkingResponse.status).toBe(201);
+
+    const cardResponse = await request(app)
+      .post('/api/financial/accounts')
+      .set(authHeaders())
+      .send({
+        name: sharedName,
+        type: 'CREDIT_CARD',
+        initialBalance: 0,
+        bankName: 'Banco Teste',
+        creditLimit: 1000,
+        statementClosingDay: 10,
+        statementDueDay: 15
+      });
+
+    expect(cardResponse.status).toBe(201);
+    expect(cardResponse.body.name).toBe(sharedName);
+    expect(cardResponse.body.type).toBe('CREDIT_CARD');
+  });
+
+  it('keeps blocking duplicate names within the same account type', async () => {
+    const sharedName = `Conta Duplicada Mesmo Tipo ${Date.now()}`;
+
+    const firstResponse = await request(app)
+      .post('/api/financial/accounts')
+      .set(authHeaders())
+      .send({
+        name: sharedName,
+        type: 'CHECKING',
+        initialBalance: 0
+      });
+
+    expect(firstResponse.status).toBe(201);
+
+    const duplicateResponse = await request(app)
+      .post('/api/financial/accounts')
+      .set(authHeaders())
+      .send({
+        name: sharedName,
+        type: 'CHECKING',
+        initialBalance: 0
+      });
+
+    expect(duplicateResponse.status).toBe(400);
+    expect(duplicateResponse.body.error).toContain(sharedName);
+  });
+
   it('creates installment purchases, groups them into invoices, pays and reopens the invoice on payment deletion', async () => {
     const card = await createCreditCardAccount();
     const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
@@ -476,5 +535,169 @@ describe('Credit card invoices', () => {
     expect(cardsAfterRetroactivePurchase.status).toBe(200);
     expect(cardsAfterRetroactivePurchase.body[0].usedLimit).toBe(0);
     expect(cardsAfterRetroactivePurchase.body[0].availableLimit).toBe(1000);
+  });
+
+  it('combines real invoice items with projected fixed card expenses in the current invoice detail', async () => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const lastDayOfCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const closingDay = Math.min(today.getDate() + 1, lastDayOfCurrentMonth);
+    const dueDay = closingDay < lastDayOfCurrentMonth ? closingDay + 1 : 5;
+
+    const card = await prisma.financialAccount.create({
+      data: {
+        name: `Cartao Hibrido ${Date.now()}`,
+        type: 'CREDIT_CARD',
+        balance: 0,
+        allowNegativeBalance: true,
+        creditLimit: 1000,
+        statementClosingDay: closingDay,
+        statementDueDay: dueDay,
+        companyId
+      }
+    });
+
+    const fixedResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Streaming no cartao',
+        amount: 75.5,
+        type: 'EXPENSE',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(fixedResponse.status).toBe(201);
+    expect(fixedResponse.body.dayOfMonth).toBeNull();
+
+    const purchaseResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra atual no cartao',
+        amount: 24.5,
+        date: today.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(purchaseResponse.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    expect(invoicesResponse.status).toBe(200);
+
+    const currentInvoice = invoicesResponse.body.find(
+      (invoice: any) =>
+        invoice.referenceYear === today.getFullYear() &&
+        invoice.referenceMonth === today.getMonth() + 1
+    );
+
+    expect(currentInvoice).toBeTruthy();
+    expect(currentInvoice.isProjected).toBe(false);
+    expect(currentInvoice.hasProjectedTransactions).toBe(true);
+    expect(Number(currentInvoice.itemsSubtotal)).toBeCloseTo(24.5, 5);
+    expect(Number(currentInvoice.fixedSubtotal)).toBeCloseTo(75.5, 5);
+    expect(Number(currentInvoice.totalAmount)).toBeCloseTo(100, 5);
+    expect(currentInvoice.itemCount).toBe(1);
+    expect(currentInvoice.fixedItemCount).toBe(1);
+
+    const invoiceDetail = await request(app)
+      .get(`/api/financial/credit-card-invoices/${currentInvoice.id}`)
+      .set(authHeaders());
+
+    expect(invoiceDetail.status).toBe(200);
+    expect(invoiceDetail.body.isProjected).toBe(false);
+    expect(invoiceDetail.body.hasProjectedTransactions).toBe(true);
+    expect(Number(invoiceDetail.body.itemsSubtotal)).toBeCloseTo(24.5, 5);
+    expect(Number(invoiceDetail.body.fixedSubtotal)).toBeCloseTo(75.5, 5);
+    expect(Number(invoiceDetail.body.totalAmount)).toBeCloseTo(100, 5);
+    expect(
+      invoiceDetail.body.transactions.some((transaction: any) => transaction.id === purchaseResponse.body.id)
+    ).toBe(true);
+    expect(
+      invoiceDetail.body.transactions.some(
+        (transaction: any) =>
+          transaction.isProjected &&
+          transaction.isFixedProjection &&
+          transaction.fixedTemplateId === fixedResponse.body.id
+      )
+    ).toBe(true);
+  });
+
+  it('lists synthetic projected invoices for the next 10 competencies and returns projected detail', async () => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const lastDayOfCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const closingDay = Math.min(today.getDate() + 1, lastDayOfCurrentMonth);
+    const dueDay = closingDay < lastDayOfCurrentMonth ? closingDay + 1 : 5;
+
+    const card = await prisma.financialAccount.create({
+      data: {
+        name: `Cartao Projetado ${Date.now()}`,
+        type: 'CREDIT_CARD',
+        balance: 0,
+        allowNegativeBalance: true,
+        creditLimit: 2000,
+        statementClosingDay: closingDay,
+        statementDueDay: dueDay,
+        companyId
+      }
+    });
+
+    const fixedResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Assinatura recorrente projetada',
+        amount: 89.9,
+        type: 'EXPENSE',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(fixedResponse.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    expect(invoicesResponse.status).toBe(200);
+    expect(invoicesResponse.body.filter((invoice: any) => invoice.isProjected)).toHaveLength(10);
+
+    const projectionKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const currentInvoice = invoicesResponse.body.find(
+      (invoice: any) => invoice.projectionKey === projectionKey
+    );
+
+    expect(currentInvoice).toBeTruthy();
+    expect(currentInvoice.id).toBeNull();
+    expect(currentInvoice.isProjected).toBe(true);
+    expect(Number(currentInvoice.itemsSubtotal)).toBe(0);
+    expect(Number(currentInvoice.fixedSubtotal)).toBeCloseTo(89.9, 5);
+    expect(Number(currentInvoice.totalAmount)).toBeCloseTo(89.9, 5);
+    expect(currentInvoice.itemCount).toBe(0);
+    expect(currentInvoice.fixedItemCount).toBe(1);
+
+    const projectedDetail = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices/projected/${projectionKey}`)
+      .set(authHeaders());
+
+    expect(projectedDetail.status).toBe(200);
+    expect(projectedDetail.body.isProjected).toBe(true);
+    expect(projectedDetail.body.paymentTransaction).toBeNull();
+    expect(Number(projectedDetail.body.itemsSubtotal)).toBe(0);
+    expect(Number(projectedDetail.body.fixedSubtotal)).toBeCloseTo(89.9, 5);
+    expect(projectedDetail.body.itemCount).toBe(0);
+    expect(projectedDetail.body.fixedItemCount).toBe(1);
+    expect(projectedDetail.body.transactions).toHaveLength(1);
+    expect(projectedDetail.body.transactions[0].isProjected).toBe(true);
+    expect(projectedDetail.body.transactions[0].isFixedProjection).toBe(true);
+    expect(projectedDetail.body.transactions[0].fixedTemplateId).toBe(fixedResponse.body.id);
   });
 });

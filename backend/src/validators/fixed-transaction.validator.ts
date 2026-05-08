@@ -48,9 +48,9 @@ export const createFixedTransactionSchema = z.object({
     .positive('ID da categoria deve ser positivo')
     .optional()
     .nullable()
-}).refine((data) => {
-  if (data.type === 'INCOME' && !data.toAccountId) return false;
-  if (data.type === 'EXPENSE' && !data.fromAccountId) return false;
+}).partial({ dayOfMonth: true }).refine((data) => {
+  if (data.type === 'INCOME' && data.fromAccountId) return false;
+  if (data.type === 'EXPENSE' && data.toAccountId) return false;
   return true;
 }, {
   message: 'Configuracao de contas invalida para o tipo da transacao fixa',
@@ -115,6 +115,13 @@ export const updateFixedTransactionSchema = z.object({
   return Object.keys(data).length > 0;
 }, {
   message: 'Informe ao menos um campo para atualizar'
+}).refine((data) => {
+  if (data.type === 'INCOME' && data.fromAccountId) return false;
+  if (data.type === 'EXPENSE' && data.toAccountId) return false;
+  return true;
+}, {
+  message: 'Configuracao de contas invalida para o tipo da transacao fixa',
+  path: ['type']
 });
 
 export const listFixedTransactionsSchema = z.object({

@@ -1,0 +1,99 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - link "ZENIT" [ref=e6] [cursor=pointer]:
+        - /url: /
+        - img "ZENIT" [ref=e7]
+      - generic [ref=e8]:
+        - button "Alterar tema de cores" [ref=e11] [cursor=pointer]:
+          - img [ref=e13]
+        - button [ref=e20] [cursor=pointer]:
+          - img [ref=e22]
+    - generic [ref=e25]:
+      - button "Recolher menu" [ref=e27] [cursor=pointer]:
+        - img [ref=e28]
+      - main [ref=e32]:
+        - navigation [ref=e33]:
+          - link "Dashboard" [ref=e34] [cursor=pointer]:
+            - /url: /
+          - img [ref=e35]
+          - generic [ref=e37]: Financeiro
+          - img [ref=e38]
+          - link "Transações" [ref=e40] [cursor=pointer]:
+            - /url: /financial/transactions
+          - img [ref=e41]
+          - generic [ref=e43]: Nova Compra no Cartão
+        - generic [ref=e44]:
+          - generic [ref=e45]:
+            - button "Voltar" [ref=e46] [cursor=pointer]:
+              - img [ref=e47]
+              - text: Voltar
+            - heading "Nova Compra no Cartão" [level=1] [ref=e49]
+            - generic [ref=e50]:
+              - button "Simples" [ref=e51] [cursor=pointer]
+              - button "Detalhado" [pressed] [ref=e52] [cursor=pointer]
+          - generic [ref=e53]:
+            - button "Cancelar" [ref=e54] [cursor=pointer]:
+              - img [ref=e55]
+              - text: Cancelar
+            - button "Registrar Compra" [ref=e58] [cursor=pointer]:
+              - img [ref=e59]
+              - text: Registrar Compra
+        - generic [ref=e65]:
+          - generic [ref=e66]:
+            - generic [ref=e68]:
+              - generic [ref=e69]: Valor **
+              - generic [ref=e70]:
+                - generic: R$
+                - textbox "Valor **" [ref=e71]:
+                  - /placeholder: 0,00
+                  - text: 0,00
+            - generic [ref=e73]:
+              - generic [ref=e74]: Parcelas
+              - spinbutton "Parcelas" [ref=e75]: "1"
+          - generic [ref=e76]:
+            - generic [ref=e77]:
+              - generic [ref=e78]: Descrição *
+              - generic [ref=e79]: Digite pelo menos 3 caracteres para ver sugestões baseadas no seu histórico
+            - generic [ref=e81]:
+              - textbox "Descrição *" [ref=e82]:
+                - /placeholder: "Ex: Compra no supermercado, Recebimento de cliente..."
+              - img [ref=e84]
+          - generic [ref=e87]: Nenhum cartão ativo disponível. Cadastre um cartão em Cartões e Faturas antes de registrar a compra.
+          - generic [ref=e88]:
+            - generic [ref=e89]:
+              - generic [ref=e90]: Cartão *
+              - combobox "Cartão *" [ref=e91]:
+                - option "Selecione um cartão" [selected]
+            - generic [ref=e93]:
+              - generic [ref=e94]: Categoria
+              - button "Sem categoria" [ref=e95] [cursor=pointer]:
+                - generic [ref=e96]: Sem categoria
+                - img [ref=e97]
+          - generic [ref=e100]:
+            - generic [ref=e101]: Data da Compra *
+            - textbox "Data da Compra *" [ref=e102]: 2026-05-08
+          - generic [ref=e103]: A compra no cartão entra com status e data de efetivação preenchidos automaticamente. Expanda o painel final para conferir limite e previsão das faturas.
+          - generic [ref=e105]:
+            - generic [ref=e106]: Tags (separadas por vírgula)
+            - textbox "Tags (separadas por vírgula)" [ref=e107]:
+              - /placeholder: "Ex: alimentação, mercado, urgente"
+          - generic [ref=e108]:
+            - generic [ref=e109]: Observações
+            - textbox "Observações" [ref=e110]:
+              - /placeholder: Informações adicionais sobre a transação...
+          - button "Detalhes do cartão e previsão de faturas Configure um cartão com fechamento e vencimento para ver a previsão." [ref=e112] [cursor=pointer]:
+            - generic [ref=e113]:
+              - img [ref=e114]
+              - generic [ref=e116]:
+                - generic [ref=e117]: Detalhes do cartão e previsão de faturas
+                - generic [ref=e118]: Configure um cartão com fechamento e vencimento para ver a previsão.
+            - img [ref=e120]
+          - generic [ref=e122]:
+            - button "Cancelar" [ref=e123] [cursor=pointer]:
+              - img [ref=e124]
+              - text: Cancelar
+            - button "Registrar Compra" [ref=e127] [cursor=pointer]:
+              - img [ref=e128]
+              - text: Registrar Compra
+  - alert [ref=e132]

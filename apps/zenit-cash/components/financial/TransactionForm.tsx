@@ -1096,20 +1096,6 @@ export default function TransactionForm({
                 />
               </div>
 
-              <div className="w-36">
-                <Input
-                  id="installmentCount"
-                  name="installmentCount"
-                  type="number"
-                  min="1"
-                  label="Parcelas"
-                  value={formData.installmentCount}
-                  onChange={handleChange}
-                  disabled={saving || isReadOnly}
-                  className="mb-0"
-                />
-              </div>
-
               <div className="w-48">
                 <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="date">
                   Data da Compra *
@@ -1122,6 +1108,20 @@ export default function TransactionForm({
                   onChange={handleChange}
                   disabled={transactionDateDisabled}
                   className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                />
+              </div>
+
+              <div className="w-36">
+                <Input
+                  id="installmentCount"
+                  name="installmentCount"
+                  type="number"
+                  min="1"
+                  label="Parcelas"
+                  value={formData.installmentCount}
+                  onChange={handleChange}
+                  disabled={saving || isReadOnly}
+                  className="mb-0"
                 />
               </div>
             </div>

@@ -1,4 +1,5 @@
 ﻿import { AiProvider, PrismaClient } from '@prisma/client';
+import { DEFAULT_OPENAI_MODEL, resolveOpenAiModel } from '../constants/openai';
 import { decryptSecret, encryptSecret } from '../utils/secret-crypto';
 
 const prisma = new PrismaClient();
@@ -72,7 +73,7 @@ export default class OpenAiIntegrationService {
         apiKeyCiphertext: encrypted?.ciphertext ?? existing!.apiKeyCiphertext,
         apiKeyIv: encrypted?.iv ?? existing!.apiKeyIv,
         apiKeyTag: encrypted?.tag ?? existing!.apiKeyTag,
-        model: (data.model || existing?.model || 'gpt-4o-mini').trim(),
+        model: resolveOpenAiModel(data.model || existing?.model),
         promptVersion: (data.promptVersion || existing?.promptVersion || 'v1').trim(),
         isActive: data.isActive ?? existing?.isActive ?? true
       },
@@ -82,7 +83,7 @@ export default class OpenAiIntegrationService {
         apiKeyCiphertext: encrypted!.ciphertext,
         apiKeyIv: encrypted!.iv,
         apiKeyTag: encrypted!.tag,
-        model: (data.model || 'gpt-4o-mini').trim(),
+        model: resolveOpenAiModel(data.model),
         promptVersion: (data.promptVersion || 'v1').trim(),
         isActive: data.isActive ?? true
       },
@@ -189,7 +190,10 @@ export default class OpenAiIntegrationService {
   }
 
   static async testCredential(data: { companyId: number; apiKey?: string; model?: string }) {
-    const apiKey = data.apiKey?.trim() || (await this.getDecryptedCredential(data.companyId, false)).apiKey;
+    const credential = data.apiKey?.trim()
+      ? null
+      : await this.getDecryptedCredential(data.companyId, false);
+    const apiKey = data.apiKey?.trim() || credential?.apiKey;
 
     if (!apiKey) {
       throw new Error('Nao foi possivel resolver a apiKey para teste.');
@@ -216,7 +220,7 @@ export default class OpenAiIntegrationService {
       ok: true,
       status: response.status,
       message: 'Credencial validada com sucesso.',
-      model: data.model || null
+      model: data.model?.trim() || credential?.model || DEFAULT_OPENAI_MODEL
     };
   }
 }

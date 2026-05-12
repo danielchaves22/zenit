@@ -36,6 +36,8 @@ interface AdminOpenAiStatusResponse {
   } | null
 }
 
+const DEFAULT_OPENAI_MODEL = 'gpt-5.4-nano'
+
 export function CompanyForm({ mode, companyId }: CompanyFormProps) {
   const router = useRouter()
   const { addToast } = useToast()
@@ -52,7 +54,7 @@ export function CompanyForm({ mode, companyId }: CompanyFormProps) {
 
   const [openAiStatus, setOpenAiStatus] = useState<AdminOpenAiStatusResponse | null>(null)
   const [openAiApiKey, setOpenAiApiKey] = useState('')
-  const [openAiModel, setOpenAiModel] = useState('gpt-4o-mini')
+  const [openAiModel, setOpenAiModel] = useState(DEFAULT_OPENAI_MODEL)
   const [openAiPromptVersion, setOpenAiPromptVersion] = useState('v1')
   const [openAiEnabled, setOpenAiEnabled] = useState(true)
 
@@ -100,7 +102,7 @@ export function CompanyForm({ mode, companyId }: CompanyFormProps) {
   function resetOpenAiState() {
     setOpenAiStatus(null)
     setOpenAiApiKey('')
-    setOpenAiModel('gpt-4o-mini')
+    setOpenAiModel(DEFAULT_OPENAI_MODEL)
     setOpenAiPromptVersion('v1')
     setOpenAiEnabled(true)
   }
@@ -134,11 +136,11 @@ export function CompanyForm({ mode, companyId }: CompanyFormProps) {
       setOpenAiStatus(data)
 
       if (data.credential) {
-        setOpenAiModel(data.credential.model || 'gpt-4o-mini')
+        setOpenAiModel(data.credential.model || DEFAULT_OPENAI_MODEL)
         setOpenAiPromptVersion(data.credential.promptVersion || 'v1')
         setOpenAiEnabled(data.credential.isActive)
       } else {
-        setOpenAiModel('gpt-4o-mini')
+        setOpenAiModel(DEFAULT_OPENAI_MODEL)
         setOpenAiPromptVersion('v1')
         setOpenAiEnabled(true)
       }
@@ -321,7 +323,7 @@ export function CompanyForm({ mode, companyId }: CompanyFormProps) {
                     label="Modelo"
                     value={openAiModel}
                     onChange={(event) => setOpenAiModel(event.target.value)}
-                    placeholder="gpt-4o-mini"
+                    placeholder={DEFAULT_OPENAI_MODEL}
                     disabled={savingOpenAi || testingOpenAi || formLoading}
                   />
 

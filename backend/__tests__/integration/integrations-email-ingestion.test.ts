@@ -14,6 +14,10 @@ const { PrismaClient } = require('@prisma/client');
 const GmailClientService = require('../../src/services/gmail-client.service').default;
 const LegalEmailExtractionService = require('../../src/services/legal-email-extraction.service').default;
 const EmailIngestionService = require('../../src/services/email-ingestion.service').default;
+const {
+  DEFAULT_OPENAI_MODEL,
+  LEGACY_OPENAI_MODEL_FALLBACK
+} = require('../../src/constants/openai');
 const { encryptSecret } = require('../../src/utils/secret-crypto');
 
 const prisma = new PrismaClient();
@@ -183,7 +187,6 @@ describe('Integrations and email ingestion', () => {
       .set('X-Company-Id', String(companyAId))
       .send({
         apiKey: 'sk-admin-valid-key-1234567890',
-        model: 'gpt-4o-mini',
         promptVersion: 'v1',
         isActive: true
       });
@@ -201,7 +204,7 @@ describe('Integrations and email ingestion', () => {
     const fetchSpy = jest.spyOn(global as any, 'fetch').mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => JSON.stringify({ data: [{ id: 'gpt-4o-mini' }] })
+      text: async () => JSON.stringify({ data: [{ id: DEFAULT_OPENAI_MODEL }] })
     } as any);
 
     const testedByAdminRoute = await request(app)
@@ -221,21 +224,85 @@ describe('Integrations and email ingestion', () => {
 
     expect(savedByAdminRoute.status).toBe(200);
     expect(savedByAdminRoute.body.provider).toBe('OPENAI');
+    expect(savedByAdminRoute.body.model).toBe(DEFAULT_OPENAI_MODEL);
 
     expect(statusAfter.status).toBe(200);
     expect(statusAfter.body.configured).toBe(true);
-    expect(statusAfter.body.model).toBe('gpt-4o-mini');
+    expect(statusAfter.body.model).toBe(DEFAULT_OPENAI_MODEL);
     expect(statusAfter.body.promptVersion).toBe('v1');
     expect(statusAfter.body.isActive).toBe(true);
     expect(statusAfter.body.credential).toBeUndefined();
 
     expect(adminStatusAfter.status).toBe(200);
     expect(adminStatusAfter.body.configured).toBe(true);
-    expect(adminStatusAfter.body.credential?.model).toBe('gpt-4o-mini');
+    expect(adminStatusAfter.body.credential?.model).toBe(DEFAULT_OPENAI_MODEL);
 
     expect(fetchSpy).toHaveBeenCalled();
     expect(testedByAdminRoute.status).toBe(200);
     expect(testedByAdminRoute.body.ok).toBe(true);
+  });
+
+  it('faz fallback para gpt-4o-mini quando a conta nao tem acesso ao default atual', async () => {
+    const savedByAdminRoute = await request(app)
+      .put(`/api/admin/companies/${companyAId}/openai`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('X-Company-Id', String(companyAId))
+      .send({
+        apiKey: 'sk-admin-valid-key-1234567890',
+        promptVersion: 'v1',
+        isActive: true
+      });
+
+    const fetchSpy = jest.spyOn(global as any, 'fetch')
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () =>
+          JSON.stringify({
+            error: {
+              code: 'model_not_found',
+              param: 'model',
+              message: `The model \`${DEFAULT_OPENAI_MODEL}\` does not exist or you do not have access to it.`
+            }
+          })
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    advogado: 'Advogada Teste',
+                    reclamante: 'JOAO TESTE'
+                  })
+                }
+              }
+            ]
+          })
+      } as any);
+
+    const extraction = await LegalEmailExtractionService.extract(
+      companyAId,
+      'Solicito analise. Reclamante: JOAO TESTE. Advogada Teste OAB 12345'
+    );
+
+    expect(savedByAdminRoute.status).toBe(200);
+    expect(extraction).toEqual({
+      advogado: 'Advogada Teste',
+      reclamante: 'JOAO TESTE'
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    const firstRequest = fetchSpy.mock.calls[0][1] as { body: string };
+    const secondRequest = fetchSpy.mock.calls[1][1] as { body: string };
+    const firstPayload = JSON.parse(firstRequest.body);
+    const secondPayload = JSON.parse(secondRequest.body);
+
+    expect(firstPayload.model).toBe(DEFAULT_OPENAI_MODEL);
+    expect(secondPayload.model).toBe(LEGACY_OPENAI_MODEL_FALLBACK);
   });
 
   it('valida endpoints Gmail com permissao estrita de SUPERUSER e isolamento por tenant', async () => {
@@ -358,7 +425,7 @@ describe('Integrations and email ingestion', () => {
           { name: 'From', value: 'advogado.externo@cliente.com' }
         ],
         body: {
-          data: toBase64Url('Solicito cálculo da inicial. Reclamante: JOAO TESTE')
+          data: toBase64Url('Solicito calculo da inicial. Reclamante: JOAO TESTE')
         }
       }
     });

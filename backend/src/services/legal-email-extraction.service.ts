@@ -1,4 +1,9 @@
-﻿import OpenAiIntegrationService from './openai-integration.service';
+import {
+  LEGACY_OPENAI_MODEL_FALLBACK,
+  resolveOpenAiModel,
+  shouldRetryWithLegacyOpenAiModel
+} from '../constants/openai';
+import OpenAiIntegrationService from './openai-integration.service';
 
 export type LegalExtractionResult = {
   advogado: string | null;
@@ -12,6 +17,41 @@ function parseJsonSafe(raw: string | null): any {
   } catch {
     return null;
   }
+}
+
+async function requestExtraction(apiKey: string, model: string, prompt: string) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: 'system',
+          content: 'Extrator de dados juridicos. Sempre retorne JSON valido. Se nao encontrar, retorne null.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.1,
+      max_tokens: 180,
+      response_format: { type: 'json_object' }
+    })
+  });
+
+  const raw = await response.text();
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    raw,
+    parsed: parseJsonSafe(raw)
+  };
 }
 
 export default class LegalEmailExtractionService {
@@ -36,38 +76,18 @@ EMAIL:
 ${emailBody.substring(0, 6000)}
 `;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${credential.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: credential.model || 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: 'Extrator de dados juridicos. Sempre retorne JSON valido. Se nao encontrar, retorne null.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.1,
-        max_tokens: 180,
-        response_format: { type: 'json_object' }
-      })
-    });
+    const primaryModel = resolveOpenAiModel(credential.model);
+    let completion = await requestExtraction(credential.apiKey, primaryModel, prompt);
 
-    const raw = await response.text();
-    const parsed = parseJsonSafe(raw);
-
-    if (!response.ok) {
-      throw new Error(`Falha OpenAI (${response.status}): ${raw}`);
+    if (!completion.ok && shouldRetryWithLegacyOpenAiModel(primaryModel, completion.status, completion.raw)) {
+      completion = await requestExtraction(credential.apiKey, LEGACY_OPENAI_MODEL_FALLBACK, prompt);
     }
 
-    const content = parsed?.choices?.[0]?.message?.content || null;
+    if (!completion.ok) {
+      throw new Error(`Falha OpenAI (${completion.status}): ${completion.raw}`);
+    }
+
+    const content = completion.parsed?.choices?.[0]?.message?.content || null;
     const data = parseJsonSafe(content);
 
     return {
@@ -76,4 +96,3 @@ ${emailBody.substring(0, 6000)}
     };
   }
 }
-

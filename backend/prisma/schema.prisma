@@ -528,7 +528,7 @@ model CompanyAiCredential {
   apiKeyCiphertext String
   apiKeyIv        String
   apiKeyTag       String
-  model           String     @default("gpt-4o-mini")
+  model           String     @default("gpt-5.4-nano")
   promptVersion   String     @default("v1")
   isActive        Boolean    @default(true)
   createdAt       DateTime   @default(now())

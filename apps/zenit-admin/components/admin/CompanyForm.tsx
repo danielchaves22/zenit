@@ -37,6 +37,8 @@ interface CompanyFormProps {
   onCancel?: () => void;
 }
 
+const DEFAULT_OPENAI_MODEL = 'gpt-5.4-nano';
+
 export default function CompanyForm({
   mode,
   companyId,
@@ -60,7 +62,7 @@ export default function CompanyForm({
 
   const [openAiStatus, setOpenAiStatus] = useState<AdminOpenAiStatusResponse | null>(null);
   const [openAiApiKey, setOpenAiApiKey] = useState('');
-  const [openAiModel, setOpenAiModel] = useState('gpt-4o-mini');
+  const [openAiModel, setOpenAiModel] = useState(DEFAULT_OPENAI_MODEL);
   const [openAiPromptVersion, setOpenAiPromptVersion] = useState('v1');
   const [openAiEnabled, setOpenAiEnabled] = useState(true);
 
@@ -73,7 +75,7 @@ export default function CompanyForm({
   function resetOpenAiState() {
     setOpenAiStatus(null);
     setOpenAiApiKey('');
-    setOpenAiModel('gpt-4o-mini');
+    setOpenAiModel(DEFAULT_OPENAI_MODEL);
     setOpenAiPromptVersion('v1');
     setOpenAiEnabled(true);
   }
@@ -117,11 +119,11 @@ export default function CompanyForm({
       setOpenAiStatus(data);
 
       if (data.credential) {
-        setOpenAiModel(data.credential.model || 'gpt-4o-mini');
+        setOpenAiModel(data.credential.model || DEFAULT_OPENAI_MODEL);
         setOpenAiPromptVersion(data.credential.promptVersion || 'v1');
         setOpenAiEnabled(data.credential.isActive);
       } else {
-        setOpenAiModel('gpt-4o-mini');
+        setOpenAiModel(DEFAULT_OPENAI_MODEL);
         setOpenAiPromptVersion('v1');
         setOpenAiEnabled(true);
       }
@@ -330,7 +332,7 @@ export default function CompanyForm({
                         label="Modelo"
                         value={openAiModel}
                         onChange={(event) => setOpenAiModel(event.target.value)}
-                        placeholder="gpt-4o-mini"
+                        placeholder={DEFAULT_OPENAI_MODEL}
                         disabled={savingOpenAi || testingOpenAi}
                       />
 

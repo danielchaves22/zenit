@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Building2, ShieldCheck } from 'lucide-react';
+import { Building2, ShieldCheck, Users } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
@@ -32,6 +32,13 @@ export default function AdminHomePage() {
             </p>
 
             <div className="flex items-center gap-3 flex-wrap">
+              <Link
+                href="/admin/users"
+                className="inline-flex items-center gap-2 rounded-md border border-blue-700/60 bg-[#111827] px-4 py-2 text-sm font-medium text-white transition-colors hover:border-blue-500 hover:bg-[#172033]"
+              >
+                <Users size={16} />
+                Ir para usuarios
+              </Link>
               <Link
                 href="/admin/companies"
                 className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/90"

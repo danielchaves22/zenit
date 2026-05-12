@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
-import { Home, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Home, Building2, ChevronLeft, ChevronRight, Users } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { AccessGuard } from '@/components/ui/AccessGuard';
@@ -134,6 +134,14 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       title: 'Administração',
       type: 'title',
       requiredRole: 'ADMIN'
+    },
+    {
+      icon: <Users size={20} />,
+      label: 'Usuarios',
+      subItems: [
+        { label: 'Usuarios', href: '/admin/users' },
+      ],
+      allowedRoles: ['ADMIN']
     },
     {
       icon: <Building2 size={20} />,
@@ -267,9 +275,14 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
             const href = firstClickableSubItem?.href || '#';
             
             // Verificar se algum dos subitens corresponde à rota atual
-            const isActive = menuItem.subItems.some(
-              subItem => subItem.href && router.pathname === subItem.href
-            );
+            const isActive = menuItem.subItems.some((subItem) => {
+              if (!subItem.href) return false;
+
+              return (
+                router.pathname === subItem.href ||
+                router.pathname.startsWith(`${subItem.href}/`)
+              );
+            });
 
             return (
               <div key={index}>

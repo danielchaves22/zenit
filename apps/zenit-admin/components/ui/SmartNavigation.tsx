@@ -3,7 +3,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { usePermissions, UserRole } from '@/hooks/usePermissions';
-import { Home, Building2 } from 'lucide-react';
+import { Home, Building2, Users } from 'lucide-react';
 
 interface NavigationItem {
   label: string;
@@ -16,6 +16,13 @@ interface NavigationItem {
 }
 
 const quickNavigationItems: NavigationItem[] = [
+  {
+    label: 'Usuarios',
+    href: '/admin/users',
+    icon: <Users size={20} />,
+    description: 'Gerenciar usuarios da plataforma',
+    category: 'administracao'
+  },
   {
     label: 'Empresas',
     href: '/admin/companies',
@@ -37,6 +44,14 @@ const navigationItems: NavigationItem[] = [
   },
   
   // Administração
+  {
+    label: 'Usuarios',
+    href: '/admin/users',
+    icon: <Users size={20} />,
+    description: 'Administrar usuarios',
+    category: 'administracao',
+    allowedRoles: ['ADMIN']
+  },
   {
     label: 'Empresas',
     href: '/admin/companies',

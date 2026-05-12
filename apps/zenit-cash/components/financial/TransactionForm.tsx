@@ -38,6 +38,7 @@ type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED';
 type PurchaseScope = 'SINGLE' | 'PURCHASE';
 type CreateFlow = 'standard' | 'credit-card-purchase';
+type PostCreateAction = 'default' | 'create-another';
 
 interface Account {
   id: number;
@@ -204,6 +205,7 @@ export default function TransactionForm({
   const [isInvoicePreviewExpanded, setIsInvoicePreviewExpanded] = useState(false);
   const [existingCreditCardInvoices, setExistingCreditCardInvoices] = useState<CreditCardInvoicePreviewStatus[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
+  const postCreateActionRef = useRef<PostCreateAction>('default');
 
   const [formData, setFormData] = useState({
     description: '',
@@ -578,6 +580,35 @@ export default function TransactionForm({
     }
   }
 
+  function getDefaultCategoryId(type: TransactionKind) {
+    const defaultCategory = categories.find((category) => category.isDefault && category.type === type);
+    const fallbackCategory = categories.find((category) => category.type === type);
+
+    return defaultCategory?.id.toString() || fallbackCategory?.id.toString() || '';
+  }
+
+  function resetCreditCardPurchaseForm(fromAccountId: string) {
+    setFormData({
+      description: '',
+      amount: '0.00',
+      date: getTodayValue(),
+      dueDate: getTodayValue(),
+      effectiveDate: getTodayValue(),
+      type: 'EXPENSE',
+      status: 'COMPLETED',
+      notes: '',
+      fromAccountId,
+      toAccountId: '',
+      categoryId: getDefaultCategoryId('EXPENSE'),
+      tags: '',
+      repeatTimes: '',
+      installmentCount: '1',
+      purchaseScope: 'PURCHASE'
+    });
+    setIsInvoicePreviewExpanded(false);
+    setShouldFocusAmount(true);
+  }
+
   function autoSelectDefaults() {
     const updates: Partial<typeof formData> = {};
 
@@ -619,14 +650,10 @@ export default function TransactionForm({
     }
 
     if (!formData.categoryId && formData.type !== 'TRANSFER') {
-      const defaultCategory = categories.find(
-        (category) => category.isDefault && category.type === formData.type
-      );
-      const fallbackCategory = categories.find((category) => category.type === formData.type);
-      const nextCategory = defaultCategory || fallbackCategory;
+      const nextCategoryId = getDefaultCategoryId(formData.type);
 
-      if (nextCategory) {
-        updates.categoryId = nextCategory.id.toString();
+      if (nextCategoryId) {
+        updates.categoryId = nextCategoryId;
       }
     }
 
@@ -667,15 +694,9 @@ export default function TransactionForm({
         return nextState;
       });
 
-      const defaultCategory = categories.find(
-        (category) => category.isDefault && category.type === nextType
-      );
-      const fallbackCategory = categories.find((category) => category.type === nextType);
-      const nextCategory = defaultCategory || fallbackCategory;
-
       setFormData((prev) => ({
         ...prev,
-        categoryId: nextCategory ? nextCategory.id.toString() : ''
+        categoryId: getDefaultCategoryId(nextType)
       }));
 
       return;
@@ -748,6 +769,8 @@ export default function TransactionForm({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    const postCreateAction = postCreateActionRef.current;
+    postCreateActionRef.current = 'default';
 
     if (mode === 'create' && isCreditCardPurchaseFlow && selectedFromAccount?.type !== 'CREDIT_CARD') {
       addToast('Selecione um cartão de crédito para registrar a compra', 'error');
@@ -805,6 +828,10 @@ export default function TransactionForm({
           isCreditCardPurchaseFlow ? 'Compra no cartão registrada com sucesso' : 'Transação criada com sucesso',
           'success'
         );
+        if (isCreditCardPurchaseFlow && postCreateAction === 'create-another') {
+          resetCreditCardPurchaseForm(formData.fromAccountId);
+          return;
+        }
       } else {
         await api.put(`/financial/transactions/${transactionId}`, payload);
         addToast('Transação atualizada com sucesso', 'success');
@@ -879,7 +906,9 @@ export default function TransactionForm({
     }
   };
 
-  const handleTopSave = () => {
+  const handleTopSave = (postCreateAction: PostCreateAction = 'default') => {
+    postCreateActionRef.current = postCreateAction;
+
     if (formRef.current) {
       formRef.current.requestSubmit();
     }
@@ -922,6 +951,9 @@ export default function TransactionForm({
         : 'Criar Transação'
       : 'Salvar Alterações';
 
+  const saveAndAddAnotherLabel = saving ? 'Salvando...' : 'Registrar e Adicionar Outra';
+  const showSaveAndAddAnotherAction = mode === 'create' && isCreditCardPurchaseFlow;
+
   const scopeMessage = currentScopeBlocked
     ? activePurchaseScope === 'PURCHASE'
       ? 'A compra inteira não pode mais ser alterada porque existe parcela em fatura paga.'
@@ -953,8 +985,8 @@ export default function TransactionForm({
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
           <Button
             variant="outline"
             onClick={handleCancel}
@@ -965,7 +997,7 @@ export default function TransactionForm({
             Voltar
           </Button>
           <h1 className="text-2xl font-semibold text-white">{getHeaderLabel()}</h1>
-          <div className="ml-4 flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 xl:ml-4">
             <button
               type="button"
               onClick={() => handleFormModeChange('simple')}
@@ -995,7 +1027,7 @@ export default function TransactionForm({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {showActions && (
             <>
               <Button
@@ -1008,10 +1040,22 @@ export default function TransactionForm({
                 <X size={16} />
                 Cancelar
               </Button>
+              {showSaveAndAddAnotherAction && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleTopSave('create-another')}
+                  disabled={actionDisabled}
+                  className="flex items-center gap-2"
+                >
+                  <Save size={16} />
+                  {saveAndAddAnotherLabel}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="accent"
-                onClick={handleTopSave}
+                onClick={() => handleTopSave('default')}
                 disabled={actionDisabled}
                 className="flex items-center gap-2"
               >
@@ -1035,34 +1079,23 @@ export default function TransactionForm({
         </div>
       </div>
 
-      <Card>
+          <Card>
         <form ref={formRef} id="transaction-form" onSubmit={handleSubmit} className="space-y-6">
-          <div className="flex flex-wrap items-start gap-4">
-            <div>
-              <CurrencyInput
-                id="amount"
-                label={isCreditCardPurchaseFlow && installmentCountValue > 1 ? 'Valor da Parcela *' : 'Valor *'}
-                value={formData.amount}
-                onChange={handleAmountChange}
-                required
-                disabled={saving || isReadOnly}
-                className="mb-0"
-                inputClassName="py-4 text-2xl"
-              />
-            </div>
+          {mode === 'create' && isCreditCardPurchaseFlow ? (
+            <div className="flex flex-wrap items-start gap-4">
+              <div>
+                <CurrencyInput
+                  id="amount"
+                  label={installmentCountValue > 1 ? 'Valor da Parcela *' : 'Valor *'}
+                  value={formData.amount}
+                  onChange={handleAmountChange}
+                  required
+                  disabled={saving || isReadOnly}
+                  className="mb-0"
+                  inputClassName="py-4 text-2xl"
+                />
+              </div>
 
-            {mode === 'edit' &&
-              transaction?.totalInstallments !== undefined &&
-              transaction?.totalInstallments !== null &&
-              transaction.totalInstallments > 1 && (
-                <div className="flex flex-col">
-                  <span className="rounded-md border border-blue-500 bg-blue-900/70 px-4 py-2 font-semibold uppercase tracking-wide text-blue-100">
-                    {`Parcela ${transaction.installmentNumber ?? 1} de ${transaction.totalInstallments}`}
-                  </span>
-                </div>
-              )}
-
-            {mode === 'create' && isCreditCardPurchaseFlow ? (
               <div className="w-36">
                 <Input
                   id="installmentCount"
@@ -1073,41 +1106,85 @@ export default function TransactionForm({
                   value={formData.installmentCount}
                   onChange={handleChange}
                   disabled={saving || isReadOnly}
+                  className="mb-0"
                 />
               </div>
-            ) : mode === 'create' ? (
-              <>
-                <div className="flex items-center pt-8">
-                  <span className="mr-2 text-sm text-gray-300">Recorrente</span>
-                  <label htmlFor="isRecurring" className="relative inline-flex cursor-pointer items-center">
-                    <input
-                      id="isRecurring"
-                      type="checkbox"
-                      checked={isRecurring}
-                      onChange={(event) => handleRecurringChange(event.target.checked)}
-                      className="peer sr-only"
-                    />
-                    <div className="h-5 w-10 rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
-                    <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
-                  </label>
-                </div>
-                {isRecurring && (
-                  <div className="w-28">
-                    <Input
-                      id="repeatTimes"
-                      name="repeatTimes"
-                      type="number"
-                      label="Repetir (meses)"
-                      value={formData.repeatTimes}
-                      onChange={handleChange}
-                      placeholder="0"
-                      disabled={saving || isReadOnly}
-                    />
+
+              <div className="w-48">
+                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="date">
+                  Data da Compra *
+                </label>
+                <input
+                  id="date"
+                  name="date"
+                  type="date"
+                  value={formData.date}
+                  onChange={handleChange}
+                  disabled={transactionDateDisabled}
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-start gap-4">
+              <div>
+                <CurrencyInput
+                  id="amount"
+                  label={isCreditCardPurchaseFlow && installmentCountValue > 1 ? 'Valor da Parcela *' : 'Valor *'}
+                  value={formData.amount}
+                  onChange={handleAmountChange}
+                  required
+                  disabled={saving || isReadOnly}
+                  className="mb-0"
+                  inputClassName="py-4 text-2xl"
+                />
+              </div>
+
+              {mode === 'edit' &&
+                transaction?.totalInstallments !== undefined &&
+                transaction?.totalInstallments !== null &&
+                transaction.totalInstallments > 1 && (
+                  <div className="flex flex-col">
+                    <span className="rounded-md border border-blue-500 bg-blue-900/70 px-4 py-2 font-semibold uppercase tracking-wide text-blue-100">
+                      {`Parcela ${transaction.installmentNumber ?? 1} de ${transaction.totalInstallments}`}
+                    </span>
                   </div>
                 )}
-              </>
-            ) : null}
-          </div>
+
+              {mode === 'create' ? (
+                <>
+                  <div className="flex items-center pt-8">
+                    <span className="mr-2 text-sm text-gray-300">Recorrente</span>
+                    <label htmlFor="isRecurring" className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        id="isRecurring"
+                        type="checkbox"
+                        checked={isRecurring}
+                        onChange={(event) => handleRecurringChange(event.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <div className="h-5 w-10 rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+                    </label>
+                  </div>
+                  {isRecurring && (
+                    <div className="w-28">
+                      <Input
+                        id="repeatTimes"
+                        name="repeatTimes"
+                        type="number"
+                        label="Repetir (meses)"
+                        value={formData.repeatTimes}
+                        onChange={handleChange}
+                        placeholder="0"
+                        disabled={saving || isReadOnly}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+          )}
 
           <div>
             <div className="mb-2 flex items-center gap-3">
@@ -1295,7 +1372,7 @@ export default function TransactionForm({
             </div>
           )}
 
-          {isSimpleMode ? (
+          {!isCreditCardPurchaseFlow && (isSimpleMode ? (
             <div className={`grid grid-cols-1 gap-6 ${isCreditCardPurchaseFlow ? 'md:grid-cols-1' : 'md:grid-cols-3'}`}>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-300" htmlFor="date">
@@ -1414,7 +1491,7 @@ export default function TransactionForm({
                 </>
               )}
             </div>
-          )}
+          ))}
 
           {isCreditCardContext && (
             <div className="rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
@@ -1563,7 +1640,7 @@ export default function TransactionForm({
           )}
 
           {showActions && (
-            <div className="flex justify-end gap-4 border-t border-gray-700 pt-6">
+            <div className="flex flex-wrap justify-end gap-4 border-t border-gray-700 pt-6">
               <Button
                 type="button"
                 variant="outline"
@@ -1574,9 +1651,24 @@ export default function TransactionForm({
                 <X size={16} />
                 Cancelar
               </Button>
+              {showSaveAndAddAnotherAction && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleTopSave('create-another')}
+                  disabled={actionDisabled}
+                  className="flex items-center gap-2"
+                >
+                  <Save size={16} />
+                  {saveAndAddAnotherLabel}
+                </Button>
+              )}
               <Button
                 type="submit"
                 variant="accent"
+                onClick={() => {
+                  postCreateActionRef.current = 'default';
+                }}
                 disabled={actionDisabled}
                 className="flex items-center gap-2"
               >

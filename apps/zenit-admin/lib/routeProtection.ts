@@ -108,6 +108,7 @@ export function getAllowedRoutes(userRole: UserRole | null): string[] {
   
   // Rotas administrativas baseadas no role
   if (userRole === 'ADMIN') {
+    allowedRoutes.push('/admin/users');
     allowedRoutes.push('/admin/companies');
   }
   

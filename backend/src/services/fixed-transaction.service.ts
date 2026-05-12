@@ -73,14 +73,6 @@ function endOfDay(date: Date): Date {
   return normalized;
 }
 
-function firstDayOfNextMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 1);
-}
-
-function endOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0);
-}
-
 function getLastDayOfMonth(year: number, monthIndex: number): number {
   return new Date(year, monthIndex + 1, 0).getDate();
 }
@@ -257,6 +249,69 @@ function computeNextDueDate(
   return buildOccurrenceDateForMonth(template, nextMonth.getFullYear(), nextMonth.getMonth());
 }
 
+function computeTemplateNextDueDate(params: {
+  startDate: Date;
+  type: TransactionType;
+  dayOfMonth?: number | null;
+  fromAccount: FixedAccountSelection | null;
+}): Date {
+  const today = startOfDay(new Date());
+  const referenceDate = params.startDate > today ? params.startDate : today;
+
+  return computeNextDueDate(referenceDate, {
+    type: params.type,
+    dayOfMonth: params.dayOfMonth,
+    fromAccount: params.fromAccount
+  });
+}
+
+async function resolveMaterializationAccountIds(params: {
+  companyId: number;
+  type: TransactionType;
+  fromAccountId?: number | null;
+  toAccountId?: number | null;
+}): Promise<{ fromAccountId: number | null; toAccountId: number | null }> {
+  const fromAccountId = params.fromAccountId ?? null;
+  const toAccountId = params.toAccountId ?? null;
+
+  if (
+    (params.type === TransactionType.EXPENSE && fromAccountId) ||
+    (params.type === TransactionType.INCOME && toAccountId)
+  ) {
+    return { fromAccountId, toAccountId };
+  }
+
+  const defaultAccount = await prisma.financialAccount.findFirst({
+    where: {
+      companyId: params.companyId,
+      isDefault: true,
+      isActive: true,
+      type: { not: AccountType.CREDIT_CARD }
+    },
+    select: { id: true }
+  });
+
+  if (!defaultAccount) {
+    return { fromAccountId, toAccountId };
+  }
+
+  if (params.type === TransactionType.EXPENSE) {
+    return {
+      fromAccountId: fromAccountId ?? defaultAccount.id,
+      toAccountId
+    };
+  }
+
+  if (params.type === TransactionType.INCOME) {
+    return {
+      fromAccountId,
+      toAccountId: toAccountId ?? defaultAccount.id
+    };
+  }
+
+  return { fromAccountId, toAccountId };
+}
+
 export default class FixedTransactionService {
   static async createFixedTransaction(data: {
     description: string;
@@ -307,7 +362,8 @@ export default class FixedTransactionService {
         dayOfWeek: null,
         startDate,
         endDate,
-        nextDueDate: computeNextDueDate(startDate, {
+        nextDueDate: computeTemplateNextDueDate({
+          startDate,
           type: data.type,
           dayOfMonth: resolvedDayOfMonth,
           fromAccount: accounts.fromAccount
@@ -423,7 +479,7 @@ export default class FixedTransactionService {
     });
   }
 
-  static async updateFixedTransactionVersioned(
+  static async updateFixedTransaction(
     id: number,
     data: Partial<{
       description: string;
@@ -495,82 +551,66 @@ export default class FixedTransactionService {
         ? null
         : nextDayOfMonth ?? null;
 
-    const now = new Date();
-    const currentMonthEnd = endOfMonth(now);
-    const nextCompetenceStart = firstDayOfNextMonth(now);
     const requestedEndDate = data.endDate !== undefined
       ? (data.endDate ? endOfDay(data.endDate) : null)
       : existing.endDate;
 
-    if (requestedEndDate && requestedEndDate < nextCompetenceStart) {
-      throw new Error('Data final da nova versao deve ser posterior a proxima competencia');
+    if (requestedEndDate && requestedEndDate < existing.startDate) {
+      throw new Error('Data final deve ser posterior ou igual a data inicial da fixa');
     }
 
-    const created = await prisma.$transaction(async (tx) => {
-      await tx.recurringTransaction.update({
-        where: { id: existing.id },
-        data: {
-          endDate: existing.endDate && existing.endDate < currentMonthEnd
-            ? existing.endDate
-            : currentMonthEnd,
-          isActive: true
-        }
-      });
-
-      return tx.recurringTransaction.create({
-        data: {
-          description: data.description ?? existing.description,
-          amount: data.amount !== undefined ? parseDecimal(data.amount) : existing.amount,
+    const updated = await prisma.recurringTransaction.update({
+      where: { id: existing.id },
+      data: {
+        description: data.description ?? existing.description,
+        amount: data.amount !== undefined ? parseDecimal(data.amount) : existing.amount,
+        type: nextType,
+        frequency: RecurringFrequency.MONTHLY,
+        dayOfMonth: resolvedDayOfMonth,
+        dayOfWeek: null,
+        startDate: existing.startDate,
+        endDate: requestedEndDate,
+        nextDueDate: computeTemplateNextDueDate({
+          startDate: existing.startDate,
           type: nextType,
-          frequency: RecurringFrequency.MONTHLY,
           dayOfMonth: resolvedDayOfMonth,
-          dayOfWeek: null,
-          startDate: nextCompetenceStart,
-          endDate: requestedEndDate,
-          nextDueDate: computeNextDueDate(nextCompetenceStart, {
-            type: nextType,
-            dayOfMonth: resolvedDayOfMonth,
-            fromAccount: nextAccounts.fromAccount
-          }),
-          isActive: data.isActive ?? true,
-          notes: data.notes !== undefined ? data.notes : existing.notes,
-          fromAccountId: nextFromAccountId ?? null,
-          toAccountId: nextToAccountId ?? null,
-          categoryId: data.categoryId !== undefined ? data.categoryId : existing.categoryId,
-          companyId,
-          createdBy: existing.createdBy
+          fromAccount: nextAccounts.fromAccount
+        }),
+        isActive: data.isActive ?? existing.isActive,
+        notes: data.notes !== undefined ? data.notes : existing.notes,
+        fromAccountId: nextFromAccountId ?? null,
+        toAccountId: nextToAccountId ?? null,
+        categoryId: data.categoryId !== undefined ? data.categoryId : existing.categoryId
+      },
+      include: {
+        fromAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
         },
-        include: {
-          fromAccount: {
-            select: {
-              id: true,
-              name: true,
-              type: true,
-              statementClosingDay: true,
-              statementDueDay: true
-            }
-          },
-          toAccount: {
-            select: {
-              id: true,
-              name: true,
-              type: true,
-              statementClosingDay: true,
-              statementDueDay: true
-            }
-          },
-          category: { select: { id: true, name: true, color: true } }
-        }
-      });
+        toAccount: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        },
+        category: { select: { id: true, name: true, color: true } }
+      }
     });
 
-    logger.info('Fixed transaction versioned', {
-      previousTemplateId: existing.id,
-      newTemplateId: created.id,
+    logger.info('Fixed transaction updated', {
+      templateId: existing.id,
       companyId
     });
 
-    return created;
+    return updated;
   }
 
   static async cancelFixedTransaction(id: number, companyId: number): Promise<FixedTemplateWithRelations> {
@@ -835,6 +875,12 @@ export default class FixedTransactionService {
     try {
       const { default: FinancialTransactionService } = await import('./financial-transaction.service');
       const isCreditCardFixedExpense = isCreditCardFixedExpenseTemplate(template);
+      const resolvedAccounts = await resolveMaterializationAccountIds({
+        companyId,
+        type: template.type,
+        fromAccountId: template.fromAccountId,
+        toAccountId: template.toAccountId
+      });
 
       const createdResult = await FinancialTransactionService.createTransaction({
         description: template.description,
@@ -845,8 +891,8 @@ export default class FixedTransactionService {
         type: template.type,
         status: isCreditCardFixedExpense ? TransactionStatus.COMPLETED : TransactionStatus.PENDING,
         notes: template.notes ?? undefined,
-        fromAccountId: template.fromAccountId,
-        toAccountId: template.toAccountId,
+        fromAccountId: resolvedAccounts.fromAccountId,
+        toAccountId: resolvedAccounts.toAccountId,
         categoryId: template.categoryId,
         companyId,
         createdBy: userId,

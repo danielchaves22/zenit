@@ -339,7 +339,7 @@ export default function FixedTransactionForm({
         addToast('Transação fixa criada com sucesso', 'success');
       } else {
         await api.put(`/financial/fixed-transactions/${transactionId}`, payload);
-        addToast('Transação fixa atualizada (nova versão para próxima competência)', 'success');
+        addToast('Transação fixa atualizada com sucesso', 'success');
       }
 
       if (onSuccess) {
@@ -399,7 +399,7 @@ export default function FixedTransactionForm({
               ? 'Salvando...'
               : mode === 'create'
                 ? 'Criar Fixa'
-                : 'Salvar Nova Versão'}
+                : 'Salvar Alterações'}
           </Button>
         </div>
       </div>
@@ -604,7 +604,7 @@ export default function FixedTransactionForm({
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={16} className="mt-0.5" />
                   <span>
-                    Salvar esta edição cria uma nova versão para as próximas competências.
+                    Salvar esta edição atualiza este template. Competências já materializadas continuam independentes e não serão alteradas.
                   </span>
                 </div>
               </div>

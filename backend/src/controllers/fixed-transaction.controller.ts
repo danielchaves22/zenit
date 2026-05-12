@@ -159,7 +159,7 @@ export async function updateFixedTransaction(req: Request, res: Response) {
       });
     }
 
-    const updated = await FixedTransactionService.updateFixedTransactionVersioned(
+    const updated = await FixedTransactionService.updateFixedTransaction(
       id,
       {
         ...req.body,

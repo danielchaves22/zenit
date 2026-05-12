@@ -124,6 +124,7 @@ describe('Fixed transactions virtualization and materialization', () => {
         type: 'CHECKING',
         balance: 10000,
         allowNegativeBalance: true,
+        isDefault: true,
         companyId
       }
     });
@@ -479,6 +480,18 @@ describe('Fixed transactions virtualization and materialization', () => {
         (item: any) => item.fixedTemplateId === createResponse.body.id && item.isVirtual === true
       )
     ).toBeDefined();
+
+    const occurrenceDate = buildOccurrenceDate(1, 9);
+    const materializeResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${createResponse.body.id}/materialize`)
+      .set(authHeaders())
+      .send({
+        occurrenceDate: occurrenceDate.toISOString()
+      });
+
+    expect(materializeResponse.status).toBe(201);
+    expect(materializeResponse.body.transaction.fromAccountId).toBe(expenseAccountId);
+    expect(materializeResponse.body.transaction.recurringTransactionId).toBe(createResponse.body.id);
   });
 
   it('rejects fixed incomes linked to credit card accounts', async () => {
@@ -1028,7 +1041,7 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(count).toBe(1);
   });
 
-  it('template update impacts only next competence', async () => {
+  it('template update keeps the same template and updates unmaterialized projections', async () => {
     const currentMonthLastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const projectedDay = Math.min(now.getDate() + 1, currentMonthLastDay);
 
@@ -1056,16 +1069,14 @@ describe('Fixed transactions virtualization and materialization', () => {
       });
 
     expect(updateResponse.status).toBe(200);
-    const newTemplateId = updateResponse.body.id;
-    expect(newTemplateId).not.toBe(oldTemplateId);
+    const updatedTemplateId = updateResponse.body.id;
+    expect(updatedTemplateId).toBe(oldTemplateId);
 
-    const oldTemplate = await prisma.recurringTransaction.findUnique({ where: { id: oldTemplateId } });
-    const newTemplate = await prisma.recurringTransaction.findUnique({ where: { id: newTemplateId } });
+    const updatedTemplate = await prisma.recurringTransaction.findUnique({ where: { id: oldTemplateId } });
 
-    expect(oldTemplate).not.toBeNull();
-    expect(newTemplate).not.toBeNull();
-    expect(oldTemplate?.endDate).not.toBeNull();
-    expect(newTemplate?.startDate.getMonth()).toBe((now.getMonth() + 1) % 12);
+    expect(updatedTemplate).not.toBeNull();
+    expect(Number(updatedTemplate?.amount)).toBe(250);
+    expect(updatedTemplate?.endDate).toBeNull();
 
     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -1077,12 +1088,12 @@ describe('Fixed transactions virtualization and materialization', () => {
       (item: any) => item.fixedTemplateId === oldTemplateId && item.isVirtual === true
     );
     expect(currentVirtual).toBeDefined();
-    expect(Number(currentVirtual.amount)).toBe(100);
+    expect(Number(currentVirtual.amount)).toBe(250);
 
     const nextMonthList = await listTransactions(nextMonth.start, nextMonth.end);
     expect(nextMonthList.status).toBe(200);
     const nextVirtual = nextMonthList.body.data.find(
-      (item: any) => item.fixedTemplateId === newTemplateId && item.isVirtual === true
+      (item: any) => item.fixedTemplateId === oldTemplateId && item.isVirtual === true
     );
     expect(nextVirtual).toBeDefined();
     expect(Number(nextVirtual.amount)).toBe(250);

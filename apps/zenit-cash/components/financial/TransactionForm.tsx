@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { AutocompleteInput } from '@/components/ui/AutoCompleteInput';
+import type { AutocompleteSuggestion } from '@/components/ui/AutoCompleteInput';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
@@ -114,11 +115,6 @@ interface Transaction {
   purchaseGroupId?: string | null;
   creditCardInvoice?: InvoiceSummary | null;
   purchaseGroupTransactions?: PurchaseGroupTransaction[];
-}
-
-interface AutocompleteSuggestion {
-  description: string;
-  frequency: number;
 }
 
 interface TransactionFormProps {
@@ -725,8 +721,17 @@ export default function TransactionForm({
     setFormData((prev) => ({ ...prev, description: value }));
   };
 
-  const handleSuggestionSelect = (description: string) => {
-    console.log('Sugestão selecionada:', description);
+  const handleSuggestionSelect = (suggestion: AutocompleteSuggestion) => {
+    const nextCategoryId = suggestion.categoryId ? suggestion.categoryId.toString() : '';
+    const hasKnownCategory = nextCategoryId
+      ? categories.some((category) => category.id.toString() === nextCategoryId)
+      : false;
+
+    setFormData((prev) => ({
+      ...prev,
+      description: suggestion.description,
+      categoryId: hasKnownCategory ? nextCategoryId : ''
+    }));
   };
 
   const handleAmountChange = (value: string) => {

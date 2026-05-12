@@ -2695,7 +2695,7 @@ export default class FinancialTransactionService {
     query: string, 
     transactionType: TransactionType, // âœ… NOVO PARÃ‚METRO
     limit: number = 10
-  ): Promise<Array<{ description: string; frequency: number }>> {
+  ): Promise<Array<{ description: string; frequency: number; categoryId: number | null; categoryName: string | null }>> {
     
     // ValidaÃ§Ã£o de entrada
     if (!query || query.trim().length < 3) {
@@ -2707,7 +2707,7 @@ export default class FinancialTransactionService {
     try {
       // âœ… BUSCAR DESCRIÃ‡Ã•ES FILTRADAS POR TIPO E FREQUÃŠNCIA
       const suggestions = await prisma.financialTransaction.groupBy({
-        by: ['description'],
+        by: ['description', 'categoryId'],
         where: {
           companyId,
           type: transactionType, // âœ… FILTRO POR TIPO DE TRANSAÃ‡ÃƒO
@@ -2726,18 +2726,41 @@ export default class FinancialTransactionService {
             }
           },
           {
+            categoryId: 'asc'
+          },
+          {
             description: 'asc' // AlfabÃ©tica como critÃ©rio secundÃ¡rio
           }
         ],
         take: limit
       });
 
+      const categoryIds = suggestions
+        .map((item) => item.categoryId)
+        .filter((categoryId): categoryId is number => categoryId !== null);
+
+      const categories = categoryIds.length > 0
+        ? await prisma.financialCategory.findMany({
+            where: {
+              companyId,
+              id: { in: categoryIds }
+            },
+            select: {
+              id: true,
+              name: true
+            }
+          })
+        : [];
+      const categoriesById = new Map(categories.map((category) => [category.id, category.name]));
+
       // Mapear resultado para formato esperado
       const formattedSuggestions = suggestions
         .filter(item => item.description) // Garantir que descriÃ§Ã£o nÃ£o Ã© null
         .map(item => ({
           description: item.description!,
-          frequency: item._count.description
+          frequency: item._count.description,
+          categoryId: item.categoryId,
+          categoryName: item.categoryId ? categoriesById.get(item.categoryId) || null : null
         }));
 
       logger.debug('Autocomplete suggestions generated with type filter', {

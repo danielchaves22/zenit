@@ -2,9 +2,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Clock } from 'lucide-react';
 
-interface AutocompleteSuggestion {
+export interface AutocompleteSuggestion {
   description: string;
   frequency: number;
+  categoryId?: string | number | null;
+  categoryName?: string | null;
 }
 
 interface AutocompleteInputProps {
@@ -12,7 +14,7 @@ interface AutocompleteInputProps {
   label?: string;
   value: string;
   onChange: (value: string) => void;
-  onSuggestionSelect?: (suggestion: string) => void;
+  onSuggestionSelect?: (suggestion: AutocompleteSuggestion) => void;
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
@@ -100,7 +102,7 @@ export function AutocompleteInput({
     setActiveSuggestionIndex(-1);
     
     if (onSuggestionSelect) {
-      onSuggestionSelect(suggestion.description);
+      onSuggestionSelect(suggestion);
     }
     
     // Focus back to input
@@ -120,7 +122,7 @@ export function AutocompleteInput({
     
     // Call the callback
     if (onSuggestionSelect) {
-      onSuggestionSelect(suggestion.description);
+      onSuggestionSelect(suggestion);
     }
     
     // Close the dropdown
@@ -264,7 +266,7 @@ export function AutocompleteInput({
         >
           {suggestions.map((suggestion, index) => (
             <div
-              key={`${suggestion.description}-${index}`}
+              key={`${suggestion.description}-${suggestion.categoryId ?? 'none'}-${index}`}
               className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-elevated ${
                 index === activeSuggestionIndex ? 'bg-elevated' : ''
               } ${index === 0 ? 'rounded-t-lg' : ''} ${
@@ -284,6 +286,9 @@ export function AutocompleteInput({
               <div className="flex-1 min-w-0">
                 <div className="text-white text-sm truncate">
                   {highlightMatch(suggestion.description, value)}
+                </div>
+                <div className="mt-1 text-xs text-gray-400 truncate">
+                  {suggestion.categoryName || 'Sem categoria'}
                 </div>
               </div>
               

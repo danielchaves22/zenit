@@ -685,7 +685,7 @@ export default function TransactionsListPage() {
   const compactCreateButtonClass =
     'flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-sm';
   const filterHeaderGridClass = isCustomPeriod
-    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(240px,0.72fr)_auto_auto]'
+    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(220px,0.66fr)_auto_auto]'
     : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_auto_auto]';
 
   if (loading && transactions.length === 0) {
@@ -706,10 +706,11 @@ export default function TransactionsListPage() {
         ]}
       />
 
-      <div className="mb-6 grid grid-cols-1 gap-3 xl:grid-cols-[auto_1fr_auto] xl:items-center">
+      <div className="mb-6 space-y-4">
         <h1 className="text-2xl font-semibold text-white">Transações Financeiras</h1>
 
-        <div className="flex flex-wrap gap-3 xl:justify-center">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+          <div className="flex flex-wrap gap-3 xl:justify-start">
           <div className="min-w-[150px] rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2">
             <div className="text-[11px] font-medium uppercase tracking-wide text-red-200/80">
               Despesas
@@ -738,7 +739,7 @@ export default function TransactionsListPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-2 xl:self-start">
           <Link href="/financial/transactions/new-credit-card-purchase">
             <Button
               variant="outline"
@@ -778,12 +779,14 @@ export default function TransactionsListPage() {
         </div>
       </div>
 
+      </div>
+
       <Card className="mb-6">
         <div className={filterHeaderGridClass}>
           <div className="flex flex-col">
             <label className={filterLabelClassName}>Periodo</label>
             {isCustomPeriod ? (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(200px,0.95fr)_minmax(180px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-[minmax(180px,0.88fr)_minmax(145px,0.64fr)_minmax(180px,0.98fr)_minmax(180px,0.98fr)]">
                 <select
                   value={dateField}
                   onChange={(event) =>

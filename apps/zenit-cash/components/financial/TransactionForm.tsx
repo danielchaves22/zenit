@@ -235,25 +235,33 @@ export default function TransactionForm({
     [accounts, formData.toAccountId]
   );
 
+  const filterSelectableAccounts = (selectedAccountId: string, allowCreditCard: boolean) => {
+    return accounts.filter((account) => {
+      const isSelected = account.id.toString() === selectedAccountId;
+
+      if (mode === 'edit' && isSelected) {
+        return true;
+      }
+
+      if (!account.isActive) {
+        return false;
+      }
+
+      return allowCreditCard ? account.type === 'CREDIT_CARD' : account.type !== 'CREDIT_CARD';
+    });
+  };
+
   const availableFromAccounts = useMemo(() => {
-    if (mode === 'edit') {
-      return accounts;
-    }
-
     if (isCreditCardPurchaseFlow) {
-      return accounts.filter((account) => account.type === 'CREDIT_CARD' && account.isActive);
+      return filterSelectableAccounts(formData.fromAccountId, true);
     }
 
-    return accounts.filter((account) => account.type !== 'CREDIT_CARD' && account.isActive);
-  }, [accounts, isCreditCardPurchaseFlow, mode]);
+    return filterSelectableAccounts(formData.fromAccountId, false);
+  }, [accounts, formData.fromAccountId, isCreditCardPurchaseFlow, mode]);
 
   const availableToAccounts = useMemo(() => {
-    if (mode === 'edit') {
-      return accounts;
-    }
-
-    return accounts.filter((account) => account.type !== 'CREDIT_CARD' && account.isActive);
-  }, [accounts, mode]);
+    return filterSelectableAccounts(formData.toAccountId, false);
+  }, [accounts, formData.toAccountId, mode]);
 
   const isCreditCardExpense =
     formData.type === 'EXPENSE' &&

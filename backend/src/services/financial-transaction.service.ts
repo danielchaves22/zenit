@@ -20,13 +20,17 @@ import {
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
-type PurchaseScope = 'SINGLE' | 'PURCHASE';
+type PurchaseScope = 'SINGLE' | 'FUTURE' | 'PURCHASE';
 type TransactionListDateField = 'dueDate' | 'date' | 'effectiveDate' | 'createdAt';
 type CreditCardInvoiceReferenceInput = CreditCardInvoiceReference & {
   accountId: number;
   allowExternalSettlement?: boolean;
 };
 type CreditCardInvoiceSummaryDateField = Extract<TransactionListDateField, 'dueDate' | 'date'>;
+type CreditCardInvoiceNavigation = {
+  accountId: number;
+  invoiceKey: string;
+};
 
 type CreditCardInvoiceSummaryRow = {
   id: number | null;
@@ -68,10 +72,7 @@ type CreditCardInvoiceSummaryRow = {
   isProjected: boolean;
   hasProjectedTransactions: boolean;
   isCreditCardInvoiceSummary: true;
-  invoiceNavigation: {
-    accountId: number;
-    invoiceKey: string;
-  };
+  invoiceNavigation: CreditCardInvoiceNavigation;
   itemsSubtotal: string;
   fixedSubtotal: string;
 };
@@ -993,6 +994,16 @@ export default class FinancialTransactionService {
       throw new Error('Compra parcelada nao encontrada');
     }
 
+    const currentTransactionIndex = groupedTransactions.findIndex(
+      (transaction) => transaction.id === currentTransactionId
+    );
+    const currentTransaction =
+      currentTransactionIndex >= 0 ? groupedTransactions[currentTransactionIndex] : null;
+
+    if (!currentTransaction) {
+      throw new Error('Parcela nao encontrada na compra agrupada');
+    }
+
     const hasPaidInvoice = groupedTransactions.some(
       (transaction) =>
         transaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID
@@ -1002,35 +1013,48 @@ export default class FinancialTransactionService {
       throw new Error('Não é possível alterar a compra inteira porque existe parcela em fatura paga');
     }
 
-    if (scope === 'SINGLE') {
-      const currentTransaction = groupedTransactions.find(
-        (transaction) => transaction.id === currentTransactionId
-      );
-
-      if (!currentTransaction) {
-        throw new Error('Parcela nao encontrada na compra agrupada');
-      }
-
-      if (currentTransaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID) {
-        throw new Error('Não é possível alterar parcela que pertence a fatura paga');
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const scheduledDate = new Date(
-        currentTransaction.scheduledDate ||
-          currentTransaction.dueDate ||
-          currentTransaction.date
-      );
-      scheduledDate.setHours(0, 0, 0, 0);
-
-      if (scheduledDate <= today) {
-        throw new Error('Ajustes individuais sao permitidos apenas para parcelas futuras e nao pagas');
-      }
+    if (scope === 'PURCHASE') {
+      return groupedTransactions;
     }
 
-    return groupedTransactions;
+    if (currentTransaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID) {
+      throw new Error('Não é possível alterar parcela que pertence a fatura paga');
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const currentScheduledDate = new Date(
+      currentTransaction.scheduledDate ||
+        currentTransaction.dueDate ||
+        currentTransaction.date
+    );
+    currentScheduledDate.setHours(0, 0, 0, 0);
+
+    if (currentScheduledDate <= today) {
+      throw new Error('Ajustes individuais sao permitidos apenas para parcelas futuras e nao pagas');
+    }
+
+    if (scope === 'SINGLE') {
+      return [currentTransaction];
+    }
+
+    const futureTransactions = groupedTransactions.slice(currentTransactionIndex);
+
+    if (futureTransactions.length <= 1) {
+      throw new Error('Nao ha parcelas futuras adicionais para aplicar este ajuste');
+    }
+
+    const paidFutureTransaction = futureTransactions.find(
+      (transaction) =>
+        transaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID
+    );
+
+    if (paidFutureTransaction) {
+      throw new Error('Não é possível alterar esta parcela e as futuras porque existe parcela selecionada em fatura paga');
+    }
+
+    return futureTransactions;
   }
 
   private static async updateSingleTransactionRecordTx(
@@ -1265,7 +1289,15 @@ export default class FinancialTransactionService {
       let updatedTransaction: FinancialTransaction;
 
       if (originalTxn.purchaseGroupId) {
-        this.ensureGroupedPurchaseEditableFields(data);
+        const groupedUpdatePayload = {
+          description: updatePayload.description,
+          amount: updatePayload.amount,
+          notes: updatePayload.notes,
+          categoryId: updatePayload.categoryId,
+          tags: updatePayload.tags
+        };
+
+        this.ensureGroupedPurchaseEditableFields(groupedUpdatePayload);
 
         const groupedTransactions = await this.assertGroupedPurchaseMutationAllowedTx(
           tx,
@@ -1275,29 +1307,20 @@ export default class FinancialTransactionService {
           id
         );
 
-        if (purchaseScope === 'PURCHASE') {
-          const updates = [];
-          for (const groupedTransaction of groupedTransactions) {
-            updates.push(
-              await this.updateSingleTransactionRecordTx(
-                tx,
-                groupedTransaction,
-                updatePayload,
-                companyId
-              )
-            );
-          }
-
-          updatedTransaction =
-            updates.find((transaction) => transaction.id === id) || updates[0];
-        } else {
-          updatedTransaction = await this.updateSingleTransactionRecordTx(
-            tx,
-            originalTxn,
-            updatePayload,
-            companyId
+        const updates = [];
+        for (const groupedTransaction of groupedTransactions) {
+          updates.push(
+            await this.updateSingleTransactionRecordTx(
+              tx,
+              groupedTransaction,
+              groupedUpdatePayload,
+              companyId
+            )
           );
         }
+
+        updatedTransaction =
+          updates.find((transaction) => transaction.id === id) || updates[0];
       } else {
         updatedTransaction = await this.updateSingleTransactionRecordTx(
           tx,
@@ -1425,16 +1448,12 @@ export default class FinancialTransactionService {
           id
         );
 
-        if (scope === 'PURCHASE') {
-          for (const groupedTransaction of groupedTransactions) {
-            await this.deleteSingleTransactionRecordTx(
-              tx,
-              groupedTransaction,
-              options.companyId
-            );
-          }
-        } else {
-          await this.deleteSingleTransactionRecordTx(tx, originalTxn, options.companyId);
+        for (const groupedTransaction of groupedTransactions) {
+          await this.deleteSingleTransactionRecordTx(
+            tx,
+            groupedTransaction,
+            options.companyId
+          );
         }
       } else {
         await this.deleteSingleTransactionRecordTx(tx, originalTxn, options.companyId);
@@ -1581,18 +1600,39 @@ export default class FinancialTransactionService {
             settlementType: true
           }
         },
+        paidInvoice: {
+          select: {
+            id: true,
+            accountId: true,
+            referenceYear: true,
+            referenceMonth: true
+          }
+        },
         tags: { select: { id: true, name: true } },
         createdByUser: { select: { id: true, name: true } }
       }
     });
 
-    const decoratedMaterialized = materialized.map((transaction: any) => ({
-      ...transaction,
-      isVirtual: false,
-      isFixed: !!transaction.recurringTransactionId,
-      fixedTemplateId: transaction.recurringTransactionId ?? null,
-      virtualKey: undefined
-    }));
+    const decoratedMaterialized = materialized.map((transaction: any) => {
+      const { paidInvoice, ...baseTransaction } = transaction;
+
+      return {
+        ...baseTransaction,
+        isVirtual: false,
+        isFixed: !!transaction.recurringTransactionId,
+        fixedTemplateId: transaction.recurringTransactionId ?? null,
+        virtualKey: undefined,
+        isCreditCardInvoicePayment: Boolean(paidInvoice),
+        invoiceNavigation: paidInvoice
+          ? this.buildCreditCardInvoiceNavigation({
+              accountId: paidInvoice.accountId,
+              realInvoiceId: paidInvoice.id,
+              referenceYear: paidInvoice.referenceYear,
+              referenceMonth: paidInvoice.referenceMonth
+            })
+          : undefined
+      };
+    });
     const visibleMaterialized = decoratedMaterialized;
 
     const buildResult = async (paramsForResult?: {
@@ -1911,6 +1951,12 @@ export default class FinancialTransactionService {
         invoice.referenceYear,
         invoice.referenceMonth
       );
+
+      if (invoice.status === CreditCardInvoiceStatus.PAID) {
+        emittedKeys.add(summaryKey);
+        continue;
+      }
+
       const projectedGroup = projectedGroups.get(summaryKey);
       const summaryDescription = this.buildCreditCardInvoiceSummaryDescription(
         invoice.account.name,
@@ -2012,6 +2058,20 @@ export default class FinancialTransactionService {
     referenceMonth: number
   ): string {
     return `Fatura ${accountName} ${String(referenceMonth).padStart(2, '0')}/${referenceYear}`;
+  }
+
+  private static buildCreditCardInvoiceNavigation(params: {
+    accountId: number;
+    realInvoiceId?: number | null;
+    referenceYear: number;
+    referenceMonth: number;
+  }): CreditCardInvoiceNavigation {
+    return {
+      accountId: params.accountId,
+      invoiceKey: params.realInvoiceId
+        ? `invoice:${params.realInvoiceId}`
+        : `projection:${String(params.referenceYear)}-${String(params.referenceMonth).padStart(2, '0')}`
+    };
   }
 
   private static groupProjectedCreditCardInvoiceSummaries(
@@ -2121,9 +2181,6 @@ export default class FinancialTransactionService {
     const status = params.invoiceStatus === CreditCardInvoiceStatus.PAID
       ? TransactionStatus.COMPLETED
       : TransactionStatus.PENDING;
-    const invoiceKey = params.realInvoiceId
-      ? `invoice:${params.realInvoiceId}`
-      : `projection:${String(params.referenceYear)}-${String(params.referenceMonth).padStart(2, '0')}`;
 
     return {
       id: params.realInvoiceId,
@@ -2162,10 +2219,12 @@ export default class FinancialTransactionService {
       isProjected: params.isProjected,
       hasProjectedTransactions: params.projectedGroup?.hasProjectedTransactions ?? false,
       isCreditCardInvoiceSummary: true,
-      invoiceNavigation: {
+      invoiceNavigation: this.buildCreditCardInvoiceNavigation({
         accountId: params.account.id,
-        invoiceKey
-      },
+        realInvoiceId: params.realInvoiceId,
+        referenceYear: params.referenceYear,
+        referenceMonth: params.referenceMonth
+      }),
       itemsSubtotal: realItemsSubtotal.toString(),
       fixedSubtotal: fixedSubtotal.toString()
     };

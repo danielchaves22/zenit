@@ -79,6 +79,7 @@ interface Transaction {
   isProjected?: boolean;
   hasProjectedTransactions?: boolean;
   isCreditCardInvoiceSummary?: boolean;
+  isCreditCardInvoicePayment?: boolean;
   invoiceNavigation?: {
     accountId: number;
     invoiceKey: string;
@@ -1069,6 +1070,11 @@ export default function TransactionsListPage() {
 	                    const isMaterializing = materializingVirtualKey === (transaction.virtualKey || '');
 	                    const isProjectedLike = Boolean(transaction.isVirtual || transaction.isProjected);
 	                    const invoiceHref = getTransactionInvoiceHref(transaction);
+	                    const invoiceActionHref =
+	                      invoiceHref &&
+	                      (transaction.isCreditCardInvoiceSummary || transaction.isCreditCardInvoicePayment)
+	                        ? invoiceHref
+	                        : null;
 	                    const rowKey =
 	                      transaction.virtualKey ||
 	                      transaction.invoiceNavigation?.invoiceKey ||
@@ -1082,8 +1088,8 @@ export default function TransactionsListPage() {
 	                      >
 	                        <td className="px-4 py-3">
 	                          <div className="flex items-center justify-center gap-1">
-	                            {transaction.isCreditCardInvoiceSummary && invoiceHref ? (
-	                              <Link href={invoiceHref}>
+	                            {invoiceActionHref ? (
+	                              <Link href={invoiceActionHref}>
 	                                <button
 	                                  className="p-1 text-gray-300 transition-colors hover:text-accent"
 	                                  title="Abrir fatura"
@@ -1163,7 +1169,7 @@ export default function TransactionsListPage() {
                                   Fixa
                                 </span>
                               )}
-	                              {(transaction.purchaseGroupId || transaction.creditCardInvoice || transaction.isCreditCardInvoiceSummary) && (
+	                              {(transaction.purchaseGroupId || transaction.creditCardInvoice || transaction.isCreditCardInvoiceSummary || transaction.isCreditCardInvoicePayment) && (
                                 <span className="rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200">
                                   Cartão
                                 </span>

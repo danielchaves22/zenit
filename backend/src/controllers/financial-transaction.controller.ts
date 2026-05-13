@@ -310,6 +310,8 @@ export async function deleteTransaction(req: Request, res: Response) {
     const scope =
       req.query.scope === 'purchase'
         ? 'PURCHASE'
+        : req.query.scope === 'future'
+          ? 'FUTURE'
         : req.query.scope === 'single'
           ? 'SINGLE'
           : undefined;

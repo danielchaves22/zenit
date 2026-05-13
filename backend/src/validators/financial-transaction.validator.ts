@@ -8,8 +8,8 @@ const transactionStatusSchema = z.enum(['PENDING', 'COMPLETED', 'CANCELED'], {
   errorMap: () => ({ message: 'Status deve ser: PENDING, COMPLETED ou CANCELED' })
 });
 
-const purchaseScopeSchema = z.enum(['SINGLE', 'PURCHASE'], {
-  errorMap: () => ({ message: 'Escopo deve ser SINGLE ou PURCHASE' })
+const purchaseScopeSchema = z.enum(['SINGLE', 'FUTURE', 'PURCHASE'], {
+  errorMap: () => ({ message: 'Escopo deve ser SINGLE, FUTURE ou PURCHASE' })
 });
 
 const transactionListDateFieldSchema = z.enum(['dueDate', 'date', 'effectiveDate', 'createdAt'], {

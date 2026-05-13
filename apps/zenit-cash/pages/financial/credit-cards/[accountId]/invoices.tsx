@@ -121,12 +121,12 @@ function compareInvoicesAscending(a: CreditCardInvoiceListItem, b: CreditCardInv
 }
 
 function getInvoiceSelectionKey(invoice: Pick<CreditCardInvoiceListItem, 'id' | 'projectionKey' | 'referenceYear' | 'referenceMonth'>) {
-  if (invoice.projectionKey) {
-    return `projection:${invoice.projectionKey}`;
-  }
-
   if (invoice.id !== null) {
     return `invoice:${invoice.id}`;
+  }
+
+  if (invoice.projectionKey) {
+    return `projection:${invoice.projectionKey}`;
   }
 
   return `reference:${invoice.referenceYear}-${String(invoice.referenceMonth).padStart(2, '0')}`;
@@ -203,6 +203,15 @@ function InvoicesPageInner() {
     () => buildVisibleInvoices(sortedInvoices, showPaidInvoices),
     [showPaidInvoices, sortedInvoices]
   );
+  const requestedInvoiceFromQuery = useMemo(
+    () =>
+      selectedInvoiceFromQuery
+        ? sortedInvoices.find(
+            (invoice) => getInvoiceSelectionKey(invoice) === selectedInvoiceFromQuery
+          ) || null
+        : null,
+    [selectedInvoiceFromQuery, sortedInvoices]
+  );
   const selectedVisibleInvoiceIndex = useMemo(
     () => visibleInvoices.findIndex((invoice) => getInvoiceSelectionKey(invoice) === selectedInvoiceKey),
     [selectedInvoiceKey, visibleInvoices]
@@ -236,25 +245,25 @@ function InvoicesPageInner() {
   }, [selectedInvoiceKey, visibleInvoices]);
 
   useEffect(() => {
-    if (!selectedInvoiceFromQuery || selectedInvoiceFromQuery === selectedInvoiceKey) {
+    if (!requestedInvoiceFromQuery || showPaidInvoices || requestedInvoiceFromQuery.status !== 'PAID') {
       return;
     }
 
-    setSelectedInvoiceKey(selectedInvoiceFromQuery);
-  }, [selectedInvoiceFromQuery, selectedInvoiceKey]);
+    setShowPaidInvoices(true);
+  }, [requestedInvoiceFromQuery, showPaidInvoices]);
 
   useEffect(() => {
-    const visibleInvoiceKeys = new Set(
-      visibleInvoices.map((invoice) => getInvoiceSelectionKey(invoice))
-    );
-    const requestedInvoiceKey = selectedInvoiceFromQuery || null;
-
-    if (requestedInvoiceKey && visibleInvoiceKeys.has(requestedInvoiceKey)) {
+    if (requestedInvoiceFromQuery) {
+      const requestedInvoiceKey = getInvoiceSelectionKey(requestedInvoiceFromQuery);
       if (selectedInvoiceKey !== requestedInvoiceKey) {
         setSelectedInvoiceKey(requestedInvoiceKey);
       }
       return;
     }
+
+    const visibleInvoiceKeys = new Set(
+      visibleInvoices.map((invoice) => getInvoiceSelectionKey(invoice))
+    );
 
     if (selectedInvoiceKey && visibleInvoiceKeys.has(selectedInvoiceKey)) {
       return;
@@ -268,7 +277,7 @@ function InvoicesPageInner() {
     if (selectedInvoiceKey !== fallbackInvoiceKey) {
       setSelectedInvoiceKey(fallbackInvoiceKey);
     }
-  }, [firstUnpaidInvoice, selectedInvoiceFromQuery, selectedInvoiceKey, visibleInvoices]);
+  }, [firstUnpaidInvoice, requestedInvoiceFromQuery, selectedInvoiceKey, visibleInvoices]);
 
   useEffect(() => {
     if (!detailScrollRef.current) {

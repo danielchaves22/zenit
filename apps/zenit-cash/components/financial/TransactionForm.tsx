@@ -37,7 +37,7 @@ import {
 
 type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED';
-type PurchaseScope = 'SINGLE' | 'PURCHASE';
+type PurchaseScope = 'SINGLE' | 'FUTURE' | 'PURCHASE';
 type CreateFlow = 'standard' | 'credit-card-purchase';
 type PostCreateAction = 'default' | 'create-another';
 
@@ -329,13 +329,24 @@ export default function TransactionForm({
   const isGroupedCreditCardPurchase = Boolean(transaction?.purchaseGroupId);
   const isCreditCardContext = isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
   const currentGroupTransaction = purchaseGroupTransactions.find((item) => item.id === transaction?.id) || null;
+  const currentGroupTransactionIndex = purchaseGroupTransactions.findIndex((item) => item.id === transaction?.id);
+  const futureScopeTransactions =
+    currentGroupTransactionIndex >= 0
+      ? purchaseGroupTransactions.slice(currentGroupTransactionIndex)
+      : [];
   const hasPaidInvoiceInGroup = purchaseGroupTransactions.some((item) => item.creditCardInvoice?.status === 'PAID');
   const canEditPurchaseScope = isGroupedCreditCardPurchase && !hasPaidInvoiceInGroup;
   const canEditSingleScope = isGroupedCreditCardPurchase && isFutureInstallment(currentGroupTransaction);
+  const canEditFutureScope =
+    isGroupedCreditCardPurchase &&
+    canEditSingleScope &&
+    futureScopeTransactions.length > 1 &&
+    futureScopeTransactions.every((item) => item.creditCardInvoice?.status !== 'PAID');
   const activePurchaseScope = isGroupedCreditCardPurchase ? formData.purchaseScope : 'SINGLE';
   const currentScopeBlocked =
     isGroupedCreditCardPurchase &&
     ((activePurchaseScope === 'PURCHASE' && !canEditPurchaseScope) ||
+      (activePurchaseScope === 'FUTURE' && !canEditFutureScope) ||
       (activePurchaseScope === 'SINGLE' && !canEditSingleScope));
   const isCompletedReadOnly =
     mode === 'edit' &&
@@ -411,6 +422,8 @@ export default function TransactionForm({
     setFormData((prev) => {
       const nextScope: PurchaseScope = canEditPurchaseScope
         ? 'PURCHASE'
+        : canEditFutureScope
+          ? 'FUTURE'
         : canEditSingleScope
           ? 'SINGLE'
           : prev.purchaseScope;
@@ -421,7 +434,7 @@ export default function TransactionForm({
 
       return { ...prev, purchaseScope: nextScope };
     });
-  }, [canEditPurchaseScope, canEditSingleScope, isGroupedCreditCardPurchase]);
+  }, [canEditFutureScope, canEditPurchaseScope, canEditSingleScope, isGroupedCreditCardPurchase]);
 
   useEffect(() => {
     if (!isCreditCardPurchaseFlow) {
@@ -819,7 +832,21 @@ export default function TransactionForm({
       };
 
       if (mode === 'edit' && transaction?.purchaseGroupId) {
+        payload.description = formData.description;
+        payload.amount = parseFloat(formData.amount);
+        payload.categoryId = formData.categoryId ? parseInt(formData.categoryId, 10) : null;
+        payload.tags = formData.tags.split(',').map((tag) => tag.trim()).filter(Boolean);
+        payload.notes = formData.notes;
         payload.purchaseScope = formData.purchaseScope;
+
+        delete payload.date;
+        delete payload.dueDate;
+        delete payload.effectiveDate;
+        delete payload.type;
+        delete payload.status;
+        delete payload.fromAccountId;
+        delete payload.toAccountId;
+        delete payload.repeatTimes;
       }
 
       delete payload.installmentCount;
@@ -866,7 +893,12 @@ export default function TransactionForm({
     }
 
     const isPurchaseDelete = transaction.purchaseGroupId && formData.purchaseScope === 'PURCHASE';
-    const scopeLabel = isPurchaseDelete ? 'a compra inteira' : 'esta parcela';
+    const isFutureDelete = transaction.purchaseGroupId && formData.purchaseScope === 'FUTURE';
+    const scopeLabel = isPurchaseDelete
+      ? 'a compra inteira'
+      : isFutureDelete
+        ? 'esta parcela e as futuras'
+        : 'esta parcela';
 
     confirmation.confirm(
       {
@@ -962,10 +994,14 @@ export default function TransactionForm({
   const scopeMessage = currentScopeBlocked
     ? activePurchaseScope === 'PURCHASE'
       ? 'A compra inteira não pode mais ser alterada porque existe parcela em fatura paga.'
-      : 'Ajustes individuais só são permitidos para parcelas futuras e não pagas.'
+      : activePurchaseScope === 'FUTURE'
+        ? 'Ajustes para esta parcela e as futuras só são permitidos quando todas elas ainda são futuras e não pagas.'
+        : 'Ajustes individuais só são permitidos para parcelas futuras e não pagas.'
     : activePurchaseScope === 'PURCHASE'
       ? 'As alterações serão aplicadas em todas as parcelas desta compra.'
-      : 'As alterações serão aplicadas apenas nesta parcela futura.';
+      : activePurchaseScope === 'FUTURE'
+        ? 'As alterações serão aplicadas nesta parcela e em todas as futuras.'
+        : 'As alterações serão aplicadas apenas nesta parcela futura.';
   const externalInstallmentsCount = resolvedInvoicePreview.filter((item) => item.shouldSettleExternally).length;
   const previewSummaryLabelLegacy = invoicePreview.length === 0
     ? 'Configure um cartão com fechamento e vencimento para ver a previsão.'
@@ -1149,7 +1185,7 @@ export default function TransactionForm({
                 transaction?.totalInstallments !== undefined &&
                 transaction?.totalInstallments !== null &&
                 transaction.totalInstallments > 1 && (
-                  <div className="flex flex-col">
+                  <div className="flex flex-col pt-8">
                     <span className="rounded-md border border-blue-500 bg-blue-900/70 px-4 py-2 font-semibold uppercase tracking-wide text-blue-100">
                       {`Parcela ${transaction.installmentNumber ?? 1} de ${transaction.totalInstallments}`}
                     </span>
@@ -1298,7 +1334,7 @@ export default function TransactionForm({
                   <div className="font-medium text-white">Escopo da alteração</div>
                   <div className="mt-1 text-sm text-gray-300">{scopeMessage}</div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => handlePurchaseScopeChange('PURCHASE')}
@@ -1310,6 +1346,18 @@ export default function TransactionForm({
                     }`}
                   >
                     Compra inteira
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handlePurchaseScopeChange('FUTURE')}
+                    disabled={saving || !canEditFutureScope}
+                    className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
+                      formData.purchaseScope === 'FUTURE'
+                        ? 'border-accent bg-accent text-white'
+                        : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
+                    }`}
+                  >
+                    Esta e futuras
                   </button>
                   <button
                     type="button"

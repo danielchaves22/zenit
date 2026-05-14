@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import CategorySelect from '@/components/financial/CategorySelect';
+import TransactionSettlementModal from '@/components/financial/TransactionSettlementModal';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -34,6 +35,14 @@ import {
   getInvoiceReferenceLabel,
   getUsedCreditLimit
 } from '@/utils/creditCards';
+import {
+  formatCalendarDate,
+  getTodayDateValue,
+  isCalendarDateAfter,
+  isCalendarDateBefore,
+  normalizeDateInputValue
+} from '@/utils/financialStatus';
+import { buildTransactionUpsertPayload } from '@/utils/transactionPayload';
 
 type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED';
@@ -130,7 +139,7 @@ interface TransactionFormProps {
 }
 
 function getTodayValue() {
-  return new Date().toISOString().split('T')[0];
+  return getTodayDateValue();
 }
 
 function formatCurrency(value: string | number) {
@@ -142,11 +151,7 @@ function formatCurrency(value: string | number) {
 }
 
 function toInputDate(value?: string | null) {
-  if (!value) {
-    return '';
-  }
-
-  return new Date(value).toISOString().split('T')[0];
+  return normalizeDateInputValue(value);
 }
 
 function isFutureInstallment(transaction?: PurchaseGroupTransaction | null) {
@@ -164,13 +169,65 @@ function isFutureInstallment(transaction?: PurchaseGroupTransaction | null) {
     return false;
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  return isCalendarDateAfter(referenceDate);
+}
 
-  const scheduledDate = new Date(referenceDate);
-  scheduledDate.setHours(0, 0, 0, 0);
+function getPrimaryDateLabel(type: TransactionKind, isCreditCardContext: boolean) {
+  if (isCreditCardContext) {
+    return 'Data da Compra';
+  }
 
-  return scheduledDate > today;
+  switch (type) {
+    case 'INCOME':
+      return 'Data da Receita';
+    case 'TRANSFER':
+      return 'Data da Transferencia';
+    case 'EXPENSE':
+    default:
+      return 'Data da Despesa';
+  }
+}
+
+function getSettlementToggleLabel(type: TransactionKind) {
+  switch (type) {
+    case 'INCOME':
+      return 'Ja foi recebida?';
+    case 'TRANSFER':
+      return 'Ja foi efetivada?';
+    case 'EXPENSE':
+    default:
+      return 'Ja foi paga?';
+  }
+}
+
+function getSettlementDateLabel(type: TransactionKind) {
+  switch (type) {
+    case 'INCOME':
+      return 'Data do recebimento';
+    case 'TRANSFER':
+      return 'Data da efetivacao';
+    case 'EXPENSE':
+    default:
+      return 'Data do pagamento';
+  }
+}
+
+function getSettlementActionLabel(type: Extract<TransactionKind, 'EXPENSE' | 'INCOME'>) {
+  return type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita';
+}
+
+function getCompletionHint(type: TransactionKind, isCompleted: boolean, liquidationDate: string) {
+  if (!isCompleted) {
+    return '(pendente)';
+  }
+
+  const action = type === 'INCOME' ? 'recebida' : type === 'TRANSFER' ? 'efetivada' : 'paga';
+
+  if (!liquidationDate) {
+    return `(${action} hoje)`;
+  }
+
+  return `(${action} em ${formatCalendarDate(liquidationDate)})`;
 }
 
 export default function TransactionForm({
@@ -208,7 +265,7 @@ export default function TransactionForm({
     amount: '0.00',
     date: getTodayValue(),
     dueDate: getTodayValue(),
-    effectiveDate: getTodayValue(),
+    liquidationDate: getTodayValue(),
     type: initialType,
     status: 'COMPLETED' as TransactionStatus,
     notes: '',
@@ -222,6 +279,10 @@ export default function TransactionForm({
   });
 
   const [isRecurring, setIsRecurring] = useState(false);
+  const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
+  const [settlementAccountId, setSettlementAccountId] = useState('');
+  const [settlementDate, setSettlementDate] = useState(getTodayValue());
+  const [settlementNotes, setSettlementNotes] = useState('');
   const isCreditCardPurchaseFlow = mode === 'create' && createFlow === 'credit-card-purchase';
 
   const selectedFromAccount = useMemo(
@@ -260,6 +321,12 @@ export default function TransactionForm({
   const availableToAccounts = useMemo(() => {
     return filterSelectableAccounts(formData.toAccountId, false);
   }, [accounts, formData.toAccountId, mode]);
+  const settlementAccounts = useMemo(() => {
+    return accounts.filter((account) => {
+      const isSelected = account.id.toString() === settlementAccountId;
+      return account.type !== 'CREDIT_CARD' && (account.isActive || isSelected);
+    });
+  }, [accounts, settlementAccountId]);
 
   const isCreditCardExpense =
     formData.type === 'EXPENSE' &&
@@ -284,17 +351,13 @@ export default function TransactionForm({
     );
   }, [existingCreditCardInvoices]);
   const resolvedInvoicePreview = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
     return invoicePreview.map((item) => {
       const referenceLabel = getInvoiceReferenceLabel(item.referenceYear, item.referenceMonth);
       const existingInvoice =
         existingCreditCardInvoicesByReference.get(`${item.referenceYear}-${item.referenceMonth}`) || null;
-      const dueDate = new Date(item.dueDate);
       const shouldSettleExternally = existingInvoice
         ? existingInvoice.status === 'PAID'
-        : dueDate.getTime() < today.getTime();
+        : isCalendarDateBefore(item.dueDate);
 
       return {
         ...item,
@@ -358,21 +421,43 @@ export default function TransactionForm({
   const isPending = formData.status === 'PENDING';
   const isSimpleMode = formMode === 'simple';
   const isCompleted = formData.status === 'COMPLETED';
+  const isCanceled = formData.status === 'CANCELED';
+  const isExpense = formData.type === 'EXPENSE';
+  const isIncome = formData.type === 'INCOME';
+  const isTransfer = formData.type === 'TRANSFER';
   const showCreditCardPurchasePreview = mode === 'create' && isCreditCardPurchaseFlow;
   const shouldRedirectToCreditCardInvoices =
     formData.type === 'EXPENSE' &&
     selectedFromAccount?.type === 'CREDIT_CARD' &&
     Boolean(formData.fromAccountId);
-  const completionHint = isCompleted
-    ? formData.effectiveDate
-      ? `(efetivada em ${new Date(formData.effectiveDate).toLocaleDateString('pt-BR')})`
-      : '(efetivada hoje)'
-    : '(pendente)';
+  const completionHint = getCompletionHint(formData.type, isCompleted, formData.liquidationDate);
+  const primaryDateLabel = getPrimaryDateLabel(formData.type, isCreditCardContext);
+  const settlementToggleLabel = getSettlementToggleLabel(formData.type);
+  const settlementDateLabel = getSettlementDateLabel(formData.type);
+  const settlementActionLabel = isExpense
+    ? getSettlementActionLabel('EXPENSE')
+    : isIncome
+      ? getSettlementActionLabel('INCOME')
+      : 'Liquidar transacao';
+  const requiresFromAccount = isTransfer || (isExpense && isCompleted);
+  const requiresToAccount = isTransfer || (isIncome && isCompleted);
+  const canOpenSettlementModal =
+    mode === 'edit' &&
+    isPending &&
+    !isReadOnly &&
+    !isCreditCardContext &&
+    !isGroupedCreditCardPurchase &&
+    (isExpense || isIncome);
+  const showInlineSettlementControls = !isCreditCardPurchaseFlow && !canOpenSettlementModal;
 
   const accountFieldsDisabled = saving || isReadOnly || isGroupedCreditCardPurchase;
   const statusDisabled = saving || isReadOnly || isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
   const dueDateDisabled = saving || isReadOnly || isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
-  const effectiveDateDisabled = saving || isPending || isReadOnly || isCreditCardPurchaseFlow || isGroupedCreditCardPurchase;
+  const liquidationDateDisabled =
+    saving ||
+    isReadOnly ||
+    isCreditCardPurchaseFlow ||
+    isGroupedCreditCardPurchase;
   const transactionDateDisabled = saving || isReadOnly || isGroupedCreditCardPurchase;
 
   useEffect(() => {
@@ -447,7 +532,7 @@ export default function TransactionForm({
       type: 'EXPENSE',
       status: 'COMPLETED',
       repeatTimes: '',
-      effectiveDate: prev.date || getTodayValue()
+      liquidationDate: prev.date || getTodayValue()
     }));
   }, [isCreditCardPurchaseFlow]);
 
@@ -457,13 +542,13 @@ export default function TransactionForm({
     }
 
     setFormData((prev) => {
-      if (prev.effectiveDate === prev.date) {
+      if (prev.liquidationDate === prev.date) {
         return prev;
       }
 
       return {
         ...prev,
-        effectiveDate: prev.date
+        liquidationDate: prev.date
       };
     });
   }, [formData.date, isCreditCardPurchaseFlow]);
@@ -535,7 +620,17 @@ export default function TransactionForm({
 
     try {
       const response = await api.get(`/financial/transactions/${transactionId}`);
-      const txn = response.data as Transaction;
+      const rawTxn = response.data as Transaction;
+      const normalizedStatus: TransactionStatus =
+        rawTxn.status === 'CANCELED'
+          ? 'CANCELED'
+          : rawTxn.effectiveDate
+            ? 'COMPLETED'
+            : rawTxn.status;
+      const txn = {
+        ...rawTxn,
+        status: normalizedStatus
+      };
 
       setTransaction(txn);
       if (onTransactionLoaded) {
@@ -548,9 +643,9 @@ export default function TransactionForm({
         amount: txn.amount,
         date: toInputDate(txn.date) || getTodayValue(),
         dueDate: toInputDate(txn.dueDate) || getTodayValue(),
-        effectiveDate: toInputDate(txn.effectiveDate) || getTodayValue(),
+        liquidationDate: toInputDate(txn.effectiveDate),
         type: txn.type,
-        status: txn.status,
+        status: normalizedStatus,
         notes: txn.notes || '',
         fromAccountId: txn.fromAccount?.id.toString() || '',
         toAccountId: txn.toAccount?.id.toString() || '',
@@ -602,7 +697,7 @@ export default function TransactionForm({
       amount: '0.00',
       date: getTodayValue(),
       dueDate: getTodayValue(),
-      effectiveDate: getTodayValue(),
+      liquidationDate: getTodayValue(),
       type: 'EXPENSE',
       status: 'COMPLETED',
       notes: '',
@@ -674,8 +769,8 @@ export default function TransactionForm({
       updates.dueDate = getTodayValue();
     }
 
-    if (!formData.effectiveDate) {
-      updates.effectiveDate = getTodayValue();
+    if (!formData.liquidationDate && formData.status === 'COMPLETED') {
+      updates.liquidationDate = getTodayValue();
     }
 
     if (Object.keys(updates).length > 0) {
@@ -714,16 +809,8 @@ export default function TransactionForm({
     setFormData((prev) => {
       const updated = { ...prev, [name]: value };
 
-      if (name === 'status') {
-        if (value === 'PENDING') {
-          updated.effectiveDate = '';
-        } else if (!prev.effectiveDate) {
-          updated.effectiveDate = getTodayValue();
-        }
-      }
-
       if (name === 'date' && isCreditCardPurchaseFlow) {
-        updated.effectiveDate = value;
+        updated.liquidationDate = value;
       }
 
       return updated;
@@ -776,9 +863,84 @@ export default function TransactionForm({
       return {
         ...prev,
         status: checked ? 'COMPLETED' : 'PENDING',
-        effectiveDate: checked ? (prev.effectiveDate || today) : ''
+        liquidationDate: checked ? (prev.liquidationDate || today) : ''
       };
     });
+  };
+
+  const handleOpenSettlementModal = () => {
+    if (!(isExpense || isIncome)) {
+      return;
+    }
+
+    setSettlementAccountId(isExpense ? formData.fromAccountId : formData.toAccountId);
+    setSettlementDate(formData.liquidationDate || getTodayValue());
+    setSettlementNotes(formData.notes || '');
+    setIsSettlementModalOpen(true);
+  };
+
+  const handleCloseSettlementModal = () => {
+    if (saving) {
+      return;
+    }
+
+    setIsSettlementModalOpen(false);
+  };
+
+  const handleConfirmSettlement = async () => {
+    if (!transactionId || !(isExpense || isIncome)) {
+      return;
+    }
+
+    if (!settlementAccountId) {
+      addToast(
+        isExpense ? 'Selecione a conta do pagamento' : 'Selecione a conta do recebimento',
+        'error'
+      );
+      return;
+    }
+
+    if (!settlementDate) {
+      addToast(`Informe ${getSettlementDateLabel(formData.type).toLowerCase()}`, 'error');
+      return;
+    }
+
+    if (formData.type === 'TRANSFER' && (!formData.fromAccountId || !formData.toAccountId)) {
+      addToast('Informe as contas de origem e destino para a transferencia', 'error');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const payload = buildTransactionUpsertPayload(formData, {
+        status: 'COMPLETED',
+        liquidationDate: settlementDate,
+        notes: settlementNotes,
+        fromAccountId: isExpense ? settlementAccountId : formData.fromAccountId,
+        toAccountId: isIncome ? settlementAccountId : formData.toAccountId,
+        repeatTimes: !isCreditCardPurchaseFlow && isRecurring ? Number(formData.repeatTimes || 0) : 0
+      });
+
+      await api.put(`/financial/transactions/${transactionId}`, payload);
+
+      setFormData((prev) => ({
+        ...prev,
+        status: 'COMPLETED',
+        liquidationDate: settlementDate,
+        notes: settlementNotes,
+        fromAccountId: isExpense ? settlementAccountId : prev.fromAccountId,
+        toAccountId: isIncome ? settlementAccountId : prev.toAccountId
+      }));
+      setIsSettlementModalOpen(false);
+      addToast(isExpense ? 'Despesa liquidada com sucesso' : 'Receita liquidada com sucesso', 'success');
+      await fetchTransaction();
+    } catch (error: any) {
+      console.error('Erro ao liquidar transacao:', error);
+      addToast(error.response?.data?.error || 'Erro ao liquidar transacao', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePurchaseScopeChange = (scope: PurchaseScope) => {
@@ -815,21 +977,48 @@ export default function TransactionForm({
       return;
     }
 
+    const requiresSettlementAccount =
+      formData.status === 'COMPLETED' || Boolean(formData.liquidationDate);
+
+    if (formData.type === 'TRANSFER' && (!formData.fromAccountId || !formData.toAccountId)) {
+      addToast('Informe as contas de origem e destino para a transferencia', 'error');
+      return;
+    }
+
+    if (formData.type === 'EXPENSE' && requiresSettlementAccount && !formData.fromAccountId) {
+      addToast('Informe a conta do pagamento para liquidar a despesa', 'error');
+      return;
+    }
+
+    if (formData.type === 'INCOME' && requiresSettlementAccount && !formData.toAccountId) {
+      addToast('Informe a conta do recebimento para liquidar a receita', 'error');
+      return;
+    }
+
+    let normalizedStatus = formData.status;
+    let normalizedLiquidationDate = formData.liquidationDate;
+
+    if (normalizedStatus === 'PENDING' || normalizedStatus === 'CANCELED') {
+      normalizedLiquidationDate = '';
+    }
+
+    if (normalizedStatus !== 'CANCELED' && normalizedLiquidationDate) {
+      normalizedStatus = 'COMPLETED';
+    }
+
+    if (normalizedStatus === 'COMPLETED' && !normalizedLiquidationDate) {
+      addToast('Informe a data de liquidação para transações concluídas', 'error');
+      return;
+    }
+
     setSaving(true);
 
     try {
-      const payload: Record<string, unknown> = {
-        ...formData,
-        amount: parseFloat(formData.amount),
-        date: new Date(formData.date).toISOString(),
-        dueDate: formData.dueDate ? new Date(formData.dueDate).toISOString() : null,
-        effectiveDate: formData.effectiveDate ? new Date(formData.effectiveDate).toISOString() : null,
-        fromAccountId: formData.fromAccountId ? parseInt(formData.fromAccountId, 10) : null,
-        toAccountId: formData.toAccountId ? parseInt(formData.toAccountId, 10) : null,
-        categoryId: formData.categoryId ? parseInt(formData.categoryId, 10) : null,
-        tags: formData.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+      const payload = buildTransactionUpsertPayload(formData, {
+        status: normalizedStatus,
+        liquidationDate: normalizedLiquidationDate,
         repeatTimes: !isCreditCardPurchaseFlow && isRecurring ? Number(formData.repeatTimes || 0) : 0
-      };
+      });
 
       if (mode === 'edit' && transaction?.purchaseGroupId) {
         payload.description = formData.description;
@@ -1093,6 +1282,18 @@ export default function TransactionForm({
                   {saveAndAddAnotherLabel}
                 </Button>
               )}
+              {canOpenSettlementModal && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleOpenSettlementModal}
+                  disabled={actionDisabled}
+                  className="flex items-center gap-2"
+                >
+                  <Save size={16} />
+                  {settlementActionLabel}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="accent"
@@ -1130,7 +1331,7 @@ export default function TransactionForm({
                   label={installmentCountValue > 1 ? 'Valor da Parcela *' : 'Valor *'}
                   value={formData.amount}
                   onChange={handleAmountChange}
-                  required
+                  required={requiresFromAccount}
                   disabled={saving || isReadOnly}
                   className="mb-0"
                   inputClassName="py-4 text-2xl"
@@ -1174,7 +1375,7 @@ export default function TransactionForm({
                   label={isCreditCardPurchaseFlow && installmentCountValue > 1 ? 'Valor da Parcela *' : 'Valor *'}
                   value={formData.amount}
                   onChange={handleAmountChange}
-                  required
+                  required={requiresToAccount}
                   disabled={saving || isReadOnly}
                   className="mb-0"
                   inputClassName="py-4 text-2xl"
@@ -1269,7 +1470,7 @@ export default function TransactionForm({
                   value={formData.fromAccountId}
                   onChange={handleChange}
                   className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
-                  required
+                  required={requiresFromAccount}
                   disabled={accountFieldsDisabled}
                 >
                   <option value="">
@@ -1282,13 +1483,18 @@ export default function TransactionForm({
                     </option>
                   ))}
                 </select>
+                {!requiresFromAccount && !isCreditCardPurchaseFlow && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Opcional enquanto estiver pendente. A conta pode ser definida na liquidaÃ§Ã£o.
+                  </p>
+                )}
               </div>
             )}
 
             {(formData.type === 'INCOME' || formData.type === 'TRANSFER') && (
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="toAccountId">
-                  Conta de Destino *
+                  {`Conta de Destino${requiresToAccount ? ' *' : ''}`}
                 </label>
                 <select
                   id="toAccountId"
@@ -1296,7 +1502,7 @@ export default function TransactionForm({
                   value={formData.toAccountId}
                   onChange={handleChange}
                   className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
-                  required
+                  required={requiresToAccount}
                   disabled={accountFieldsDisabled}
                 >
                   <option value="">Selecione uma conta</option>
@@ -1307,6 +1513,11 @@ export default function TransactionForm({
                     </option>
                   ))}
                 </select>
+                {!requiresToAccount && (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Opcional enquanto estiver pendente. A conta pode ser definida na liquidaÃ§Ã£o.
+                  </p>
+                )}
               </div>
             )}
 
@@ -1410,7 +1621,7 @@ export default function TransactionForm({
                               ? getInvoiceReferenceLabel(item.creditCardInvoice.referenceYear, item.creditCardInvoice.referenceMonth)
                               : '-'}
                           </td>
-                          <td className="px-3 py-2">{item.dueDate ? new Date(item.dueDate).toLocaleDateString('pt-BR') : '-'}</td>
+                          <td className="px-3 py-2">{item.dueDate ? formatCalendarDate(item.dueDate) : '-'}</td>
                           <td className="px-3 py-2">
                             <span className={`rounded-full px-2 py-1 text-xs font-medium ${getInvoiceDisplayStatusClasses(invoiceStatus)}`}>
                               {getInvoiceDisplayStatusLabel(invoiceStatus)}
@@ -1425,7 +1636,7 @@ export default function TransactionForm({
             </div>
           )}
 
-          {!isCreditCardPurchaseFlow && (isSimpleMode ? (
+          {!isCreditCardPurchaseFlow && (false ? (isSimpleMode ? (
             <div className={`grid grid-cols-1 gap-6 ${isCreditCardPurchaseFlow ? 'md:grid-cols-1' : 'md:grid-cols-3'}`}>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-300" htmlFor="date">
@@ -1528,29 +1739,164 @@ export default function TransactionForm({
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="effectiveDate">
-                      Data de Efetivação
+                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="liquidationDate">
+                      Data de Liquidação
                     </label>
                     <input
-                      id="effectiveDate"
-                      name="effectiveDate"
+                      id="liquidationDate"
+                      name="liquidationDate"
                       type="date"
-                      value={formData.effectiveDate}
+                      value={formData.liquidationDate}
                       onChange={handleChange}
-                      disabled={effectiveDateDisabled}
+                      disabled={liquidationDateDisabled}
                       className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
                     />
                   </div>
                 </>
               )}
             </div>
+          )) : (
+            isSimpleMode ? (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-300" htmlFor="date">
+                    {primaryDateLabel}
+                  </label>
+                  <input
+                    id="date"
+                    name="date"
+                    type="date"
+                    value={formData.date}
+                    onChange={handleChange}
+                    disabled={transactionDateDisabled}
+                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  />
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center gap-3">
+                    <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                      {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                    </label>
+                  </div>
+                  <input
+                    id="dueDate"
+                    name="dueDate"
+                    type="date"
+                    value={formData.dueDate}
+                    onChange={handleChange}
+                    disabled={dueDateDisabled}
+                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  />
+                </div>
+
+                {showInlineSettlementControls ? (
+                  <div className="flex flex-col justify-center gap-2">
+                    <span className="text-sm font-medium text-gray-300">{settlementToggleLabel}</span>
+                    <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        checked={isCompleted}
+                        onChange={(event) => handleSimpleStatusChange(event.target.checked)}
+                        className="peer sr-only"
+                        disabled={statusDisabled}
+                      />
+                      <div className="h-full w-full rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-6" />
+                    </label>
+                    <span className="text-xs text-gray-400">{completionHint}</span>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-sky-800/60 bg-sky-950/20 p-4">
+                    <div className="text-sm font-medium text-white">TransaÃ§Ã£o pendente</div>
+                    <p className="mt-1 text-xs text-sky-100/80">
+                      Use o botÃ£o "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="date">
+                    {`${primaryDateLabel} *`}
+                  </label>
+                  <input
+                    id="date"
+                    name="date"
+                    type="date"
+                    value={formData.date}
+                    onChange={handleChange}
+                    disabled={transactionDateDisabled}
+                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                    {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                  </label>
+                  <input
+                    id="dueDate"
+                    name="dueDate"
+                    type="date"
+                    value={formData.dueDate}
+                    onChange={handleChange}
+                    disabled={dueDateDisabled}
+                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  />
+                </div>
+
+                {showInlineSettlementControls ? (
+                  <div className="flex flex-col justify-center gap-2">
+                    <span className="text-sm font-medium text-gray-300">{settlementToggleLabel}</span>
+                    <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
+                      <input
+                        type="checkbox"
+                        checked={isCompleted}
+                        onChange={(event) => handleSimpleStatusChange(event.target.checked)}
+                        className="peer sr-only"
+                        disabled={statusDisabled}
+                      />
+                      <div className="h-full w-full rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-6" />
+                    </label>
+                    <span className="text-xs text-gray-400">{completionHint}</span>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-sky-800/60 bg-sky-950/20 p-4 md:col-span-2">
+                    <div className="text-sm font-medium text-white">TransaÃ§Ã£o pendente</div>
+                    <p className="mt-1 text-sm text-sky-100/80">
+                      Esta transaÃ§Ã£o ainda nÃ£o impactou o saldo. Use o botÃ£o "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
+                    </p>
+                  </div>
+                )}
+
+                {showInlineSettlementControls && isCompleted && (
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="liquidationDate">
+                      {settlementDateLabel}
+                    </label>
+                    <input
+                      id="liquidationDate"
+                      name="liquidationDate"
+                      type="date"
+                      value={formData.liquidationDate}
+                      onChange={handleChange}
+                      disabled={liquidationDateDisabled}
+                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    />
+                  </div>
+                )}
+              </div>
+            )
           ))}
 
           {isCreditCardContext && (
             <div className="rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
               {isCreditCardPurchaseFlow
-                ? 'A compra no cartão entra com status e data de efetivação preenchidos automaticamente. Expanda o painel final para conferir limite e previsão das faturas.'
-                : 'A data da compra controla a competência da despesa. O vencimento e a efetivação da fatura são calculados automaticamente pelo cartão.'}
+                ? 'A compra no cartão entra com status e data de liquidação preenchidos automaticamente. Expanda o painel final para conferir limite e previsão das faturas.'
+                : 'A data da compra controla a competência da despesa. O vencimento e a liquidação da fatura são calculados automaticamente pelo cartão.'}
             </div>
           )}
 
@@ -1732,6 +2078,25 @@ export default function TransactionForm({
           )}
         </form>
       </Card>
+
+      {(isExpense || isIncome) && (
+        <TransactionSettlementModal
+          isOpen={isSettlementModalOpen}
+          kind={isExpense ? 'EXPENSE' : 'INCOME'}
+          accounts={settlementAccounts}
+          accountId={settlementAccountId}
+          settlementDate={settlementDate}
+          notes={settlementNotes}
+          loading={saving}
+          title={isExpense ? 'Registrar pagamento' : 'Registrar recebimento'}
+          confirmLabel={settlementActionLabel}
+          onClose={handleCloseSettlementModal}
+          onConfirm={handleConfirmSettlement}
+          onAccountIdChange={setSettlementAccountId}
+          onSettlementDateChange={setSettlementDate}
+          onNotesChange={setSettlementNotes}
+        />
+      )}
 
       <ConfirmationModal
         isOpen={confirmation.isOpen}

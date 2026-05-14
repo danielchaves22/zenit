@@ -9,9 +9,10 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { AccessGuard } from '@/components/ui/AccessGuard';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
+import { usePermissions } from '@/hooks/usePermissions';
 import { useToast } from '@/components/ui/ToastContext';
 import TagMultiSelectAutocomplete, { TagOption } from '@/components/ui/TagMultiSelectAutocomplete';
-import { Plus, FileText, Edit2, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, FileText, Edit2, Trash2, ChevronDown, ChevronRight, Calculator } from 'lucide-react';
 import api from '@/lib/api';
 
 type ProcessStatus = 'SOLICITACAO' | 'INICIAL' | 'CALCULO';
@@ -29,6 +30,11 @@ interface ProcessItem {
   notes: string | null;
   createdAt: string;
   processTags: Array<{ tag: ProcessTag }>;
+  initialCalculation: {
+    id: number;
+    status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+    currentPublishedVersionId: number | null;
+  } | null;
 }
 
 interface ProcessListResponse {
@@ -70,10 +76,26 @@ function originClass(originType: ProcessOriginType): string {
     : 'bg-slate-100 text-slate-900 border border-slate-300';
 }
 
+function formatInitialCalculationStatus(item: ProcessItem): string {
+  if (!item.initialCalculation) return 'Nao iniciado';
+  if (item.initialCalculation.currentPublishedVersionId) return 'Publicado';
+  if (item.initialCalculation.status === 'ARCHIVED') return 'Arquivado';
+  return 'Rascunho';
+}
+
+function initialCalculationClass(item: ProcessItem): string {
+  if (!item.initialCalculation) return 'bg-slate-100 text-slate-900 border border-slate-300';
+  if (item.initialCalculation.currentPublishedVersionId) return 'bg-emerald-100 text-emerald-900 border border-emerald-300';
+  if (item.initialCalculation.status === 'ARCHIVED') return 'bg-rose-100 text-rose-900 border border-rose-300';
+  return 'bg-amber-100 text-amber-900 border border-amber-300';
+}
+
 export default function ProcessesPage() {
   const router = useRouter();
   const confirmation = useConfirmation();
+  const { isAdmin } = usePermissions();
   const { addToast } = useToast();
+  const canAccessInitialCalculation = isAdmin();
 
   const [processes, setProcesses] = useState<ProcessItem[]>([]);
   const [selectedTags, setSelectedTags] = useState<ProcessTag[]>([]);
@@ -199,6 +221,10 @@ export default function ProcessesPage() {
 
   function openEditForm(id: number) {
     router.push(`/processes/${id}`);
+  }
+
+  function openInitialCalculation(id: number) {
+    router.push(`/processes/${id}/initial`);
   }
 
   async function handleStatusChange(id: number, status: ProcessStatus) {
@@ -406,8 +432,11 @@ export default function ProcessesPage() {
                 <table className="w-full">
                   <thead className="text-muted bg-elevated uppercase text-xs border-b border-soft">
                     <tr>
-                      <th className="px-4 py-3 text-center w-28">Acoes</th>
+                      <th className={`px-4 py-3 text-center ${canAccessInitialCalculation ? 'w-36' : 'w-28'}`}>Acoes</th>
                       <th className="px-4 py-3 text-left">Processo</th>
+                      {canAccessInitialCalculation && (
+                        <th className="px-4 py-3 text-left">Calculo inicial</th>
+                      )}
                       <th className="px-4 py-3 text-left">Origem</th>
                       <th className="px-4 py-3 text-left">Advogado</th>
                       <th className="px-4 py-3 text-left">Reclamante</th>
@@ -421,6 +450,16 @@ export default function ProcessesPage() {
                       <tr key={item.id} className="border-b border-soft hover:bg-elevated">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1 justify-center">
+                            {canAccessInitialCalculation && (
+                              <button
+                                onClick={() => openInitialCalculation(item.id)}
+                                className="p-1 text-gray-300 hover:text-emerald-400"
+                                title="Calculo inicial"
+                                disabled={actionLoading}
+                              >
+                                <Calculator size={16} />
+                              </button>
+                            )}
                             <button
                               onClick={() => openEditForm(item.id)}
                               className="p-1 text-gray-300 hover:text-[#2563eb]"
@@ -440,6 +479,24 @@ export default function ProcessesPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-white font-medium">#{item.id}</td>
+                        {canAccessInitialCalculation && (
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-2">
+                              <span
+                                className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-medium ${initialCalculationClass(item)}`}
+                              >
+                                {formatInitialCalculationStatus(item)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => openInitialCalculation(item.id)}
+                                className="text-left text-xs text-accent hover:text-accent-hover"
+                              >
+                                {item.initialCalculation ? 'Abrir calculo' : 'Iniciar calculo'}
+                              </button>
+                            </div>
+                          </td>
+                        )}
                         <td className="px-4 py-3">
                           <span
                             className={`inline-flex items-center justify-center px-2 py-1 rounded text-xs font-medium ${originClass(item.originType)}`}

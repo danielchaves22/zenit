@@ -162,6 +162,13 @@ export default class ProcessService {
               tag: true
             }
           },
+          initialCalculation: {
+            select: {
+              id: true,
+              status: true,
+              currentPublishedVersionId: true
+            }
+          },
           sourceImport: {
             select: {
               id: true,
@@ -196,6 +203,13 @@ export default class ProcessService {
       include: {
         processTags: {
           include: { tag: true }
+        },
+        initialCalculation: {
+          select: {
+            id: true,
+            status: true,
+            currentPublishedVersionId: true
+          }
         },
         sourceImport: true,
         statusHistory: {

@@ -70,6 +70,59 @@ enum ProcessOriginType {
   IMPORT
 }
 
+enum InitialCalculationStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FgtsRegime {
+  FGTS_8
+  FGTS_11_2
+}
+
+enum CalculationVerbaScope {
+  SYSTEM
+  COMPANY
+}
+
+enum CalculationVerbaStrategy {
+  MONTHLY_WITH_STANDARD_REFLEXES
+  STANDARD_RESCISORY_BLOCK
+  RESCISORY_NOTICE
+  QUANTITY_X_HOURLY_RATE
+  QUANTITY_X_DAILY_RATE
+  MONTHS_X_REMUNERATION
+  MONTHS_X_BASE_AMOUNT
+  FIXED_AMOUNT
+  CONDITIONAL_PENALTY_467
+  CONDITIONAL_PENALTY_477
+}
+
+enum CalculationVerbaFgtsMode {
+  REGIME
+  FIXED_8
+  NONE
+}
+
+enum CalculationVersionVerbaSource {
+  TEMPLATE
+  PROCESS_CUSTOM
+  AD_HOC
+}
+
+enum CalculationLineType {
+  PRINCIPAL
+  REFLEXO_13
+  REFLEXO_FERIAS
+  REFLEXO_AVISO
+  REFLEXO_DSR
+  FGTS
+  MULTA
+  TOTAL
+  OUTRA
+}
+
 enum InboundImportSourceType {
   EMAIL
 }
@@ -133,6 +186,9 @@ model Company {
   processes           Process[]
   processTags         ProcessTag[]
   inboundImports      InboundImport[]
+  initialCalculations InitialCalculation[]
+  processCustomVerbas ProcessCustomVerba[]
+  calculationVerbaTemplates CalculationVerbaTemplate[]
   aiCredentials       CompanyAiCredential[]
   gmailConnection     GmailConnection?
   emailIngestionConfig EmailIngestionConfig?
@@ -441,6 +497,8 @@ model Process {
   updatedByUser       User?              @relation("ProcessUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
   statusHistory       ProcessStatusHistory[]
   processTags         ProcessTagLink[]
+  initialCalculation  InitialCalculation?
+  customVerbas        ProcessCustomVerba[]
 
   @@index([companyId])
   @@index([companyId, status])
@@ -519,6 +577,158 @@ model InboundImport {
   @@index([companyId, destinationType])
   @@index([companyId, processedAt])
   @@index([companyId, externalThreadId])
+}
+
+model CalculationRuleSet {
+  id          Int        @id @default(autoincrement())
+  code        String     @unique
+  name        String
+  description String?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  versions    InitialCalculationVersion[]
+}
+
+model CalculationVerbaTemplate {
+  id              Int                        @id @default(autoincrement())
+  companyId       Int?
+  scope           CalculationVerbaScope     @default(SYSTEM)
+  code            String                     @unique
+  label           String
+  groupCode       String
+  groupLabel      String
+  strategy        CalculationVerbaStrategy
+  fgtsMode        CalculationVerbaFgtsMode  @default(NONE)
+  configJson      Json?
+  inputSchemaJson Json?
+  sortOrder       Int                        @default(0)
+  isActive        Boolean                    @default(true)
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  company         Company?                   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  versionVerbas   InitialCalculationVersionVerba[]
+
+  @@index([companyId])
+  @@index([scope, isActive])
+  @@index([groupCode, sortOrder])
+}
+
+model ProcessCustomVerba {
+  id              Int                        @id @default(autoincrement())
+  processId       Int
+  companyId       Int
+  code            String
+  label           String
+  groupCode       String
+  groupLabel      String
+  strategy        CalculationVerbaStrategy
+  fgtsMode        CalculationVerbaFgtsMode  @default(NONE)
+  configJson      Json?
+  inputSchemaJson Json?
+  sortOrder       Int                        @default(0)
+  isActive        Boolean                    @default(true)
+  createdBy       Int
+  updatedBy       Int?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  process         Process                    @relation(fields: [processId], references: [id], onDelete: Cascade)
+  company         Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  versionVerbas   InitialCalculationVersionVerba[]
+
+  @@unique([processId, code], name: "unique_process_custom_verba_code")
+  @@index([companyId])
+  @@index([processId, isActive])
+}
+
+model InitialCalculation {
+  id                        Int                       @id @default(autoincrement())
+  processId                 Int                       @unique
+  companyId                 Int
+  status                    InitialCalculationStatus  @default(DRAFT)
+  currentPublishedVersionId Int?                      @unique
+  createdBy                 Int
+  updatedBy                 Int?
+  createdAt                 DateTime                  @default(now())
+  updatedAt                 DateTime                  @updatedAt
+
+  process                   Process                    @relation(fields: [processId], references: [id], onDelete: Cascade)
+  company                   Company                    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  currentPublishedVersion   InitialCalculationVersion? @relation("InitialCalculationCurrentPublishedVersion", fields: [currentPublishedVersionId], references: [id], onDelete: SetNull)
+  versions                  InitialCalculationVersion[] @relation("InitialCalculationVersions")
+
+  @@index([companyId])
+  @@index([status])
+}
+
+model InitialCalculationVersion {
+  id                   Int                            @id @default(autoincrement())
+  initialCalculationId Int
+  versionNumber        Int
+  ruleSetId            Int
+  fgtsRegime           FgtsRegime
+  inputSnapshotJson    Json
+  summarySnapshotJson  Json?
+  publishedAt          DateTime?
+  createdBy            Int
+  createdAt            DateTime                       @default(now())
+
+  initialCalculation   InitialCalculation             @relation("InitialCalculationVersions", fields: [initialCalculationId], references: [id], onDelete: Cascade)
+  currentForCalculation InitialCalculation?           @relation("InitialCalculationCurrentPublishedVersion")
+  ruleSet              CalculationRuleSet             @relation(fields: [ruleSetId], references: [id], onDelete: Restrict)
+  verbas               InitialCalculationVersionVerba[]
+
+  @@unique([initialCalculationId, versionNumber], name: "unique_initial_calculation_version_number")
+  @@index([ruleSetId])
+  @@index([publishedAt])
+}
+
+model InitialCalculationVersionVerba {
+  id                    Int                           @id @default(autoincrement())
+  versionId             Int
+  sourceType            CalculationVersionVerbaSource
+  templateId            Int?
+  processCustomVerbaId  Int?
+  verbaCode             String
+  verbaLabel            String
+  groupCode             String
+  groupLabel            String
+  strategy              CalculationVerbaStrategy
+  fgtsMode              CalculationVerbaFgtsMode     @default(NONE)
+  configJson            Json?
+  inputSchemaJson       Json?
+  isEnabled             Boolean                      @default(true)
+  sortOrder             Int                          @default(0)
+  createdAt             DateTime                     @default(now())
+
+  version               InitialCalculationVersion    @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  template              CalculationVerbaTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  processCustomVerba    ProcessCustomVerba?          @relation(fields: [processCustomVerbaId], references: [id], onDelete: SetNull)
+  linhasResultado       InitialCalculationLine[]
+
+  @@index([versionId, sortOrder])
+  @@index([templateId])
+  @@index([processCustomVerbaId])
+  @@index([groupCode])
+}
+
+model InitialCalculationLine {
+  id             Int                  @id @default(autoincrement())
+  versionVerbaId Int
+  lineType       CalculationLineType
+  label          String
+  amount         Decimal              @db.Decimal(15, 2)
+  sortOrder      Int                  @default(0)
+  memoryJson     Json?
+  createdAt      DateTime             @default(now())
+
+  versionVerba   InitialCalculationVersionVerba @relation(fields: [versionVerbaId], references: [id], onDelete: Cascade)
+
+  @@index([versionVerbaId, sortOrder])
+  @@index([lineType])
 }
 
 model CompanyAiCredential {

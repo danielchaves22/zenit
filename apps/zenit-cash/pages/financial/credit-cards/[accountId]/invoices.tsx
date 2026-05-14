@@ -14,12 +14,19 @@ import api from '@/lib/api';
 import { formatAccountDisplayName } from '@/utils/accounts';
 import {
   getAvailableCreditLimit,
+  getInvoiceDisplayStatus,
   getInvoiceDisplayStatusClasses,
   getInvoiceDisplayStatusLabel,
   getInvoiceReferenceLabel,
   getInvoiceSettlementLabel,
   getUsedCreditLimit
 } from '@/utils/creditCards';
+import {
+  compareCalendarDateValues,
+  formatCalendarDate,
+  getTodayDateValue,
+  toIsoDateString
+} from '@/utils/financialStatus';
 import { formatTransactionDescription } from '@/utils/transactions';
 
 interface PaymentTransaction {
@@ -117,7 +124,7 @@ function compareInvoicesAscending(a: CreditCardInvoiceListItem, b: CreditCardInv
     return a.referenceMonth - b.referenceMonth;
   }
 
-  return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+  return compareCalendarDateValues(a.dueDate, b.dueDate);
 }
 
 function getInvoiceSelectionKey(invoice: Pick<CreditCardInvoiceListItem, 'id' | 'projectionKey' | 'referenceYear' | 'referenceMonth'>) {
@@ -169,7 +176,7 @@ function InvoicesPageInner() {
   const invoiceItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [paymentData, setPaymentData] = useState({
     fromAccountId: '',
-    paymentDate: new Date().toISOString().split('T')[0],
+    paymentDate: getTodayDateValue(),
     notes: ''
   });
 
@@ -370,9 +377,7 @@ function InvoicesPageInner() {
     try {
       await api.post(`/financial/credit-card-invoices/${invoiceDetail.id}/pay`, {
         fromAccountId: Number(paymentData.fromAccountId),
-        paymentDate: paymentData.paymentDate
-          ? new Date(paymentData.paymentDate).toISOString()
-          : undefined,
+        paymentDate: toIsoDateString(paymentData.paymentDate) || undefined,
         notes: paymentData.notes || undefined
       });
 
@@ -675,7 +680,7 @@ function InvoicesPageInner() {
                         visibleInvoices.map((invoice) => {
                           const invoiceKey = getInvoiceSelectionKey(invoice);
                           const isSelected = invoiceKey === selectedInvoiceKey;
-                          const displayStatus = invoice.displayStatus || invoice.status;
+                          const displayStatus = getInvoiceDisplayStatus(invoice.status, invoice.dueDate);
 
                           return (
                             <button
@@ -701,8 +706,8 @@ function InvoicesPageInner() {
                                   </div>
                                   <div className="mt-1 text-xs text-gray-400">
                                     Fecha{' '}
-                                    {new Date(invoice.closingDate).toLocaleDateString('pt-BR')} •
-                                    vence {new Date(invoice.dueDate).toLocaleDateString('pt-BR')}
+                                    {formatCalendarDate(invoice.closingDate)} •
+                                    vence {formatCalendarDate(invoice.dueDate)}
                                   </div>
                                 </div>
                                 <span
@@ -816,11 +821,11 @@ function InvoicesPageInner() {
                                 <div className="flex flex-wrap items-center gap-2">
                                 <span
                                   className={`rounded-full px-3 py-1 text-xs font-medium ${getInvoiceDisplayStatusClasses(
-                                    invoiceDetail.displayStatus || invoiceDetail.status
+                                    getInvoiceDisplayStatus(invoiceDetail.status, invoiceDetail.dueDate)
                                   )}`}
                                 >
                                   {getInvoiceDisplayStatusLabel(
-                                    invoiceDetail.displayStatus || invoiceDetail.status
+                                    getInvoiceDisplayStatus(invoiceDetail.status, invoiceDetail.dueDate)
                                   )}
                                 </span>
                                 {invoiceDetail.isProjected && (
@@ -835,9 +840,9 @@ function InvoicesPageInner() {
                                 )}
                                 <span>
                                   Fechamento{' '}
-                                {new Date(invoiceDetail.closingDate).toLocaleDateString('pt-BR')}{' '}
+                                {formatCalendarDate(invoiceDetail.closingDate)}{' '}
                                 • vencimento{' '}
-                                {new Date(invoiceDetail.dueDate).toLocaleDateString('pt-BR')}
+                                {formatCalendarDate(invoiceDetail.dueDate)}
                                 </span>
                               </div>
                             </div>
@@ -936,9 +941,7 @@ function InvoicesPageInner() {
                                   'Conta não identificada'}{' '}
                                 • {formatCurrency(invoiceDetail.paymentTransaction.amount)} •{' '}
                                 {invoiceDetail.paymentTransaction.effectiveDate
-                                  ? new Date(
-                                      invoiceDetail.paymentTransaction.effectiveDate
-                                    ).toLocaleDateString('pt-BR')
+                                  ? formatCalendarDate(invoiceDetail.paymentTransaction.effectiveDate)
                                   : '-'}
                               </div>
                             </div>
@@ -960,7 +963,7 @@ function InvoicesPageInner() {
                             </div>
                             <div className="mt-2 text-sm text-gray-300">
                               {invoiceDetail.settledAt
-                                ? `Liquidada em ${new Date(invoiceDetail.settledAt).toLocaleDateString('pt-BR')}`
+                                ? `Liquidada em ${formatCalendarDate(invoiceDetail.settledAt)}`
                                 : 'Liquidação histórica sem transferência registrada'}
                             </div>
                             {invoiceHasExternalSettlements && (

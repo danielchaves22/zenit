@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
+  AlertTriangle,
   ArrowUpDown,
   CheckCircle,
   ChevronDown,
@@ -31,10 +32,21 @@ import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import CategorySelect from '@/components/financial/CategorySelect';
+import TransactionSettlementModal from '@/components/financial/TransactionSettlementModal';
 import api from '@/lib/api';
 import { formatAccountDisplayName } from '@/utils/accounts';
 import { formatTransactionDescription } from '@/utils/transactions';
 import { getInvoiceReferenceLabel } from '@/utils/creditCards';
+import {
+  compareCalendarDateValues,
+  formatCalendarDate,
+  getTodayDateValue,
+  getTransactionDisplayStatus,
+  getTransactionDisplayStatusClasses,
+  getTransactionDisplayStatusLabel,
+  type TransactionDisplayStatus
+} from '@/utils/financialStatus';
+import { buildTransactionUpsertPayload } from '@/utils/transactionPayload';
 
 type TransactionTypeFilter = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatusFilter = 'PENDING' | 'COMPLETED' | 'CANCELED';
@@ -56,6 +68,7 @@ interface Transaction {
   type: TransactionTypeFilter;
   status: TransactionStatusFilter;
   notes?: string;
+  repeatTimes?: number | null;
   fromAccount?: { id: number; name: string; type?: string };
   toAccount?: { id: number; name: string; type?: string };
   category?: { id: number; name: string; color: string; icon?: string };
@@ -105,6 +118,7 @@ interface Account {
   id: number;
   name: string;
   type: string;
+  isActive?: boolean;
 }
 
 interface Category {
@@ -131,7 +145,7 @@ const TRANSACTION_DATE_FIELD_OPTIONS: Array<{
 }> = [
   { value: 'dueDate', label: 'Data de vencimento' },
   { value: 'date', label: 'Data da transação' },
-  { value: 'effectiveDate', label: 'Data de pagamento' },
+  { value: 'effectiveDate', label: 'Data de liquidaÃ§Ã£o' },
   { value: 'createdAt', label: 'Data de criação' }
 ];
 
@@ -254,6 +268,44 @@ function getTransactionInvoiceHref(
   return `/financial/credit-cards/${transaction.fromAccount.id}/invoices?invoiceKey=${encodeURIComponent(invoiceKey)}`;
 }
 
+function getTransactionAccountDisplay(transaction: Pick<Transaction, 'fromAccount' | 'toAccount'>) {
+  const accountLabel = formatAccountDisplayName(transaction.fromAccount || transaction.toAccount);
+  return accountLabel === '-' ? 'A definir' : accountLabel;
+}
+
+function canSettleTransaction(transaction: Transaction) {
+  if (!transaction.id) {
+    return false;
+  }
+
+  if (transaction.type === 'TRANSFER') {
+    return false;
+  }
+
+  if (transaction.status !== 'PENDING' || transaction.effectiveDate) {
+    return false;
+  }
+
+  if (transaction.isVirtual || transaction.isProjected) {
+    return false;
+  }
+
+  if (
+    transaction.purchaseGroupId ||
+    transaction.creditCardInvoice ||
+    transaction.isCreditCardInvoiceSummary ||
+    transaction.isCreditCardInvoicePayment
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+function shouldAdjustExpenseSummaryWithTransferPayments(types: TransactionTypeFilter[]) {
+  return types.includes('TRANSFER');
+}
+
 export default function TransactionsListPage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -291,6 +343,11 @@ export default function TransactionsListPage() {
     categoryId: '',
     search: ''
   });
+  const [settlementTarget, setSettlementTarget] = useState<Transaction | null>(null);
+  const [settlementLoading, setSettlementLoading] = useState(false);
+  const [settlementAccountId, setSettlementAccountId] = useState('');
+  const [settlementDate, setSettlementDate] = useState(getTodayDateValue());
+  const [settlementNotes, setSettlementNotes] = useState('');
 
   const isCustomPeriod = periodPreset === 'CUSTOM';
   const activePeriod = useMemo(
@@ -345,6 +402,12 @@ export default function TransactionsListPage() {
     : projectedSavings < 0
       ? 'text-red-200/80'
       : 'text-slate-300/80';
+  const settlementAccounts = useMemo(() => {
+    return accounts.filter((account) => {
+      const isSelected = account.id.toString() === settlementAccountId;
+      return account.type !== 'CREDIT_CARD' && (account.isActive !== false || isSelected);
+    });
+  }, [accounts, settlementAccountId]);
 
   useEffect(() => {
     void fetchAccounts();
@@ -358,6 +421,37 @@ export default function TransactionsListPage() {
 
     void fetchData();
   }, [activePeriod, currentPage, customPeriodError, dateField, filters, isCustomPeriod, showOnlyMaterialized]);
+
+  async function fetchTransferPaymentExpenseAdjustment(baseParams: URLSearchParams): Promise<number> {
+    if (!shouldAdjustExpenseSummaryWithTransferPayments(filters.types)) {
+      return 0;
+    }
+
+    const pageSize = 100;
+    let page = 1;
+    let totalPagesForTransfers = 1;
+    let total = 0;
+
+    do {
+      const params = new URLSearchParams(baseParams.toString());
+      params.set('page', page.toString());
+      params.set('pageSize', pageSize.toString());
+      params.delete('types');
+      params.append('types', 'TRANSFER');
+
+      const response = await api.get(`/financial/transactions?${params.toString()}`);
+      const transferRows = (response.data.data || []) as Transaction[];
+
+      total += transferRows
+        .filter((transaction) => transaction.isCreditCardInvoicePayment)
+        .reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
+
+      totalPagesForTransfers = Number(response.data.pages || 1);
+      page += 1;
+    } while (page <= totalPagesForTransfers);
+
+    return total;
+  }
 
   async function fetchData() {
     if (isCustomPeriod && customPeriodError) {
@@ -400,11 +494,15 @@ export default function TransactionsListPage() {
       }
 
       const response = await api.get(`/financial/transactions?${params.toString()}`);
+      const transferPaymentExpenseAdjustment = await fetchTransferPaymentExpenseAdjustment(params);
+      const apiIncomeTotal = Number(response.data.summary?.incomeTotal || 0);
+      const apiExpenseTotal = Number(response.data.summary?.expenseTotal || 0);
+
       setTransactions(response.data.data || []);
       setTotalPages(response.data.pages || 1);
       setSummary({
-        incomeTotal: response.data.summary?.incomeTotal || '0',
-        expenseTotal: response.data.summary?.expenseTotal || '0'
+        incomeTotal: apiIncomeTotal.toString(),
+        expenseTotal: (apiExpenseTotal + transferPaymentExpenseAdjustment).toString()
       });
     } catch (error: any) {
       const fallback = 'Erro ao carregar transacoes';
@@ -562,6 +660,102 @@ export default function TransactionsListPage() {
     }
   }
 
+  async function handleOpenSettlement(transaction: Transaction) {
+    if (!canSettleTransaction(transaction) || !transaction.id) {
+      return;
+    }
+
+    setSettlementLoading(true);
+
+    try {
+      const response = await api.get(`/financial/transactions/${transaction.id}`);
+      const detail = response.data as Transaction;
+      const initialAccountId =
+        detail.type === 'EXPENSE'
+          ? detail.fromAccount?.id?.toString() || ''
+          : detail.toAccount?.id?.toString() || '';
+
+      setSettlementTarget(detail);
+      setSettlementAccountId(initialAccountId);
+      setSettlementDate(getTodayDateValue());
+      setSettlementNotes(detail.notes || '');
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao carregar transacao para liquidacao', 'error');
+    } finally {
+      setSettlementLoading(false);
+    }
+  }
+
+  function handleCloseSettlement(force = false) {
+    if (settlementLoading && !force) {
+      return;
+    }
+
+    setSettlementTarget(null);
+    setSettlementAccountId('');
+    setSettlementDate(getTodayDateValue());
+    setSettlementNotes('');
+  }
+
+  async function handleConfirmSettlement() {
+    if (!settlementTarget?.id) {
+      return;
+    }
+
+    if (!settlementAccountId) {
+      addToast(
+        settlementTarget.type === 'EXPENSE'
+          ? 'Selecione a conta do pagamento'
+          : 'Selecione a conta do recebimento',
+        'error'
+      );
+      return;
+    }
+
+    if (!settlementDate) {
+      addToast(
+        settlementTarget.type === 'EXPENSE'
+          ? 'Informe a data do pagamento'
+          : 'Informe a data do recebimento',
+        'error'
+      );
+      return;
+    }
+
+    setSettlementLoading(true);
+
+    try {
+      const payload = buildTransactionUpsertPayload(settlementTarget, {
+        status: 'COMPLETED',
+        liquidationDate: settlementDate,
+        notes: settlementNotes,
+        fromAccountId:
+          settlementTarget.type === 'EXPENSE'
+            ? settlementAccountId
+            : settlementTarget.fromAccount?.id,
+        toAccountId:
+          settlementTarget.type === 'INCOME'
+            ? settlementAccountId
+            : settlementTarget.toAccount?.id,
+        repeatTimes: settlementTarget.repeatTimes ?? 0
+      });
+
+      await api.put(`/financial/transactions/${settlementTarget.id}`, payload);
+      addToast(
+        settlementTarget.type === 'EXPENSE'
+          ? 'Despesa liquidada com sucesso'
+          : 'Receita liquidada com sucesso',
+        'success'
+      );
+      handleCloseSettlement(true);
+      await fetchData();
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao liquidar transacao', 'error');
+    } finally {
+      setSettlementLoading(false);
+    }
+  }
+
   function handleSort(key: 'dueDate' | 'effectiveDate' | 'description') {
     setSortConfig((prev) => {
       if (prev.key === key) {
@@ -583,14 +777,13 @@ export default function TransactionsListPage() {
 
   function formatDate(dateString?: string): string {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    return formatCalendarDate(dateString);
   }
 
   function formatDateShort(dateString: string): string {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
+    return formatCalendarDate(dateString, {
       day: '2-digit',
-      month: '2-digit',
-      timeZone: 'UTC'
+      month: '2-digit'
     });
   }
 
@@ -607,23 +800,6 @@ export default function TransactionsListPage() {
     }
   };
 
-  const getStatusColor = (status: string, isVirtual?: boolean) => {
-    if (isVirtual) {
-      return 'bg-sky-900 text-sky-200';
-    }
-
-    switch (status) {
-      case 'COMPLETED':
-        return 'bg-green-900 text-green-300';
-      case 'PENDING':
-        return 'bg-yellow-900 text-yellow-300';
-      case 'CANCELED':
-        return 'bg-red-900 text-red-300';
-      default:
-        return 'bg-gray-700 text-gray-300';
-    }
-  };
-
   const getAmountColor = (type: string) => {
     switch (type) {
       case 'INCOME':
@@ -637,18 +813,18 @@ export default function TransactionsListPage() {
     }
   };
 
-  const getStatusIcon = (status: string, isVirtual?: boolean) => {
-    if (isVirtual) {
-      return <Clock size={12} className="text-sky-300" />;
-    }
-
+  const getStatusIcon = (status: TransactionDisplayStatus) => {
     switch (status) {
-      case 'COMPLETED':
+      case 'SETTLED':
+      case 'PAID':
         return <CheckCircle size={12} className="text-green-400" />;
-      case 'PENDING':
-        return <Clock size={12} className="text-yellow-400" />;
+      case 'OVERDUE':
+        return <AlertTriangle size={12} className="text-red-400" />;
       case 'CANCELED':
-        return <X size={12} className="text-red-400" />;
+        return <X size={12} className="text-gray-300" />;
+      case 'PROJECTED':
+      case 'OPEN':
+        return <Clock size={12} className="text-sky-300" />;
       default:
         return null;
     }
@@ -672,10 +848,8 @@ export default function TransactionsListPage() {
           : String(bValue).localeCompare(String(aValue));
       }
 
-      const aDate = new Date(aValue).getTime();
-      const bDate = new Date(bValue).getTime();
-
-      return direction === 'asc' ? aDate - bDate : bDate - aDate;
+      const comparison = compareCalendarDateValues(aValue, bValue);
+      return direction === 'asc' ? comparison : -comparison;
     });
 
     return sorted;
@@ -962,7 +1136,7 @@ export default function TransactionsListPage() {
                   className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
                 >
                   <option value="">Todos</option>
-                  <option value="PENDING">Pendente</option>
+                  <option value="PENDING">Em aberto / vencida</option>
                   <option value="COMPLETED">Concluída</option>
                   <option value="CANCELED">Cancelada</option>
                 </select>
@@ -1056,7 +1230,7 @@ export default function TransactionsListPage() {
                     <th className="px-4 py-3 text-left">Conta</th>
                     <th className="px-4 py-3 text-left">Categoria</th>
                     <th className="cursor-pointer px-4 py-3 text-center" onClick={() => handleSort('effectiveDate')}>
-                      Data Pagamento
+                      Data de LiquidaÃ§Ã£o
                       {sortConfig.key === 'effectiveDate' && (
                         sortConfig.direction === 'asc'
                           ? <ChevronUp size={12} className="ml-1 inline" />
@@ -1069,6 +1243,7 @@ export default function TransactionsListPage() {
 	                  {sortedTransactions.map((transaction) => {
 	                    const isMaterializing = materializingVirtualKey === (transaction.virtualKey || '');
 	                    const isProjectedLike = Boolean(transaction.isVirtual || transaction.isProjected);
+	                    const displayStatus = getTransactionDisplayStatus(transaction);
 	                    const invoiceHref = getTransactionInvoiceHref(transaction);
 	                    const invoiceActionHref =
 	                      invoiceHref &&
@@ -1112,6 +1287,15 @@ export default function TransactionsListPage() {
                               </button>
                             ) : (
                               <>
+                                {canSettleTransaction(transaction) && (
+                                  <button
+                                    onClick={() => handleOpenSettlement(transaction)}
+                                    className="p-1 text-gray-300 transition-colors hover:text-green-400"
+                                    title={transaction.type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita'}
+                                  >
+                                    <CheckCircle size={14} />
+                                  </button>
+                                )}
                                 {transaction.id && (
                                   <Link href={`/financial/transactions/${transaction.id}`}>
                                     <button
@@ -1217,21 +1401,15 @@ export default function TransactionsListPage() {
 
                         <td className="px-4 py-3 text-center">
                           <div className="flex items-center justify-center gap-1">
-	                            {getStatusIcon(transaction.status, isProjectedLike)}
-	                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${getStatusColor(transaction.status, isProjectedLike)}`}>
-	                              {isProjectedLike
-	                                ? 'Projetada'
-	                                : transaction.status === 'COMPLETED'
-                                  ? 'Concluída'
-                                  : transaction.status === 'PENDING'
-                                    ? 'Pendente'
-                                    : 'Cancelada'}
+                            {getStatusIcon(displayStatus.status)}
+                            <span className={`rounded-full px-2 py-1 text-xs font-medium ${getTransactionDisplayStatusClasses(displayStatus.status)}`}>
+                              {getTransactionDisplayStatusLabel(displayStatus.status)}
                             </span>
                           </div>
                         </td>
 
                         <td className="px-4 py-3 text-gray-300">
-                          {formatAccountDisplayName(transaction.fromAccount || transaction.toAccount)}
+                          {getTransactionAccountDisplay(transaction)}
                         </td>
 
                         <td className="px-4 py-3">
@@ -1253,7 +1431,7 @@ export default function TransactionsListPage() {
                             {transaction.effectiveDate && (
                               <div className="flex items-center gap-1 text-green-400">
                                 <CheckCircle size={10} />
-                                <span>Efet: {formatDateShort(transaction.effectiveDate)}</span>
+                                <span>Liq: {formatDateShort(transaction.effectiveDate)}</span>
                               </div>
                             )}
                             {!transaction.effectiveDate && <span className="text-gray-500">-</span>}
@@ -1292,6 +1470,24 @@ export default function TransactionsListPage() {
           </>
         )}
       </Card>
+
+      {settlementTarget && (settlementTarget.type === 'EXPENSE' || settlementTarget.type === 'INCOME') && (
+        <TransactionSettlementModal
+          isOpen={Boolean(settlementTarget)}
+          kind={settlementTarget.type}
+          accounts={settlementAccounts}
+          accountId={settlementAccountId}
+          settlementDate={settlementDate}
+          notes={settlementNotes}
+          loading={settlementLoading}
+          confirmLabel={settlementTarget.type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita'}
+          onClose={() => handleCloseSettlement()}
+          onConfirm={handleConfirmSettlement}
+          onAccountIdChange={setSettlementAccountId}
+          onSettlementDateChange={setSettlementDate}
+          onNotesChange={setSettlementNotes}
+        />
+      )}
 
       <ConfirmationModal
         isOpen={confirmation.isOpen}

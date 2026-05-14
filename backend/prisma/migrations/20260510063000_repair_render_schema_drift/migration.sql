@@ -1,0 +1,1 @@
+-- Empty migration placeholder restored so Prisma can traverse migration history.

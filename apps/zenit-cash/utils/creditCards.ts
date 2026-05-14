@@ -1,3 +1,8 @@
+import {
+  formatCalendarDate,
+  getInvoiceDisplayStatus as getDerivedInvoiceDisplayStatus
+} from '@/utils/financialStatus';
+
 export interface CreditCardAccountLike {
   id: number;
   name: string;
@@ -44,7 +49,7 @@ export function getInvoiceReferenceLabel(referenceYear: number, referenceMonth: 
 }
 
 export function formatInvoiceDate(date: Date) {
-  return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+  return formatCalendarDate(date);
 }
 
 export function getUsedCreditLimit(account: CreditCardAccountLike) {
@@ -122,11 +127,7 @@ export function buildCreditCardInvoicePreview(
 }
 
 export function getInvoiceDisplayStatus(status: string, dueDate?: string | null) {
-  if (status !== 'PAID' && dueDate && new Date(dueDate).getTime() < Date.now()) {
-    return 'OVERDUE';
-  }
-
-  return status;
+  return getDerivedInvoiceDisplayStatus(status, dueDate);
 }
 
 export function getInvoiceDisplayStatusLabel(status: string) {

@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
+import { usePermissions } from '@/hooks/usePermissions';
 import TagMultiSelectAutocomplete, { TagOption } from '@/components/ui/TagMultiSelectAutocomplete';
-import { Save, X, Plus } from 'lucide-react';
+import { Save, X, Plus, Calculator } from 'lucide-react';
 import api from '@/lib/api';
 
 type ProcessStatus = 'SOLICITACAO' | 'INICIAL' | 'CALCULO';
@@ -74,7 +75,9 @@ function formatOrigin(originType: ProcessOriginType): string {
 export function ProcessForm({ mode, processId }: ProcessFormProps) {
   const router = useRouter();
   const { addToast } = useToast();
+  const { isAdmin } = usePermissions();
   const isEdit = mode === 'edit';
+  const canAccessInitialCalculation = isAdmin();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -151,6 +154,11 @@ export function ProcessForm({ mode, processId }: ProcessFormProps) {
 
   function handleCancel() {
     router.push('/processes');
+  }
+
+  function openInitialCalculation() {
+    if (!processId) return;
+    router.push(`/processes/${processId}/initial`);
   }
 
   async function handleCreateTag() {
@@ -232,6 +240,18 @@ export function ProcessForm({ mode, processId }: ProcessFormProps) {
           {isEdit ? 'Editar processo' : 'Novo processo'}
         </h1>
         <div className="flex gap-3">
+          {isEdit && processId && canAccessInitialCalculation && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={openInitialCalculation}
+              disabled={formLoading}
+              className="flex items-center gap-2"
+            >
+              <Calculator size={16} />
+              Calculo inicial
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"

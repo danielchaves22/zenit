@@ -19,11 +19,13 @@ import {
 import api from '@/lib/api';
 import {
   getAvailableCreditLimit,
+  getInvoiceDisplayStatus,
   getInvoiceDisplayStatusClasses,
   getInvoiceDisplayStatusLabel,
   getInvoiceReferenceLabel,
   getUsedCreditLimit
 } from '@/utils/creditCards';
+import { formatCalendarDate } from '@/utils/financialStatus';
 
 interface CreditCardInvoiceSummary {
   id: number;
@@ -166,7 +168,9 @@ function CreditCardsPageInner() {
           {cards.map((card) => {
             const availableLimit = getAvailableCreditLimit(card);
             const usedLimit = getUsedCreditLimit(card);
-            const nextInvoiceStatus = card.nextInvoice?.displayStatus || card.nextInvoice?.status || 'OPEN';
+            const nextInvoiceStatus = card.nextInvoice
+              ? getInvoiceDisplayStatus(card.nextInvoice.status, card.nextInvoice.dueDate)
+              : 'OPEN';
 
             return (
               <Card key={card.id} className={`border border-gray-700 ${card.isActive === false ? 'opacity-70' : ''}`}>
@@ -263,7 +267,7 @@ function CreditCardsPageInner() {
                         <div className="text-xs uppercase tracking-wide text-gray-400">Vencimento</div>
                         <div className="mt-1 text-lg font-semibold text-white">
                           {card.nextInvoice.dueDate
-                            ? new Date(card.nextInvoice.dueDate).toLocaleDateString('pt-BR')
+                            ? formatCalendarDate(card.nextInvoice.dueDate)
                             : '-'}
                         </div>
                       </div>

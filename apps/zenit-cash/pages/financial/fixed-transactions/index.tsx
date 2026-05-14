@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Ban,
   CalendarDays,
@@ -16,17 +16,20 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { MultiSelect } from '@/components/ui/MultiSelect';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { useToast } from '@/components/ui/ToastContext';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import api from '@/lib/api';
 import { formatAccountDisplayName } from '@/utils/accounts';
 
+type FixedTransactionType = 'INCOME' | 'EXPENSE';
+
 interface FixedTransaction {
   id: number;
   description: string;
   amount: string;
-  type: 'INCOME' | 'EXPENSE';
+  type: FixedTransactionType;
   dayOfMonth: number | null;
   startDate: string;
   endDate?: string | null;
@@ -43,6 +46,13 @@ interface FixedTransaction {
   canDelete?: boolean;
 }
 
+const ALL_FIXED_TRANSACTION_TYPES: FixedTransactionType[] = ['INCOME', 'EXPENSE'];
+
+const FIXED_TRANSACTION_TYPE_OPTIONS = [
+  { value: 'INCOME', label: 'Receita' },
+  { value: 'EXPENSE', label: 'Despesa' }
+];
+
 function FixedTransactionsPageInner() {
   const { addToast } = useToast();
   const confirmation = useConfirmation();
@@ -50,6 +60,17 @@ function FixedTransactionsPageInner() {
   const [items, setItems] = useState<FixedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [selectedTypes, setSelectedTypes] = useState<FixedTransactionType[]>([
+    ...ALL_FIXED_TRANSACTION_TYPES
+  ]);
+
+  const filteredItems = useMemo(() => {
+    if (selectedTypes.length === 0) {
+      return [];
+    }
+
+    return items.filter((item) => selectedTypes.includes(item.type));
+  }, [items, selectedTypes]);
 
   useEffect(() => {
     void fetchFixedTransactions();
@@ -181,6 +202,20 @@ function FixedTransactionsPageInner() {
       </div>
 
       <Card>
+        <div className="mb-4 grid grid-cols-1 gap-4 border-b border-gray-700 pb-4 md:grid-cols-[minmax(240px,360px)_1fr]">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Tipo</label>
+            <MultiSelect
+              options={FIXED_TRANSACTION_TYPE_OPTIONS}
+              values={selectedTypes}
+              onChange={(values) => setSelectedTypes(values as FixedTransactionType[])}
+              placeholder="Selecione os tipos"
+              className="mb-0"
+              triggerClassName="h-10"
+            />
+          </div>
+        </div>
+
         {loading ? (
           <div className="py-8 text-center text-gray-400">Carregando transações fixas...</div>
         ) : items.length === 0 ? (
@@ -193,6 +228,11 @@ function FixedTransactionsPageInner() {
                 Criar primeira fixa
               </Button>
             </Link>
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="py-12 text-center">
+            <Repeat size={42} className="mx-auto mb-3 text-gray-500" />
+            <p className="text-gray-400">Nenhuma transaÃ§Ã£o fixa encontrada para os tipos selecionados</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -211,7 +251,7 @@ function FixedTransactionsPageInner() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
+                {filteredItems.map((item) => (
                   <tr
                     key={item.id}
                     className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${!item.isActive ? 'opacity-60' : ''}`}

@@ -46,6 +46,12 @@ const dayOfMonthSchema = z.coerce
   .optional()
   .nullable();
 
+const hexColorSchema = z
+  .string()
+  .regex(/^#[0-9A-Fa-f]{6}$/, 'Cor deve estar no formato #RRGGBB')
+  .optional()
+  .nullable();
+
 export const createAccountSchema = z
   .object({
     name: z.string().min(2, { message: 'Nome deve ter pelo menos 2 caracteres' }),
@@ -53,8 +59,11 @@ export const createAccountSchema = z
     initialBalance: initialBalanceSchema,
     accountNumber: z.string().optional().nullable(),
     bankName: z.string().optional().nullable(),
+    bankCode: z.string().max(40).optional().nullable(),
+    bankId: z.coerce.number().int().positive().optional().nullable(),
     allowNegativeBalance: z.boolean().optional().default(false),
     creditLimit: moneyLikeSchema,
+    cardColor: hexColorSchema,
     statementClosingDay: dayOfMonthSchema,
     statementDueDay: dayOfMonthSchema
   })
@@ -94,9 +103,12 @@ export const updateAccountSchema = z
     type: accountTypeSchema.optional(),
     accountNumber: z.string().optional().nullable(),
     bankName: z.string().optional().nullable(),
+    bankCode: z.string().max(40).optional().nullable(),
+    bankId: z.coerce.number().int().positive().optional().nullable(),
     isActive: z.boolean().optional(),
     allowNegativeBalance: z.boolean().optional(),
     creditLimit: moneyLikeSchema,
+    cardColor: hexColorSchema,
     statementClosingDay: dayOfMonthSchema,
     statementDueDay: dayOfMonthSchema
   })

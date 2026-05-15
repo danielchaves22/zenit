@@ -232,7 +232,7 @@ function FixedTransactionsPageInner() {
         ) : filteredItems.length === 0 ? (
           <div className="py-12 text-center">
             <Repeat size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="text-gray-400">Nenhuma transaÃ§Ã£o fixa encontrada para os tipos selecionados</p>
+            <p className="text-gray-400">Nenhuma transação fixa encontrada para os tipos selecionados</p>
           </div>
         ) : (
           <div className="overflow-x-auto">

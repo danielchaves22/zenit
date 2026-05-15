@@ -490,7 +490,7 @@ function InvoicesPageInner() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="text-xs uppercase tracking-[0.2em] text-gray-400">
-                          Limite do cartÃ£o
+                          Limite do cartão
                         </div>
                         <div className="mt-2 text-xl font-semibold text-white">
                     {card.creditLimit ? formatCurrency(card.creditLimit) : 'Não configurado'}
@@ -1210,7 +1210,7 @@ function InvoicesPageInner() {
 
                 <div>
                   <label style={{ display: 'none' }}>
-                    ObservaÃ§Ãµes
+                    Observações
                   </label>
                   <div className="mb-1 text-sm font-medium text-gray-300">
                     {'Observa\u00E7\u00F5es'}

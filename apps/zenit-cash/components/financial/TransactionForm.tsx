@@ -1485,7 +1485,7 @@ export default function TransactionForm({
                 </select>
                 {!requiresFromAccount && !isCreditCardPurchaseFlow && (
                   <p className="mt-1 text-xs text-gray-400">
-                    Opcional enquanto estiver pendente. A conta pode ser definida na liquidaÃ§Ã£o.
+                    Opcional enquanto estiver pendente. A conta pode ser definida na liquidação.
                   </p>
                 )}
               </div>
@@ -1515,7 +1515,7 @@ export default function TransactionForm({
                 </select>
                 {!requiresToAccount && (
                   <p className="mt-1 text-xs text-gray-400">
-                    Opcional enquanto estiver pendente. A conta pode ser definida na liquidaÃ§Ã£o.
+                    Opcional enquanto estiver pendente. A conta pode ser definida na liquidação.
                   </p>
                 )}
               </div>
@@ -1808,9 +1808,9 @@ export default function TransactionForm({
                   </div>
                 ) : (
                   <div className="rounded-lg border border-sky-800/60 bg-sky-950/20 p-4">
-                    <div className="text-sm font-medium text-white">TransaÃ§Ã£o pendente</div>
+                    <div className="text-sm font-medium text-white">Transação pendente</div>
                     <p className="mt-1 text-xs text-sky-100/80">
-                      Use o botÃ£o "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
+                      Use o botão "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
                     </p>
                   </div>
                 )}
@@ -1865,9 +1865,9 @@ export default function TransactionForm({
                   </div>
                 ) : (
                   <div className="rounded-lg border border-sky-800/60 bg-sky-950/20 p-4 md:col-span-2">
-                    <div className="text-sm font-medium text-white">TransaÃ§Ã£o pendente</div>
+                    <div className="text-sm font-medium text-white">Transação pendente</div>
                     <p className="mt-1 text-sm text-sky-100/80">
-                      Esta transaÃ§Ã£o ainda nÃ£o impactou o saldo. Use o botÃ£o "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
+                      Esta transação ainda não impactou o saldo. Use o botão "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
                     </p>
                   </div>
                 )}

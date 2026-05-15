@@ -40,6 +40,7 @@ import {
   deleteAccount,
   adjustBalance
 } from '../controllers/financial-account.controller';
+import { listFinancialBanks } from '../controllers/bank.controller';
 
 import {
   createCategory,
@@ -89,6 +90,7 @@ import financialAccountMovementRoutes from './financial-account-movement-report.
 const router = Router();
 
 router.get('/defaults', getCompanyDefaults);
+router.get('/banks', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listFinancialBanks);
 
 // Financial accounts
 router.post('/accounts', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(createAccountSchema), createAccount);

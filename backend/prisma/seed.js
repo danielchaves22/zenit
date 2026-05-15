@@ -1,6 +1,8 @@
 // backend/prisma/seed.js
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcrypt');
+const fs = require('fs');
+const path = require('path');
 
 const prisma = new PrismaClient({
   log: ['query', 'info', 'warn', 'error'],
@@ -14,6 +16,18 @@ const APP_CATALOG = [
   { appKey: 'ZENIT_CALC', name: 'Zenit Calc' },
   { appKey: 'ZENIT_ADMIN', name: 'Zenit Admin' }
 ];
+
+function loadBankCatalog() {
+  const catalogPath = path.join(__dirname, '..', 'src', 'catalogs', 'bank-catalog.ts');
+  const content = fs.readFileSync(catalogPath, 'utf8');
+  const match = content.match(/export const BANK_CATALOG: BankCatalogItem\[] = (\[[\s\S]*?\]);/);
+
+  if (!match) {
+    throw new Error('Nao foi possivel carregar o catalogo de bancos');
+  }
+
+  return JSON.parse(match[1]);
+}
 
 async function main() {
   try {
@@ -35,6 +49,7 @@ async function main() {
     console.log('[seed] Company ensured:', { id: company.id, code: company.code });
 
     await createDefaultFinancialStructure(company.id);
+    await syncBankCatalog();
 
     let adminUser = await prisma.user.findUnique({
       where: { email: ADMIN_EMAIL },
@@ -208,6 +223,31 @@ async function ensureAppAccess(companyId, userId) {
       create: { userId, companyId, appId: catalogItem.id, granted: true }
     });
   }
+}
+
+async function syncBankCatalog() {
+  const bankCatalog = loadBankCatalog();
+
+  for (const bank of bankCatalog) {
+    await prisma.bank.upsert({
+      where: { code: bank.code },
+      update: {
+        name: bank.name,
+        iconSlug: bank.iconSlug,
+        displayOrder: bank.displayOrder,
+        isActive: bank.isActive
+      },
+      create: {
+        code: bank.code,
+        name: bank.name,
+        iconSlug: bank.iconSlug,
+        displayOrder: bank.displayOrder,
+        isActive: bank.isActive
+      }
+    });
+  }
+
+  console.log('[seed] Bank catalog ensured:', { count: bankCatalog.length });
 }
 
 main()

@@ -1,4 +1,5 @@
 import express from 'express';
+import path from 'path';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -18,6 +19,7 @@ import openAiIntegrationRoutes from './routes/openai-integration.routes';
 import gmailIntegrationRoutes from './routes/gmail-integration.routes';
 import integrationPublicRoutes from './routes/integration-public.routes';
 import adminCompanyOpenAiRoutes from './routes/admin-company-openai.routes';
+import adminBankRoutes from './routes/admin-bank.routes';
 import appAccessRoutes from './routes/app-access.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
@@ -111,6 +113,17 @@ const corsOptions: cors.CorsOptions = {
 
 app.use(cors(corsOptions));
 
+// 7.1) Assets publicos versionados no repositorio
+app.use(
+  '/public',
+  express.static(path.join(__dirname, '..', 'public'), {
+    setHeaders(res) {
+      // Permite que o frontend em outra origem local (porta) renderize SVGs em <img>.
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+  })
+);
+
 // 8) Body parsing com limites
 app.use(json({ limit: '10mb' }));
 app.use(urlencoded({ extended: true, limit: '10mb' }));
@@ -189,6 +202,7 @@ app.use('/api/inbound-imports', createRateLimitMiddleware('api'), inboundImportR
 app.use('/api/integrations/openai', createRateLimitMiddleware('api'), openAiIntegrationRoutes);
 app.use('/api/integrations/gmail', createRateLimitMiddleware('api'), gmailIntegrationRoutes);
 app.use('/api/admin/companies', createRateLimitMiddleware('api'), adminCompanyOpenAiRoutes);
+app.use('/api/admin/banks', createRateLimitMiddleware('api'), adminBankRoutes);
 app.use('/api/app-access', createRateLimitMiddleware('api'), appAccessRoutes);
 app.use('/api/financial', createRateLimitMiddleware('financial'), financialRoutes);
 // Financial routes with cache for read operations

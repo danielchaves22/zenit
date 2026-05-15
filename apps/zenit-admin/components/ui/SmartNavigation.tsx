@@ -3,7 +3,7 @@ import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { usePermissions, UserRole } from '@/hooks/usePermissions';
-import { Home, Building2, Users } from 'lucide-react';
+import { Home, Building2, Landmark, Users } from 'lucide-react';
 
 interface NavigationItem {
   label: string;
@@ -28,6 +28,13 @@ const quickNavigationItems: NavigationItem[] = [
     href: '/admin/companies',
     icon: <Building2 size={20} />,
     description: 'Gerenciar empresas cadastradas',
+    category: 'administracao'
+  },
+  {
+    label: 'Bancos',
+    href: '/admin/banks',
+    icon: <Landmark size={20} />,
+    description: 'Gerenciar catalogo global de bancos',
     category: 'administracao'
   }
 ];
@@ -57,6 +64,14 @@ const navigationItems: NavigationItem[] = [
     href: '/admin/companies',
     icon: <Building2 size={20} />,
     description: 'Administrar empresas',
+    category: 'administracao',
+    allowedRoles: ['ADMIN']
+  },
+  {
+    label: 'Bancos',
+    href: '/admin/banks',
+    icon: <Landmark size={20} />,
+    description: 'Administrar catalogo global de bancos',
     category: 'administracao',
     allowedRoles: ['ADMIN']
   }

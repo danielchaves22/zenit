@@ -17,6 +17,11 @@ export const routePermissions: RoutePermission[] = [
     allowedRoles: ['ADMIN'],
     redirectTo: '/'
   },
+  {
+    path: '/admin/banks',
+    allowedRoles: ['ADMIN'],
+    redirectTo: '/'
+  },
 
   // Área administrativa geral - força admin em qualquer rota /admin
   {
@@ -110,6 +115,7 @@ export function getAllowedRoutes(userRole: UserRole | null): string[] {
   if (userRole === 'ADMIN') {
     allowedRoutes.push('/admin/users');
     allowedRoutes.push('/admin/companies');
+    allowedRoutes.push('/admin/banks');
   }
   
   return allowedRoutes;

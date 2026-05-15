@@ -246,6 +246,21 @@ model CompanyAppEntitlement {
   @@index([appId])
 }
 
+model Bank {
+  id           Int                @id @default(autoincrement())
+  code         String             @unique
+  name         String             @unique
+  iconSlug     String
+  displayOrder Int                @default(0)
+  isActive     Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  accounts     FinancialAccount[]
+
+  @@index([isActive, displayOrder])
+}
+
 model UserAppGrant {
   id         Int      @id @default(autoincrement())
   userId     Int
@@ -272,7 +287,10 @@ model FinancialAccount {
   balance           Decimal            @db.Decimal(15, 2) @default(0)
   accountNumber     String?
   bankName          String?
+  bankCode          String?
+  bankId            Int?
   creditLimit       Decimal?            @db.Decimal(15, 2)
+  cardColor         String?
   statementClosingDay Int?
   statementDueDay   Int?
   isActive          Boolean            @default(true)
@@ -280,6 +298,7 @@ model FinancialAccount {
   allowNegativeBalance Boolean         @default(false)
   companyId         Int
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  bank              Bank?              @relation(fields: [bankId], references: [id], onDelete: SetNull)
   recurringOutgoing RecurringTransaction[] @relation("RecurringFromAccount")
   recurringIncoming RecurringTransaction[] @relation("RecurringToAccount")
   createdAt         DateTime           @default(now())
@@ -292,6 +311,7 @@ model FinancialAccount {
   userAccess            UserFinancialAccountAccess[]
 
   @@unique([name, type, companyId])
+  @@index([bankId])
   @@index([companyId])
   @@index([companyId, isDefault]) // ✅ ÍNDICE OTIMIZADO
 }

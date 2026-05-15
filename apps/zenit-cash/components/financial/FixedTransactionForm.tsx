@@ -311,7 +311,7 @@ export default function FixedTransactionForm({
     }
 
     if (isCreditCardFixedExpense && !form.fromAccountId) {
-      addToast('Selecione o cartÃ£o para a despesa fixa', 'error');
+      addToast('Selecione o cartão para a despesa fixa', 'error');
       return;
     }
 

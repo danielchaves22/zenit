@@ -1,6 +1,7 @@
 import { AccountType, FinancialAccount, Prisma, PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import cacheService from './cache.service';
+import BankService from './bank.service';
 import { parseDecimal } from '../utils/money';
 
 const prisma = new PrismaClient();
@@ -85,8 +86,11 @@ export default class FinancialAccountService {
     initialBalance?: string | number;
     accountNumber?: string;
     bankName?: string;
+    bankCode?: string;
+    bankId?: number | null;
     allowNegativeBalance?: boolean;
     creditLimit?: number | string | null;
+    cardColor?: string | null;
     statementClosingDay?: number | null;
     statementDueDay?: number | null;
     companyId: number;
@@ -97,8 +101,11 @@ export default class FinancialAccountService {
       initialBalance = 0,
       accountNumber,
       bankName,
+      bankCode,
+      bankId,
       allowNegativeBalance = false,
       creditLimit,
+      cardColor,
       statementClosingDay,
       statementDueDay,
       companyId
@@ -121,6 +128,7 @@ export default class FinancialAccountService {
       statementClosingDay,
       statementDueDay
     );
+    const linkedBank = await BankService.resolveLinkedBank(bankId);
 
     return prisma.financialAccount.create({
       data: {
@@ -128,14 +136,15 @@ export default class FinancialAccountService {
         type,
         balance: initialBalance,
         accountNumber,
-        bankName,
+        bankName: linkedBank.bankName ?? bankName ?? null,
+        bankCode: linkedBank.bankCode ?? bankCode ?? null,
+        bankId: linkedBank.bankId,
         allowNegativeBalance: finalAllowNegativeBalance,
         creditLimit: creditCardConfig.creditLimit,
+        cardColor,
         statementClosingDay: creditCardConfig.statementClosingDay,
         statementDueDay: creditCardConfig.statementDueDay,
-        company: {
-          connect: { id: companyId }
-        }
+        companyId
       }
     });
   }
@@ -147,9 +156,12 @@ export default class FinancialAccountService {
       type: AccountType;
       accountNumber?: string | null;
       bankName?: string | null;
+      bankCode?: string | null;
+      bankId?: number | null;
       isActive: boolean;
       allowNegativeBalance: boolean;
       creditLimit?: number | string | null;
+      cardColor?: string | null;
       statementClosingDay?: number | null;
       statementDueDay?: number | null;
     }>
@@ -198,6 +210,8 @@ export default class FinancialAccountService {
         : account.statementClosingDay,
       data.statementDueDay !== undefined ? data.statementDueDay : account.statementDueDay
     );
+    const linkedBank =
+      data.bankId !== undefined ? await BankService.resolveLinkedBank(data.bankId) : null;
 
     const updatedAccount = await prisma.financialAccount.update({
       where: { id },
@@ -205,10 +219,13 @@ export default class FinancialAccountService {
         name: data.name,
         type: nextType,
         accountNumber: data.accountNumber,
-        bankName: data.bankName,
+        bankName: data.bankId !== undefined ? linkedBank?.bankName : data.bankName,
+        bankCode: data.bankId !== undefined ? linkedBank?.bankCode : data.bankCode,
+        bankId: data.bankId !== undefined ? linkedBank?.bankId : undefined,
         isActive: data.isActive,
         allowNegativeBalance: nextAllowNegativeBalance,
         creditLimit: creditCardConfig.creditLimit,
+        cardColor: data.cardColor,
         statementClosingDay: creditCardConfig.statementClosingDay,
         statementDueDay: creditCardConfig.statementDueDay
       }

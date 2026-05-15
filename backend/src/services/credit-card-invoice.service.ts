@@ -14,6 +14,7 @@ import {
   resolveCreditCardInvoiceReference,
   resolveCreditCardInvoiceStatus
 } from '../utils/credit-card';
+import { getBankIconPath } from '../catalogs/bank-catalog';
 
 const prisma = new PrismaClient();
 
@@ -98,8 +99,11 @@ type CardAccountWithConfig = {
   type: string;
   balance: Prisma.Decimal;
   bankName: string | null;
+  bankCode: string | null;
+  bankId: number | null;
   accountNumber: string | null;
   creditLimit: Prisma.Decimal | null;
+  cardColor: string | null;
   statementClosingDay: number | null;
   statementDueDay: number | null;
 };
@@ -249,8 +253,11 @@ export default class CreditCardInvoiceService {
         type: true,
         balance: true,
         bankName: true,
+        bankCode: true,
+        bankId: true,
         accountNumber: true,
         creditLimit: true,
+        cardColor: true,
         statementClosingDay: true,
         statementDueDay: true
       }
@@ -456,6 +463,9 @@ export default class CreditCardInvoiceService {
           ? { id: { in: params.accountIds } }
           : {})
       },
+      include: {
+        bank: true
+      },
       orderBy: { name: 'asc' }
     });
 
@@ -487,6 +497,12 @@ export default class CreditCardInvoiceService {
 
       result.push({
         ...card,
+        bank: card.bank
+          ? {
+              ...card.bank,
+              iconPath: getBankIconPath(card.bank.iconSlug)
+            }
+          : null,
         availableLimit,
         usedLimit,
         nextInvoice: nextInvoice

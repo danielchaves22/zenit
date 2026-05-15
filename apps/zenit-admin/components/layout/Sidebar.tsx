@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
-import { Home, Building2, ChevronLeft, ChevronRight, Users } from 'lucide-react';
+import { Home, Building2, ChevronLeft, ChevronRight, Landmark, Users } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { AccessGuard } from '@/components/ui/AccessGuard';
@@ -148,6 +148,14 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       label: 'Empresas',
       subItems: [
         { label: 'Empresas', href: '/admin/companies' },
+      ],
+      allowedRoles: ['ADMIN']
+    },
+    {
+      icon: <Landmark size={20} />,
+      label: 'Bancos',
+      subItems: [
+        { label: 'Bancos', href: '/admin/banks' },
       ],
       allowedRoles: ['ADMIN']
     },

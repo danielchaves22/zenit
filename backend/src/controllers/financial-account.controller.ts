@@ -41,8 +41,11 @@ export async function createAccount(req: Request, res: Response) {
       initialBalance,
       accountNumber,
       bankName,
+      bankCode,
+      bankId,
       allowNegativeBalance,
       creditLimit,
+      cardColor,
       statementClosingDay,
       statementDueDay
     } = req.body;
@@ -53,8 +56,11 @@ export async function createAccount(req: Request, res: Response) {
       initialBalance,
       accountNumber,
       bankName,
+      bankCode,
+      bankId,
       allowNegativeBalance,
       creditLimit,
+      cardColor,
       statementClosingDay,
       statementDueDay,
       companyId
@@ -152,9 +158,12 @@ export async function updateAccount(req: Request, res: Response) {
       type,
       accountNumber,
       bankName,
+      bankCode,
+      bankId,
       isActive,
       allowNegativeBalance,
       creditLimit,
+      cardColor,
       statementClosingDay,
       statementDueDay
     } = req.body;
@@ -164,9 +173,12 @@ export async function updateAccount(req: Request, res: Response) {
       type,
       accountNumber,
       bankName,
+      bankCode,
+      bankId,
       isActive,
       allowNegativeBalance,
       creditLimit,
+      cardColor,
       statementClosingDay,
       statementDueDay
     });

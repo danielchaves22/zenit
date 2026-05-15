@@ -145,7 +145,7 @@ const TRANSACTION_DATE_FIELD_OPTIONS: Array<{
 }> = [
   { value: 'dueDate', label: 'Data de vencimento' },
   { value: 'date', label: 'Data da transação' },
-  { value: 'effectiveDate', label: 'Data de liquidaÃ§Ã£o' },
+  { value: 'effectiveDate', label: 'Data de liquidação' },
   { value: 'createdAt', label: 'Data de criação' }
 ];
 
@@ -1230,7 +1230,7 @@ export default function TransactionsListPage() {
                     <th className="px-4 py-3 text-left">Conta</th>
                     <th className="px-4 py-3 text-left">Categoria</th>
                     <th className="cursor-pointer px-4 py-3 text-center" onClick={() => handleSort('effectiveDate')}>
-                      Data de LiquidaÃ§Ã£o
+                      Data de Liquidação
                       {sortConfig.key === 'effectiveDate' && (
                         sortConfig.direction === 'asc'
                           ? <ChevronUp size={12} className="ml-1 inline" />

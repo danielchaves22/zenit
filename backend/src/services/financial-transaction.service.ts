@@ -1,5 +1,6 @@
 ﻿import { PrismaClient, FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
+import { FinancialAccountPurpose } from '@prisma/client';
 import { parseDecimal } from '../utils/money';
 import cacheService from './cache.service';
 import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
@@ -1541,7 +1542,9 @@ export default class FinancialTransactionService {
       !includeCreditCardTransactions || shouldSummarizeCreditCardInvoices;
     const whereFilters: Prisma.FinancialTransactionWhereInput[] = [
       { companyId },
-      this.buildListDateWhere(dateField, normalizedStartDate, normalizedEndDate)
+      this.buildListDateWhere(dateField, normalizedStartDate, normalizedEndDate),
+      { NOT: { fromAccount: { is: { purpose: FinancialAccountPurpose.BUDGET } } } },
+      { NOT: { toAccount: { is: { purpose: FinancialAccountPurpose.BUDGET } } } }
     ];
 
     if (types && types.length > 0) {
@@ -2601,7 +2604,8 @@ export default class FinancialTransactionService {
     const accountWhere: any = { 
       companyId, 
       isActive: true,
-      type: { not: AccountType.CREDIT_CARD }
+      type: { not: AccountType.CREDIT_CARD },
+      purpose: FinancialAccountPurpose.GENERAL
     };
     
     if (accessibleAccountIds && accessibleAccountIds.length > 0) {
@@ -2617,7 +2621,11 @@ export default class FinancialTransactionService {
     const transactionWhere: any = {
       companyId,
       status: 'COMPLETED',
-      date: { gte: startDate, lte: endDate }
+      date: { gte: startDate, lte: endDate },
+      AND: [
+        { NOT: { fromAccount: { is: { purpose: FinancialAccountPurpose.BUDGET } } } },
+        { NOT: { toAccount: { is: { purpose: FinancialAccountPurpose.BUDGET } } } }
+      ]
     };
 
     if (accessibleAccountIds && accessibleAccountIds.length > 0) {

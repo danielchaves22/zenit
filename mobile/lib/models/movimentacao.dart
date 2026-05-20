@@ -21,7 +21,7 @@ class Movimentacao extends HiveObject {
   DateTime data;
 
   @HiveField(2)
-  double valor;
+  int valorEmCentavos;
 
   @HiveField(3)
   TipoMovimentacao tipo;
@@ -32,17 +32,25 @@ class Movimentacao extends HiveObject {
   @HiveField(5)
   DateTime createdAt;
 
-  // Novo campo para rastrear a última atualização
   @HiveField(6)
   DateTime updatedAt;
+
+  @HiveField(7)
+  int impactoSaldoPrincipalEmCentavos;
 
   Movimentacao({
     required this.id,
     required this.data,
-    required this.valor,
+    required this.valorEmCentavos,
     required this.tipo,
     this.descricao,
     required this.createdAt,
     DateTime? updatedAt,
-  }) : updatedAt = updatedAt ?? createdAt;
+    int? impactoSaldoPrincipalEmCentavos,
+  })  : updatedAt = updatedAt ?? createdAt,
+        impactoSaldoPrincipalEmCentavos =
+            impactoSaldoPrincipalEmCentavos ??
+                (tipo == TipoMovimentacao.entrada ? valorEmCentavos : -valorEmCentavos);
+
+  bool get afetaSaldoPrincipal => impactoSaldoPrincipalEmCentavos != 0;
 }

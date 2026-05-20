@@ -1,40 +1,65 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:orcamento_app/models/tipo_distribuicao_entrada.dart';
-import '../models/orcamento.dart';
+import 'package:intl/intl.dart';
 
-late final DateTime dataDeTrabalhoAtual;
-bool MODO_DEV = (dotenv.env['MODO_DEV']?.toLowerCase() ?? 'false') == 'true';
-TipoDistribuicaoEntrada defaultDistribuicaoEntrada =
-    TipoDistribuicaoEntrada.principal;
+import 'models/orcamento.dart';
+import 'models/tipo_distribuicao_entrada.dart';
+import 'services/app_config.dart';
+import 'services/clock_service.dart';
+
+DateTime get dataDeTrabalhoAtual => ClockService.instance.businessDate;
+bool get modoDev => AppConfig.instance.modoDev;
+TipoDistribuicaoEntrada get defaultDistribuicaoEntrada => TipoDistribuicaoEntrada.principal;
 
 DateTime dataDeTrabalho() {
-  DateTime hoje;
+  return ClockService.instance.businessDate;
+}
 
-  if (dotenv.env['MODO_DEV'] == 'true' && dotenv.env['DATA_SIMULADA'] != null) {
-    try {
-      final partes = dotenv.env['DATA_SIMULADA']!.split('-');
-      hoje = DateTime(
-        int.parse(partes[0]),
-        int.parse(partes[1]),
-        int.parse(partes[2]),
-      );
-    } catch (_) {
-      hoje = DateTime.now();
-    }
-  } else {
-    hoje = DateTime.now();
+DateTime agoraUtc() {
+  return ClockService.instance.nowUtc();
+}
+
+String formatarMoeda(int valorEmCentavos) {
+  final formatter = NumberFormat.currency(
+    locale: 'pt_BR',
+    symbol: 'R\$',
+    decimalDigits: 2,
+  );
+  return formatter.format(valorEmCentavos / 100);
+}
+
+int parseValorEmCentavos(String rawValue) {
+  final normalized = rawValue
+      .trim()
+      .replaceAll(RegExp(r'[^0-9,.-]'), '')
+      .replaceAll('.', '')
+      .replaceAll(',', '.');
+
+  if (normalized.isEmpty) {
+    return 0;
   }
 
-  return DateTime(hoje.year, hoje.month, hoje.day);
+  final parsed = double.tryParse(normalized);
+  if (parsed == null) {
+    return 0;
+  }
+
+  return (parsed * 100).round();
+}
+
+int dividirCentavos(int valorEmCentavos, int divisor) {
+  if (divisor <= 0) {
+    return 0;
+  }
+
+  return (valorEmCentavos / divisor).round();
 }
 
 void recalcularOrcamentoDiarioAtual(Orcamento orcamento) {
   final diasRestantes = orcamento.diasRestantes;
+  if (diasRestantes <= 0) {
+    return;
+  }
 
-  if (diasRestantes <= 0) return;
-
-  final novoValor = orcamento.valorOrcamentoDiarioRecalculado;
-
-  orcamento.orcamentoDiarioAtual = double.parse(novoValor.toStringAsFixed(2));
+  orcamento.orcamentoDiarioAtualEmCentavos =
+      dividirCentavos(orcamento.saldoDisponivelOrcamentoEmCentavos, diasRestantes);
   orcamento.dataOrcamentoDiarioAtual = dataDeTrabalhoAtual;
 }

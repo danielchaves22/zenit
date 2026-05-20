@@ -1,56 +1,48 @@
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+
 import '../models/movimentacao.dart';
 import '../models/orcamento.dart';
 import '../models/tipo_distribuicao_entrada.dart';
+import '../services/app_services.dart';
 import '../utils.dart';
 import '../widgets/app_drawer.dart';
 
 class RegistrarMovimentacaoPage extends StatefulWidget {
+  const RegistrarMovimentacaoPage({
+    super.key,
+    required this.orcamento,
+    this.tipoFixo,
+  });
+
   final Orcamento orcamento;
   final TipoMovimentacao? tipoFixo;
 
-  const RegistrarMovimentacaoPage({
-    Key? key,
-    required this.orcamento,
-    this.tipoFixo,
-  }) : super(key: key);
-
   @override
-  State<RegistrarMovimentacaoPage> createState() =>
-      _RegistrarMovimentacaoPageState();
+  State<RegistrarMovimentacaoPage> createState() => _RegistrarMovimentacaoPageState();
 }
 
 class _RegistrarMovimentacaoPageState extends State<RegistrarMovimentacaoPage> {
   final _formKey = GlobalKey<FormState>();
   final _valorController = TextEditingController();
   final _descricaoController = TextEditingController();
-  DateTime _data = dataDeTrabalhoAtual;
-  late TipoMovimentacao _tipo;
   final _valorFocus = FocusNode();
 
-  // Controle da distribuição de entrada (aplicável somente para orçamentos de GASTO)
+  final DateTime _data = dataDeTrabalhoAtual;
+  late TipoMovimentacao _tipo;
   late TipoDistribuicaoEntrada _distribuicaoEntrada;
 
   @override
   void initState() {
     super.initState();
-    // Se um tipo fixo for fornecido, utilize-o; senão, determine conforme o tipo do orçamento
-    if (widget.tipoFixo != null) {
-      _tipo = widget.tipoFixo!;
-    } else {
-      _tipo = widget.orcamento.tipo == TipoOrcamento.gasto
-          ? TipoMovimentacao.saida
-          : TipoMovimentacao.entrada;
-    }
-    // Configura a distribuição: se for entrada em orçamento de GASTO, usa o default global
-    if (_tipo == TipoMovimentacao.entrada &&
-        widget.orcamento.tipo == TipoOrcamento.gasto) {
-      _distribuicaoEntrada = defaultDistribuicaoEntrada;
-    } else {
-      _distribuicaoEntrada = TipoDistribuicaoEntrada.principal;
-    }
-    // Foco no campo de valor
+    _tipo = widget.tipoFixo ??
+        (widget.orcamento.tipo == TipoOrcamento.gasto
+            ? TipoMovimentacao.saida
+            : TipoMovimentacao.entrada);
+    _distribuicaoEntrada = _tipo == TipoMovimentacao.entrada &&
+            widget.orcamento.tipo == TipoOrcamento.gasto
+        ? defaultDistribuicaoEntrada
+        : TipoDistribuicaoEntrada.principal;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FocusScope.of(context).requestFocus(_valorFocus);
     });
@@ -66,31 +58,29 @@ class _RegistrarMovimentacaoPageState extends State<RegistrarMovimentacaoPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Exibe a opção de distribuição se for ENTRADA e o orçamento for de GASTO
-    bool mostrarOpcaoDistribuicao = (_tipo == TipoMovimentacao.entrada) &&
-        (widget.orcamento.tipo == TipoOrcamento.gasto);
+    final mostrarOpcaoDistribuicao =
+        _tipo == TipoMovimentacao.entrada && widget.orcamento.tipo == TipoOrcamento.gasto;
+
     return Scaffold(
       drawer: const AppDrawer(),
-      appBar: AppBar(title: const Text('Nova Movimentação')),
+      appBar: AppBar(title: const Text('Nova movimentacao')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
-              // Campo de Valor
               TextFormField(
                 controller: _valorController,
                 focusNode: _valorFocus,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 decoration: const InputDecoration(labelText: 'Valor'),
                 validator: (value) =>
-                    value == null || value.isEmpty ? 'Obrigatório' : null,
+                    value == null || value.trim().isEmpty ? 'Obrigatorio' : null,
               ),
               const SizedBox(height: 12),
-              // Campo Tipo: se tipoFixo foi passado, desabilita a alteração
               DropdownButtonFormField<TipoMovimentacao>(
-                value: _tipo,
+                initialValue: _tipo,
                 items: TipoMovimentacao.values.map((tipo) {
                   return DropdownMenuItem(
                     value: tipo,
@@ -100,12 +90,15 @@ class _RegistrarMovimentacaoPageState extends State<RegistrarMovimentacaoPage> {
                 onChanged: widget.tipoFixo != null
                     ? null
                     : (value) {
-                        if (value != null) setState(() => _tipo = value);
+                        if (value != null) {
+                          setState(() {
+                            _tipo = value;
+                          });
+                        }
                       },
                 decoration: const InputDecoration(labelText: 'Tipo'),
               ),
               const SizedBox(height: 12),
-              // Opção de distribuição para entrada em orçamento de GASTO
               if (mostrarOpcaoDistribuicao)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,9 +107,7 @@ class _RegistrarMovimentacaoPageState extends State<RegistrarMovimentacaoPage> {
                       'Alocar em:',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    RadioListTile<TipoDistribuicaoEntrada>(
-                      title: const Text('Saldo do orçamento'),
-                      value: TipoDistribuicaoEntrada.principal,
+                    RadioGroup<TipoDistribuicaoEntrada>(
                       groupValue: _distribuicaoEntrada,
                       onChanged: (value) {
                         if (value != null) {
@@ -125,42 +116,37 @@ class _RegistrarMovimentacaoPageState extends State<RegistrarMovimentacaoPage> {
                           });
                         }
                       },
-                    ),
-                    RadioListTile<TipoDistribuicaoEntrada>(
-                      title: const Text('Saldo extra do dia'),
-                      value: TipoDistribuicaoEntrada.extra,
-                      groupValue: _distribuicaoEntrada,
-                      onChanged: (value) {
-                        if (value != null) {
-                          setState(() {
-                            _distribuicaoEntrada = value;
-                          });
-                        }
-                      },
+                      child: Column(
+                        children: const [
+                          RadioListTile<TipoDistribuicaoEntrada>(
+                            title: Text('Saldo do orcamento'),
+                            value: TipoDistribuicaoEntrada.principal,
+                          ),
+                          RadioListTile<TipoDistribuicaoEntrada>(
+                            title: Text('Saldo extra do dia'),
+                            value: TipoDistribuicaoEntrada.extra,
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               const SizedBox(height: 12),
-              // Campo de Descrição (opcional)
               TextFormField(
                 controller: _descricaoController,
-                decoration:
-                    const InputDecoration(labelText: 'Descrição (opcional)'),
+                decoration: const InputDecoration(labelText: 'Descricao (opcional)'),
               ),
               const SizedBox(height: 24),
-              // Linha de botões: Cancelar e Salvar
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   ElevatedButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: const Text("Cancelar"),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
                   ),
                   ElevatedButton(
                     onPressed: _salvar,
-                    child: const Text("Salvar"),
+                    child: const Text('Salvar'),
                   ),
                 ],
               ),
@@ -171,72 +157,37 @@ class _RegistrarMovimentacaoPageState extends State<RegistrarMovimentacaoPage> {
     );
   }
 
-  void _salvar() {
+  Future<void> _salvar() async {
     if (_formKey.currentState?.validate() != true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Por favor, preencha o campo de valor para prosseguir.'),
-          duration: Duration(seconds: 3),
-        ),
+        const SnackBar(content: Text('Preencha o campo de valor para prosseguir.')),
       );
       return;
     }
 
-    final valor = double.tryParse(_valorController.text) ?? 0.0;
-    if (valor <= 0) {
+    final valorEmCentavos = parseValorEmCentavos(_valorController.text);
+    if (valorEmCentavos <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('O valor deve ser maior que zero.'),
-          duration: Duration(seconds: 3),
-        ),
+        const SnackBar(content: Text('O valor deve ser maior que zero.')),
       );
       return;
     }
 
-    final movimentacao = Movimentacao(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+    await AppServices.budgetService.registrarMovimentacao(
+      orcamento: widget.orcamento,
+      valorEmCentavos: valorEmCentavos,
+      tipoMovimentacao: _tipo,
       data: _data,
-      valor: valor,
-      tipo: _tipo,
       descricao: _descricaoController.text,
-      createdAt: dataDeTrabalhoAtual,
+      distribuicaoEntrada: _distribuicaoEntrada,
     );
 
-    final box = Hive.box<Orcamento>('orcamentos');
-    Orcamento orcamento = widget.orcamento;
-    orcamento.movimentacoes.add(movimentacao);
-
-    // Lógica para movimentação de ENTRADA:
-    if (_tipo == TipoMovimentacao.entrada) {
-      if (widget.orcamento.tipo == TipoOrcamento.gasto) {
-        if (_distribuicaoEntrada == TipoDistribuicaoEntrada.extra) {
-          orcamento.saldoExtraDoDia += valor;
-        } else {
-          orcamento.saldoAtual += valor;
-          orcamento.incrementarOrcamentoDiario(valor);
-        }
-      } else {
-        orcamento.saldoAtual += valor;
-        recalcularOrcamentoDiarioAtual(orcamento);
-      }
-    } else if (_tipo == TipoMovimentacao.saida) {
-      if (orcamento.saldoExtraDoDia >= valor) {
-        orcamento.saldoExtraDoDia -= valor;
-      } else {
-        final restante = valor - orcamento.saldoExtraDoDia;
-        orcamento.saldoExtraDoDia = 0;
-        orcamento.saldoAtual -= restante;
-      }
+    if (!mounted) {
+      return;
     }
 
-    box.put(orcamento.id, orcamento);
-
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Movimentação registrada com sucesso!'),
-        duration: Duration(seconds: 2),
-      ),
+      const SnackBar(content: Text('Movimentacao registrada com sucesso!')),
     );
 
     Navigator.pop(context);

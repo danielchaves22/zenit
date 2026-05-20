@@ -1,10 +1,4 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
-
 part of 'movimentacao.dart';
-
-// **************************************************************************
-// TypeAdapterGenerator
-// **************************************************************************
 
 class MovimentacaoAdapter extends TypeAdapter<Movimentacao> {
   @override
@@ -16,27 +10,33 @@ class MovimentacaoAdapter extends TypeAdapter<Movimentacao> {
     final fields = <int, dynamic>{
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
+
+    final tipo = fields[3] as TipoMovimentacao;
+    final valorEmCentavos = _readMoneyValue(fields[2]);
+
     return Movimentacao(
-      id: fields[0] as String,
-      data: fields[1] as DateTime,
-      valor: fields[2] as double,
-      tipo: fields[3] as TipoMovimentacao,
+      id: (fields[0] as String?) ?? '',
+      data: _readDate(fields[1]),
+      valorEmCentavos: valorEmCentavos,
+      tipo: tipo,
       descricao: fields[4] as String?,
-      createdAt: fields[5] as DateTime,
-      updatedAt: fields[6] as DateTime?,
+      createdAt: _readDate(fields[5]),
+      updatedAt: fields[6] == null ? null : _readDate(fields[6]),
+      impactoSaldoPrincipalEmCentavos:
+          fields[7] == null ? null : _readMoneyValue(fields[7]),
     );
   }
 
   @override
   void write(BinaryWriter writer, Movimentacao obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
       ..write(obj.data)
       ..writeByte(2)
-      ..write(obj.valor)
+      ..write(obj.valorEmCentavos)
       ..writeByte(3)
       ..write(obj.tipo)
       ..writeByte(4)
@@ -44,7 +44,29 @@ class MovimentacaoAdapter extends TypeAdapter<Movimentacao> {
       ..writeByte(5)
       ..write(obj.createdAt)
       ..writeByte(6)
-      ..write(obj.updatedAt);
+      ..write(obj.updatedAt)
+      ..writeByte(7)
+      ..write(obj.impactoSaldoPrincipalEmCentavos);
+  }
+
+  int _readMoneyValue(dynamic rawValue) {
+    if (rawValue is int) {
+      return rawValue;
+    }
+    if (rawValue is double) {
+      return (rawValue * 100).round();
+    }
+    if (rawValue is num) {
+      return (rawValue.toDouble() * 100).round();
+    }
+    return 0;
+  }
+
+  DateTime _readDate(dynamic rawValue) {
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   }
 
   @override

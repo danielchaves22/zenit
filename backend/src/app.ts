@@ -21,6 +21,8 @@ import integrationPublicRoutes from './routes/integration-public.routes';
 import adminCompanyOpenAiRoutes from './routes/admin-company-openai.routes';
 import adminBankRoutes from './routes/admin-bank.routes';
 import appAccessRoutes from './routes/app-access.routes';
+import cashBootstrapRoutes from './routes/cash-bootstrap.routes';
+import cashRoutes from './routes/cash.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
@@ -185,6 +187,7 @@ app.use('/api', createRateLimitMiddleware('api'), integrationPublicRoutes);
 
 // 14) Middleware de autenticação
 app.use('/api', authMiddleware);
+app.use('/api/cash', createRateLimitMiddleware('api'), cashBootstrapRoutes);
 
 // 15) Middleware de tenant
 app.use('/api', tenantMiddleware);
@@ -204,7 +207,7 @@ app.use('/api/integrations/gmail', createRateLimitMiddleware('api'), gmailIntegr
 app.use('/api/admin/companies', createRateLimitMiddleware('api'), adminCompanyOpenAiRoutes);
 app.use('/api/admin/banks', createRateLimitMiddleware('api'), adminBankRoutes);
 app.use('/api/app-access', createRateLimitMiddleware('api'), appAccessRoutes);
-app.use('/api/financial', createRateLimitMiddleware('financial'), financialRoutes);
+app.use('/api/cash', createRateLimitMiddleware('financial'), cashRoutes);
 // Financial routes with cache for read operations
 app.use('/api/financial/summary', createRateLimitMiddleware('financial'), cacheMiddleware(600)); // 10min cache
 app.use('/api/financial/accounts', createRateLimitMiddleware('financial'), cacheMiddleware(300)); // 5min cache

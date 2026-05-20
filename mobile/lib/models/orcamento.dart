@@ -1,6 +1,8 @@
 import 'package:hive/hive.dart';
+
+import '../services/clock_service.dart';
 import 'movimentacao.dart';
-import '../utils.dart';
+
 part 'orcamento.g.dart';
 
 @HiveType(typeId: 4)
@@ -29,36 +31,35 @@ class Orcamento extends HiveObject {
   String id;
 
   @HiveField(1)
-  double valorInicial;
+  int valorInicialEmCentavos;
 
   @HiveField(2)
-  double saldoAtual;
+  int saldoAtualEmCentavos;
 
   @HiveField(3)
   DateTime dataFinal;
 
   @HiveField(4)
-  double saldoFinalDesejado;
+  int saldoFinalDesejadoEmCentavos;
 
   @HiveField(5)
   List<Movimentacao> movimentacoes;
 
   @HiveField(6)
-  double orcamentoDiarioInicial;
+  int orcamentoDiarioInicialEmCentavos;
 
   @HiveField(7)
-  double orcamentoDiarioAtual;
+  int orcamentoDiarioAtualEmCentavos;
 
   @HiveField(8)
   DateTime dataInicio;
 
   @HiveField(9)
-  late TipoOrcamento tipo;
+  TipoOrcamento tipo;
 
   @HiveField(10)
-  late DateTime dataOrcamentoDiarioAtual;
+  DateTime dataOrcamentoDiarioAtual;
 
-  // NOVOS CAMPOS:
   @HiveField(11)
   String codigo;
 
@@ -68,113 +69,116 @@ class Orcamento extends HiveObject {
   @HiveField(13)
   StatusOrcamento status;
 
-  // Campo para armazenar valor extra destinado somente para o saldo do dia
   @HiveField(14)
-  double saldoExtraDoDia;
+  int saldoExtraDoDiaEmCentavos;
 
-  // Campo para controlar a data da última atualização (para sincronização)
   @HiveField(15)
   DateTime updatedAt;
 
+  @HiveField(16)
+  DateTime createdAt;
+
   Orcamento({
     required this.id,
-    required this.valorInicial,
-    required this.saldoAtual,
+    required this.valorInicialEmCentavos,
+    required this.saldoAtualEmCentavos,
     required this.dataFinal,
-    required this.saldoFinalDesejado,
+    required this.saldoFinalDesejadoEmCentavos,
     required this.movimentacoes,
-    required this.orcamentoDiarioInicial,
-    required this.orcamentoDiarioAtual,
+    required this.orcamentoDiarioInicialEmCentavos,
+    required this.orcamentoDiarioAtualEmCentavos,
     required this.dataInicio,
     required this.tipo,
     required this.dataOrcamentoDiarioAtual,
     required this.codigo,
     required this.isTrabalho,
     required this.status,
-    this.saldoExtraDoDia = 0,
+    this.saldoExtraDoDiaEmCentavos = 0,
+    required this.createdAt,
     DateTime? updatedAt,
-  }) : updatedAt = updatedAt ?? dataDeTrabalhoAtual;
+  }) : updatedAt = updatedAt ?? createdAt;
 
   int get diasRestantes {
-    final hoje = dataDeTrabalhoAtual;
-    final dataHoje = DateTime(hoje.year, hoje.month, hoje.day);
+    final hoje = dataDeHoje();
     final dataAlvo = DateTime(dataFinal.year, dataFinal.month, dataFinal.day);
-    return dataAlvo.difference(dataHoje).inDays + 1;
+    return dataAlvo.difference(hoje).inDays + 1;
   }
 
   int get diasTotais {
     final inicio = DateTime(dataInicio.year, dataInicio.month, dataInicio.day);
     final fim = DateTime(dataFinal.year, dataFinal.month, dataFinal.day);
-
     return fim.difference(inicio).inDays + 1;
   }
 
-  String get descricaoAmigavelPosicaoOrcamentoDiario {
-    return "";
-  }
+  bool get atingiuMetaEconomiaDoDia => entradasDeHoje() >= orcamentoDiarioAtualEmCentavos;
 
-  bool get atingiuMetaEconomiaDoDia {
-    return entradasDeHoje() >= orcamentoDiarioAtual;
-  }
-
-  double entradasDoDia(DateTime dia) {
+  int entradasDoDia(DateTime dia) {
     return movimentacoesDoDia(dia, TipoMovimentacao.entrada);
   }
 
-  double movimentacoesDoDia(DateTime dia, TipoMovimentacao tipo) {
+  int movimentacoesDoDia(DateTime dia, TipoMovimentacao tipoMovimentacao) {
     return movimentacoes
-        .where((m) =>
-            m.data.year == dia.year &&
-            m.data.month == dia.month &&
-            m.data.day == dia.day &&
-            m.tipo == tipo)
-        .fold(0.0, (soma, m) => soma + m.valor);
+        .where(
+          (movimentacao) =>
+              movimentacao.data.year == dia.year &&
+              movimentacao.data.month == dia.month &&
+              movimentacao.data.day == dia.day &&
+              movimentacao.tipo == tipoMovimentacao,
+        )
+        .fold<int>(0, (soma, movimentacao) => soma + movimentacao.valorEmCentavos);
   }
 
-  double gastosDoDia(DateTime dia) {
+  int gastosDoDia(DateTime dia) {
     return movimentacoesDoDia(dia, TipoMovimentacao.saida);
   }
 
-  double gastosDeHoje() {
-    return (gastosDoDia(dataDeHoje())).clamp(0.0, double.infinity);
+  int gastosDeHoje() {
+    return gastosDoDia(dataDeHoje()).clamp(0, 1 << 31);
   }
 
-  double entradasDeHoje() {
-    return (entradasDoDia(dataDeHoje())).clamp(0.0, double.infinity);
+  int entradasDeHoje() {
+    return entradasDoDia(dataDeHoje()).clamp(0, 1 << 31);
   }
 
-  double saldoDoDia(DateTime dia) {
+  int saldoDoDia(DateTime dia) {
     final dataDia = DateTime(dia.year, dia.month, dia.day);
     final dataHoje = dataDeHoje();
-    if (dataDia != dataHoje) return 0.0;
-    return (orcamentoDiarioAtual - gastosDoDia(dia))
-        .clamp(0.0, double.infinity);
+    if (dataDia != dataHoje) {
+      return 0;
+    }
+
+    final saldo = orcamentoDiarioAtualEmCentavos - gastosDoDia(dia);
+    return saldo < 0 ? 0 : saldo;
   }
 
   DateTime dataDeHoje() {
-    final hoje = dataDeTrabalhoAtual;
+    final hoje = ClockService.instance.businessDate;
     return DateTime(hoje.year, hoje.month, hoje.day);
   }
 
-  double get saldoDeHoje {
-    final dataHoje = dataDeHoje();
-    return saldoDoDia(dataHoje);
+  int get saldoDeHojeEmCentavos => saldoDoDia(dataDeHoje());
+
+  int get saldoTotalDoDiaEmCentavos =>
+      orcamentoDiarioAtualEmCentavos + saldoExtraDoDiaEmCentavos;
+
+  int get saldoDisponivelOrcamentoEmCentavos =>
+      tipo == TipoOrcamento.gasto
+          ? saldoAtualEmCentavos - saldoFinalDesejadoEmCentavos
+          : saldoFinalDesejadoEmCentavos - saldoAtualEmCentavos;
+
+  int get valorOrcamentoDiarioRecalculadoEmCentavos =>
+      _dividirCentavos(saldoDisponivelOrcamentoEmCentavos, diasRestantes);
+
+  int get previsaoOrcamentoDiarioAmanhaEmCentavos {
+    final divisor = diasRestantes - 1;
+    if (divisor <= 0) {
+      return 0;
+    }
+    return _dividirCentavos(saldoDisponivelOrcamentoEmCentavos, divisor);
   }
 
-  // Saldo Total do Dia = orçamento diário atual + saldoExtraDoDia
-  double get saldoTotalDoDia => orcamentoDiarioAtual + saldoExtraDoDia;
+  bool get estouroOrcamentoDiario => gastosDeHoje() > orcamentoDiarioAtualEmCentavos;
 
-  double get saldoDisponivelOrcamento => saldoAtual - saldoFinalDesejado;
-
-  double get valorOrcamentoDiarioRecalculado =>
-      saldoDisponivelOrcamento / diasRestantes;
-
-  double get previsaoOrcamentoDiarioAmanha =>
-      saldoDisponivelOrcamento / (diasRestantes - 1);
-
-  bool get estouroOrcamentoDiario => gastosDeHoje() > orcamentoDiarioAtual;
-
-  // Métodos de ação:
   void archive() {
     status = StatusOrcamento.arquivado;
   }
@@ -187,12 +191,18 @@ class Orcamento extends HiveObject {
     status = StatusOrcamento.excluido;
   }
 
-  void incrementarOrcamentoDiario(double valor) {
-    final diasRestantes = this.diasRestantes;
-    if (diasRestantes > 0) {
-      double incremento =
-          double.parse((valor / diasRestantes).toStringAsFixed(2));
-      this.orcamentoDiarioAtual += incremento;
+  void incrementarOrcamentoDiario(int valorEmCentavos) {
+    if (diasRestantes <= 0) {
+      return;
     }
+
+    orcamentoDiarioAtualEmCentavos += _dividirCentavos(valorEmCentavos, diasRestantes);
+  }
+
+  static int _dividirCentavos(int valor, int divisor) {
+    if (divisor <= 0) {
+      return 0;
+    }
+    return (valor / divisor).round();
   }
 }

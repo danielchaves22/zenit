@@ -1,4 +1,10 @@
-import { AccountType, FinancialAccount, Prisma, PrismaClient } from '@prisma/client';
+import {
+  AccountType,
+  FinancialAccount,
+  FinancialAccountPurpose,
+  Prisma,
+  PrismaClient
+} from '@prisma/client';
 import { logger } from '../utils/logger';
 import cacheService from './cache.service';
 import BankService from './bank.service';
@@ -251,8 +257,17 @@ export default class FinancialAccountService {
     allowNegativeBalance?: boolean;
     search?: string;
     accountIds?: number[];
+    includeBudgetAccounts?: boolean;
   }): Promise<FinancialAccount[]> {
-    const { companyId, type, isActive, allowNegativeBalance, search, accountIds } = params;
+    const {
+      companyId,
+      type,
+      isActive,
+      allowNegativeBalance,
+      search,
+      accountIds,
+      includeBudgetAccounts = false
+    } = params;
 
     if (accountIds && accountIds.length === 0) {
       return [];
@@ -260,6 +275,7 @@ export default class FinancialAccountService {
 
     const where: Prisma.FinancialAccountWhereInput = {
       companyId,
+      ...(includeBudgetAccounts ? {} : { purpose: FinancialAccountPurpose.GENERAL }),
       ...(type && { type }),
       ...(isActive !== undefined && { isActive }),
       ...(allowNegativeBalance !== undefined && { allowNegativeBalance }),

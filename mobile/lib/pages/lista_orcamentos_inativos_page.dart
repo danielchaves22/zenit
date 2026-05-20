@@ -4,10 +4,10 @@ import '../models/orcamento.dart';
 import '../widgets/app_drawer.dart';
 
 class ListaOrcamentosInativosPage extends StatefulWidget {
-  const ListaOrcamentosInativosPage({Key? key}) : super(key: key);
+  const ListaOrcamentosInativosPage({super.key});
 
   @override
-  _ListaOrcamentosInativosPageState createState() =>
+  State<ListaOrcamentosInativosPage> createState() =>
       _ListaOrcamentosInativosPageState();
 }
 
@@ -81,7 +81,7 @@ class _ListaOrcamentosInativosPageState
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '${orcamento.codigo}',
+                            orcamento.codigo,
                             style: const TextStyle(
                                 fontWeight: FontWeight.bold, fontSize: 16),
                           ),

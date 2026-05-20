@@ -1,9 +1,17 @@
 ﻿import request from 'supertest';
 import bcrypt from 'bcrypt';
 import app from '../../src/app';
-import { PrismaClient } from '@prisma/client';
+import { AppKey, PrismaClient } from '@prisma/client';
+import AppAccessService from '../../src/services/app-access.service';
 
 const prisma = new PrismaClient();
+const APP_KEY_HEADER = 'x-app-key';
+const APP_KEY_VALUE = 'zenit-calc';
+const calcHeaders = (token: string, companyId: number) => ({
+  Authorization: `Bearer ${token}`,
+  'X-Company-Id': String(companyId),
+  [APP_KEY_HEADER]: APP_KEY_VALUE
+});
 
 describe('Process domain routes', () => {
   let uniqueSuffix: string;
@@ -84,6 +92,25 @@ describe('Process domain routes', () => {
       ]
     });
 
+    await AppAccessService.setCompanyEntitlements(companyAId, [
+      { appKey: AppKey.ZENIT_CALC, enabled: true }
+    ]);
+    await AppAccessService.setCompanyEntitlements(companyBId, [
+      { appKey: AppKey.ZENIT_CALC, enabled: true }
+    ]);
+    await AppAccessService.setUserGrants(adminUserId, companyAId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(superUserId, companyAId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(regularUserId, companyAId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(outsiderUserId, companyBId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true }
+    ]);
+
     const adminLogin = await request(app)
       .post('/api/auth/login')
       .send({ email: `admin.process.${uniqueSuffix}@zenit.com`, password: 'Senha123' });
@@ -137,8 +164,7 @@ describe('Process domain routes', () => {
     for (const status of statuses) {
       const response = await request(app)
         .post('/api/processes')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .set('X-Company-Id', String(companyAId))
+        .set(calcHeaders(adminToken, companyAId))
         .send({ status, originType: 'MANUAL' });
 
       expect(response.status).toBe(201);
@@ -149,20 +175,17 @@ describe('Process domain routes', () => {
   it('permite criacao por ADMIN, SUPERUSER e USER na empresa ativa', async () => {
     const adminRes = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ status: 'SOLICITACAO' });
 
     const superRes = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${superToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(superToken, companyAId))
       .send({ status: 'INICIAL' });
 
     const userRes = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${userToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(userToken, companyAId))
       .send({ status: 'CALCULO' });
 
     expect(adminRes.status).toBe(201);
@@ -173,28 +196,24 @@ describe('Process domain routes', () => {
   it('registra historico ao alterar status em qualquer direcao', async () => {
     const created = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ status: 'SOLICITACAO' });
 
     const processId = created.body.id;
 
     const toCalculo = await request(app)
       .patch(`/api/processes/${processId}/status`)
-      .set('Authorization', `Bearer ${superToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(superToken, companyAId))
       .send({ status: 'CALCULO', reason: 'Avanco para calculo' });
 
     const backToInicial = await request(app)
       .patch(`/api/processes/${processId}/status`)
-      .set('Authorization', `Bearer ${userToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(userToken, companyAId))
       .send({ status: 'INICIAL', reason: 'Retorno para revisao' });
 
     const history = await request(app)
       .get(`/api/processes/${processId}/status-history`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     expect(toCalculo.status).toBe(200);
     expect(backToInicial.status).toBe(200);
@@ -206,14 +225,12 @@ describe('Process domain routes', () => {
   it('garante isolamento por tenant', async () => {
     const created = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ status: 'SOLICITACAO' });
 
     const outsiderGet = await request(app)
       .get(`/api/processes/${created.body.id}`)
-      .set('Authorization', `Bearer ${outsiderToken}`)
-      .set('X-Company-Id', String(companyBId));
+      .set(calcHeaders(outsiderToken, companyBId));
 
     expect(created.status).toBe(201);
     expect(outsiderGet.status).toBe(404);
@@ -222,27 +239,23 @@ describe('Process domain routes', () => {
   it('realiza soft delete removendo da listagem e preservando historico', async () => {
     const created = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ status: 'SOLICITACAO' });
 
     const processId = created.body.id;
 
     await request(app)
       .patch(`/api/processes/${processId}/status`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ status: 'INICIAL' });
 
     const deleteRes = await request(app)
       .delete(`/api/processes/${processId}`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     const listRes = await request(app)
       .get('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     const processInDb = await prisma.process.findUnique({ where: { id: processId } });
     const historyCount = await prisma.processStatusHistory.count({ where: { processId } });
@@ -258,26 +271,22 @@ describe('Process domain routes', () => {
     const tagName = `email-${uniqueSuffix}`;
     const tagRes1 = await request(app)
       .post('/api/process-tags')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ name: tagName });
 
     const tagRes2 = await request(app)
       .post('/api/process-tags')
-      .set('Authorization', `Bearer ${superToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(superToken, companyAId))
       .send({ name: tagName });
 
     const secondTag = await request(app)
       .post('/api/process-tags')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ name: `urgente-${uniqueSuffix}` });
 
     const createdProcess = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({
         status: 'SOLICITACAO',
         tagIds: [tagRes1.body.id, secondTag.body.id]
@@ -285,8 +294,7 @@ describe('Process domain routes', () => {
 
     const createdProcessOnlyOneTag = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({
         status: 'SOLICITACAO',
         tagIds: [tagRes1.body.id]
@@ -295,20 +303,17 @@ describe('Process domain routes', () => {
     const filteredAny = await request(app)
       .get('/api/processes')
       .query({ tagIds: `${tagRes1.body.id},${secondTag.body.id}`, tagMatchMode: 'ANY' })
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     const filteredAll = await request(app)
       .get('/api/processes')
       .query({ tagIds: `${tagRes1.body.id},${secondTag.body.id}`, tagMatchMode: 'ALL' })
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     const filteredNoTagWithAll = await request(app)
       .get('/api/processes')
       .query({ tagMatchMode: 'ALL' })
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     expect(tagRes1.status).toBe(201);
     expect(tagRes2.status).toBe(409);
@@ -330,21 +335,18 @@ describe('Process domain routes', () => {
 
     const createA = await request(app)
       .post('/api/process-tags')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ name: `${prefix}-a` });
 
     const createB = await request(app)
       .post('/api/process-tags')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ name: `${prefix}-b` });
 
     const listLimited = await request(app)
       .get('/api/process-tags')
       .query({ search: prefix, limit: 1 })
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     expect(createA.status).toBe(201);
     expect(createB.status).toBe(201);
@@ -359,8 +361,7 @@ describe('Process domain routes', () => {
 
     const importRes = await request(app)
       .post('/api/inbound-imports')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({
         sourceType: 'EMAIL',
         externalId,
@@ -369,8 +370,7 @@ describe('Process domain routes', () => {
 
     const duplicateImportRes = await request(app)
       .post('/api/inbound-imports')
-      .set('Authorization', `Bearer ${superToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(superToken, companyAId))
       .send({
         sourceType: 'EMAIL',
         externalId
@@ -378,14 +378,12 @@ describe('Process domain routes', () => {
 
     const processWithoutImport = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ status: 'INICIAL', originType: 'MANUAL' });
 
     const processWithImport = await request(app)
       .post('/api/processes')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({
         status: 'SOLICITACAO',
         originType: 'IMPORT',

@@ -28,6 +28,11 @@ enum AccountType {
   CASH
 }
 
+enum FinancialAccountPurpose {
+  GENERAL
+  BUDGET
+}
+
 enum TransactionType {
   INCOME
   EXPENSE
@@ -147,6 +152,29 @@ enum ProcessSourceProvider {
   GMAIL
 }
 
+enum BudgetKind {
+  SPENDING
+  SAVINGS
+}
+
+enum BudgetStatus {
+  ACTIVE
+  ARCHIVED
+  EXPIRED
+  DELETED
+}
+
+enum BudgetEntryType {
+  INCOME
+  EXPENSE
+  MANUAL_ADJUSTMENT
+}
+
+enum BudgetEntryAllocationMode {
+  PRINCIPAL
+  EXTRA
+}
+
 model User {
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
@@ -166,6 +194,8 @@ model User {
   createdProcesses       Process[]            @relation("ProcessCreatedBy")
   updatedProcesses       Process[]            @relation("ProcessUpdatedBy")
   processStatusChanges   ProcessStatusHistory[] @relation("ProcessStatusHistoryChangedBy")
+  personalWorkspaceOwned Company?             @relation("PersonalWorkspaceOwner")
+  budgets                Budget[]
 }
 
 model Company {
@@ -173,6 +203,9 @@ model Company {
   name                String
   address             String?
   code                Int                   @unique
+  timeZone            String?
+  isPersonalWorkspace Boolean               @default(false)
+  personalWorkspaceOwnerId Int?             @unique
   users               UserCompany[]
   groups              CompanyGroup[]
   createdAt           DateTime              @default(now())
@@ -194,6 +227,8 @@ model Company {
   emailIngestionConfig EmailIngestionConfig?
   appEntitlements     CompanyAppEntitlement[]
   userAppGrants       UserAppGrant[]
+  personalWorkspaceOwner User?              @relation("PersonalWorkspaceOwner", fields: [personalWorkspaceOwnerId], references: [id], onDelete: SetNull)
+  budgets             Budget[]
 }
 
 model CompanyGroup {
@@ -284,6 +319,7 @@ model FinancialAccount {
   id                Int                 @id @default(autoincrement())
   name              String
   type              AccountType
+  purpose           FinancialAccountPurpose @default(GENERAL)
   balance           Decimal            @db.Decimal(15, 2) @default(0)
   accountNumber     String?
   bankName          String?
@@ -296,6 +332,7 @@ model FinancialAccount {
   isActive          Boolean            @default(true)
   isDefault         Boolean            @default(false)
   allowNegativeBalance Boolean         @default(false)
+  isSystemManaged   Boolean            @default(false)
   companyId         Int
   company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   bank              Bank?              @relation(fields: [bankId], references: [id], onDelete: SetNull)
@@ -309,6 +346,7 @@ model FinancialAccount {
   incomingTransactions FinancialTransaction[] @relation("ToAccount")
   creditCardInvoices   CreditCardInvoice[]
   userAccess            UserFinancialAccountAccess[]
+  budget                Budget?
 
   @@unique([name, type, companyId])
   @@index([bankId])
@@ -382,6 +420,7 @@ model FinancialTransaction {
   scheduledDate           DateTime?
   recurringTransactionId  Int?
   recurringTransaction    RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
+  budgetEntry            BudgetEntry?
   occurrenceKey    String?              @unique
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
@@ -492,6 +531,64 @@ model UserFinancialAccountAccess {
   @@index([financialAccountId])
   @@index([companyId])
   @@index([grantedBy])
+}
+
+model Budget {
+  id                  Int              @id @default(autoincrement())
+  companyId           Int
+  userId              Int
+  clientKey           String
+  code                String
+  kind                BudgetKind
+  status              BudgetStatus     @default(ACTIVE)
+  initialBalance      Decimal          @db.Decimal(15, 2)
+  currentBalance      Decimal          @db.Decimal(15, 2)
+  targetEndingBalance Decimal          @db.Decimal(15, 2) @default(0)
+  dailyBudgetInitial  Decimal          @db.Decimal(15, 2)
+  dailyBudgetCurrent  Decimal          @db.Decimal(15, 2)
+  dayExtraBalance     Decimal          @db.Decimal(15, 2) @default(0)
+  startDate           DateTime
+  endDate             DateTime
+  lastDailyBudgetDate DateTime
+  isPrimary           Boolean          @default(false)
+  financialAccountId  Int              @unique
+  clientCreatedAt     DateTime
+  clientUpdatedAt     DateTime
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  company             Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  financialAccount    FinancialAccount @relation(fields: [financialAccountId], references: [id], onDelete: Cascade)
+  entries             BudgetEntry[]
+
+  @@unique([companyId, userId, clientKey], name: "unique_budget_client_key")
+  @@index([companyId, userId])
+  @@index([companyId, status])
+}
+
+model BudgetEntry {
+  id                    Int                        @id @default(autoincrement())
+  budgetId              Int
+  clientKey             String
+  entryType             BudgetEntryType
+  allocationMode        BudgetEntryAllocationMode?
+  amount                Decimal                    @db.Decimal(15, 2)
+  principalImpactAmount Decimal                    @db.Decimal(15, 2) @default(0)
+  occurredAt            DateTime
+  description           String?
+  affectsBudgetBalance  Boolean                    @default(true)
+  financialTransactionId Int?                      @unique
+  clientCreatedAt       DateTime
+  clientUpdatedAt       DateTime
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  budget                Budget                     @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  financialTransaction  FinancialTransaction?      @relation(fields: [financialTransactionId], references: [id], onDelete: SetNull)
+
+  @@unique([budgetId, clientKey], name: "unique_budget_entry_client_key")
+  @@index([budgetId, occurredAt])
 }
 
 model Process {

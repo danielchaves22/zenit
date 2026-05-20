@@ -1,48 +1,45 @@
-// /backend/__tests__/auth.test.ts
-
 import request from 'supertest';
-import app from '../src/app';
+import app from '../../src/app';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
 describe('Auth routes', () => {
-  const testEmail = 'test@example.com';
+  const uniqueSuffix = Date.now().toString();
+  const testEmail = `auth.${uniqueSuffix}@example.com`;
   const testPassword = 'secret123';
+  let companyIds: number[] = [];
 
   beforeAll(async () => {
-    // 1) Limpa todas as associações e dados de usuário
-    await prisma.userCompany.deleteMany();
-    await prisma.user.deleteMany();
-    // 2) Limpa todas as empresas
-    await prisma.company.deleteMany();
-
-    // 3) Cria as empresas uma a uma e captura os IDs
     const empresaA = await prisma.company.create({
-      data: { name: 'Empresa A', code: 0 },
+      data: { name: `Empresa A ${uniqueSuffix}`, code: Number(uniqueSuffix.slice(-6)) + 300 }
     });
     const empresaB = await prisma.company.create({
-      data: { name: 'Empresa B', code: 1 },
+      data: { name: `Empresa B ${uniqueSuffix}`, code: Number(uniqueSuffix.slice(-6)) + 301 }
     });
+    companyIds = [empresaA.id, empresaB.id];
 
-    // 4) Cria o usuário hashed
     const hashed = await bcrypt.hash(testPassword, 10);
     const user = await prisma.user.create({
       data: { email: testEmail, password: hashed, name: 'Test User', role: 'USER' }
     });
 
-    // 5) Associa o usuário à segunda empresa (empresaB.id)
     await prisma.userCompany.create({
       data: { userId: user.id, companyId: empresaB.id, isDefault: true, role: 'USER' }
     });
   });
 
   afterAll(async () => {
-    // Limpa tudo após os testes
-    await prisma.userCompany.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.company.deleteMany();
+    await prisma.userCompany.deleteMany({
+      where: { companyId: { in: companyIds } }
+    });
+    await prisma.user.deleteMany({
+      where: { email: testEmail }
+    });
+    await prisma.company.deleteMany({
+      where: { id: { in: companyIds } }
+    });
     await prisma.$disconnect();
   });
 
@@ -62,6 +59,6 @@ describe('Auth routes', () => {
       .send({ email: testEmail, password: 'wrongpassword' });
 
     expect(res.status).toBe(401);
-    expect(res.body).toEqual({ error: 'Credenciais inválidas.' });
+    expect(res.body).toEqual({ error: 'Credenciais invalidas' });
   });
 });

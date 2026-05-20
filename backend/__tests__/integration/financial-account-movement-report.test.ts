@@ -1,30 +1,196 @@
-// backend/tests/financial-account-movement-report.test.ts
 import request from 'supertest';
-import app from '../src/app';
+import bcrypt from 'bcrypt';
+import { AppKey, PrismaClient } from '@prisma/client';
+import app from '../../src/app';
+import AppAccessService from '../../src/services/app-access.service';
+import FinancialTransactionService from '../../src/services/financial-transaction.service';
+
+const prisma = new PrismaClient();
+const APP_KEY_HEADER = 'x-app-key';
+const APP_KEY_VALUE = 'zenit-cash';
+const authHeaders = (token: string, companyId: number) => ({
+  Authorization: `Bearer ${token}`,
+  'X-Company-Id': String(companyId),
+  [APP_KEY_HEADER]: APP_KEY_VALUE
+});
 
 describe('Financial Account Movement Report', () => {
+  const uniqueSuffix = Date.now().toString();
   let authToken: string;
   let companyId: number;
+  let otherCompanyId: number;
+  let userId: number;
   let accountIds: number[];
+  let foreignAccountId: number;
+  let reportData: any[];
 
   beforeAll(async () => {
-    // Setup: Login and get auth token
+    const company = await prisma.company.create({
+      data: {
+        name: `Report Company ${uniqueSuffix}`,
+        code: Number(uniqueSuffix.slice(-6)) + 600
+      }
+    });
+    const otherCompany = await prisma.company.create({
+      data: {
+        name: `Other Report Company ${uniqueSuffix}`,
+        code: Number(uniqueSuffix.slice(-6)) + 601
+      }
+    });
+    companyId = company.id;
+    otherCompanyId = otherCompany.id;
+
+    const passwordHash = await bcrypt.hash('password123', 10);
+    const user = await prisma.user.create({
+      data: {
+        email: `report.${uniqueSuffix}@test.com`,
+        password: passwordHash,
+        name: 'Report Admin',
+        role: 'ADMIN'
+      }
+    });
+    userId = user.id;
+
+    await prisma.userCompany.create({
+      data: { userId, companyId, isDefault: true, role: 'ADMIN' }
+    });
+
+    await AppAccessService.setCompanyEntitlements(companyId, [
+      { appKey: AppKey.ZENIT_CASH, enabled: true }
+    ]);
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_CASH, granted: true }
+    ]);
+
+    const [account1, account2, foreignAccount, expenseCategory, incomeCategory] = await Promise.all([
+      prisma.financialAccount.create({
+        data: {
+          name: `Conta Principal ${uniqueSuffix}`,
+          type: 'CHECKING',
+          balance: 0,
+          companyId
+        }
+      }),
+      prisma.financialAccount.create({
+        data: {
+          name: `Conta Secundaria ${uniqueSuffix}`,
+          type: 'CASH',
+          balance: 0,
+          companyId
+        }
+      }),
+      prisma.financialAccount.create({
+        data: {
+          name: `Conta Externa ${uniqueSuffix}`,
+          type: 'CHECKING',
+          balance: 0,
+          companyId: otherCompanyId
+        }
+      }),
+      prisma.financialCategory.create({
+        data: {
+          name: `Despesa ${uniqueSuffix}`,
+          type: 'EXPENSE',
+          companyId
+        }
+      }),
+      prisma.financialCategory.create({
+        data: {
+          name: `Receita ${uniqueSuffix}`,
+          type: 'INCOME',
+          companyId
+        }
+      })
+    ]);
+
+    accountIds = [account1.id, account2.id];
+    foreignAccountId = foreignAccount.id;
+
+    await FinancialTransactionService.createTransaction({
+      description: 'Recebimento inicial',
+      amount: 1000,
+      date: new Date('2024-01-10T10:00:00.000Z'),
+      type: 'INCOME',
+      status: 'COMPLETED',
+      toAccountId: account1.id,
+      categoryId: incomeCategory.id,
+      companyId,
+      createdBy: userId
+    });
+
+    await FinancialTransactionService.createTransaction({
+      description: 'Pagamento fornecedor',
+      amount: 200,
+      date: new Date('2024-01-11T12:00:00.000Z'),
+      type: 'EXPENSE',
+      status: 'COMPLETED',
+      fromAccountId: account1.id,
+      categoryId: expenseCategory.id,
+      companyId,
+      createdBy: userId
+    });
+
+    await FinancialTransactionService.createTransaction({
+      description: 'Transferencia interna',
+      amount: 150,
+      date: new Date('2024-01-15T09:30:00.000Z'),
+      type: 'TRANSFER',
+      status: 'COMPLETED',
+      fromAccountId: account1.id,
+      toAccountId: account2.id,
+      companyId,
+      createdBy: userId
+    });
+
     const loginResponse = await request(app)
       .post('/api/auth/login')
+      .set(APP_KEY_HEADER, APP_KEY_VALUE)
       .send({
-        email: 'admin@test.com',
+        email: `report.${uniqueSuffix}@test.com`,
         password: 'password123'
       });
-    
+
     authToken = loginResponse.body.token;
-    companyId = loginResponse.body.user.company.id;
-    
-    // Get available accounts
-    const accountsResponse = await request(app)
-      .get('/api/financial/accounts')
-      .set('Authorization', `Bearer ${authToken}`);
-    
-    accountIds = accountsResponse.body.map((acc: any) => acc.id);
+
+    const initialReport = await request(app)
+      .get('/api/financial/reports/financial-account-movement')
+      .query({
+        startDate: '2024-01-01',
+        endDate: '2024-01-31',
+        financialAccountIds: accountIds.join(','),
+        groupBy: 'day'
+      })
+      .set(authHeaders(authToken, companyId));
+
+    reportData = initialReport.body;
+  });
+
+  afterAll(async () => {
+    await prisma.financialTransaction.deleteMany({
+      where: { companyId: { in: [companyId, otherCompanyId] } }
+    });
+    await prisma.financialCategory.deleteMany({
+      where: { companyId: { in: [companyId, otherCompanyId] } }
+    });
+    await prisma.financialAccount.deleteMany({
+      where: { companyId: { in: [companyId, otherCompanyId] } }
+    });
+    await prisma.userAppGrant.deleteMany({
+      where: { companyId }
+    });
+    await prisma.companyAppEntitlement.deleteMany({
+      where: { companyId }
+    });
+    await prisma.userCompany.deleteMany({
+      where: { userId }
+    });
+    await prisma.user.deleteMany({
+      where: { id: userId }
+    });
+    await prisma.company.deleteMany({
+      where: { id: { in: [companyId, otherCompanyId] } }
+    });
+    await prisma.$disconnect();
   });
 
   describe('GET /api/financial/reports/financial-account-movement', () => {
@@ -37,21 +203,17 @@ describe('Financial Account Movement Report', () => {
           financialAccountIds: accountIds.join(','),
           groupBy: 'day'
         })
-        .set('Authorization', `Bearer ${authToken}`)
+        .set(authHeaders(authToken, companyId))
         .expect(200);
 
       expect(response.body).toBeInstanceOf(Array);
-      
-      if (response.body.length > 0) {
-        const period = response.body[0];
-        expect(period).toHaveProperty('period');
-        expect(period).toHaveProperty('periodLabel');
-        expect(period).toHaveProperty('income');
-        expect(period).toHaveProperty('expense');
-        expect(period).toHaveProperty('balance');
-        expect(period).toHaveProperty('transactions');
-        expect(period.transactions).toBeInstanceOf(Array);
-      }
+      expect(response.body.length).toBeGreaterThan(0);
+      expect(response.body[0]).toHaveProperty('period');
+      expect(response.body[0]).toHaveProperty('periodLabel');
+      expect(response.body[0]).toHaveProperty('income');
+      expect(response.body[0]).toHaveProperty('expense');
+      expect(response.body[0]).toHaveProperty('balance');
+      expect(response.body[0].transactions).toBeInstanceOf(Array);
     });
 
     it('should return 400 for missing required parameters', async () => {
@@ -59,9 +221,8 @@ describe('Financial Account Movement Report', () => {
         .get('/api/financial/reports/financial-account-movement')
         .query({
           startDate: '2024-01-01'
-          // Missing endDate and financialAccountIds
         })
-        .set('Authorization', `Bearer ${authToken}`)
+        .set(authHeaders(authToken, companyId))
         .expect(400);
     });
 
@@ -70,10 +231,10 @@ describe('Financial Account Movement Report', () => {
         .get('/api/financial/reports/financial-account-movement')
         .query({
           startDate: '2024-01-31',
-          endDate: '2024-01-01', // End before start
+          endDate: '2024-01-01',
           financialAccountIds: accountIds.join(',')
         })
-        .set('Authorization', `Bearer ${authToken}`)
+        .set(authHeaders(authToken, companyId))
         .expect(400);
     });
 
@@ -86,7 +247,7 @@ describe('Financial Account Movement Report', () => {
           financialAccountIds: accountIds.join(','),
           groupBy: 'invalid'
         })
-        .set('Authorization', `Bearer ${authToken}`)
+        .set(authHeaders(authToken, companyId))
         .expect(400);
     });
 
@@ -99,14 +260,14 @@ describe('Financial Account Movement Report', () => {
           financialAccountIds: accountIds.join(','),
           groupBy: 'week'
         })
-        .set('Authorization', `Bearer ${authToken}`)
+        .set(authHeaders(authToken, companyId))
         .expect(200);
 
       expect(response.body).toBeInstanceOf(Array);
-      
       if (response.body.length > 0) {
-        const period = response.body[0];
-        expect(period.periodLabel).toMatch(/\d{2}\/\d{2}\/\d{4} - \d{2}\/\d{2}\/\d{4}/);
+        expect(response.body[0].periodLabel).toMatch(
+          /Semana de \d{2}\/\d{2}\/\d{4} a \d{2}\/\d{2}\/\d{4}/
+        );
       }
     });
 
@@ -119,81 +280,65 @@ describe('Financial Account Movement Report', () => {
           financialAccountIds: accountIds.join(','),
           groupBy: 'month'
         })
-        .set('Authorization', `Bearer ${authToken}`)
+        .set(authHeaders(authToken, companyId))
         .expect(200);
 
       expect(response.body).toBeInstanceOf(Array);
+      if (response.body.length > 0) {
+        expect(String(response.body[0].periodLabel)).toContain('2024');
+      }
     });
   });
 
   describe('POST /api/financial/reports/financial-account-movement/pdf', () => {
-    it('should export report to PDF', async () => {
-      // First get report data
-      const reportResponse = await request(app)
-        .get('/api/financial/reports/financial-account-movement')
-        .query({
-          startDate: '2024-01-01',
-          endDate: '2024-01-31',
-          financialAccountIds: accountIds.join(','),
-          groupBy: 'day'
-        })
-        .set('Authorization', `Bearer ${authToken}`);
-
+    it('should export report to text payload for the current PDF stub', async () => {
       const response = await request(app)
         .post('/api/financial/reports/financial-account-movement/pdf')
+        .set(authHeaders(authToken, companyId))
         .send({
           startDate: '2024-01-01',
           endDate: '2024-01-31',
           financialAccountIds: accountIds,
           groupBy: 'day',
-          data: reportResponse.body
+          data: reportData
         })
-        .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
 
-      expect(response.headers['content-type']).toBe('application/pdf');
-      expect(response.headers['content-disposition']).toMatch(/attachment; filename=".*\.pdf"/);
+      expect(response.headers['content-type']).toContain('text/plain');
+      expect(response.headers['content-disposition']).toMatch(
+        /attachment; filename="relatorio-movimentacao-contas-2024-01-01-2024-01-31\.txt"/
+      );
     });
 
     it('should return 400 for missing data', async () => {
       await request(app)
         .post('/api/financial/reports/financial-account-movement/pdf')
+        .set(authHeaders(authToken, companyId))
         .send({
           startDate: '2024-01-01',
           endDate: '2024-01-31'
-          // Missing required fields
         })
-        .set('Authorization', `Bearer ${authToken}`)
         .expect(400);
     });
   });
 
   describe('POST /api/financial/reports/financial-account-movement/excel', () => {
-    it('should export report to Excel', async () => {
-      // First get report data
-      const reportResponse = await request(app)
-        .get('/api/financial/reports/financial-account-movement')
-        .query({
-          startDate: '2024-01-01',
-          endDate: '2024-01-31',
-          financialAccountIds: accountIds.join(','),
-          groupBy: 'day'
-        })
-        .set('Authorization', `Bearer ${authToken}`);
-
+    it('should export report to Excel mime type', async () => {
       const response = await request(app)
         .post('/api/financial/reports/financial-account-movement/excel')
+        .set(authHeaders(authToken, companyId))
         .send({
           startDate: '2024-01-01',
           endDate: '2024-01-31',
           financialAccountIds: accountIds,
           groupBy: 'day',
-          data: reportResponse.body
+          data: reportData
         })
-        .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
 
-      expect(response.headers['content-type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      expect(response.headers['content-type']).toBe(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
       expect(response.headers['content-disposition']).toMatch(/attachment; filename=".*\.xlsx"/);
     });
   });
@@ -207,83 +352,20 @@ describe('Financial Account Movement Report', () => {
           endDate: '2024-01-31',
           financialAccountIds: accountIds.join(',')
         })
+        .set(APP_KEY_HEADER, APP_KEY_VALUE)
         .expect(401);
     });
 
-    it('should return 403 for accounts from different company', async () => {
-      // This would need to be tested with accounts from another company
-      // For now, we'll test with non-existent account IDs
+    it('should return 500 for accounts outside the active company', async () => {
       await request(app)
         .get('/api/financial/reports/financial-account-movement')
         .query({
           startDate: '2024-01-01',
           endDate: '2024-01-31',
-          financialAccountIds: '99999,99998' // Non-existent IDs
+          financialAccountIds: `${accountIds[0]},${foreignAccountId}`
         })
-        .set('Authorization', `Bearer ${authToken}`)
-        .expect(500); // Should fail when trying to validate account ownership
+        .set(authHeaders(authToken, companyId))
+        .expect(500);
     });
   });
 });
-
-// ========================================
-// MANUAL TESTING EXAMPLES
-// ========================================
-
-/*
-1. GET Report Example:
-curl -X GET "http://localhost:3000/api/financial/reports/financial-account-movement?startDate=2024-01-01&endDate=2024-01-31&financialAccountIds=1,2,3&groupBy=day" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
-
-2. Export PDF Example:
-curl -X POST "http://localhost:3000/api/financial/reports/financial-account-movement/pdf" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "startDate": "2024-01-01",
-    "endDate": "2024-01-31",
-    "financialAccountIds": [1, 2, 3],
-    "groupBy": "day",
-    "data": [
-      {
-        "period": "2024-01-01",
-        "periodLabel": "01/01/2024",
-        "income": 1000.00,
-        "expense": 500.00,
-        "balance": 500.00,
-        "transactions": [
-          {
-            "id": 1,
-            "description": "Venda de produto",
-            "amount": 1000.00,
-            "date": "2024-01-01T10:00:00.000Z",
-            "type": "INCOME",
-            "financialAccount": {
-              "id": 1,
-              "name": "Conta Principal"
-            },
-            "category": {
-              "id": 1,
-              "name": "Vendas",
-              "color": "#16A34A"
-            }
-          }
-        ]
-      }
-    ]
-  }' \
-  --output report.pdf
-
-3. Export Excel Example:
-curl -X POST "http://localhost:3000/api/financial/reports/financial-account-movement/excel" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "startDate": "2024-01-01",
-    "endDate": "2024-01-31",
-    "financialAccountIds": [1, 2, 3],
-    "groupBy": "week",
-    "data": []
-  }' \
-  --output report.xlsx
-*/

@@ -1,10 +1,4 @@
-// GENERATED CODE - DO NOT MODIFY BY HAND
-
 part of 'orcamento.dart';
-
-// **************************************************************************
-// TypeAdapterGenerator
-// **************************************************************************
 
 class OrcamentoAdapter extends TypeAdapter<Orcamento> {
   @override
@@ -16,46 +10,50 @@ class OrcamentoAdapter extends TypeAdapter<Orcamento> {
     final fields = <int, dynamic>{
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
+
+    final createdAt = _readDate(fields[16] ?? fields[8] ?? fields[15]);
+
     return Orcamento(
-      id: fields[0] as String,
-      valorInicial: fields[1] as double,
-      saldoAtual: fields[2] as double,
-      dataFinal: fields[3] as DateTime,
-      saldoFinalDesejado: fields[4] as double,
-      movimentacoes: (fields[5] as List).cast<Movimentacao>(),
-      orcamentoDiarioInicial: fields[6] as double,
-      orcamentoDiarioAtual: fields[7] as double,
-      dataInicio: fields[8] as DateTime,
-      tipo: fields[9] as TipoOrcamento,
-      dataOrcamentoDiarioAtual: fields[10] as DateTime,
-      codigo: fields[11] as String,
-      isTrabalho: fields[12] as bool,
-      status: fields[13] as StatusOrcamento,
-      saldoExtraDoDia: fields[14] as double,
-      updatedAt: fields[15] as DateTime?,
+      id: (fields[0] as String?) ?? '',
+      valorInicialEmCentavos: _readMoneyValue(fields[1]),
+      saldoAtualEmCentavos: _readMoneyValue(fields[2]),
+      dataFinal: _readDate(fields[3]),
+      saldoFinalDesejadoEmCentavos: _readMoneyValue(fields[4]),
+      movimentacoes: ((fields[5] as List?) ?? const []).cast<Movimentacao>(),
+      orcamentoDiarioInicialEmCentavos: _readMoneyValue(fields[6]),
+      orcamentoDiarioAtualEmCentavos: _readMoneyValue(fields[7]),
+      dataInicio: _readDate(fields[8]),
+      tipo: fields[9] as TipoOrcamento? ?? TipoOrcamento.gasto,
+      dataOrcamentoDiarioAtual: _readDate(fields[10]),
+      codigo: (fields[11] as String?) ?? '',
+      isTrabalho: (fields[12] as bool?) ?? false,
+      status: fields[13] as StatusOrcamento? ?? StatusOrcamento.ativo,
+      saldoExtraDoDiaEmCentavos: _readMoneyValue(fields[14]),
+      updatedAt: fields[15] == null ? null : _readDate(fields[15]),
+      createdAt: createdAt,
     );
   }
 
   @override
   void write(BinaryWriter writer, Orcamento obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
-      ..write(obj.valorInicial)
+      ..write(obj.valorInicialEmCentavos)
       ..writeByte(2)
-      ..write(obj.saldoAtual)
+      ..write(obj.saldoAtualEmCentavos)
       ..writeByte(3)
       ..write(obj.dataFinal)
       ..writeByte(4)
-      ..write(obj.saldoFinalDesejado)
+      ..write(obj.saldoFinalDesejadoEmCentavos)
       ..writeByte(5)
       ..write(obj.movimentacoes)
       ..writeByte(6)
-      ..write(obj.orcamentoDiarioInicial)
+      ..write(obj.orcamentoDiarioInicialEmCentavos)
       ..writeByte(7)
-      ..write(obj.orcamentoDiarioAtual)
+      ..write(obj.orcamentoDiarioAtualEmCentavos)
       ..writeByte(8)
       ..write(obj.dataInicio)
       ..writeByte(9)
@@ -69,9 +67,31 @@ class OrcamentoAdapter extends TypeAdapter<Orcamento> {
       ..writeByte(13)
       ..write(obj.status)
       ..writeByte(14)
-      ..write(obj.saldoExtraDoDia)
+      ..write(obj.saldoExtraDoDiaEmCentavos)
       ..writeByte(15)
-      ..write(obj.updatedAt);
+      ..write(obj.updatedAt)
+      ..writeByte(16)
+      ..write(obj.createdAt);
+  }
+
+  int _readMoneyValue(dynamic rawValue) {
+    if (rawValue is int) {
+      return rawValue;
+    }
+    if (rawValue is double) {
+      return (rawValue * 100).round();
+    }
+    if (rawValue is num) {
+      return (rawValue.toDouble() * 100).round();
+    }
+    return 0;
+  }
+
+  DateTime _readDate(dynamic rawValue) {
+    if (rawValue is DateTime) {
+      return rawValue;
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
   }
 
   @override

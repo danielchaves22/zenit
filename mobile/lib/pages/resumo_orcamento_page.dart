@@ -1,327 +1,206 @@
-import 'package:orcamento_app/utils.dart';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
+
 import '../models/movimentacao.dart';
 import '../models/orcamento.dart';
-import 'lista_orcamentos_page.dart';
-import 'criar_orcamento_page.dart';
+import '../services/app_services.dart';
+import '../utils.dart';
 import '../widgets/app_drawer.dart';
 
-class ResumoOrcamentoPage extends StatefulWidget {
-  final Orcamento orcamento; // Orçamento passado por parâmetro
+class ResumoOrcamentoPage extends StatelessWidget {
+  const ResumoOrcamentoPage({super.key, required this.orcamento});
 
-  const ResumoOrcamentoPage({Key? key, required this.orcamento})
-      : super(key: key);
-
-  @override
-  State<ResumoOrcamentoPage> createState() => _ResumoOrcamentoPageState();
-}
-
-class _ResumoOrcamentoPageState extends State<ResumoOrcamentoPage> {
-  late Box<Orcamento> box;
-
-  @override
-  void initState() {
-    super.initState();
-    box = Hive.box<Orcamento>('orcamentos');
-  }
-
-  // Função auxiliar para converter status em string
-  String _statusToString(StatusOrcamento status) {
-    switch (status) {
-      case StatusOrcamento.arquivado:
-        return 'Arquivado';
-      case StatusOrcamento.expirado:
-        return 'Expirado';
-      case StatusOrcamento.excluido:
-        return 'Excluído';
-      default:
-        return '';
-    }
-  }
+  final Orcamento orcamento;
 
   @override
   Widget build(BuildContext context) {
-    final orcamento = widget.orcamento;
-    final bool isActive = orcamento.status == StatusOrcamento.ativo;
-    final movimentacoes = orcamento.movimentacoes;
-    final movimentacoesAgrupadas = <String, List<Movimentacao>>{};
-    for (var mov in movimentacoes) {
-      final dataFormatada = DateFormat('dd/MM/yyyy').format(mov.data);
-      movimentacoesAgrupadas.putIfAbsent(dataFormatada, () => []).add(mov);
-    }
-    final diasOrdenados = movimentacoesAgrupadas.keys.toList()
-      ..sort((a, b) => DateFormat('dd/MM/yyyy')
-          .parse(b)
-          .compareTo(DateFormat('dd/MM/yyyy').parse(a)));
-    final hojeFormatado = DateFormat('dd/MM/yyyy').format(dataDeTrabalhoAtual);
+    final box = AppServices.budgetRepository.listenableBox;
 
-    // Cálculo da mensagem amigável (para orçamentos ativos)
-    String friendlyMessage = "";
-    Color friendlyColor = Colors.black;
-    if (isActive) {
-      if (orcamento.tipo == TipoOrcamento.gasto) {
-        double gastosHoje = orcamento.gastosDeHoje();
-        double dailyBudget = orcamento.orcamentoDiarioAtual;
-        double difference = dailyBudget - gastosHoje;
-        if (difference > 0) {
-          friendlyMessage =
-              "Hoje estou economizando R\$ ${difference.toStringAsFixed(2)}";
-          friendlyColor = Colors.green;
-        } else if (difference == 0) {
-          friendlyMessage = "Hoje atingi meu limite de gasto";
-          friendlyColor = Colors.amber;
-        } else {
-          friendlyMessage =
-              "Hoje gastei R\$ ${(-difference).toStringAsFixed(2)} além do previsto";
-          friendlyColor = Colors.red;
-        }
-      } else {
-        double entradasHoje = orcamento.movimentacoes.where((m) {
-          final hoje = dataDeTrabalhoAtual;
-          return m.tipo == TipoMovimentacao.entrada &&
-              m.data.year == hoje.year &&
-              m.data.month == hoje.month &&
-              m.data.day == hoje.day;
-        }).fold(0.0, (sum, m) => sum + m.valor);
-        double dailyTarget = orcamento.orcamentoDiarioAtual;
-        double diff = entradasHoje - dailyTarget;
-        if (diff < 0) {
-          friendlyMessage =
-              "Hoje ainda preciso guardar R\$ ${(-diff).toStringAsFixed(2)}";
-          friendlyColor = Colors.red;
-        } else if (diff == 0) {
-          friendlyMessage = "Hoje atingi minha meta de economia";
-          friendlyColor = Colors.green;
-        } else {
-          friendlyMessage =
-              "Hoje guardei R\$ ${diff.toStringAsFixed(2)} a mais que o planejado";
-          friendlyColor = Colors.green;
-        }
-      }
-    }
+    return ValueListenableBuilder(
+      valueListenable: box.listenable(),
+      builder: (context, _, __) {
+        final current = box.get(orcamento.id) ?? orcamento;
+        final isActive = current.status == StatusOrcamento.ativo;
 
-    // Previsão para amanhã (utilizando o getter do model)
-    String forecastMessage =
-        "Projeção para amanhã: R\$ ${orcamento.previsaoOrcamentoDiarioAmanha.toStringAsFixed(2)}";
-
-    return Scaffold(
-      drawer: const AppDrawer(),
-      appBar: AppBar(
-        title: Row(
-          children: [
-            Text(
-              "Orçamento ${orcamento.codigo}",
-              style: const TextStyle(fontSize: 20),
+        return Scaffold(
+          drawer: const AppDrawer(),
+          appBar: AppBar(
+            title: Row(
+              children: [
+                Text('Orcamento ${current.codigo}', style: const TextStyle(fontSize: 20)),
+                const SizedBox(width: 8),
+                if (isActive && current.isTrabalho)
+                  Chip(
+                    label: const Text(
+                      'Orcamento de Trabalho',
+                      style: TextStyle(fontSize: 12, color: Colors.white),
+                    ),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                  )
+                else if (!isActive)
+                  Chip(
+                    label: Text(
+                      _statusToString(current.status),
+                      style: const TextStyle(fontSize: 12, color: Colors.white),
+                    ),
+                    backgroundColor: Colors.black,
+                  ),
+              ],
             ),
-            const SizedBox(width: 8),
-            // Se ativo e de trabalho, mostra o chip "Orçamento de Trabalho"
-            if (isActive && orcamento.isTrabalho)
-              Chip(
-                label: const Text(
-                  "Orçamento de Trabalho",
-                  style: TextStyle(fontSize: 12, color: Colors.white),
-                ),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-              )
-            // Se inativo, mostra o chip com o status, em preto e branco
-            else if (!isActive)
-              Chip(
-                label: Text(
-                  _statusToString(orcamento.status),
-                  style: const TextStyle(fontSize: 12, color: Colors.white),
-                ),
-                backgroundColor: Colors.black,
-              ),
-          ],
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            tooltip: "Mais ações",
-            onSelected: (value) => _handleSecondaryAction(value, orcamento),
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: "clonar",
-                child: Text("Clonar"),
-              ),
-              if (isActive)
-                PopupMenuItem(
-                  value: "arquivar",
-                  child: const Text("Arquivar"),
-                )
-              else
-                PopupMenuItem(
-                  value: "reativar",
-                  child: const Text("Reativar"),
-                ),
-              if (isActive && !orcamento.isTrabalho)
-                const PopupMenuItem(
-                  value: "definir_trabalho",
-                  child: Text("Definir como orçamento de trabalho"),
-                ),
-              const PopupMenuItem(
-                value: "excluir",
-                child: Text("Excluir"),
+            actions: [
+              PopupMenuButton<String>(
+                tooltip: 'Mais acoes',
+                onSelected: (value) => _handleSecondaryAction(context, value, current),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'clonar',
+                    child: Text('Clonar'),
+                  ),
+                  if (isActive)
+                    const PopupMenuItem(
+                      value: 'arquivar',
+                      child: Text('Arquivar'),
+                    )
+                  else
+                    const PopupMenuItem(
+                      value: 'reativar',
+                      child: Text('Reativar'),
+                    ),
+                  if (isActive && !current.isTrabalho)
+                    const PopupMenuItem(
+                      value: 'definir_trabalho',
+                      child: Text('Definir como orcamento de trabalho'),
+                    ),
+                  const PopupMenuItem(
+                    value: 'excluir',
+                    child: Text('Excluir'),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: isActive
-              ? Column(
-                  children: [
-                    // Seção superior: mensagem amigável e previsão
-                    Center(
-                      child: Column(
-                        children: [
-                          Text(
-                            friendlyMessage,
-                            style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: friendlyColor),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            forecastMessage,
-                            style:
-                                TextStyle(fontSize: 18, color: friendlyColor),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    // Ações primárias: botões "Gastar" e "Guardar"
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          body: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: isActive
+                  ? Column(
                       children: [
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/movimentacao',
-                              arguments: {
-                                'orcamento': orcamento,
-                                'tipoFixo': TipoMovimentacao.saida,
+                        _buildHeadline(context, current),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/movimentacao',
+                                  arguments: {
+                                    'orcamento': current,
+                                    'tipoFixo': TipoMovimentacao.saida,
+                                  },
+                                );
                               },
-                            ).then((_) => setState(() {}));
-                          },
-                          icon: const Icon(Icons.arrow_downward,
-                              color: Colors.red),
-                          label: const Text("Gastar"),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/movimentacao',
-                              arguments: {
-                                'orcamento': orcamento,
-                                'tipoFixo': TipoMovimentacao.entrada,
+                              icon: const Icon(Icons.arrow_downward, color: Colors.red),
+                              label: const Text('Gastar'),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/movimentacao',
+                                  arguments: {
+                                    'orcamento': current,
+                                    'tipoFixo': TipoMovimentacao.entrada,
+                                  },
+                                );
                               },
-                            ).then((_) => setState(() {}));
-                          },
-                          icon: const Icon(Icons.arrow_upward,
-                              color: Colors.green),
-                          label: const Text("Guardar"),
+                              icon: const Icon(Icons.arrow_upward, color: Colors.green),
+                              label: const Text('Guardar'),
+                            ),
+                          ],
                         ),
+                        const SizedBox(height: 16),
+                        _buildDetailsSection(context, current, isActive),
                       ],
-                    ),
-                    const SizedBox(height: 16),
-                    _buildDetailsSection(isActive),
-                  ],
-                )
-              : _buildDetailsSection(isActive),
-        ),
+                    )
+                  : _buildDetailsSection(context, current, isActive),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeadline(BuildContext context, Orcamento orcamento) {
+    final message = _buildFriendlyMessage(orcamento);
+    final forecastMessage =
+        'Projecao para amanha: ${formatarMoeda(orcamento.previsaoOrcamentoDiarioAmanhaEmCentavos)}';
+
+    return Center(
+      child: Column(
+        children: [
+          Text(
+            message.text,
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              color: message.color,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            forecastMessage,
+            style: TextStyle(fontSize: 18, color: message.color),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildDetailsSection(bool isActive) {
-    final orcamento = widget.orcamento;
-    final movimentacoes = orcamento.movimentacoes;
+  Widget _buildDetailsSection(BuildContext context, Orcamento orcamento, bool isActive) {
     final movimentacoesAgrupadas = <String, List<Movimentacao>>{};
-    for (var mov in movimentacoes) {
-      final dataFormatada = DateFormat('dd/MM/yyyy').format(mov.data);
-      movimentacoesAgrupadas.putIfAbsent(dataFormatada, () => []).add(mov);
+    for (final movimentacao in orcamento.movimentacoes) {
+      final dataFormatada = DateFormat('dd/MM/yyyy').format(movimentacao.data);
+      movimentacoesAgrupadas.putIfAbsent(dataFormatada, () => []).add(movimentacao);
     }
+
     final diasOrdenados = movimentacoesAgrupadas.keys.toList()
-      ..sort((a, b) => DateFormat('dd/MM/yyyy')
-          .parse(b)
-          .compareTo(DateFormat('dd/MM/yyyy').parse(a)));
+      ..sort(
+        (a, b) => DateFormat('dd/MM/yyyy').parse(b).compareTo(
+              DateFormat('dd/MM/yyyy').parse(a),
+            ),
+      );
     final hojeFormatado = DateFormat('dd/MM/yyyy').format(dataDeTrabalhoAtual);
 
     return ExpansionTile(
-      title: const Text("Detalhes"),
-      initiallyExpanded: !isActive ? true : false,
+      title: const Text('Detalhes'),
+      initiallyExpanded: !isActive,
       children: [
         Card(
           elevation: 2,
-          margin: const EdgeInsets.all(0),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide.none,
-          ),
+          margin: EdgeInsets.zero,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Coluna Inicial
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Inicial",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Saldo: R\$ ${orcamento.valorInicial.toStringAsFixed(2)}",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      Text(
-                        "Dias: ${orcamento.diasTotais}",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      Text(
-                        "Orçamento diário: R\$ ${orcamento.orcamentoDiarioInicial.toStringAsFixed(2)}",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
+                  child: _buildBudgetColumn(
+                    title: 'Inicial',
+                    saldo: formatarMoeda(orcamento.valorInicialEmCentavos),
+                    dias: '${orcamento.diasTotais}',
+                    orcamentoDiario: formatarMoeda(orcamento.orcamentoDiarioInicialEmCentavos),
                   ),
                 ),
-                // Coluna Atual
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Atual",
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        "Saldo: R\$ ${orcamento.saldoAtual.toStringAsFixed(2)}",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      Text(
-                        "Dias: ${orcamento.diasRestantes}",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      Text(
-                        "Orçamento diário: R\$ ${orcamento.orcamentoDiarioAtual.toStringAsFixed(2)}",
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
+                  child: _buildBudgetColumn(
+                    title: 'Atual',
+                    saldo: formatarMoeda(orcamento.saldoAtualEmCentavos),
+                    dias: '${orcamento.diasRestantes}',
+                    orcamentoDiario: formatarMoeda(orcamento.orcamentoDiarioAtualEmCentavos),
                   ),
                 ),
               ],
@@ -329,39 +208,31 @@ class _ResumoOrcamentoPageState extends State<ResumoOrcamentoPage> {
           ),
         ),
         const SizedBox(height: 16),
-        // Lista de movimentações agrupadas por dia
         ...diasOrdenados.map((dia) {
           final lista = movimentacoesAgrupadas[dia]!;
           final isHoje = dia == hojeFormatado;
-          double entradas = 0.0;
-          double saidas = 0.0;
-          for (var mov in lista) {
-            if (mov.tipo == TipoMovimentacao.entrada) {
-              entradas += mov.valor;
-            } else {
-              saidas += mov.valor;
-            }
-          }
+          final entradas = lista
+              .where((mov) => mov.tipo == TipoMovimentacao.entrada)
+              .fold<int>(0, (sum, mov) => sum + mov.valorEmCentavos);
+          final saidas = lista
+              .where((mov) => mov.tipo == TipoMovimentacao.saida)
+              .fold<int>(0, (sum, mov) => sum + mov.valorEmCentavos);
           final saldoDia = entradas - saidas;
           final resultadoBom = orcamento.tipo == TipoOrcamento.gasto
-              ? saidas <= orcamento.orcamentoDiarioAtual
-              : saldoDia >= orcamento.orcamentoDiarioAtual;
+              ? saidas <= orcamento.orcamentoDiarioAtualEmCentavos
+              : saldoDia >= orcamento.orcamentoDiarioAtualEmCentavos;
           final corTotal = resultadoBom ? Colors.green : Colors.red;
           final textoResumo = orcamento.tipo == TipoOrcamento.gasto
-              ? 'Total do dia: R\$ ${saidas.toStringAsFixed(2)}'
-              : 'Total economizado: R\$ ${saldoDia.toStringAsFixed(2)}';
+              ? 'Total do dia: ${formatarMoeda(saidas)}'
+              : 'Total economizado: ${formatarMoeda(saldoDia)}';
+
           return Card(
             elevation: 2,
             margin: const EdgeInsets.symmetric(vertical: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide.none,
-            ),
             child: ExpansionTile(
               title: Text(
                 isHoje ? 'Movimentos de hoje' : 'Movimentos do dia $dia',
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               initiallyExpanded: isHoje,
               children: [
@@ -375,106 +246,137 @@ class _ResumoOrcamentoPageState extends State<ResumoOrcamentoPage> {
                             : Colors.red,
                       ),
                       title: Text(
-                        'R\$ ${mov.valor.toStringAsFixed(2)}',
+                        formatarMoeda(mov.valorEmCentavos),
                         style: TextStyle(
-                            fontWeight: FontWeight.w500,
-                            color: mov.tipo == TipoMovimentacao.entrada
-                                ? Colors.green
-                                : Colors.red),
+                          fontWeight: FontWeight.w500,
+                          color: mov.tipo == TipoMovimentacao.entrada
+                              ? Colors.green
+                              : Colors.red,
+                        ),
                       ),
-                      subtitle: Text(mov.tipo == TipoMovimentacao.entrada
-                          ? 'Entrada'
-                          : 'Saída'),
+                      subtitle: Text(
+                        mov.descricao?.trim().isNotEmpty == true
+                            ? mov.descricao!
+                            : (mov.tipo == TipoMovimentacao.entrada ? 'Entrada' : 'Saida'),
+                      ),
                     )),
                 Padding(
-                  padding:
-                      const EdgeInsets.only(left: 16.0, bottom: 8.0, top: 8.0),
+                  padding: const EdgeInsets.only(left: 16, bottom: 8, top: 8),
                   child: Text(
                     textoResumo,
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, color: corTotal),
+                    style: TextStyle(fontWeight: FontWeight.bold, color: corTotal),
                   ),
-                )
+                ),
               ],
             ),
           );
-        }).toList(),
+        }),
       ],
     );
   }
 
-  void _handleSecondaryAction(String action, Orcamento orcamento) async {
-    if (action == "clonar") {
+  Widget _buildBudgetColumn({
+    required String title,
+    required String saldo,
+    required String dias,
+    required String orcamentoDiario,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 8),
+        Text('Saldo: $saldo', style: const TextStyle(fontSize: 16)),
+        Text('Dias: $dias', style: const TextStyle(fontSize: 16)),
+        Text('Orcamento diario: $orcamentoDiario', style: const TextStyle(fontSize: 16)),
+      ],
+    );
+  }
+
+  Future<void> _handleSecondaryAction(
+    BuildContext context,
+    String action,
+    Orcamento orcamento,
+  ) async {
+    if (action == 'clonar') {
       Navigator.pushNamed(context, '/criarClone', arguments: orcamento);
-    } else if (action == "arquivar") {
+      return;
+    }
+
+    if (action == 'arquivar') {
       final confirm = await _showConfirmationDialog(
-          'Arquivar', 'Tem certeza que deseja arquivar este orçamento?');
+        context,
+        'Arquivar',
+        'Tem certeza que deseja arquivar este orcamento?',
+      );
       if (confirm) {
-        orcamento.archive();
-        box.put(orcamento.id, orcamento);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Orçamento arquivado.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        setState(() {});
-      }
-    } else if (action == "reativar") {
-      final confirm = await _showConfirmationDialog(
-          'Reativar', 'Tem certeza que deseja reativar este orçamento?');
-      if (confirm) {
-        orcamento.reactivate();
-        box.put(orcamento.id, orcamento);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Orçamento reativado.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        setState(() {});
-      }
-    } else if (action == "definir_trabalho") {
-      final confirm = await _showConfirmationDialog('Definir',
-          'Tem certeza que deseja definir este orçamento como de trabalho?');
-      if (confirm) {
-        // Desmarca os demais orçamentos ativos que já estão definidos como de trabalho
-        for (var element in box.values) {
-          if (element is Orcamento) {
-            if (element.status == StatusOrcamento.ativo && element.isTrabalho) {
-              element.isTrabalho = false;
-              box.put(element.id, element);
-            }
-          }
+        await AppServices.budgetService.arquivar(orcamento);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Orcamento arquivado.')),
+          );
         }
-        orcamento.isTrabalho = true;
-        box.put(orcamento.id, orcamento);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Orçamento definido como de trabalho.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        setState(() {});
       }
-    } else if (action == "excluir") {
+      return;
+    }
+
+    if (action == 'reativar') {
       final confirm = await _showConfirmationDialog(
-          'Excluir', 'Tem certeza que deseja excluir este orçamento?');
+        context,
+        'Reativar',
+        'Tem certeza que deseja reativar este orcamento?',
+      );
       if (confirm) {
-        orcamento.exclude();
-        box.put(orcamento.id, orcamento);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Orçamento excluído.'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        Navigator.pushReplacementNamed(context, '/lista');
+        await AppServices.budgetService.reativar(orcamento);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Orcamento reativado.')),
+          );
+        }
+      }
+      return;
+    }
+
+    if (action == 'definir_trabalho') {
+      final confirm = await _showConfirmationDialog(
+        context,
+        'Definir',
+        'Tem certeza que deseja definir este orcamento como de trabalho?',
+      );
+      if (confirm) {
+        await AppServices.budgetService.definirComoTrabalho(orcamento);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Orcamento definido como de trabalho.')),
+          );
+        }
+      }
+      return;
+    }
+
+    if (action == 'excluir') {
+      final confirm = await _showConfirmationDialog(
+        context,
+        'Excluir',
+        'Tem certeza que deseja excluir este orcamento?',
+      );
+      if (confirm) {
+        await AppServices.budgetService.excluir(orcamento);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Orcamento excluido.')),
+          );
+          Navigator.pushReplacementNamed(context, '/lista');
+        }
       }
     }
   }
 
-  Future<bool> _showConfirmationDialog(String title, String message) async {
+  Future<bool> _showConfirmationDialog(
+    BuildContext context,
+    String title,
+    String message,
+  ) async {
     return await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
@@ -494,4 +396,58 @@ class _ResumoOrcamentoPageState extends State<ResumoOrcamentoPage> {
         ) ??
         false;
   }
+
+  String _statusToString(StatusOrcamento status) {
+    switch (status) {
+      case StatusOrcamento.arquivado:
+        return 'Arquivado';
+      case StatusOrcamento.expirado:
+        return 'Expirado';
+      case StatusOrcamento.excluido:
+        return 'Excluido';
+      default:
+        return '';
+    }
+  }
+
+  _FriendlyMessage _buildFriendlyMessage(Orcamento orcamento) {
+    if (orcamento.tipo == TipoOrcamento.gasto) {
+      final difference = orcamento.orcamentoDiarioAtualEmCentavos - orcamento.gastosDeHoje();
+      if (difference > 0) {
+        return _FriendlyMessage(
+          'Hoje estou economizando ${formatarMoeda(difference)}',
+          Colors.green,
+        );
+      }
+      if (difference == 0) {
+        return const _FriendlyMessage('Hoje atingi meu limite de gasto', Colors.amber);
+      }
+      return _FriendlyMessage(
+        'Hoje gastei ${formatarMoeda(-difference)} alem do previsto',
+        Colors.red,
+      );
+    }
+
+    final diff = orcamento.entradasDeHoje() - orcamento.orcamentoDiarioAtualEmCentavos;
+    if (diff < 0) {
+      return _FriendlyMessage(
+        'Hoje ainda preciso guardar ${formatarMoeda(-diff)}',
+        Colors.red,
+      );
+    }
+    if (diff == 0) {
+      return const _FriendlyMessage('Hoje atingi minha meta de economia', Colors.green);
+    }
+    return _FriendlyMessage(
+      'Hoje guardei ${formatarMoeda(diff)} a mais que o planejado',
+      Colors.green,
+    );
+  }
+}
+
+class _FriendlyMessage {
+  const _FriendlyMessage(this.text, this.color);
+
+  final String text;
+  final Color color;
 }

@@ -161,6 +161,65 @@ function resolveOccurrenceDateForReference(
   return buildOccurrenceDateForMonth(template, referenceDate.getFullYear(), referenceDate.getMonth());
 }
 
+const materializedOccurrenceInclude = {
+  category: { select: { id: true, name: true, color: true } },
+  fromAccount: { select: { id: true, name: true, type: true } },
+  toAccount: { select: { id: true, name: true, type: true } },
+  creditCardInvoice: {
+    select: {
+      id: true,
+      referenceYear: true,
+      referenceMonth: true,
+      dueDate: true,
+      status: true,
+      settlementType: true
+    }
+  },
+  tags: { select: { id: true, name: true } },
+  createdByUser: { select: { id: true, name: true } }
+} satisfies Prisma.FinancialTransactionInclude;
+
+async function findMaterializedOccurrence(companyId: number, occurrenceKey: string) {
+  return prisma.financialTransaction.findFirst({
+    where: {
+      companyId,
+      occurrenceKey
+    },
+    include: materializedOccurrenceInclude
+  });
+}
+
+function isMaterializationConcurrencyError(error: any): boolean {
+  const message = String(error?.message ?? '');
+
+  return (
+    error?.code === 'P2002' ||
+    message.includes('Another transaction is using one of these accounts') ||
+    message.includes('could not serialize access due to concurrent update') ||
+    message.includes('could not obtain lock')
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForMaterializedOccurrence(companyId: number, occurrenceKey: string, attempts = 10, delayMs = 50) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const occurrence = await findMaterializedOccurrence(companyId, occurrenceKey);
+
+    if (occurrence) {
+      return occurrence;
+    }
+
+    if (attempt < attempts - 1) {
+      await sleep(delayMs);
+    }
+  }
+
+  return null;
+}
+
 async function resolveFixedAccounts(params: {
   companyId: number;
   fromAccountId?: number | null;
@@ -854,19 +913,7 @@ export default class FixedTransactionService {
 
     const occurrenceKey = buildOccurrenceKeyValue(template.id, occurrenceDate);
 
-    const existing = await prisma.financialTransaction.findFirst({
-      where: {
-        companyId,
-        occurrenceKey
-      },
-      include: {
-        category: { select: { id: true, name: true, color: true } },
-        fromAccount: { select: { id: true, name: true } },
-        toAccount: { select: { id: true, name: true } },
-        tags: { select: { id: true, name: true } },
-        createdByUser: { select: { id: true, name: true } }
-      }
-    });
+    const existing = await findMaterializedOccurrence(companyId, occurrenceKey);
 
     if (existing) {
       return { transaction: existing, created: false };
@@ -905,29 +952,7 @@ export default class FixedTransactionService {
         throw new Error('Materializacao de transacao fixa retornou mais de uma transacao');
       }
 
-      const created = await prisma.financialTransaction.findFirst({
-        where: {
-          companyId,
-          occurrenceKey
-        },
-        include: {
-          category: { select: { id: true, name: true, color: true } },
-          fromAccount: { select: { id: true, name: true, type: true } },
-          toAccount: { select: { id: true, name: true, type: true } },
-          creditCardInvoice: {
-            select: {
-              id: true,
-              referenceYear: true,
-              referenceMonth: true,
-              dueDate: true,
-              status: true,
-              settlementType: true
-            }
-          },
-          tags: { select: { id: true, name: true } },
-          createdByUser: { select: { id: true, name: true } }
-        }
-      });
+      const created = await findMaterializedOccurrence(companyId, occurrenceKey);
 
       if (!created) {
         throw new Error('Nao foi possivel localizar a ocorrencia materializada');
@@ -943,20 +968,8 @@ export default class FixedTransactionService {
 
       return { transaction: created, created: true };
     } catch (error: any) {
-      if (error.code === 'P2002') {
-        const duplicated = await prisma.financialTransaction.findFirst({
-          where: {
-            companyId,
-            occurrenceKey
-          },
-          include: {
-            category: { select: { id: true, name: true, color: true } },
-            fromAccount: { select: { id: true, name: true } },
-            toAccount: { select: { id: true, name: true } },
-            tags: { select: { id: true, name: true } },
-            createdByUser: { select: { id: true, name: true } }
-          }
-        });
+      if (isMaterializationConcurrencyError(error)) {
+        const duplicated = await waitForMaterializedOccurrence(companyId, occurrenceKey);
 
         if (duplicated) {
           return { transaction: duplicated, created: false };
@@ -1001,21 +1014,30 @@ export default class FixedTransactionService {
     let createdCount = 0;
 
     for (const template of templates) {
-      const expectedDate = resolveOccurrenceDateForReference(template, today);
+      try {
+        const expectedDate = resolveOccurrenceDateForReference(template, today);
 
-      if (expectedDate.getDate() !== today.getDate()) {
-        continue;
-      }
+        if (expectedDate.getDate() !== today.getDate()) {
+          continue;
+        }
 
-      const result = await this.materializeOccurrence({
-        templateId: template.id,
-        companyId: template.companyId,
-        occurrenceDate: today,
-        userId: template.createdBy
-      });
+        const result = await this.materializeOccurrence({
+          templateId: template.id,
+          companyId: template.companyId,
+          occurrenceDate: today,
+          userId: template.createdBy
+        });
 
-      if (result.created) {
-        createdCount += 1;
+        if (result.created) {
+          createdCount += 1;
+        }
+      } catch (error: any) {
+        logger.warn('Skipping fixed transaction template during daily materialization', {
+          templateId: template.id,
+          companyId: template.companyId,
+          referenceDate: today.toISOString(),
+          error: error?.message ?? String(error)
+        });
       }
     }
 

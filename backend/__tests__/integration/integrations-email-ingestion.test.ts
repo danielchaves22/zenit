@@ -10,7 +10,8 @@ process.env.GMAIL_OAUTH_REDIRECT_URI =
 const request = require('supertest');
 const bcrypt = require('bcrypt');
 const app = require('../../src/app').default;
-const { PrismaClient } = require('@prisma/client');
+const { AppKey, PrismaClient } = require('@prisma/client');
+const AppAccessService = require('../../src/services/app-access.service').default;
 const GmailClientService = require('../../src/services/gmail-client.service').default;
 const LegalEmailExtractionService = require('../../src/services/legal-email-extraction.service').default;
 const EmailIngestionService = require('../../src/services/email-ingestion.service').default;
@@ -21,6 +22,19 @@ const {
 const { encryptSecret } = require('../../src/utils/secret-crypto');
 
 const prisma = new PrismaClient();
+const APP_KEY_HEADER = 'x-app-key';
+const CALC_APP_KEY_VALUE = 'zenit-calc';
+const ADMIN_APP_KEY_VALUE = 'zenit-admin';
+const calcHeaders = (token: string, companyId: number) => ({
+  Authorization: `Bearer ${token}`,
+  'X-Company-Id': String(companyId),
+  [APP_KEY_HEADER]: CALC_APP_KEY_VALUE
+});
+const adminHeaders = (token: string, companyId: number) => ({
+  Authorization: `Bearer ${token}`,
+  'X-Company-Id': String(companyId),
+  [APP_KEY_HEADER]: ADMIN_APP_KEY_VALUE
+});
 
 describe('Integrations and email ingestion', () => {
   let uniqueSuffix: string;
@@ -105,6 +119,28 @@ describe('Integrations and email ingestion', () => {
       ]
     });
 
+    await AppAccessService.setCompanyEntitlements(companyAId, [
+      { appKey: AppKey.ZENIT_CALC, enabled: true },
+      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+    ]);
+    await AppAccessService.setCompanyEntitlements(companyBId, [
+      { appKey: AppKey.ZENIT_CALC, enabled: true }
+    ]);
+    await AppAccessService.setUserGrants(adminUserId, companyAId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true },
+      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(superUserId, companyAId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true },
+      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(regularUserId, companyAId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(outsiderUserId, companyBId, [
+      { appKey: AppKey.ZENIT_CALC, granted: true }
+    ]);
+
     const adminLogin = await request(app)
       .post('/api/auth/login')
       .send({ email: `admin.integrations.${uniqueSuffix}@zenit.com`, password: 'Senha123' });
@@ -160,31 +196,26 @@ describe('Integrations and email ingestion', () => {
   it('valida governanca OpenAI (tenant somente leitura e escrita via admin)', async () => {
     const statusBefore = await request(app)
       .get('/api/integrations/openai/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     const tenantWriteDeniedForAdmin = await request(app)
       .put('/api/integrations/openai/byok')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ apiKey: 'sk-admin-should-be-denied-1234567890' });
 
     const tenantTestDeniedForAdmin = await request(app)
       .post('/api/integrations/openai/test')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({});
 
     const adminRouteDeniedForSuperuser = await request(app)
       .put(`/api/admin/companies/${companyAId}/openai`)
-      .set('Authorization', `Bearer ${superUserToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(adminHeaders(superUserToken, companyAId))
       .send({ apiKey: 'sk-superuser-denied-1234567890' });
 
     const savedByAdminRoute = await request(app)
       .put(`/api/admin/companies/${companyAId}/openai`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(adminHeaders(adminToken, companyAId))
       .send({
         apiKey: 'sk-admin-valid-key-1234567890',
         promptVersion: 'v1',
@@ -193,13 +224,11 @@ describe('Integrations and email ingestion', () => {
 
     const statusAfter = await request(app)
       .get('/api/integrations/openai/status')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(adminToken, companyAId));
 
     const adminStatusAfter = await request(app)
       .get(`/api/admin/companies/${companyAId}/openai`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(adminHeaders(adminToken, companyAId));
 
     const fetchSpy = jest.spyOn(global as any, 'fetch').mockResolvedValue({
       ok: true,
@@ -209,8 +238,7 @@ describe('Integrations and email ingestion', () => {
 
     const testedByAdminRoute = await request(app)
       .post(`/api/admin/companies/${companyAId}/openai/test`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(adminHeaders(adminToken, companyAId))
       .send({});
 
     expect(statusBefore.status).toBe(200);
@@ -245,8 +273,7 @@ describe('Integrations and email ingestion', () => {
   it('faz fallback para gpt-4o-mini quando a conta nao tem acesso ao default atual', async () => {
     const savedByAdminRoute = await request(app)
       .put(`/api/admin/companies/${companyAId}/openai`)
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(adminHeaders(adminToken, companyAId))
       .send({
         apiKey: 'sk-admin-valid-key-1234567890',
         promptVersion: 'v1',
@@ -308,37 +335,31 @@ describe('Integrations and email ingestion', () => {
   it('valida endpoints Gmail com permissao estrita de SUPERUSER e isolamento por tenant', async () => {
     const status = await request(app)
       .get('/api/integrations/gmail/status')
-      .set('Authorization', `Bearer ${superUserToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(superUserToken, companyAId));
 
     const oauthStart = await request(app)
       .post('/api/integrations/gmail/oauth/start')
-      .set('Authorization', `Bearer ${superUserToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(superUserToken, companyAId))
       .send({});
 
     const oauthDeniedForAdmin = await request(app)
       .post('/api/integrations/gmail/oauth/start')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({});
 
     const configDeniedForAdmin = await request(app)
       .put('/api/integrations/gmail/config')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(adminToken, companyAId))
       .send({ enabled: true });
 
     const configDeniedForUser = await request(app)
       .put('/api/integrations/gmail/config')
-      .set('Authorization', `Bearer ${userToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(userToken, companyAId))
       .send({ enabled: true });
 
     const configSaved = await request(app)
       .put('/api/integrations/gmail/config')
-      .set('Authorization', `Bearer ${superUserToken}`)
-      .set('X-Company-Id', String(companyAId))
+      .set(calcHeaders(superUserToken, companyAId))
       .send({
         enabled: true,
         subjectRequiredText: 'Inicial Trabalhista',
@@ -350,8 +371,7 @@ describe('Integrations and email ingestion', () => {
 
     const outsiderStatus = await request(app)
       .get('/api/integrations/gmail/status')
-      .set('Authorization', `Bearer ${outsiderToken}`)
-      .set('X-Company-Id', String(companyAId));
+      .set(calcHeaders(outsiderToken, companyAId));
 
     expect(status.status).toBe(200);
     expect(status.body.connected).toBe(false);

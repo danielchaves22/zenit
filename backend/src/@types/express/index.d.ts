@@ -14,6 +14,7 @@ declare global {
          * `req.user.userId`.
          */
         userId: number;
+        exp?: number;
         role: Role;
         appKey?: AppKey;
       };

@@ -2,16 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:orcamento_app/models/orcamento.dart';
-import 'package:orcamento_app/pages/criar_orcamento_page.dart';
-import 'package:orcamento_app/pages/lista_orcamentos_inativos_page.dart';
-import 'package:orcamento_app/pages/resumo_orcamento_page.dart';
 import 'package:orcamento_app/widgets/app_drawer.dart';
 
 class ListaOrcamentosPage extends StatefulWidget {
-  const ListaOrcamentosPage({Key? key}) : super(key: key);
+  const ListaOrcamentosPage({super.key});
 
   @override
-  _ListaOrcamentosPageState createState() => _ListaOrcamentosPageState();
+  State<ListaOrcamentosPage> createState() => _ListaOrcamentosPageState();
 }
 
 class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
@@ -125,6 +122,9 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
             label: "Gasto",
             onTap: () {
               Future.delayed(const Duration(milliseconds: 200), () {
+                if (!context.mounted) {
+                  return;
+                }
                 Navigator.pushNamed(
                   context,
                   '/criar',
@@ -141,6 +141,9 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
             label: "Economia",
             onTap: () {
               Future.delayed(const Duration(milliseconds: 200), () {
+                if (!context.mounted) {
+                  return;
+                }
                 Navigator.pushNamed(
                   context,
                   '/criar',

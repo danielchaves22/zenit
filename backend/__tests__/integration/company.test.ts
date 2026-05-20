@@ -1,53 +1,115 @@
 import request from 'supertest';
-import app from '../src/app';
-import { PrismaClient } from '@prisma/client';
+import app from '../../src/app';
+import { AppKey, PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
+import AppAccessService from '../../src/services/app-access.service';
 
 const prisma = new PrismaClient();
+const APP_KEY_HEADER = 'x-app-key';
+const APP_KEY_VALUE = 'zenit-admin';
+const authHeaders = (token: string, companyId: number) => ({
+  Authorization: `Bearer ${token}`,
+  'X-Company-Id': companyId.toString(),
+  [APP_KEY_HEADER]: APP_KEY_VALUE
+});
 
 describe('Company routes (RBAC)', () => {
+  const uniqueSuffix = Date.now().toString();
   let adminToken: string;
   let superToken: string;
   let userToken: string;
   let equinoxId: number;
   let otherCompanyId: number;
+  const createdCompanyIds: number[] = [];
 
   beforeAll(async () => {
-    // Limpeza completa
-    await prisma.userCompany.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.company.deleteMany();
-
-    // Criação de empresas
-    const eq = await prisma.company.create({ data: { name: 'Equinox', code: 0 } });
-    const ot = await prisma.company.create({ data: { name: 'Outra', code: 1 } });
+    const eq = await prisma.company.create({
+      data: { name: `Equinox ${uniqueSuffix}`, code: Number(uniqueSuffix.slice(-6)) }
+    });
+    const ot = await prisma.company.create({
+      data: { name: `Outra ${uniqueSuffix}`, code: Number(uniqueSuffix.slice(-6)) + 1 }
+    });
     equinoxId = eq.id;
     otherCompanyId = ot.id;
 
-    // Criação de usuários
     const hash = await bcrypt.hash('Senha123', 10);
-    const ad = await prisma.user.create({ data: { email: 'admin@e.com', password: hash, name: 'Adm', role: 'ADMIN' } });
-    const su = await prisma.user.create({ data: { email: 'super@o.com', password: hash, name: 'Sup', role: 'SUPERUSER' } });
-    const us = await prisma.user.create({ data: { email: 'user@o.com', password: hash, name: 'User', role: 'USER' } });
+    const ad = await prisma.user.create({
+      data: {
+        email: `admin.${uniqueSuffix}@e.com`,
+        password: hash,
+        name: 'Adm',
+        role: 'ADMIN'
+      }
+    });
+    const su = await prisma.user.create({
+      data: {
+        email: `super.${uniqueSuffix}@o.com`,
+        password: hash,
+        name: 'Sup',
+        role: 'SUPERUSER'
+      }
+    });
+    const us = await prisma.user.create({
+      data: {
+        email: `user.${uniqueSuffix}@o.com`,
+        password: hash,
+        name: 'User',
+        role: 'USER'
+      }
+    });
 
-    // Associações
     await prisma.userCompany.create({ data: { userId: ad.id, companyId: eq.id, isDefault: true, role: 'ADMIN' } });
     await prisma.userCompany.create({ data: { userId: su.id, companyId: ot.id, isDefault: true, role: 'SUPERUSER' } });
     await prisma.userCompany.create({ data: { userId: us.id, companyId: ot.id, isDefault: true, role: 'USER' } });
 
-    // Tokens
-    const r1 = await request(app).post('/api/auth/login').send({ email: 'admin@e.com', password: 'Senha123' });
+    await AppAccessService.setCompanyEntitlements(eq.id, [
+      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+    ]);
+    await AppAccessService.setCompanyEntitlements(ot.id, [
+      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+    ]);
+    await AppAccessService.setUserGrants(ad.id, eq.id, [
+      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(su.id, ot.id, [
+      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+    ]);
+    await AppAccessService.setUserGrants(us.id, ot.id, [
+      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+    ]);
+
+    const r1 = await request(app)
+      .post('/api/auth/login')
+      .send({ email: `admin.${uniqueSuffix}@e.com`, password: 'Senha123' });
     adminToken = r1.body.token;
-    const r2 = await request(app).post('/api/auth/login').send({ email: 'super@o.com', password: 'Senha123' });
+    const r2 = await request(app)
+      .post('/api/auth/login')
+      .send({ email: `super.${uniqueSuffix}@o.com`, password: 'Senha123' });
     superToken = r2.body.token;
-    const r3 = await request(app).post('/api/auth/login').send({ email: 'user@o.com', password: 'Senha123' });
+    const r3 = await request(app)
+      .post('/api/auth/login')
+      .send({ email: `user.${uniqueSuffix}@o.com`, password: 'Senha123' });
     userToken = r3.body.token;
   });
 
   afterAll(async () => {
-    await prisma.userCompany.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.company.deleteMany();
+    const companyIds = [equinoxId, otherCompanyId, ...createdCompanyIds].filter(Boolean);
+
+    await prisma.userAppGrant.deleteMany({
+      where: { companyId: { in: companyIds } }
+    });
+    await prisma.companyAppEntitlement.deleteMany({
+      where: { companyId: { in: companyIds } }
+    });
+    await prisma.userCompany.deleteMany({
+      where: { companyId: { in: companyIds } }
+    });
+    await prisma.user.deleteMany({
+      where: { email: { contains: uniqueSuffix } }
+    });
+    await prisma.company.deleteMany({
+      where: { id: { in: companyIds } }
+    });
     await prisma.$disconnect();
   });
 
@@ -55,47 +117,45 @@ describe('Company routes (RBAC)', () => {
     it('ADMIN pode criar empresa', async () => {
       const res = await request(app)
         .post('/api/companies')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .set('X-Company-Id', equinoxId.toString())
-        .send({ name: 'Nova', address: 'Rua X' });
+        .set(authHeaders(adminToken, equinoxId))
+        .send({ name: `Nova ${uniqueSuffix}`, address: 'Rua X' });
       expect(res.status).toBe(201);
       expect(res.body).toHaveProperty('id');
+      createdCompanyIds.push(res.body.id);
     });
 
-    it('SUPERUSER não pode criar empresa', async () => {
+    it('SUPERUSER nao pode criar empresa', async () => {
       const res = await request(app)
         .post('/api/companies')
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Company-Id', otherCompanyId.toString())
-        .send({ name: 'Err', address: 'Rua Y' });
+        .set(authHeaders(superToken, otherCompanyId))
+        .send({ name: `Err ${uniqueSuffix}`, address: 'Rua Y' });
       expect(res.status).toBe(403);
     });
   });
 
   describe('GET /api/companies', () => {
-    it('ADMIN vê todas as empresas', async () => {
+    it('ADMIN ve todas as empresas', async () => {
       const res = await request(app)
         .get('/api/companies')
-        .set('Authorization', `Bearer ${adminToken}`)
-        .set('X-Company-Id', equinoxId.toString());
+        .set(authHeaders(adminToken, equinoxId));
       expect(res.status).toBe(200);
-      // Existem pelo menos Equinox e Outra
       expect(res.body.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('SUPERUSER não pode listar', async () => {
+    it('SUPERUSER lista apenas empresas vinculadas', async () => {
       const res = await request(app)
         .get('/api/companies')
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Company-Id', otherCompanyId.toString());
-      expect(res.status).toBe(403);
+        .set(authHeaders(superToken, otherCompanyId));
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].id).toBe(otherCompanyId);
     });
 
-    it('USER não pode listar', async () => {
+    it('USER nao pode listar', async () => {
       const res = await request(app)
         .get('/api/companies')
-        .set('Authorization', `Bearer ${userToken}`)
-        .set('X-Company-Id', otherCompanyId.toString());
+        .set(authHeaders(userToken, otherCompanyId));
       expect(res.status).toBe(403);
     });
   });
@@ -104,38 +164,36 @@ describe('Company routes (RBAC)', () => {
     it('ADMIN pode editar empresa', async () => {
       const res = await request(app)
         .put(`/api/companies/${equinoxId}`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .set('X-Company-Id', equinoxId.toString())
-        .send({ name: 'EquinoxX' });
+        .set(authHeaders(adminToken, equinoxId))
+        .send({ name: `EquinoxX ${uniqueSuffix}` });
       expect(res.status).toBe(200);
-      expect(res.body.name).toBe('EquinoxX');
+      expect(res.body.name).toBe(`EquinoxX ${uniqueSuffix}`);
     });
 
-    it('SUPERUSER não pode editar', async () => {
+    it('SUPERUSER nao pode editar', async () => {
       const res = await request(app)
         .put(`/api/companies/${otherCompanyId}`)
-        .set('Authorization', `Bearer ${superToken}`)
-        .set('X-Company-Id', otherCompanyId.toString())
-        .send({ name: 'Teste' });
+        .set(authHeaders(superToken, otherCompanyId))
+        .send({ name: `Teste ${uniqueSuffix}` });
       expect(res.status).toBe(403);
     });
   });
 
   describe('DELETE /api/companies/:id', () => {
     it('ADMIN pode excluir', async () => {
-      const nova = await prisma.company.create({ data: { name: 'Temp', code: 99 } });
+      const nova = await prisma.company.create({
+        data: { name: `Temp ${uniqueSuffix}`, code: Number(uniqueSuffix.slice(-6)) + 99 }
+      });
       const res = await request(app)
         .delete(`/api/companies/${nova.id}`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .set('X-Company-Id', equinoxId.toString());
+        .set(authHeaders(adminToken, equinoxId));
       expect(res.status).toBe(204);
     });
 
-    it('USER não pode excluir', async () => {
+    it('USER nao pode excluir', async () => {
       const res = await request(app)
         .delete(`/api/companies/${equinoxId}`)
-        .set('Authorization', `Bearer ${userToken}`)
-        .set('X-Company-Id', otherCompanyId.toString());
+        .set(authHeaders(userToken, otherCompanyId));
       expect(res.status).toBe(403);
     });
   });

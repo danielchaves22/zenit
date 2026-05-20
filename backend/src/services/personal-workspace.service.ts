@@ -13,6 +13,12 @@ type PersonalWorkspaceResult = {
   timeZone: string | null;
 };
 
+type SelectedCompanyResult = {
+  companyId: number;
+  name: string;
+  timeZone: string | null;
+};
+
 export default class PersonalWorkspaceService {
   static async getOrCreateForUser(
     userId: number,
@@ -98,6 +104,49 @@ export default class PersonalWorkspaceService {
       name: workspaceName,
       created: true,
       timeZone: requestedTimeZone
+    };
+  }
+
+  static async selectExistingCashCompanyForUser(
+    userId: number,
+    companyId: number
+  ): Promise<SelectedCompanyResult> {
+    const membership = await prisma.userCompany.findUnique({
+      where: {
+        userId_companyId: {
+          userId,
+          companyId
+        }
+      },
+      include: {
+        company: {
+          select: {
+            id: true,
+            name: true,
+            timeZone: true
+          }
+        }
+      }
+    });
+
+    if (!membership) {
+      throw new Error('Usuario nao pertence a empresa informada');
+    }
+
+    const hasCashAccess = await AppAccessService.hasEffectiveAccess(
+      userId,
+      companyId,
+      AppKey.ZENIT_CASH
+    );
+
+    if (!hasCashAccess) {
+      throw new Error('Usuario sem acesso efetivo ao Zenit Cash nesta empresa');
+    }
+
+    return {
+      companyId: membership.company.id,
+      name: membership.company.name,
+      timeZone: membership.company.timeZone
     };
   }
 

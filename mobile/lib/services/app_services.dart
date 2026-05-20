@@ -10,6 +10,7 @@ import 'budget_repository.dart';
 import 'budget_service.dart';
 import 'clock_service.dart';
 import 'mobile_migration_service.dart';
+import 'scope_service.dart';
 import 'sync_service.dart';
 
 class AppServices {
@@ -20,6 +21,8 @@ class AppServices {
   static late final AuthService authService;
   static late final SyncService syncService;
   static late final BudgetService budgetService;
+  static late final MobileMigrationService migrationService;
+  static late final ScopeService scopeService;
 
   static Future<void> initialize() async {
     await AppConfig.instance.load();
@@ -61,19 +64,17 @@ class AppServices {
       repository: budgetRepository,
       syncService: syncService,
     );
+    migrationService = MobileMigrationService(budgetRepository);
+    scopeService = ScopeService(
+      repository: budgetRepository,
+      authService: authService,
+      appStateStore: appStateStore,
+      syncService: syncService,
+      budgetService: budgetService,
+      migrationService: migrationService,
+    );
 
-    await MobileMigrationService(budgetRepository).run();
     await authService.restoreSession();
-    await syncService.initialize();
-    await budgetService.refreshDailyBudgetsIfNeeded();
-
-    if (!authService.isAuthenticated) {
-      return;
-    }
-
-    final requiresReconciliation = await syncService.runInitialBindingIfNeeded();
-    if (!requiresReconciliation) {
-      await syncService.runAuthenticatedSync();
-    }
+    await scopeService.initialize();
   }
 }

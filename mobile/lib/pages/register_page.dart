@@ -2,15 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../services/app_services.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class RegisterPage extends StatefulWidget {
+  const RegisterPage({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -19,6 +20,7 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -35,7 +37,8 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      await AppServices.authService.signIn(
+      await AppServices.authService.register(
+        name: _nameController.text,
         email: _emailController.text,
         password: _passwordController.text,
       );
@@ -46,8 +49,21 @@ class _LoginPageState extends State<LoginPage> {
 
       Navigator.pushReplacementNamed(context, '/company-selection');
     } catch (error) {
+      final message = error.toString().replaceFirst('Exception: ', '');
+      if (message == 'Conta ja existente. Faca login.') {
+        if (!mounted) {
+          return;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Conta ja existente. Faca login.')),
+        );
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
       setState(() {
-        _error = error.toString().replaceFirst('Exception: ', '');
+        _error = message;
       });
     } finally {
       if (mounted) {
@@ -62,17 +78,16 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Entrar para sincronizar'),
+        title: const Text('Criar conta para sincronizar'),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: ListView(
             children: [
               const Text(
-                'O app continua funcionando offline sem login. Entre apenas se quiser backup e sincronizacao com o Zenit.',
+                'O cadastro so serve para backup e sincronizacao. O uso local continua simples e opcional.',
               ),
               const SizedBox(height: 16),
               if (_error != null)
@@ -83,6 +98,17 @@ class _LoginPageState extends State<LoginPage> {
                     style: const TextStyle(color: Colors.red),
                   ),
                 ),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Nome'),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Informe seu nome';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
               TextFormField(
                 controller: _emailController,
                 decoration: const InputDecoration(labelText: 'E-mail'),
@@ -100,8 +126,8 @@ class _LoginPageState extends State<LoginPage> {
                 decoration: const InputDecoration(labelText: 'Senha'),
                 obscureText: true,
                 validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Informe a senha';
+                  if (value == null || value.length < 6) {
+                    return 'Use pelo menos 6 caracteres';
                   }
                   return null;
                 },
@@ -115,16 +141,16 @@ class _LoginPageState extends State<LoginPage> {
                         width: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Entrar'),
+                    : const Text('Criar conta'),
               ),
               const SizedBox(height: 12),
               TextButton(
                 onPressed: _loading
                     ? null
                     : () {
-                        Navigator.pushReplacementNamed(context, '/register');
+                        Navigator.pushReplacementNamed(context, '/login');
                       },
-                child: const Text('Criar conta para sincronizar'),
+                child: const Text('Ja tenho conta'),
               ),
             ],
           ),

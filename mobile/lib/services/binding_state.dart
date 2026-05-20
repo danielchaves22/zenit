@@ -1,5 +1,3 @@
-import 'auth_service.dart';
-
 class CloudBindingState {
   const CloudBindingState({
     required this.installationId,
@@ -26,8 +24,11 @@ class CloudBindingState {
       boundCompanyId != null &&
       hasCompletedInitialReconciliation;
 
-  bool matchesSession(AuthSession session) {
-    return boundUserId == session.userId && boundCompanyId == session.companyId;
+  bool matches({
+    required int userId,
+    required String companyId,
+  }) {
+    return boundUserId == userId && boundCompanyId == companyId;
   }
 
   CloudBindingState copyWith({
@@ -61,8 +62,9 @@ class CloudBindingState {
       lastSuccessfulPushAt: clearLastSuccessfulPushAt
           ? null
           : (lastSuccessfulPushAt ?? this.lastSuccessfulPushAt),
-      hasCompletedInitialReconciliation: hasCompletedInitialReconciliation ??
-          this.hasCompletedInitialReconciliation,
+      hasCompletedInitialReconciliation:
+          hasCompletedInitialReconciliation ??
+              this.hasCompletedInitialReconciliation,
     );
   }
 }

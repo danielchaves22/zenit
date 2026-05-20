@@ -16,8 +16,13 @@ class AppDrawer extends StatelessWidget {
           ValueListenableBuilder<AuthSession?>(
             valueListenable: AppServices.authService.sessionListenable,
             builder: (context, session, _) {
+              final target = AppServices.authService.currentTarget;
               final title = session?.userName ?? 'Modo local';
-              final subtitle = session?.userEmail ?? 'Sem sincronizacao';
+              final subtitle = session == null
+                  ? 'Sem conta conectada'
+                  : target == null
+                      ? '${session.userEmail}\nLocal only'
+                      : '${session.userEmail}\n${target.name}';
 
               return UserAccountsDrawerHeader(
                 accountName: Text(title),
@@ -55,17 +60,33 @@ class AppDrawer extends StatelessWidget {
                     return ListTile(
                       leading: Icon(_iconForStatus(syncState.status)),
                       title: const Text('Sincronizacao'),
-                      subtitle: Text(_subtitleForStatus(syncState)),
+                      subtitle: Text(
+                        _subtitleForStatus(
+                          snapshot: syncState,
+                          session: AppServices.authService.currentSession,
+                          target: AppServices.authService.currentTarget,
+                        ),
+                      ),
                       onTap: () {
-                        if (AppServices.authService.isAuthenticated) {
-                          if (syncState.status == SyncStatus.reconciliationRequired) {
-                            Navigator.pushNamed(context, '/sync-reconciliation');
-                          } else {
-                            AppServices.syncService.forceSync();
-                          }
-                        } else {
+                        final session = AppServices.authService.currentSession;
+                        final target = AppServices.authService.currentTarget;
+
+                        if (session == null) {
                           Navigator.pushNamed(context, '/login');
+                          return;
                         }
+
+                        if (target == null) {
+                          Navigator.pushNamed(context, '/company-selection');
+                          return;
+                        }
+
+                        if (syncState.status == SyncStatus.reconciliationRequired) {
+                          Navigator.pushNamed(context, '/sync-reconciliation');
+                          return;
+                        }
+
+                        AppServices.syncService.forceSync();
                       },
                     );
                   },
@@ -76,7 +97,7 @@ class AppDrawer extends StatelessWidget {
                     if (session == null) {
                       return ListTile(
                         leading: const Icon(Icons.login),
-                        title: const Text('Entrar para sincronizar'),
+                        title: const Text('Entrar ou criar conta'),
                         onTap: () {
                           Navigator.pushNamed(context, '/login');
                         },
@@ -84,12 +105,36 @@ class AppDrawer extends StatelessWidget {
                     }
 
                     return ListTile(
+                      leading: const Icon(Icons.business),
+                      title: Text(
+                        AppServices.authService.currentTarget == null
+                            ? 'Escolher empresa ou workspace'
+                            : 'Trocar empresa ou workspace',
+                      ),
+                      onTap: () {
+                        Navigator.pushNamed(context, '/company-selection');
+                      },
+                    );
+                  },
+                ),
+                ValueListenableBuilder<AuthSession?>(
+                  valueListenable: AppServices.authService.sessionListenable,
+                  builder: (context, session, _) {
+                    if (session == null) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return ListTile(
                       leading: const Icon(Icons.logout),
                       title: const Text('Sair da sincronizacao'),
                       onTap: () async {
-                        await AppServices.authService.signOut();
+                        await AppServices.scopeService.signOut();
                         if (context.mounted) {
-                          Navigator.pop(context);
+                          Navigator.pushNamedAndRemoveUntil(
+                            context,
+                            '/',
+                            (route) => false,
+                          );
                         }
                       },
                     );
@@ -120,7 +165,11 @@ class AppDrawer extends StatelessWidget {
     }
   }
 
-  String _subtitleForStatus(SyncStateSnapshot snapshot) {
+  String _subtitleForStatus({
+    required SyncStateSnapshot snapshot,
+    required AuthSession? session,
+    required ActiveCloudTarget? target,
+  }) {
     switch (snapshot.status) {
       case SyncStatus.reconciliationRequired:
         return 'Reconciliacao pendente. Toque para resolver.';
@@ -139,7 +188,13 @@ class AppDrawer extends StatelessWidget {
       case SyncStatus.error:
         return snapshot.lastSyncError ?? 'Erro ao sincronizar. Toque para tentar de novo.';
       case SyncStatus.localOnly:
-        return 'Modo guest/local only. Toque para entrar.';
+        if (session == null) {
+          return 'Modo guest/local only. Toque para entrar.';
+        }
+        if (target == null) {
+          return 'Conta conectada sem empresa selecionada.';
+        }
+        return 'Uso local somente neste escopo.';
     }
   }
 }

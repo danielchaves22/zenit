@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../models/movimentacao.dart';
@@ -15,11 +14,10 @@ class ResumoOrcamentoPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final box = AppServices.budgetRepository.listenableBox;
-
     return ValueListenableBuilder(
-      valueListenable: box.listenable(),
+      valueListenable: AppServices.budgetRepository.currentBoxListenable,
       builder: (context, _, __) {
+        final box = AppServices.budgetRepository.listenableBox;
         final current = box.get(orcamento.id) ?? orcamento;
         final isActive = current.status == StatusOrcamento.ativo;
 

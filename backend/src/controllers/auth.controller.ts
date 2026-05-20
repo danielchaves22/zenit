@@ -42,12 +42,101 @@ async function buildAppAccessByCompany(userId: number, companyIds: number[]) {
   return accessByCompany;
 }
 
+type AuthCompanyView = {
+  id: number;
+  name: string;
+  role: string;
+  isDefault: boolean;
+  manageFinancialAccounts: boolean;
+  manageFinancialCategories: boolean;
+};
+
+async function buildAuthPayload(
+  userId: number,
+  requestedAppHeader?: string | null
+): Promise<{
+  token: string;
+  refreshToken: string;
+  user: {
+    id: number;
+    name: string;
+    email: string;
+    mustChangePassword: boolean;
+    companies: AuthCompanyView[];
+    appAccessByCompany: Record<
+      number,
+      { appKey: string; enabled: boolean; granted: boolean; allowed: boolean }[]
+    >;
+  };
+  preferences: {
+    colorScheme: string | null;
+  };
+}> {
+  const requestedApp = toPrismaAppKey(requestedAppHeader);
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      companies: {
+        include: {
+          company: true
+        }
+      }
+    }
+  });
+
+  if (!user) {
+    throw new Error('Usuario nao encontrado');
+  }
+
+  const companies = user.companies.map((uc) => ({
+    id: uc.companyId,
+    name: uc.company.name,
+    role: uc.role,
+    isDefault: uc.isDefault,
+    manageFinancialAccounts: uc.manageFinancialAccounts,
+    manageFinancialCategories: uc.manageFinancialCategories
+  }));
+
+  const appAccessByCompany = await buildAppAccessByCompany(
+    user.id,
+    companies.map((company) => company.id)
+  );
+
+  if (requestedApp && companies.length > 0) {
+    const requestedKey = toHeaderAppKey(requestedApp);
+    const hasRequestedAccess = Object.values(appAccessByCompany).some((companyAccess) =>
+      companyAccess.some((access) => access.appKey === requestedKey && access.allowed)
+    );
+
+    if (!hasRequestedAccess) {
+      throw new Error('Usuario sem acesso ao aplicativo solicitado.');
+    }
+  }
+
+  const preferences = await prisma.userPreference.findUnique({ where: { userId: user.id } });
+
+  return {
+    token: generateToken({ userId: user.id }),
+    refreshToken: generateRefreshToken({ userId: user.id }),
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      mustChangePassword: user.mustChangePassword,
+      companies,
+      appAccessByCompany
+    },
+    preferences: {
+      colorScheme: preferences?.colorScheme || null
+    }
+  };
+}
+
 export async function login(req: Request, res: Response) {
   const { email, password } = req.body;
   const clientIP = getClientIP(req);
   const appHeader = req.headers[APP_HEADER];
   const appHeaderValue = Array.isArray(appHeader) ? appHeader[0] : appHeader;
-  const requestedApp = toPrismaAppKey(appHeaderValue);
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email e senha sao obrigatorios' });
@@ -58,12 +147,9 @@ export async function login(req: Request, res: Response) {
   try {
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
-      include: {
-        companies: {
-          include: {
-            company: true
-          }
-        }
+      select: {
+        id: true,
+        password: true
       }
     });
 
@@ -91,67 +177,92 @@ export async function login(req: Request, res: Response) {
 
     await resetLoginAttempts(normalizedEmail, clientIP);
 
-    const companies = user.companies.map((uc) => ({
-      id: uc.companyId,
-      name: uc.company.name,
-      role: uc.role,
-      isDefault: uc.isDefault,
-      manageFinancialAccounts: uc.manageFinancialAccounts,
-      manageFinancialCategories: uc.manageFinancialCategories
-    }));
-
-    const appAccessByCompany = await buildAppAccessByCompany(
-      user.id,
-      companies.map((company) => company.id)
-    );
-
-    if (requestedApp && companies.length > 0) {
-      const requestedKey = toHeaderAppKey(requestedApp);
-      const hasRequestedAccess = Object.values(appAccessByCompany).some((companyAccess) =>
-        companyAccess.some((access) => access.appKey === requestedKey && access.allowed)
-      );
-
-      if (!hasRequestedAccess) {
-        return res.status(403).json({
-          error: 'Usuario sem acesso ao aplicativo solicitado.'
-        });
-      }
-    }
-
-    const tokenPayload = {
-      userId: user.id
-    };
-
-    const token = generateToken(tokenPayload);
-    const refreshToken = generateRefreshToken(tokenPayload);
-    const preferences = await prisma.userPreference.findUnique({ where: { userId: user.id } });
+    const authPayload = await buildAuthPayload(user.id, appHeaderValue);
 
     logger.info('User login successful', {
       userId: user.id,
       email: normalizedEmail,
-      companies,
       ip: clientIP,
       userAgent: req.get('User-Agent')
     });
 
     return res.status(200).json({
-      token,
-      refreshToken,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        mustChangePassword: user.mustChangePassword,
-        companies,
-        appAccessByCompany
-      },
-      preferences: {
-        colorScheme: preferences?.colorScheme || null
-      },
+      ...authPayload,
       message: 'Login realizado com sucesso'
     });
   } catch (error: unknown) {
+    if (getErrorMessage(error) === 'Usuario sem acesso ao aplicativo solicitado.') {
+      return res.status(403).json({
+        error: 'Usuario sem acesso ao aplicativo solicitado.'
+      });
+    }
+ 
     logger.error('Login internal error', {
+      error: getErrorMessage(error),
+      stack: getErrorStack(error),
+      email: normalizedEmail,
+      ip: clientIP
+    });
+
+    return res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+}
+
+export async function register(req: Request, res: Response) {
+  const { email, password, name } = req.body;
+  const clientIP = getClientIP(req);
+  const appHeader = req.headers[APP_HEADER];
+  const appHeaderValue = Array.isArray(appHeader) ? appHeader[0] : appHeader;
+
+  if (!email || !password || !name) {
+    return res.status(400).json({ error: 'Nome, email e senha sao obrigatorios' });
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedName = String(name).trim();
+
+  try {
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true }
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        code: 'EMAIL_ALREADY_EXISTS',
+        error: 'Conta ja existente. Faca login.'
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const user = await prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        password: passwordHash,
+        name: normalizedName,
+        role: 'USER',
+        mustChangePassword: false
+      },
+      select: {
+        id: true
+      }
+    });
+
+    const authPayload = await buildAuthPayload(user.id, appHeaderValue);
+
+    logger.info('User self-signup successful', {
+      userId: user.id,
+      email: normalizedEmail,
+      ip: clientIP,
+      userAgent: req.get('User-Agent')
+    });
+
+    return res.status(201).json({
+      ...authPayload,
+      message: 'Cadastro realizado com sucesso'
+    });
+  } catch (error: unknown) {
+    logger.error('Register internal error', {
       error: getErrorMessage(error),
       stack: getErrorStack(error),
       email: normalizedEmail,
@@ -209,61 +320,11 @@ export async function refreshToken(req: Request, res: Response) {
 export async function getCurrentUser(req: Request, res: Response) {
   try {
     const userId = req.user.userId;
-
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        companies: {
-          select: {
-            role: true,
-            isDefault: true,
-            manageFinancialAccounts: true,
-            manageFinancialCategories: true,
-            company: {
-              select: {
-                id: true,
-                name: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    const preferences = await prisma.userPreference.findUnique({ where: { userId } });
-
-    if (!user) {
-      return res.status(404).json({ error: 'Usuario nao encontrado' });
-    }
-
-    const companies = user.companies.map((uc) => ({
-      id: uc.company.id,
-      name: uc.company.name,
-      role: uc.role,
-      isDefault: uc.isDefault,
-      manageFinancialAccounts: uc.manageFinancialAccounts,
-      manageFinancialCategories: uc.manageFinancialCategories
-    }));
-
-    const appAccessByCompany = await buildAppAccessByCompany(
-      user.id,
-      companies.map((company) => company.id)
-    );
+    const authPayload = await buildAuthPayload(userId);
 
     return res.status(200).json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        companies,
-        appAccessByCompany
-      },
-      preferences: {
-        colorScheme: preferences?.colorScheme || null
-      }
+      user: authPayload.user,
+      preferences: authPayload.preferences
     });
   } catch (error: unknown) {
     logger.error('Error fetching current user', {

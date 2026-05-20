@@ -84,7 +84,7 @@ class _SyncReconciliationPageState extends State<SyncReconciliationPage> {
 
   Future<void> _useCloud() async {
     await _runAction(() async {
-      await AppServices.syncService.adoptRemoteBudgets();
+      await AppServices.scopeService.completeReconciliationUsingCloud();
       if (!mounted) {
         return;
       }
@@ -94,7 +94,7 @@ class _SyncReconciliationPageState extends State<SyncReconciliationPage> {
 
   Future<void> _importLocalAsNew() async {
     await _runAction(() async {
-      await AppServices.syncService.importLocalBudgetsAsNew();
+      await AppServices.scopeService.completeReconciliationByImportingLocal();
       if (!mounted) {
         return;
       }

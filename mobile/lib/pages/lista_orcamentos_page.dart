@@ -1,31 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_speed_dial/flutter_speed_dial.dart';
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:orcamento_app/models/orcamento.dart';
-import 'package:orcamento_app/widgets/app_drawer.dart';
 
-class ListaOrcamentosPage extends StatefulWidget {
+import '../models/orcamento.dart';
+import '../services/app_services.dart';
+import '../widgets/app_drawer.dart';
+
+class ListaOrcamentosPage extends StatelessWidget {
   const ListaOrcamentosPage({super.key});
-
-  @override
-  State<ListaOrcamentosPage> createState() => _ListaOrcamentosPageState();
-}
-
-class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
-  late Box<Orcamento> box;
-
-  @override
-  void initState() {
-    super.initState();
-    box = Hive.box<Orcamento>('orcamentos');
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
-        title: const Text('Orçamentos Ativos'),
+        title: const Text('Orcamentos Ativos'),
         actions: [
           TextButton.icon(
             style: TextButton.styleFrom(
@@ -40,14 +28,15 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
         ],
       ),
       body: ValueListenableBuilder(
-        valueListenable: box.listenable(),
-        builder: (context, Box<Orcamento> box, _) {
+        valueListenable: AppServices.budgetRepository.currentBoxListenable,
+        builder: (context, _, __) {
+          final box = AppServices.budgetRepository.listenableBox;
           final ativos = box.values
               .where((orc) => orc.status == StatusOrcamento.ativo)
               .toList();
 
           if (ativos.isEmpty) {
-            return const Center(child: Text('Nenhum orçamento ativo.'));
+            return const Center(child: Text('Nenhum orcamento ativo.'));
           }
 
           return ListView.builder(
@@ -63,30 +52,37 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
                 child: ListTile(
                   title: Row(
                     children: [
-                      Icon(iconTipo,
-                          color: Theme.of(context).colorScheme.primary),
+                      Icon(
+                        iconTipo,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           orcamento.codigo,
                           style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
                         ),
                       ),
                       if (orcamento.isTrabalho)
                         Chip(
-                          label: const Text("Orçamento de Trabalho",
-                              style:
-                                  TextStyle(fontSize: 12, color: Colors.white)),
-                          backgroundColor:
-                              Theme.of(context).colorScheme.primary,
+                          label: const Text(
+                            'Orcamento de Trabalho',
+                            style: TextStyle(fontSize: 12, color: Colors.white),
+                          ),
+                          backgroundColor: Theme.of(context).colorScheme.primary,
                         ),
                     ],
                   ),
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () {
-                    Navigator.pushReplacementNamed(context, '/resumo',
-                        arguments: orcamento);
+                    Navigator.pushReplacementNamed(
+                      context,
+                      '/resumo',
+                      arguments: orcamento,
+                    );
                   },
                 ),
               );
@@ -94,32 +90,19 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
           );
         },
       ),
-      // Versão com SpeedDial: botões suspensos ao redor do FAB
       floatingActionButton: SpeedDial(
-        /// Usa um ícone "+" quando fechado
         icon: Icons.add,
-
-        /// Quando aberto, mostra o ícone "X"
         activeIcon: Icons.close,
-
-        /// Mantém o botão redondo com o shape padrão
         shape: const CircleBorder(),
-
-        /// Define as cores conforme o estilo anterior (ajuste conforme seu gosto)
-        backgroundColor: Theme.of(context)
-            .colorScheme
-            .primary, // Exemplo: azul (pode ser substituído pela cor antiga)
+        backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
-
-        /// Configura a opacidade do overlay (opcional)
         overlayColor: Colors.black,
         overlayOpacity: 0.2,
-
         children: [
           SpeedDialChild(
             child: const Icon(Icons.money),
             backgroundColor: Colors.red,
-            label: "Gasto",
+            label: 'Gasto',
             onTap: () {
               Future.delayed(const Duration(milliseconds: 200), () {
                 if (!context.mounted) {
@@ -129,7 +112,7 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
                   context,
                   '/criar',
                   arguments: {
-                    "tipoFixo": TipoOrcamento.gasto,
+                    'tipoFixo': TipoOrcamento.gasto,
                   },
                 );
               });
@@ -138,7 +121,7 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
           SpeedDialChild(
             child: const Icon(Icons.savings),
             backgroundColor: Colors.green,
-            label: "Economia",
+            label: 'Economia',
             onTap: () {
               Future.delayed(const Duration(milliseconds: 200), () {
                 if (!context.mounted) {
@@ -148,7 +131,7 @@ class _ListaOrcamentosPageState extends State<ListaOrcamentosPage> {
                   context,
                   '/criar',
                   arguments: {
-                    "tipoFixo": TipoOrcamento.economia,
+                    'tipoFixo': TipoOrcamento.economia,
                   },
                 );
               });

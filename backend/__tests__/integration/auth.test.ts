@@ -8,6 +8,7 @@ const prisma = new PrismaClient();
 describe('Auth routes', () => {
   const uniqueSuffix = Date.now().toString();
   const testEmail = `auth.${uniqueSuffix}@example.com`;
+  const registerEmail = `register.${uniqueSuffix}@example.com`;
   const testPassword = 'secret123';
   let companyIds: number[] = [];
 
@@ -35,7 +36,7 @@ describe('Auth routes', () => {
       where: { companyId: { in: companyIds } }
     });
     await prisma.user.deleteMany({
-      where: { email: testEmail }
+      where: { email: { in: [testEmail, registerEmail] } }
     });
     await prisma.company.deleteMany({
       where: { id: { in: companyIds } }
@@ -60,5 +61,38 @@ describe('Auth routes', () => {
 
     expect(res.status).toBe(401);
     expect(res.body).toEqual({ error: 'Credenciais invalidas' });
+  });
+
+  it('should self-register a user without companies', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .set('X-App-Key', 'zenit-cash')
+      .send({
+        email: registerEmail,
+        password: testPassword,
+        name: 'Register User'
+      });
+
+    expect(res.status).toBe(201);
+    expect(typeof res.body.token).toBe('string');
+    expect(res.body.user.email).toBe(registerEmail);
+    expect(res.body.user.companies).toEqual([]);
+    expect(res.body.user.appAccessByCompany).toEqual({});
+  });
+
+  it('should reject self-signup when email already exists', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        email: testEmail,
+        password: testPassword,
+        name: 'Duplicated User'
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      code: 'EMAIL_ALREADY_EXISTS',
+      error: 'Conta ja existente. Faca login.'
+    });
   });
 });

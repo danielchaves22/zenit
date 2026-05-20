@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:orcamento_app/models/movimentacao.dart';
 import 'package:orcamento_app/services/auth_service.dart';
 import 'package:orcamento_app/services/clock_service.dart';
+import 'package:orcamento_app/services/local_scope.dart';
 import 'package:orcamento_app/services/sync_state.dart';
 
 import '../test_support.dart';
@@ -25,7 +26,7 @@ void main() {
       await context.syncService.initialize();
 
       context.syncService.scheduleSync();
-      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(const Duration(milliseconds: 25));
 
       expect(context.syncService.stateListenable.value.status, SyncStatus.localOnly);
       expect(context.syncService.stateListenable.value.hasPendingChanges, isTrue);
@@ -52,16 +53,11 @@ void main() {
           putCalls += 1;
           return http.Response('{}', 500);
         }),
-        session: const AuthSession(
-          userId: 1,
-          token: 'token-1',
-          refreshToken: 'refresh-1',
-          companyId: 'company-1',
-          userName: 'Usuario',
-          userEmail: 'user@example.com',
-        ),
+        session: _session(),
       );
+
       await context.syncService.initialize();
+      await context.syncService.switchScope(_companyScopeId(), target: _target());
 
       final requiresReconciliation =
           await context.syncService.runInitialBindingIfNeeded();
@@ -92,16 +88,11 @@ void main() {
             200,
           );
         }),
-        session: const AuthSession(
-          userId: 1,
-          token: 'token-1',
-          refreshToken: 'refresh-1',
-          companyId: 'company-1',
-          userName: 'Usuario',
-          userEmail: 'user@example.com',
-        ),
+        session: _session(),
       );
+
       await context.syncService.initialize();
+      await context.syncService.switchScope(_companyScopeId(), target: _target());
 
       final requiresReconciliation =
           await context.syncService.runInitialBindingIfNeeded();
@@ -139,17 +130,11 @@ void main() {
             200,
           );
         }),
-        session: const AuthSession(
-          userId: 1,
-          token: 'token-1',
-          refreshToken: 'refresh-1',
-          companyId: 'company-1',
-          userName: 'Usuario',
-          userEmail: 'user@example.com',
-        ),
+        session: _session(),
       );
-      await context.syncService.initialize();
 
+      await context.syncService.initialize();
+      await context.syncService.switchScope(_companyScopeId(), target: _target());
       await context.repository.save(
         buildOrcamento(id: 'budget-local', codigo: 'Local'),
       );
@@ -200,17 +185,11 @@ void main() {
             200,
           );
         }),
-        session: const AuthSession(
-          userId: 1,
-          token: 'token-1',
-          refreshToken: 'refresh-1',
-          companyId: 'company-1',
-          userName: 'Usuario',
-          userEmail: 'user@example.com',
-        ),
+        session: _session(),
       );
-      await context.syncService.initialize();
 
+      await context.syncService.initialize();
+      await context.syncService.switchScope(_companyScopeId(), target: _target());
       await context.repository.save(
         buildOrcamento(
           id: 'budget-local',
@@ -229,8 +208,10 @@ void main() {
           await context.syncService.runInitialBindingIfNeeded();
 
       expect(requiresReconciliation, isTrue);
-      expect(context.syncService.stateListenable.value.status,
-          SyncStatus.reconciliationRequired);
+      expect(
+        context.syncService.stateListenable.value.status,
+        SyncStatus.reconciliationRequired,
+      );
       expect(
         context.syncService.pendingReconciliationListenable.value?.localBudgetCount,
         1,
@@ -246,8 +227,10 @@ void main() {
       expect(imported, hasLength(1));
       expect(imported.single['clientKey'], isNot('budget-local'));
       expect(imported.single['isPrimary'], isFalse);
-      expect((imported.single['entries'] as List<dynamic>).single['clientKey'],
-          isNot('entry-local'));
+      expect(
+        (imported.single['entries'] as List<dynamic>).single['clientKey'],
+        isNot('entry-local'),
+      );
       expect(context.repository.allBudgets.length, 2);
       expect(context.syncService.pendingReconciliationListenable.value, isNull);
       expect(context.syncService.bindingState.isBound, isTrue);
@@ -295,16 +278,11 @@ void main() {
             200,
           );
         }),
-        session: const AuthSession(
-          userId: 1,
-          token: 'token-1',
-          refreshToken: 'refresh-1',
-          companyId: 'company-1',
-          userName: 'Usuario',
-          userEmail: 'user@example.com',
-        ),
+        session: _session(),
       );
+
       await context.syncService.initialize();
+      await context.syncService.switchScope(_companyScopeId(), target: _target());
       await context.syncService.runInitialBindingIfNeeded();
 
       final staleLocal = buildOrcamento(
@@ -320,12 +298,36 @@ void main() {
       final putBudget = (capturedPutBody['budgets'] as List<dynamic>).single
           as Map<String, dynamic>;
       expect(putBudget['entries'], hasLength(1));
-      expect((putBudget['entries'] as List<dynamic>).single['clientKey'],
-          'entry-remote');
+      expect(
+        (putBudget['entries'] as List<dynamic>).single['clientKey'],
+        'entry-remote',
+      );
       expect(requestIndex, greaterThanOrEqualTo(3));
       expect(context.syncService.stateListenable.value.status, SyncStatus.synced);
     });
   });
+}
+
+AuthSession _session() {
+  return const AuthSession(
+    userId: 1,
+    token: 'token-1',
+    refreshToken: 'refresh-1',
+    userName: 'Usuario',
+    userEmail: 'user@example.com',
+  );
+}
+
+ActiveCloudTarget _target() {
+  return const ActiveCloudTarget(
+    companyId: 'company-1',
+    name: 'Empresa Teste',
+    timeZone: 'America/Sao_Paulo',
+  );
+}
+
+String _companyScopeId() {
+  return LocalScopeId.company(userId: 1, companyId: 'company-1');
 }
 
 Map<String, dynamic> _serverBudgetJson({
@@ -335,7 +337,7 @@ Map<String, dynamic> _serverBudgetJson({
   List<Map<String, dynamic>>? entries,
 }) {
   final today = businessToday();
-  final timeZone = 'America/Sao_Paulo';
+  const timeZone = 'America/Sao_Paulo';
 
   return {
     'clientKey': id,
@@ -364,7 +366,7 @@ Map<String, dynamic> _serverEntryJson({
   required int amountCents,
   required int principalImpactAmountCents,
 }) {
-  final timeZone = 'America/Sao_Paulo';
+  const timeZone = 'America/Sao_Paulo';
   final today = businessToday();
 
   return {

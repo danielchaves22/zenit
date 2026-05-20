@@ -6,10 +6,12 @@ import 'package:orcamento_app/pages/resumo_orcamento_page.dart';
 import 'models/movimentacao.dart';
 import 'models/orcamento.dart';
 import 'pages/configuracoes_page.dart';
+import 'pages/company_selection_page.dart';
 import 'pages/criar_orcamento_page.dart';
 import 'pages/entry_point.dart';
 import 'pages/lista_orcamentos_page.dart';
 import 'pages/login_page.dart';
+import 'pages/register_page.dart';
 import 'pages/sync_reconciliation_page.dart';
 import 'services/app_services.dart';
 
@@ -38,6 +40,8 @@ class MyApp extends StatelessWidget {
         '/inativos': (context) => const ListaOrcamentosInativosPage(),
         '/configuracoes': (context) => const ConfiguracoesPage(),
         '/login': (context) => const LoginPage(),
+        '/register': (context) => const RegisterPage(),
+        '/company-selection': (context) => const CompanySelectionPage(),
         '/sync-reconciliation': (context) => const SyncReconciliationPage(),
       },
       onGenerateRoute: (settings) {

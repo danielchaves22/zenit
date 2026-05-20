@@ -14,16 +14,19 @@ import 'binding_state.dart';
 import 'budget_repository.dart';
 import 'clock_service.dart';
 import 'id_service.dart';
+import 'local_scope.dart';
 import 'sync_state.dart';
 
 class PendingReconciliation {
   const PendingReconciliation({
+    required this.scopeId,
     required this.timeZone,
     required this.businessDate,
     required this.localBudgets,
     required this.remoteBudgets,
   });
 
+  final String scopeId;
   final String timeZone;
   final DateTime businessDate;
   final List<Orcamento> localBudgets;
@@ -67,66 +70,96 @@ class SyncService {
   );
   final ValueNotifier<PendingReconciliation?> pendingReconciliationListenable =
       ValueNotifier<PendingReconciliation?>(null);
+  final ValueNotifier<int> pendingScopeCountListenable = ValueNotifier<int>(0);
 
   Timer? _debounceTimer;
   bool _isSyncing = false;
   bool _resyncRequested = false;
+  String _currentScopeId = LocalScopeId.guest;
+  ActiveCloudTarget? _currentTarget;
   late CloudBindingState _bindingState;
 
+  String get currentScopeId => _currentScopeId;
   CloudBindingState get bindingState => _bindingState;
+
+  bool get hasCurrentTarget => _currentTarget != null;
 
   bool get isBoundToCurrentSession {
     final session = _authService.currentSession;
-    return session != null && _bindingState.matchesSession(session) && _bindingState.isBound;
+    final target = _currentTarget;
+    return session != null &&
+        target != null &&
+        _bindingState.matches(
+          userId: session.userId,
+          companyId: target.companyId,
+        ) &&
+        _bindingState.isBound;
   }
 
   Future<void> initialize() async {
-    _bindingState = _appStateStore.loadBindingState();
-    stateListenable.value = _appStateStore.loadSyncState();
+    _appStateStore.ensureInstallationId();
+    await switchScope(
+      LocalScopeId.guest,
+      target: null,
+      persistAsActiveScope: false,
+    );
+    await _refreshPendingScopeCount();
+  }
 
-    final session = _authService.currentSession;
-    if (session != null && _bindingState.matchesSession(session) && _bindingState.timeZone != null) {
-      ClockService.instance.setWorkspaceTimeZone(_bindingState.timeZone);
-      return;
+  Future<void> switchScope(
+    String scopeId, {
+    required ActiveCloudTarget? target,
+    bool persistAsActiveScope = true,
+  }) async {
+    _currentScopeId = scopeId;
+    _currentTarget = target;
+    await _repository.switchScope(scopeId);
+    await _appStateStore.registerScope(scopeId);
+    if (persistAsActiveScope) {
+      await _appStateStore.saveActiveScopeId(scopeId);
     }
 
-    ClockService.instance.setWorkspaceTimeZone(null);
-    if (!_authService.isAuthenticated) {
-      await _updateState(
-        stateListenable.value.copyWith(
-          status: SyncStatus.localOnly,
-          hasPendingChanges: stateListenable.value.hasPendingChanges,
-        ),
-      );
-    }
+    _bindingState = _appStateStore.loadBindingState(scopeId);
+    stateListenable.value = _resolveStateForCurrentScope();
+    pendingReconciliationListenable.value = null;
+
+    final scopeTimeZone = _bindingState.timeZone ?? target?.timeZone;
+    ClockService.instance.setWorkspaceTimeZone(scopeTimeZone);
+    await _refreshPendingScopeCount();
   }
 
   Future<bool> runInitialBindingIfNeeded() async {
     final session = _authService.currentSession;
-    if (session == null) {
+    final target = _currentTarget;
+    if (session == null || target == null) {
       return false;
     }
 
-    if (_bindingState.matchesSession(session) &&
+    if (_bindingState.matches(
+          userId: session.userId,
+          companyId: target.companyId,
+        ) &&
         _bindingState.hasCompletedInitialReconciliation) {
-      if (_bindingState.timeZone != null) {
-        ClockService.instance.setWorkspaceTimeZone(_bindingState.timeZone);
-      }
+      ClockService.instance.setWorkspaceTimeZone(
+        _bindingState.timeZone ?? target.timeZone,
+      );
       return false;
     }
 
-    final remoteSnapshot = await _fetchRemoteSnapshot();
-    final localBudgets = _repository.allBudgets.toList();
+    final remoteSnapshot = await _fetchRemoteSnapshot(target);
+    final localBudgets = await _repository.listBudgetsForScope(_currentScopeId);
 
     ClockService.instance.setWorkspaceTimeZone(remoteSnapshot.timeZone);
 
     if (localBudgets.isEmpty && remoteSnapshot.budgets.isEmpty) {
       await _markBindingComplete(
-        session,
-        remoteSnapshot.timeZone,
+        scopeId: _currentScopeId,
+        session: session,
+        target: target,
+        timeZone: remoteSnapshot.timeZone,
         lastPullAt: agoraUtc(),
       );
-      await _updateState(
+      await _setCurrentState(
         SyncStateSnapshot(
           status: SyncStatus.synced,
           lastSyncAt: agoraUtc(),
@@ -137,13 +170,15 @@ class SyncService {
     }
 
     if (localBudgets.isEmpty && remoteSnapshot.budgets.isNotEmpty) {
-      await _repository.replaceAll(remoteSnapshot.budgets);
+      await _repository.replaceAllInScope(_currentScopeId, remoteSnapshot.budgets);
       await _markBindingComplete(
-        session,
-        remoteSnapshot.timeZone,
+        scopeId: _currentScopeId,
+        session: session,
+        target: target,
+        timeZone: remoteSnapshot.timeZone,
         lastPullAt: agoraUtc(),
       );
-      await _updateState(
+      await _setCurrentState(
         SyncStateSnapshot(
           status: SyncStatus.synced,
           lastSyncAt: agoraUtc(),
@@ -155,22 +190,26 @@ class SyncService {
 
     if (localBudgets.isNotEmpty && remoteSnapshot.budgets.isEmpty) {
       await _pushLocalBudgetsAndHydrate(
+        scopeId: _currentScopeId,
+        target: target,
         budgets: localBudgets,
         remoteSnapshot: remoteSnapshot,
         session: session,
         recordPull: true,
+        updateUi: true,
       );
       return false;
     }
 
     pendingReconciliationListenable.value = PendingReconciliation(
+      scopeId: _currentScopeId,
       timeZone: remoteSnapshot.timeZone,
       businessDate: remoteSnapshot.businessDate,
       localBudgets: localBudgets,
       remoteBudgets: remoteSnapshot.budgets,
     );
 
-    await _updateState(
+    await _setCurrentState(
       stateListenable.value.copyWith(
         status: SyncStatus.reconciliationRequired,
         hasPendingChanges: true,
@@ -183,19 +222,22 @@ class SyncService {
   Future<void> adoptRemoteBudgets() async {
     final pending = pendingReconciliationListenable.value;
     final session = _authService.currentSession;
-    if (pending == null || session == null) {
+    final target = _currentTarget;
+    if (pending == null || session == null || target == null) {
       return;
     }
 
     ClockService.instance.setWorkspaceTimeZone(pending.timeZone);
-    await _repository.replaceAll(pending.remoteBudgets);
+    await _repository.replaceAllInScope(_currentScopeId, pending.remoteBudgets);
     pendingReconciliationListenable.value = null;
     await _markBindingComplete(
-      session,
-      pending.timeZone,
+      scopeId: _currentScopeId,
+      session: session,
+      target: target,
+      timeZone: pending.timeZone,
       lastPullAt: agoraUtc(),
     );
-    await _updateState(
+    await _setCurrentState(
       SyncStateSnapshot(
         status: SyncStatus.synced,
         lastSyncAt: agoraUtc(),
@@ -207,7 +249,8 @@ class SyncService {
   Future<void> importLocalBudgetsAsNew() async {
     final pending = pendingReconciliationListenable.value;
     final session = _authService.currentSession;
-    if (pending == null || session == null) {
+    final target = _currentTarget;
+    if (pending == null || session == null || target == null) {
       return;
     }
 
@@ -219,6 +262,8 @@ class SyncService {
     );
 
     await _pushLocalBudgetsAndHydrate(
+      scopeId: _currentScopeId,
+      target: target,
       budgets: clonedBudgets,
       remoteSnapshot: _RemoteBudgetSnapshot(
         timeZone: pending.timeZone,
@@ -227,6 +272,7 @@ class SyncService {
       ),
       session: session,
       recordPull: true,
+      updateUi: true,
     );
 
     pendingReconciliationListenable.value = null;
@@ -234,37 +280,55 @@ class SyncService {
 
   void scheduleSync({bool immediate = false}) {
     if (!_authService.isAuthenticated) {
-      _updateState(
-        stateListenable.value.copyWith(
-          status: SyncStatus.localOnly,
-          hasPendingChanges: true,
+      unawaited(
+        _setCurrentState(
+          stateListenable.value.copyWith(
+            status: SyncStatus.localOnly,
+            hasPendingChanges: true,
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (_currentTarget == null) {
+      unawaited(
+        _setCurrentState(
+          stateListenable.value.copyWith(
+            status: SyncStatus.localOnly,
+            hasPendingChanges: true,
+          ),
         ),
       );
       return;
     }
 
     if (pendingReconciliationListenable.value != null || !isBoundToCurrentSession) {
-      _updateState(
-        stateListenable.value.copyWith(
-          status: SyncStatus.reconciliationRequired,
-          hasPendingChanges: true,
+      unawaited(
+        _setCurrentState(
+          stateListenable.value.copyWith(
+            status: SyncStatus.reconciliationRequired,
+            hasPendingChanges: true,
+          ),
         ),
       );
       return;
     }
 
     _debounceTimer?.cancel();
-    _updateState(
-      stateListenable.value.copyWith(
-        status: SyncStatus.pending,
-        hasPendingChanges: true,
-        clearLastSyncError: true,
+    unawaited(
+      _setCurrentState(
+        stateListenable.value.copyWith(
+          status: SyncStatus.pending,
+          hasPendingChanges: true,
+          clearLastSyncError: true,
+        ),
       ),
     );
 
     _debounceTimer = Timer(
       immediate ? Duration.zero : const Duration(milliseconds: 800),
-      () => runAuthenticatedSync(),
+      () => syncAllPendingScopes(),
     );
   }
 
@@ -273,9 +337,8 @@ class SyncService {
   }
 
   Future<void> runAuthenticatedSync() async {
-    final session = _authService.currentSession;
-    if (session == null) {
-      await _updateState(
+    if (_currentTarget == null) {
+      await _setCurrentState(
         stateListenable.value.copyWith(
           status: SyncStatus.localOnly,
           hasPendingChanges: true,
@@ -284,13 +347,16 @@ class SyncService {
       return;
     }
 
-    if (!isBoundToCurrentSession || pendingReconciliationListenable.value != null) {
-      await _updateState(
-        stateListenable.value.copyWith(
-          status: SyncStatus.reconciliationRequired,
-          hasPendingChanges: true,
-        ),
-      );
+    await _runAuthenticatedSyncForScope(
+      scopeId: _currentScopeId,
+      target: _currentTarget!,
+      updateUi: true,
+    );
+  }
+
+  Future<void> syncAllPendingScopes() async {
+    final session = _authService.currentSession;
+    if (session == null) {
       return;
     }
 
@@ -300,74 +366,41 @@ class SyncService {
     }
 
     _isSyncing = true;
-    await _updateState(
-      stateListenable.value.copyWith(
-        status: SyncStatus.syncing,
-        hasPendingChanges: true,
-        clearLastSyncError: true,
-      ),
-    );
-
     try {
-      final remoteSnapshot = await _fetchRemoteSnapshot();
-      final mergedBudgets = _mergeBudgets(
-        localBudgets: _repository.allBudgets.toList(),
-        remoteBudgets: remoteSnapshot.budgets,
-      );
+      final knownScopes = _appStateStore.loadKnownScopes();
+      final prioritizedScopeIds = <String>[
+        if (_currentTarget != null) _currentScopeId,
+        ...knownScopes.where((scopeId) => scopeId != _currentScopeId),
+      ];
 
-      await _markBindingComplete(
-        session,
-        remoteSnapshot.timeZone,
-        lastPullAt: agoraUtc(),
-      );
+      for (final scopeId in prioritizedScopeIds) {
+        if (LocalScopeId.isGuest(scopeId)) {
+          continue;
+        }
 
-      if (_isSameBudgetSet(mergedBudgets, remoteSnapshot.budgets) &&
-          !stateListenable.value.hasPendingChanges) {
-        await _repository.replaceAll(remoteSnapshot.budgets);
-        await _updateState(
-          SyncStateSnapshot(
-            status: SyncStatus.synced,
-            lastSyncAt: agoraUtc(),
-            hasPendingChanges: false,
-          ),
+        final binding = _appStateStore.loadBindingState(scopeId);
+        final syncState = _appStateStore.loadSyncState(scopeId);
+        if (!syncState.hasPendingChanges ||
+            !binding.isBound ||
+            binding.boundUserId != session.userId ||
+            binding.boundCompanyId == null) {
+          continue;
+        }
+
+        final target = scopeId == _currentScopeId && _currentTarget != null
+            ? _currentTarget!
+            : ActiveCloudTarget(
+                companyId: binding.boundCompanyId!,
+                name: 'Empresa',
+                timeZone: binding.timeZone,
+              );
+
+        await _runAuthenticatedSyncForScope(
+          scopeId: scopeId,
+          target: target,
+          updateUi: scopeId == _currentScopeId,
         );
-        return;
       }
-
-      final response = await _putBudgets(
-        budgets: mergedBudgets,
-        timeZone: remoteSnapshot.timeZone,
-      );
-      await _repository.replaceAll(response.budgets);
-
-      final conflicts = response.conflicts;
-      final conflictMessage = conflicts.isEmpty
-          ? null
-          : '${conflicts.length} alteracao(oes) mais recentes da nuvem foram mantidas.';
-
-      await _markBindingComplete(
-        session,
-        response.timeZone,
-        lastPullAt: agoraUtc(),
-        lastPushAt: agoraUtc(),
-      );
-      await _updateState(
-        SyncStateSnapshot(
-          status: SyncStatus.synced,
-          lastSyncAt: agoraUtc(),
-          lastSyncError: null,
-          hasPendingChanges: false,
-          lastConflictMessage: conflictMessage,
-        ),
-      );
-    } catch (error) {
-      await _updateState(
-        stateListenable.value.copyWith(
-          status: SyncStatus.error,
-          lastSyncError: error.toString(),
-          hasPendingChanges: true,
-        ),
-      );
     } finally {
       _isSyncing = false;
       if (_resyncRequested) {
@@ -377,7 +410,133 @@ class SyncService {
     }
   }
 
-  Future<_RemoteBudgetSnapshot> _fetchRemoteSnapshot() async {
+  Future<void> _runAuthenticatedSyncForScope({
+    required String scopeId,
+    required ActiveCloudTarget target,
+    required bool updateUi,
+  }) async {
+    final session = _authService.currentSession;
+    if (session == null) {
+      if (updateUi) {
+        await _setCurrentState(
+          stateListenable.value.copyWith(
+            status: SyncStatus.localOnly,
+            hasPendingChanges: true,
+          ),
+        );
+      }
+      return;
+    }
+
+    final binding = _appStateStore.loadBindingState(scopeId);
+    final currentState = _appStateStore.loadSyncState(scopeId);
+
+    if (!binding.matches(
+          userId: session.userId,
+          companyId: target.companyId,
+        ) ||
+        !binding.isBound) {
+      if (updateUi) {
+        pendingReconciliationListenable.value = null;
+        _bindingState = binding;
+        await _setCurrentState(
+          currentState.copyWith(
+            status: SyncStatus.reconciliationRequired,
+            hasPendingChanges: true,
+          ),
+        );
+      }
+      return;
+    }
+
+    await _saveScopeState(
+      scopeId,
+      currentState.copyWith(
+        status: SyncStatus.syncing,
+        hasPendingChanges: true,
+        clearLastSyncError: true,
+      ),
+      updateUi: updateUi,
+    );
+
+    try {
+      final remoteSnapshot = await _fetchRemoteSnapshot(target);
+      final mergedBudgets = _mergeBudgets(
+        localBudgets: await _repository.listBudgetsForScope(scopeId),
+        remoteBudgets: remoteSnapshot.budgets,
+      );
+
+      await _markBindingComplete(
+        scopeId: scopeId,
+        session: session,
+        target: target,
+        timeZone: remoteSnapshot.timeZone,
+        lastPullAt: agoraUtc(),
+      );
+
+      if (_isSameBudgetSet(
+            mergedBudgets,
+            remoteSnapshot.budgets,
+            timeZone: remoteSnapshot.timeZone,
+          ) &&
+          !currentState.hasPendingChanges) {
+        await _repository.replaceAllInScope(scopeId, remoteSnapshot.budgets);
+        await _saveScopeState(
+          scopeId,
+          SyncStateSnapshot(
+            status: SyncStatus.synced,
+            lastSyncAt: agoraUtc(),
+            hasPendingChanges: false,
+          ),
+          updateUi: updateUi,
+        );
+        return;
+      }
+
+      final response = await _putBudgets(
+        target: target,
+        budgets: mergedBudgets,
+        timeZone: remoteSnapshot.timeZone,
+      );
+      await _repository.replaceAllInScope(scopeId, response.budgets);
+
+      final conflictMessage = response.conflicts.isEmpty
+          ? null
+          : '${response.conflicts.length} alteracao(oes) mais recentes da nuvem foram mantidas.';
+
+      await _markBindingComplete(
+        scopeId: scopeId,
+        session: session,
+        target: target,
+        timeZone: response.timeZone,
+        lastPullAt: agoraUtc(),
+        lastPushAt: agoraUtc(),
+      );
+      await _saveScopeState(
+        scopeId,
+        SyncStateSnapshot(
+          status: SyncStatus.synced,
+          lastSyncAt: agoraUtc(),
+          lastSyncError: null,
+          hasPendingChanges: false,
+          lastConflictMessage: conflictMessage,
+        ),
+        updateUi: updateUi,
+      );
+    } catch (error) {
+      await _saveScopeState(
+        scopeId,
+        currentState.copyWith(
+          status: SyncStatus.error,
+          lastSyncError: error.toString(),
+          hasPendingChanges: true,
+        ),
+        updateUi: updateUi,
+      );
+    }
+  }
+
+  Future<_RemoteBudgetSnapshot> _fetchRemoteSnapshot(ActiveCloudTarget target) async {
     final response = await _authorizedRequest(
       () {
         final session = _authService.currentSession;
@@ -387,7 +546,7 @@ class SyncService {
 
         return _httpClient.get(
           Uri.parse('$_apiBaseUrl/api/cash/budgets'),
-          headers: _buildHeaders(session),
+          headers: _buildHeaders(session, target.companyId),
         );
       },
     );
@@ -403,7 +562,7 @@ class SyncService {
 
     return _RemoteBudgetSnapshot(
       timeZone: timeZone == null || timeZone.isEmpty
-          ? ClockService.instance.effectiveTimeZone
+          ? (target.timeZone ?? ClockService.instance.effectiveTimeZone)
           : timeZone,
       businessDate: businessDateRaw == null
           ? ClockService.instance.businessDate
@@ -419,6 +578,7 @@ class SyncService {
   }
 
   Future<_SyncResponse> _putBudgets({
+    required ActiveCloudTarget target,
     required List<Orcamento> budgets,
     required String timeZone,
   }) async {
@@ -431,7 +591,7 @@ class SyncService {
 
         return _httpClient.put(
           Uri.parse('$_apiBaseUrl/api/cash/budgets/sync'),
-          headers: _buildHeaders(session),
+          headers: _buildHeaders(session, target.companyId),
           body: jsonEncode({
             'deviceId': _bindingState.installationId,
             'budgets': _serializeBudgets(budgets, timeZone: timeZone),
@@ -484,12 +644,12 @@ class SyncService {
     return response;
   }
 
-  Map<String, String> _buildHeaders(AuthSession session) {
+  Map<String, String> _buildHeaders(AuthSession session, String companyId) {
     return {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ${session.token}',
       'X-App-Key': AppConfig.cashAppKey,
-      'X-Company-Id': session.companyId,
+      'X-Company-Id': companyId,
     };
   }
 
@@ -607,7 +767,8 @@ class SyncService {
           json['endDate'] as String,
           timeZone: timeZone,
         ),
-        saldoFinalDesejadoEmCentavos: json['targetEndingBalanceCents'] as int,
+        saldoFinalDesejadoEmCentavos:
+            json['targetEndingBalanceCents'] as int,
         movimentacoes: (json['entries'] as List<dynamic>).map((rawEntry) {
           final entry = rawEntry as Map<String, dynamic>;
           final entryType = entry['entryType'] as String;
@@ -631,8 +792,10 @@ class SyncService {
                 : principalImpactAmountCents,
           );
         }).toList(),
-        orcamentoDiarioInicialEmCentavos: json['dailyBudgetInitialCents'] as int,
-        orcamentoDiarioAtualEmCentavos: json['dailyBudgetCurrentCents'] as int,
+        orcamentoDiarioInicialEmCentavos:
+            json['dailyBudgetInitialCents'] as int,
+        orcamentoDiarioAtualEmCentavos:
+            json['dailyBudgetCurrentCents'] as int,
         dataInicio: ClockService.instance.dateOnlyFromIso(
           json['startDate'] as String,
           timeZone: timeZone,
@@ -821,64 +984,114 @@ class SyncService {
     }).toList();
   }
 
-  bool _isSameBudgetSet(List<Orcamento> left, List<Orcamento> right) {
-    return jsonEncode(_serializeBudgets(left, timeZone: ClockService.instance.effectiveTimeZone)) ==
-        jsonEncode(_serializeBudgets(right, timeZone: ClockService.instance.effectiveTimeZone));
+  bool _isSameBudgetSet(
+    List<Orcamento> left,
+    List<Orcamento> right, {
+    required String timeZone,
+  }) {
+    return jsonEncode(_serializeBudgets(left, timeZone: timeZone)) ==
+        jsonEncode(_serializeBudgets(right, timeZone: timeZone));
   }
 
   Future<void> _pushLocalBudgetsAndHydrate({
+    required String scopeId,
+    required ActiveCloudTarget target,
     required List<Orcamento> budgets,
     required _RemoteBudgetSnapshot remoteSnapshot,
     required AuthSession session,
     required bool recordPull,
+    required bool updateUi,
   }) async {
     final response = await _putBudgets(
+      target: target,
       budgets: budgets,
       timeZone: remoteSnapshot.timeZone,
     );
 
-    ClockService.instance.setWorkspaceTimeZone(response.timeZone);
-    await _repository.replaceAll(response.budgets);
-    pendingReconciliationListenable.value = null;
+    if (updateUi) {
+      ClockService.instance.setWorkspaceTimeZone(response.timeZone);
+    }
+    await _repository.replaceAllInScope(scopeId, response.budgets);
+    if (updateUi) {
+      pendingReconciliationListenable.value = null;
+    }
     await _markBindingComplete(
-      session,
-      response.timeZone,
+      scopeId: scopeId,
+      session: session,
+      target: target,
+      timeZone: response.timeZone,
       lastPullAt: recordPull ? agoraUtc() : null,
       lastPushAt: agoraUtc(),
     );
-    await _updateState(
+    await _saveScopeState(
+      scopeId,
       SyncStateSnapshot(
         status: SyncStatus.synced,
         lastSyncAt: agoraUtc(),
         hasPendingChanges: false,
       ),
+      updateUi: updateUi,
     );
   }
 
-  Future<void> _markBindingComplete(
-    AuthSession session,
-    String timeZone, {
+  Future<void> _markBindingComplete({
+    required String scopeId,
+    required AuthSession session,
+    required ActiveCloudTarget target,
+    required String timeZone,
     DateTime? lastPullAt,
     DateTime? lastPushAt,
   }) async {
-    _bindingState = _bindingState.copyWith(
+    final currentBinding = _appStateStore.loadBindingState(scopeId);
+    final nextBinding = currentBinding.copyWith(
       boundUserId: session.userId,
-      boundCompanyId: session.companyId,
+      boundCompanyId: target.companyId,
       timeZone: timeZone,
       firstBindingCompletedAt:
-          _bindingState.firstBindingCompletedAt ?? agoraUtc(),
-      lastSuccessfulPullAt: lastPullAt ?? _bindingState.lastSuccessfulPullAt,
-      lastSuccessfulPushAt: lastPushAt ?? _bindingState.lastSuccessfulPushAt,
+          currentBinding.firstBindingCompletedAt ?? agoraUtc(),
+      lastSuccessfulPullAt:
+          lastPullAt ?? currentBinding.lastSuccessfulPullAt,
+      lastSuccessfulPushAt:
+          lastPushAt ?? currentBinding.lastSuccessfulPushAt,
       hasCompletedInitialReconciliation: true,
     );
-    ClockService.instance.setWorkspaceTimeZone(timeZone);
-    await _appStateStore.saveBindingState(_bindingState);
+    await _appStateStore.saveBindingState(scopeId, nextBinding);
+
+    if (scopeId == _currentScopeId) {
+      _bindingState = nextBinding;
+      ClockService.instance.setWorkspaceTimeZone(timeZone);
+    }
   }
 
-  Future<void> _updateState(FutureOr<SyncStateSnapshot> nextState) async {
+  SyncStateSnapshot _resolveStateForCurrentScope() {
+    if (_currentTarget == null) {
+      return _appStateStore.loadSyncState(_currentScopeId).copyWith(
+            status: SyncStatus.localOnly,
+          );
+    }
+    return _appStateStore.loadSyncState(_currentScopeId);
+  }
+
+  Future<void> _setCurrentState(FutureOr<SyncStateSnapshot> nextState) async {
     final snapshot = await nextState;
-    stateListenable.value = snapshot;
-    await _appStateStore.saveSyncState(snapshot);
+    await _saveScopeState(_currentScopeId, snapshot, updateUi: true);
+  }
+
+  Future<void> _saveScopeState(
+    String scopeId,
+    SyncStateSnapshot snapshot, {
+    required bool updateUi,
+  }) async {
+    await _appStateStore.saveSyncState(scopeId, snapshot);
+    if (updateUi) {
+      stateListenable.value = snapshot;
+    }
+    await _refreshPendingScopeCount();
+  }
+
+  Future<void> _refreshPendingScopeCount() async {
+    pendingScopeCountListenable.value =
+        _appStateStore.countScopesWithPendingChanges();
   }
 
   String _extractError(String responseBody, {required String fallback}) {
@@ -896,12 +1109,21 @@ class SyncService {
     }
 
     pendingReconciliationListenable.value = null;
+    _currentTarget = null;
+    _bindingState = _appStateStore.loadBindingState(_currentScopeId);
     ClockService.instance.setWorkspaceTimeZone(null);
-    _updateState(
-      stateListenable.value.copyWith(
-        status: SyncStatus.localOnly,
+    unawaited(
+      _setCurrentState(
+        stateListenable.value.copyWith(
+          status: SyncStatus.localOnly,
+        ),
       ),
     );
+  }
+
+  void dispose() {
+    _debounceTimer?.cancel();
+    _authService.sessionListenable.removeListener(_handleSessionChanged);
   }
 }
 

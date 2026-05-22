@@ -2639,6 +2639,7 @@ export default class FinancialTransactionService {
   static async listCreditCardPurchases(params: {
     companyId: number;
     accountIds?: number[];
+    categoryIds?: number[];
     page?: number;
     pageSize?: number;
     accessibleAccountIds?: number[];
@@ -2654,8 +2655,20 @@ export default class FinancialTransactionService {
     let effectiveAccountIds = hasExplicitAccountIds
       ? Array.from(new Set(params.accountIds || []))
       : undefined;
+    const hasExplicitCategoryIds = Array.isArray(params.categoryIds);
+    const effectiveCategoryIds = hasExplicitCategoryIds
+      ? Array.from(new Set(params.categoryIds || []))
+      : undefined;
 
     if (hasExplicitAccountIds && effectiveAccountIds && effectiveAccountIds.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        pages: 1
+      };
+    }
+
+    if (hasExplicitCategoryIds && effectiveCategoryIds && effectiveCategoryIds.length === 0) {
       return {
         data: [],
         total: 0,
@@ -2737,46 +2750,99 @@ export default class FinancialTransactionService {
               in: effectiveAccountIds
             }
           }
+        : {}),
+      ...(effectiveCategoryIds
+        ? {
+            categoryId: {
+              in: effectiveCategoryIds
+            }
+          }
         : {})
     };
 
-    const [groupHeaders, legacySingles] = await Promise.all([
-      prisma.financialTransaction.findMany({
-        where: {
-          AND: [
-            baseWhere,
-            { purchaseGroupId: { not: null } },
-            { installmentNumber: 1 }
-          ]
-        },
-        select
-      }),
-      prisma.financialTransaction.findMany({
-        where: {
-          AND: [
-            baseWhere,
-            { purchaseGroupId: null }
-          ]
-        },
-        select
-      })
+    const accountFilter = effectiveAccountIds
+      ? Prisma.sql`AND ft."fromAccountId" IN (${Prisma.join(effectiveAccountIds)})`
+      : Prisma.empty;
+    const categoryFilter = effectiveCategoryIds
+      ? Prisma.sql`AND ft."categoryId" IN (${Prisma.join(effectiveCategoryIds)})`
+      : Prisma.empty;
+    const candidatesCte = Prisma.sql`
+      WITH candidates AS (
+        SELECT ft.id, ft.date
+        FROM "FinancialTransaction" ft
+        INNER JOIN "FinancialAccount" fa ON fa.id = ft."fromAccountId"
+        WHERE ft."companyId" = ${companyId}
+          AND ft.type = ${TransactionType.EXPENSE}::"TransactionType"
+          AND fa.type = ${AccountType.CREDIT_CARD}::"AccountType"
+          AND ft."purchaseGroupId" IS NOT NULL
+          AND ft."installmentNumber" = 1
+          ${accountFilter}
+          ${categoryFilter}
+
+        UNION ALL
+
+        SELECT ft.id, ft.date
+        FROM "FinancialTransaction" ft
+        INNER JOIN "FinancialAccount" fa ON fa.id = ft."fromAccountId"
+        WHERE ft."companyId" = ${companyId}
+          AND ft.type = ${TransactionType.EXPENSE}::"TransactionType"
+          AND fa.type = ${AccountType.CREDIT_CARD}::"AccountType"
+          AND ft."purchaseGroupId" IS NULL
+          ${accountFilter}
+          ${categoryFilter}
+      )
+    `;
+    const offset = (page - 1) * pageSize;
+    const [countRows, pageRows] = await Promise.all([
+      prisma.$queryRaw<Array<{ total: number }>>(Prisma.sql`
+        ${candidatesCte}
+        SELECT COUNT(*)::int AS total
+        FROM candidates
+      `),
+      prisma.$queryRaw<Array<{ id: number }>>(Prisma.sql`
+        ${candidatesCte}
+        SELECT id
+        FROM candidates
+        ORDER BY date DESC, id DESC
+        LIMIT ${pageSize}
+        OFFSET ${offset}
+      `)
     ]);
 
-    const candidates = [...groupHeaders, ...legacySingles]
-      .map((transaction) => transaction as CreditCardPurchaseBaseTransaction)
-      .sort((left, right) => {
-        const dateDiff = right.date.getTime() - left.date.getTime();
-
-        if (dateDiff !== 0) {
-          return dateDiff;
-        }
-
-        return right.id - left.id;
-      });
-
-    const total = candidates.length;
+    const total = Number(countRows[0]?.total || 0);
     const pages = Math.ceil(total / pageSize) || 1;
-    const pagedCandidates = candidates.slice((page - 1) * pageSize, page * pageSize);
+    const pagedCandidateIds = pageRows.map((row) => row.id);
+
+    if (pagedCandidateIds.length === 0) {
+      return {
+        data: [],
+        total,
+        pages
+      };
+    }
+
+    const pagedCandidatesRaw = await prisma.financialTransaction.findMany({
+      where: {
+        AND: [
+          baseWhere,
+          {
+            id: {
+              in: pagedCandidateIds
+            }
+          }
+        ]
+      },
+      select
+    });
+    const pagedCandidatesById = new Map(
+      (pagedCandidatesRaw as CreditCardPurchaseBaseTransaction[]).map((transaction) => [
+        transaction.id,
+        transaction
+      ])
+    );
+    const pagedCandidates = pagedCandidateIds
+      .map((id) => pagedCandidatesById.get(id))
+      .filter((transaction): transaction is CreditCardPurchaseBaseTransaction => Boolean(transaction));
     const groupedPurchaseIds = Array.from(
       new Set(
         pagedCandidates

@@ -48,6 +48,23 @@ const accountIdsFilterSchema = z.preprocess((value) => {
     .positive('ID da conta deve ser positivo')
 ));
 
+const categoryIdsFilterSchema = z.preprocess((value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const values = Array.isArray(value) ? value : [value];
+
+  return values
+    .flatMap((item) => (typeof item === 'string' ? item.split(',') : [item]))
+    .map((item) => (typeof item === 'string' ? item.trim() : item))
+    .filter((item) => item !== '' && item !== null && item !== undefined);
+}, z.array(
+  z.coerce.number()
+    .int('ID da categoria deve ser um numero inteiro')
+    .positive('ID da categoria deve ser positivo')
+));
+
 function parseDateFilterValue(value: string): Date {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split('-').map(Number);
@@ -294,6 +311,7 @@ export const listTransactionsSchema = z.object({
 
 export const listCreditCardPurchasesSchema = z.object({
   accountIds: accountIdsFilterSchema.optional(),
+  categoryIds: categoryIdsFilterSchema.optional(),
 
   page: z.coerce.number()
     .int('Pagina deve ser um numero inteiro')

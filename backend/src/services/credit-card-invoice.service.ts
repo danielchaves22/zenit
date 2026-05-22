@@ -469,24 +469,39 @@ export default class CreditCardInvoiceService {
       orderBy: { name: 'asc' }
     });
 
+    if (cards.length === 0) {
+      return [];
+    }
+
+    const cardIds = cards.map((card) => card.id);
+    const nextInvoices = await prisma.creditCardInvoice.findMany({
+      where: {
+        accountId: {
+          in: cardIds
+        },
+        status: {
+          not: CreditCardInvoiceStatus.PAID
+        }
+      },
+      orderBy: [
+        { accountId: 'asc' },
+        { dueDate: 'asc' },
+        { referenceYear: 'asc' },
+        { referenceMonth: 'asc' }
+      ]
+    });
+    const nextInvoiceByAccountId = new Map<number, (typeof nextInvoices)[number]>();
+
+    for (const invoice of nextInvoices) {
+      if (!nextInvoiceByAccountId.has(invoice.accountId)) {
+        nextInvoiceByAccountId.set(invoice.accountId, invoice);
+      }
+    }
+
     const result = [];
 
     for (const card of cards) {
-      await this.syncInvoicesForAccount(card.id);
-
-      const nextInvoice = await prisma.creditCardInvoice.findFirst({
-        where: {
-          accountId: card.id,
-          status: {
-            not: CreditCardInvoiceStatus.PAID
-          }
-        },
-        orderBy: [
-          { dueDate: 'asc' },
-          { referenceYear: 'asc' },
-          { referenceMonth: 'asc' }
-        ]
-      });
+      const nextInvoice = nextInvoiceByAccountId.get(card.id) || null;
 
       const balance = normalizeMoney(card.balance);
       const creditLimit = normalizeMoney(card.creditLimit);

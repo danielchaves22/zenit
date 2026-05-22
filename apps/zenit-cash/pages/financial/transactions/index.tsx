@@ -1204,20 +1204,26 @@ export default function TransactionsListPage() {
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full min-w-[1380px]">
                 <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                   <tr>
                     <th className="w-24 px-4 py-3 text-center">Ações</th>
-                    <th className="cursor-pointer px-2 py-3 text-left" onClick={() => handleSort('dueDate')}>
-                      Data Vencimento
+                    <th
+                      className="w-[124px] cursor-pointer px-2 py-3 text-left whitespace-nowrap"
+                      onClick={() => handleSort('dueDate')}
+                    >
+                      Vencimento
                       {sortConfig.key === 'dueDate' && (
                         sortConfig.direction === 'asc'
                           ? <ChevronUp size={12} className="ml-1 inline" />
                           : <ChevronDown size={12} className="ml-1 inline" />
                       )}
                     </th>
-                    <th className="px-2 py-3 text-left">Tipo</th>
-                    <th className="cursor-pointer px-4 py-3 text-left" onClick={() => handleSort('description')}>
+                    <th className="w-[116px] px-2 py-3 text-left">Tipo</th>
+                    <th
+                      className="min-w-[240px] cursor-pointer px-4 py-3 text-left"
+                      onClick={() => handleSort('description')}
+                    >
                       Descrição
                       {sortConfig.key === 'description' && (
                         sortConfig.direction === 'asc'
@@ -1225,11 +1231,16 @@ export default function TransactionsListPage() {
                           : <ChevronDown size={12} className="ml-1 inline" />
                       )}
                     </th>
+                    <th className="w-[220px] px-3 py-3 text-left">Detalhes</th>
                     <th className="px-4 py-3 text-right">Valor</th>
                     <th className="px-4 py-3 text-center">Status</th>
                     <th className="px-4 py-3 text-left">Conta</th>
                     <th className="px-4 py-3 text-left">Categoria</th>
-                    <th className="cursor-pointer px-4 py-3 text-center" onClick={() => handleSort('effectiveDate')}>
+                    <th
+                      className="w-[112px] cursor-pointer px-2 py-3 text-center whitespace-nowrap text-[0px]"
+                      onClick={() => handleSort('effectiveDate')}
+                    >
+                      <span className="text-xs uppercase text-gray-400">Liquidacao</span>
                       Data de Liquidação
                       {sortConfig.key === 'effectiveDate' && (
                         sortConfig.direction === 'asc'
@@ -1255,6 +1266,76 @@ export default function TransactionsListPage() {
 	                      transaction.invoiceNavigation?.invoiceKey ||
 	                      transaction.id ||
 	                      `${transaction.description}-${transaction.date}`;
+	                    const characteristicBadges = [] as React.ReactNode[];
+
+	                    if (transaction.isCreditCardInvoiceSummary) {
+	                      characteristicBadges.push(
+	                        <span
+	                          key="invoice-summary"
+	                          className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200"
+	                        >
+	                          Fatura
+	                        </span>
+	                      );
+	                    }
+
+	                    if (transaction.isFixed) {
+	                      characteristicBadges.push(
+	                        <span
+	                          key="fixed"
+	                          className="rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200"
+	                        >
+	                          Fixa
+	                        </span>
+	                      );
+	                    }
+
+	                    if (
+	                      transaction.purchaseGroupId ||
+	                      transaction.creditCardInvoice ||
+	                      transaction.isCreditCardInvoiceSummary ||
+	                      transaction.isCreditCardInvoicePayment
+	                    ) {
+	                      characteristicBadges.push(
+	                        <span
+	                          key="card"
+	                          className="rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200"
+	                        >
+	                          Cartao
+	                        </span>
+	                      );
+	                    }
+
+	                    if (transaction.hasProjectedTransactions && !transaction.isProjected) {
+	                      characteristicBadges.push(
+	                        <span
+	                          key="fixed-projection"
+	                          className="rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200"
+	                        >
+	                          Com fixas
+	                        </span>
+	                      );
+	                    }
+
+	                    if (
+	                      transaction.creditCardInvoice &&
+	                      transaction.fromAccount?.id &&
+	                      !transaction.isCreditCardInvoiceSummary &&
+	                      invoiceHref
+	                    ) {
+	                      characteristicBadges.push(
+	                        <Link
+	                          key="invoice-link"
+	                          href={invoiceHref}
+	                          className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
+	                        >
+	                          {`Fatura ${getInvoiceReferenceLabel(
+	                            transaction.creditCardInvoice.referenceYear,
+	                            transaction.creditCardInvoice.referenceMonth
+	                          )}`}
+	                        </Link>
+	                      );
+	                    }
 	
 	                    return (
 	                      <tr
@@ -1320,7 +1401,9 @@ export default function TransactionsListPage() {
                           </div>
                         </td>
 
-                        <td className="px-2 py-3 text-gray-300">{formatDate(transaction.dueDate)}</td>
+                        <td className="px-2 py-3 text-gray-300 whitespace-nowrap">
+                          {formatDate(transaction.dueDate)}
+                        </td>
 
                         <td className="px-2 py-3">
                           <div className="flex items-center gap-2">
@@ -1344,22 +1427,22 @@ export default function TransactionsListPage() {
 	                                transaction.totalInstallments
 	                              )}
 	                              {transaction.isCreditCardInvoiceSummary && (
-	                                <span className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200">
+	                                <span className="hidden rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200">
 	                                  Fatura
 	                                </span>
 	                              )}
 	                              {transaction.isFixed && (
-                                <span className="rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200">
+                                <span className="hidden rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200">
                                   Fixa
                                 </span>
                               )}
 	                              {(transaction.purchaseGroupId || transaction.creditCardInvoice || transaction.isCreditCardInvoiceSummary || transaction.isCreditCardInvoicePayment) && (
-                                <span className="rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200">
+                                <span className="hidden rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200">
                                   Cartão
                                 </span>
 	                              )}
 	                              {transaction.hasProjectedTransactions && !transaction.isProjected && (
-	                                <span className="rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200">
+	                                <span className="hidden rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200">
 	                                  Com fixas
 	                                </span>
 	                              )}
@@ -1367,7 +1450,7 @@ export default function TransactionsListPage() {
 	                                invoiceHref ? (
 	                                  <Link
 	                                    href={invoiceHref}
-	                                    className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
+	                                    className="hidden rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
 	                                  >
                                     {`Fatura ${getInvoiceReferenceLabel(
                                       transaction.creditCardInvoice.referenceYear,
@@ -1391,6 +1474,16 @@ export default function TransactionsListPage() {
                               <div className="mt-1 text-xs text-gray-400">{transaction.notes}</div>
                             )}
                           </div>
+                        </td>
+
+                        <td className="px-3 py-3">
+                          {characteristicBadges.length > 0 ? (
+                            <div className="flex max-w-[220px] flex-wrap gap-1.5">
+                              {characteristicBadges}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-500">-</span>
+                          )}
                         </td>
 
                         <td className="px-4 py-3 text-right">
@@ -1426,12 +1519,12 @@ export default function TransactionsListPage() {
                           )}
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-2 py-3 text-center">
                           <div className="space-y-1 text-xs">
                             {transaction.effectiveDate && (
-                              <div className="flex items-center gap-1 text-green-400">
+                              <div className="flex items-center justify-center gap-1 text-green-400">
                                 <CheckCircle size={10} />
-                                <span>Liq: {formatDateShort(transaction.effectiveDate)}</span>
+                                <span>{formatDateShort(transaction.effectiveDate)}</span>
                               </div>
                             )}
                             {!transaction.effectiveDate && <span className="text-gray-500">-</span>}

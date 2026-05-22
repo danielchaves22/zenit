@@ -53,6 +53,7 @@ describe('Credit card invoices', () => {
 
   const createLegacyCreditCardPurchase = async (cardId: number, data?: {
     amount?: number;
+    categoryId?: number;
     description?: string;
     notes?: string;
     purchaseDate?: Date;
@@ -71,7 +72,7 @@ describe('Credit card invoices', () => {
         status: 'COMPLETED',
         notes: data?.notes || '',
         fromAccountId: cardId,
-        categoryId: expenseCategoryId,
+        categoryId: data?.categoryId ?? expenseCategoryId,
         companyId,
         createdBy: userId
       }
@@ -779,6 +780,74 @@ describe('Credit card invoices', () => {
     expect(legacyPurchase.groupKey).toBe(`single:${legacyPurchase.representativeTransactionId}`);
     expect(Number(legacyPurchase.totalAmount)).toBe(75);
     expect(legacyPurchase.installments).toHaveLength(1);
+  });
+
+  it('filters credit card purchases by category ids', async () => {
+    const card = await createCreditCardAccount();
+    const travelCategory = await prisma.financialCategory.create({
+      data: {
+        name: `Categoria Viagem ${Date.now()}`,
+        type: 'EXPENSE',
+        color: '#3366ff',
+        companyId
+      }
+    });
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Categoria Padrao',
+        amount: 120,
+        date: '2099-05-08T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        installmentCount: 2
+      });
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Categoria Viagem',
+        amount: 80,
+        date: '2099-05-09T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: travelCategory.id
+      });
+
+    await createLegacyCreditCardPurchase(card.id, {
+      description: 'Compra Legada Viagem',
+      amount: 65,
+      categoryId: travelCategory.id,
+      purchaseDate: new Date('2099-05-10T12:00:00.000Z'),
+      dueDate: new Date('2099-05-15T12:00:00.000Z')
+    });
+
+    const response = await request(app)
+      .get('/api/financial/credit-card-purchases')
+      .query({
+        accountIds: [card.id],
+        categoryIds: [travelCategory.id],
+        page: 1,
+        pageSize: 20
+      })
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBe(2);
+    expect(response.body.data).toHaveLength(2);
+    expect(response.body.data.map((item: any) => item.description)).toEqual([
+      'Compra Legada Viagem',
+      'Compra Categoria Viagem'
+    ]);
+    expect(
+      response.body.data.every((item: any) => item.category?.id === travelCategory.id)
+    ).toBe(true);
   });
 
   it('returns only purchases from accessible credit cards for regular users', async () => {

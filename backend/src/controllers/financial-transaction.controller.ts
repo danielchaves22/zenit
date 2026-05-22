@@ -150,7 +150,7 @@ export async function getCreditCardPurchases(req: Request, res: Response) {
     const { companyId } = getUserContext(req);
     // @ts-ignore - auth middleware adiciona
     const { userId, role } = req.user;
-    const { accountIds, page, pageSize } = req.body;
+    const { accountIds, categoryIds, page, pageSize } = req.body;
 
     const accessibleAccountIds =
       role === 'ADMIN' || role === 'SUPERUSER'
@@ -164,6 +164,7 @@ export async function getCreditCardPurchases(req: Request, res: Response) {
     const result = await FinancialTransactionService.listCreditCardPurchases({
       companyId,
       accountIds,
+      categoryIds,
       page,
       pageSize,
       accessibleAccountIds

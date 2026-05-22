@@ -191,20 +191,27 @@ function CreditCardsPageInner() {
                 key={card.id}
                 className={`border-transparent p-0 ${card.isActive === false ? 'opacity-70' : ''}`}
               >
-                <div className="h-full rounded-xl border p-6" style={cardTheme.cardStyle}>
-                  <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="h-full rounded-xl border p-5" style={cardTheme.cardStyle}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-3">
-                        <BankLogo bank={card.bank} bankName={card.bankName} />
+                      <div className="flex items-center gap-2.5">
+                        <BankLogo
+                          bank={card.bank}
+                          bankName={card.bankName}
+                          size="md"
+                          surface="glass"
+                          outlined
+                          className="border border-white/35 shadow-[0_10px_24px_-14px_rgba(15,23,42,0.9)]"
+                        />
                         <div>
                           <h2
-                            className="text-lg font-semibold"
+                            className="text-base font-semibold leading-tight"
                             style={{ color: cardTheme.primaryTextColor }}
                           >
                             {card.name}
                           </h2>
                           <div
-                            className="mt-1 text-sm"
+                            className="mt-0.5 text-[13px] leading-tight"
                             style={{ color: cardTheme.secondaryTextColor }}
                           >
                             {card.bank?.name || card.bankName || 'Cartao sem banco informado'}
@@ -212,90 +219,96 @@ function CreditCardsPageInner() {
                         </div>
                       </div>
                       <div
-                        className="mt-3 text-xs"
+                        className="mt-2 text-[11px]"
                         style={{ color: cardTheme.tertiaryTextColor }}
                       >
                         Fecha dia {card.statementClosingDay || '-'} - vence dia {card.statementDueDay || '-'}
                       </div>
                     </div>
 
-                    <div className="flex flex-wrap justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-1.5">
                       <Link href={`/financial/transactions/new-credit-card-purchase?cardId=${card.id}`}>
                         <Button
                           variant="outline"
-                          className={`flex items-center gap-2 ${cardTheme.actionClassName}`}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 text-[13px] ${cardTheme.actionClassName}`}
                         >
-                          <Receipt size={14} />
+                          <Receipt size={13} />
                           Comprar
                         </Button>
                       </Link>
                       <Link href={`/financial/credit-cards/${card.id}`}>
                         <Button
                           variant="outline"
-                          className={`flex items-center gap-2 ${cardTheme.actionClassName}`}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 text-[13px] ${cardTheme.actionClassName}`}
                         >
-                          <Edit2 size={14} />
+                          <Edit2 size={13} />
                           Editar
                         </Button>
                       </Link>
                       <Link href={`/financial/credit-cards/${card.id}/invoices`}>
-                        <Button variant="outline" className={cardTheme.actionClassName}>
+                        <Button
+                          variant="outline"
+                          className={`px-2.5 py-1 text-[13px] ${cardTheme.actionClassName}`}
+                        >
                           Faturas
                         </Button>
                       </Link>
                       <Link href={`/financial/credit-cards/purchases?cardId=${card.id}`}>
-                        <Button variant="outline" className={cardTheme.actionClassName}>
+                        <Button
+                          variant="outline"
+                          className={`px-2.5 py-1 text-[13px] ${cardTheme.actionClassName}`}
+                        >
                           Compras
                         </Button>
                       </Link>
                       <button
                         onClick={() => void handleDelete(card)}
-                        className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${cardTheme.destructiveActionClassName}`}
+                        className={`rounded border px-2.5 py-1 text-[13px] font-semibold transition-colors ${cardTheme.destructiveActionClassName}`}
                         title="Excluir cartao"
                       >
-                        <Trash2 size={14} />
+                        <Trash2 size={13} />
                       </button>
                     </div>
                   </div>
 
-                  <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div className="rounded-lg border p-3" style={cardTheme.panelStyle}>
+                  <div className="mt-4 grid grid-cols-1 gap-2.5 md:grid-cols-3">
+                    <div className="rounded-lg border p-2.5" style={cardTheme.panelStyle}>
                       <div
-                        className="text-xs uppercase tracking-wide"
+                        className="text-[10px] uppercase tracking-[0.14em]"
                         style={{ color: cardTheme.tertiaryTextColor }}
                       >
                         Limite total
                       </div>
                       <div
-                        className="mt-1 text-lg font-semibold"
+                        className="mt-1 text-[1.1rem] font-semibold leading-tight"
                         style={{ color: cardTheme.primaryTextColor }}
                       >
                         {card.creditLimit ? formatCurrency(card.creditLimit) : 'Nao configurado'}
                       </div>
                     </div>
-                    <div className="rounded-lg border p-3" style={cardTheme.panelStyle}>
+                    <div className="rounded-lg border p-2.5" style={cardTheme.panelStyle}>
                       <div
-                        className="text-xs uppercase tracking-wide"
+                        className="text-[10px] uppercase tracking-[0.14em]"
                         style={{ color: cardTheme.tertiaryTextColor }}
                       >
                         Usado
                       </div>
                       <div
-                        className="mt-1 text-lg font-semibold"
+                        className="mt-1 text-[1.1rem] font-semibold leading-tight"
                         style={{ color: cardTheme.primaryTextColor }}
                       >
                         {formatCurrency(usedLimit)}
                       </div>
                     </div>
-                    <div className="rounded-lg border p-3" style={cardTheme.panelStyle}>
+                    <div className="rounded-lg border p-2.5" style={cardTheme.panelStyle}>
                       <div
-                        className="text-xs uppercase tracking-wide"
+                        className="text-[10px] uppercase tracking-[0.14em]"
                         style={{ color: cardTheme.tertiaryTextColor }}
                       >
                         Disponivel
                       </div>
                       <div
-                        className="mt-1 text-lg font-semibold"
+                        className="mt-1 text-[1.1rem] font-semibold leading-tight"
                         style={{
                           color:
                             availableLimit !== null && availableLimit < 0
@@ -308,18 +321,18 @@ function CreditCardsPageInner() {
                     </div>
                   </div>
 
-                  <div className="mt-5 rounded-xl border p-4" style={cardTheme.panelStyle}>
+                  <div className="mt-4 rounded-xl border p-3.5" style={cardTheme.panelStyle}>
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div
-                          className="text-sm font-medium"
+                          className="text-[13px] font-medium"
                           style={{ color: cardTheme.primaryTextColor }}
                         >
                           Proxima fatura
                         </div>
                         {card.nextInvoice ? (
                           <div
-                            className="mt-1 text-sm"
+                            className="mt-0.5 text-[13px]"
                             style={{ color: cardTheme.secondaryTextColor }}
                           >
                             {getInvoiceReferenceLabel(
@@ -329,7 +342,7 @@ function CreditCardsPageInner() {
                           </div>
                         ) : (
                           <div
-                            className="mt-1 text-sm"
+                            className="mt-0.5 text-[13px]"
                             style={{ color: cardTheme.secondaryTextColor }}
                           >
                             Nenhuma fatura em aberto
@@ -344,16 +357,16 @@ function CreditCardsPageInner() {
                     </div>
 
                     {card.nextInvoice && (
-                      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-2">
                         <div>
                           <div
-                            className="text-xs uppercase tracking-wide"
+                            className="text-[10px] uppercase tracking-[0.14em]"
                             style={{ color: cardTheme.tertiaryTextColor }}
                           >
                             Valor
                           </div>
                           <div
-                            className="mt-1 text-lg font-semibold"
+                            className="mt-1 text-[1.1rem] font-semibold leading-tight"
                             style={{ color: cardTheme.primaryTextColor }}
                           >
                             {formatCurrency(card.nextInvoice.totalAmount)}
@@ -361,13 +374,13 @@ function CreditCardsPageInner() {
                         </div>
                         <div>
                           <div
-                            className="text-xs uppercase tracking-wide"
+                            className="text-[10px] uppercase tracking-[0.14em]"
                             style={{ color: cardTheme.tertiaryTextColor }}
                           >
                             Vencimento
                           </div>
                           <div
-                            className="mt-1 text-lg font-semibold"
+                            className="mt-1 text-[1.1rem] font-semibold leading-tight"
                             style={{ color: cardTheme.primaryTextColor }}
                           >
                             {card.nextInvoice.dueDate

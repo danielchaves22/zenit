@@ -12,7 +12,8 @@ interface BankLogoProps {
   bankName?: string | null;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
-  surface?: 'transparent' | 'solid';
+  surface?: 'transparent' | 'solid' | 'glass';
+  outlined?: boolean;
 }
 
 const sizeClasses = {
@@ -29,7 +30,8 @@ const iconSizes = {
 
 const surfaceClasses = {
   transparent: 'border-transparent bg-transparent text-white/90 shadow-none',
-  solid: 'border border-white/15 bg-white/90 text-slate-700 shadow-sm'
+  solid: 'border border-white/15 bg-white/90 text-slate-700 shadow-sm',
+  glass: 'border border-white/18 bg-white/20 text-slate-700 shadow-sm backdrop-blur-[2px]'
 } as const;
 
 export default function BankLogo({
@@ -37,7 +39,8 @@ export default function BankLogo({
   bankName,
   size = 'md',
   className = '',
-  surface = 'transparent'
+  surface = 'transparent',
+  outlined = false
 }: BankLogoProps) {
   const iconUrl = getBankIconUrl(bank);
   const displayName = getBankDisplayName(bank, bankName);
@@ -57,7 +60,11 @@ export default function BankLogo({
         <img
           src={iconUrl}
           alt=""
-          className="h-full w-full object-contain p-0.5"
+          className={`h-full w-full object-contain p-0.5 ${
+            outlined
+              ? 'drop-shadow-[0_0_1px_rgba(255,255,255,0.95)] drop-shadow-[0_1px_2px_rgba(15,23,42,0.35)]'
+              : ''
+          }`}
           onError={() => setHasImageError(true)}
         />
       ) : displayName ? (

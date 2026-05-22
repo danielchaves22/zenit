@@ -53,6 +53,12 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
     { label: 'Novo Cartão' }
   ],
+  '/financial/credit-cards/purchases': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
+    { label: 'Compras no Cartão' }
+  ],
   '/financial/credit-cards/[accountId]': [
     { label: 'Dashboard', href: '/' },
     { label: 'Financeiro' },
@@ -233,6 +239,7 @@ export function SmartBreadcrumb({
       admin: 'Administração',
       dashboard: 'Dashboard',
       accounts: 'Contas',
+      purchases: 'Compras no Cartão',
       'credit-cards': 'Cartões e Faturas',
       transactions: 'Transações',
       'fixed-transactions': 'Transações Fixas',

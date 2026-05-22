@@ -1,10 +1,10 @@
-// frontend/components/financial/Dashboard.tsx - BOTÕES DE PERÍODO COM CORES DINÂMICAS
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Skeleton } from '../ui/Skeleton';
 import api from '../../lib/api';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   BarChart,
   Bar,
@@ -18,8 +18,14 @@ import {
   Pie,
   Cell
 } from 'recharts';
+import {
+  Budget,
+  fetchBudgets,
+  formatBusinessDate,
+  formatCurrencyFromCents,
+  getPrimaryBudget
+} from '@/utils/budgets';
 
-// Tipos para o resumo financeiro
 interface FinancialSummary {
   income: number;
   expense: number;
@@ -45,13 +51,16 @@ interface FinancialSummary {
 export default function FinancialDashboard() {
   const { token } = useAuth();
   const [summary, setSummary] = useState<FinancialSummary | null>(null);
+  const [primaryBudget, setPrimaryBudget] = useState<Budget | null>(null);
+  const [budgetTimeZone, setBudgetTimeZone] = useState('UTC');
+  const [budgetBusinessDate, setBudgetBusinessDate] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<'month' | 'quarter' | 'year'>('month');
 
   useEffect(() => {
     if (!token) return;
-    fetchSummary();
+    void fetchSummary();
   }, [token, period]);
 
   async function fetchSummary() {
@@ -59,7 +68,6 @@ export default function FinancialDashboard() {
     setError(null);
 
     try {
-      // Calcular datas com base no período selecionado
       const now = new Date();
       let startDate = new Date();
       let endDate = new Date();
@@ -84,6 +92,16 @@ export default function FinancialDashboard() {
       });
 
       setSummary(response.data);
+
+      try {
+        const budgetPayload = await fetchBudgets();
+        setPrimaryBudget(getPrimaryBudget(budgetPayload.budgets));
+        setBudgetTimeZone(budgetPayload.timeZone);
+        setBudgetBusinessDate(budgetPayload.businessDate);
+      } catch (_budgetError) {
+        setPrimaryBudget(null);
+        setBudgetBusinessDate(null);
+      }
     } catch (err: any) {
       setError(err.response?.data?.error || 'Erro ao carregar resumo financeiro');
     } finally {
@@ -91,7 +109,6 @@ export default function FinancialDashboard() {
     }
   }
 
-  // Formatar valor para exibição em BRL
   function formatCurrency(value: number): string {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
@@ -99,7 +116,6 @@ export default function FinancialDashboard() {
     }).format(value);
   }
 
-  // Gerar dados para o gráfico de receitas x despesas
   function getChartData() {
     if (!summary) return [];
 
@@ -117,14 +133,13 @@ export default function FinancialDashboard() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-heading font-bold">Dashboard Financeiro</h1>
-        
-        {/* ✅ BOTÕES DE PERÍODO COM CORES DINÂMICAS */}
+
         <div className="flex space-x-2">
           <button
             onClick={() => setPeriod('month')}
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-              period === 'month' 
-                ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
+              period === 'month'
+                ? 'bg-accent text-white shadow-lg'
                 : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
             }`}
           >
@@ -133,8 +148,8 @@ export default function FinancialDashboard() {
           <button
             onClick={() => setPeriod('quarter')}
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-              period === 'quarter' 
-                ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
+              period === 'quarter'
+                ? 'bg-accent text-white shadow-lg'
                 : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
             }`}
           >
@@ -143,8 +158,8 @@ export default function FinancialDashboard() {
           <button
             onClick={() => setPeriod('year')}
             className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-              period === 'year' 
-                ? 'bg-accent text-white shadow-lg' // ✅ USA CSS VARIABLE DINÂMICA
+              period === 'year'
+                ? 'bg-accent text-white shadow-lg'
                 : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
             }`}
           >
@@ -160,21 +175,23 @@ export default function FinancialDashboard() {
           ))}
         </div>
       ) : error ? (
-        <Card className="p-6 text-center text-danger">
-          {error}
-        </Card>
+        <Card className="p-6 text-center text-danger">{error}</Card>
       ) : summary && (
         <>
-          {/* Cards de resumo */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="p-6 relative overflow-hidden">
               <h3 className="text-lg font-medium text-gray-600">Receitas</h3>
               <p className="text-2xl font-bold text-success mt-2">
                 {formatCurrency(summary.income)}
               </p>
-              <div 
-                className="absolute bottom-0 left-0 h-1 bg-success" 
-                style={{ width: `${Math.min(100, (summary.income / (summary.income + summary.expense)) * 100)}%` }}
+              <div
+                className="absolute bottom-0 left-0 h-1 bg-success"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    (summary.income / (summary.income + summary.expense || 1)) * 100
+                  )}%`
+                }}
               />
             </Card>
 
@@ -183,44 +200,102 @@ export default function FinancialDashboard() {
               <p className="text-2xl font-bold text-danger mt-2">
                 {formatCurrency(summary.expense)}
               </p>
-              <div 
-                className="absolute bottom-0 left-0 h-1 bg-danger" 
-                style={{ width: `${Math.min(100, (summary.expense / (summary.income + summary.expense)) * 100)}%` }}
+              <div
+                className="absolute bottom-0 left-0 h-1 bg-danger"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    (summary.expense / (summary.income + summary.expense || 1)) * 100
+                  )}%`
+                }}
               />
             </Card>
 
             <Card className="p-6 relative overflow-hidden">
               <h3 className="text-lg font-medium text-gray-600">Saldo</h3>
-              <p className={`text-2xl font-bold mt-2 ${summary.balance >= 0 ? 'text-success' : 'text-danger'}`}>
+              <p
+                className={`text-2xl font-bold mt-2 ${
+                  summary.balance >= 0 ? 'text-success' : 'text-danger'
+                }`}
+              >
                 {formatCurrency(summary.balance)}
               </p>
-              <div 
-                className={`absolute bottom-0 left-0 h-1 ${summary.balance >= 0 ? 'bg-success' : 'bg-danger'}`} 
+              <div
+                className={`absolute bottom-0 left-0 h-1 ${
+                  summary.balance >= 0 ? 'bg-success' : 'bg-danger'
+                }`}
                 style={{ width: '100%' }}
               />
             </Card>
           </div>
 
-          {/* Gráfico de Receitas x Despesas */}
+          <Card className="p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-gray-300">Orçamento do dia</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  Visão separada do domínio de orçamentos, sem misturar no saldo financeiro geral.
+                </p>
+              </div>
+
+              <Link href="/financial/budgets">
+                <Button variant="outline">Ver orçamentos</Button>
+              </Link>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-4">
+              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
+                <div className="text-sm text-gray-400">Orçamento principal</div>
+                <div className="mt-2 text-lg font-semibold text-white">
+                  {primaryBudget?.code || 'Nenhum sincronizado'}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
+                <div className="text-sm text-gray-400">Pode usar hoje</div>
+                <div className="mt-2 text-lg font-semibold text-white">
+                  {primaryBudget
+                    ? formatCurrencyFromCents(primaryBudget.dailyBudgetCurrentCents)
+                    : '--'}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
+                <div className="text-sm text-gray-400">Saldo extra</div>
+                <div className="mt-2 text-lg font-semibold text-white">
+                  {primaryBudget
+                    ? formatCurrencyFromCents(primaryBudget.dayExtraBalanceCents)
+                    : '--'}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
+                <div className="text-sm text-gray-400">Data de negócio</div>
+                <div className="mt-2 text-lg font-semibold text-white">
+                  {budgetBusinessDate
+                    ? formatBusinessDate(budgetBusinessDate, budgetTimeZone)
+                    : '--'}
+                </div>
+              </div>
+            </div>
+          </Card>
+
           <Card className="p-6">
             <h3 className="text-lg font-medium text-gray-600 mb-4">Receitas x Despesas</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={getChartData()}
-                  margin={{ top: 10, right: 30, left: 20, bottom: 5 }}
-                >
+                <BarChart data={getChartData()} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
                   <Tooltip
                     formatter={(value) => formatCurrency(Number(value))}
                     contentStyle={{
-                      backgroundColor:  'var(--color-bg)',
+                      backgroundColor: 'var(--color-bg)',
                       borderColor: '#374151',
-                      color: '#fff',
+                      color: '#fff'
                     }}
-                    cursor={{ fill:  'var(--color-bg-tertiary)' }}
+                    cursor={{ fill: 'var(--color-bg-tertiary)' }}
                   />
                   <Legend />
                   <Bar dataKey="Receitas" fill="#16A34A" />
@@ -230,7 +305,6 @@ export default function FinancialDashboard() {
             </div>
           </Card>
 
-          {/* Caixa e Disponibilidade */}
           <Card className="p-6">
             <h3 className="text-lg font-medium text-gray-600 mb-1">Caixa e Disponibilidade</h3>
             <p className="mb-4 text-sm text-gray-400">
@@ -250,7 +324,11 @@ export default function FinancialDashboard() {
                     <tr key={account.id} className="border-t">
                       <td className="p-2">{account.name}</td>
                       <td className="p-2">{mapAccountType(account.type)}</td>
-                      <td className={`p-2 text-right ${Number(account.balance) >= 0 ? 'text-success' : 'text-danger'}`}>
+                      <td
+                        className={`p-2 text-right ${
+                          Number(account.balance) >= 0 ? 'text-success' : 'text-danger'
+                        }`}
+                      >
                         {formatCurrency(Number(account.balance))}
                       </td>
                     </tr>
@@ -258,12 +336,16 @@ export default function FinancialDashboard() {
                 </tbody>
                 <tfoot className="font-bold">
                   <tr className="border-t">
-                    <td className="p-2" colSpan={2}>Total</td>
-                    <td className={`p-2 text-right ${
-                      summary.accounts.reduce((sum, account) => sum + Number(account.balance), 0) >= 0 
-                      ? 'text-success' 
-                      : 'text-danger'
-                    }`}>
+                    <td className="p-2" colSpan={2}>
+                      Total
+                    </td>
+                    <td
+                      className={`p-2 text-right ${
+                        summary.accounts.reduce((sum, account) => sum + Number(account.balance), 0) >= 0
+                          ? 'text-success'
+                          : 'text-danger'
+                      }`}
+                    >
                       {formatCurrency(
                         summary.accounts.reduce((sum, account) => sum + Number(account.balance), 0)
                       )}
@@ -274,7 +356,6 @@ export default function FinancialDashboard() {
             </div>
           </Card>
 
-          {/* Despesas por Categoria */}
           {summary.topCategories && summary.topCategories.length > 0 && (
             <Card className="p-6">
               <h3 className="text-lg font-medium text-gray-600 mb-4">Despesas por Categoria</h3>
@@ -282,12 +363,7 @@ export default function FinancialDashboard() {
                 <div className="md:w-1/2 h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie
-                        data={summary.topCategories}
-                        dataKey="amount"
-                        nameKey="name"
-                        outerRadius={80}
-                      >
+                      <Pie data={summary.topCategories} dataKey="amount" nameKey="name" outerRadius={80}>
                         {summary.topCategories.map((category) => (
                           <Cell key={category.id} fill={category.color} />
                         ))}
@@ -295,9 +371,9 @@ export default function FinancialDashboard() {
                       <Tooltip
                         formatter={(value) => formatCurrency(Number(value))}
                         contentStyle={{
-                          backgroundColor:  'var(--color-bg)',
+                          backgroundColor: 'var(--color-bg)',
                           borderColor: '#374151',
-                          color: '#fff',
+                          color: '#fff'
                         }}
                       />
                     </PieChart>
@@ -326,15 +402,14 @@ export default function FinancialDashboard() {
   );
 }
 
-// Mapear tipos de conta para exibição amigável
 function mapAccountType(type: string): string {
   const types: Record<string, string> = {
-    'CHECKING': 'Conta Corrente',
-    'SAVINGS': 'Poupança',
-    'CREDIT_CARD': 'Cartão de Crédito',
-    'INVESTMENT': 'Investimento',
-    'CASH': 'Dinheiro'
+    CHECKING: 'Conta Corrente',
+    SAVINGS: 'Poupança',
+    CREDIT_CARD: 'Cartão de Crédito',
+    INVESTMENT: 'Investimento',
+    CASH: 'Dinheiro'
   };
-  
+
   return types[type] || type;
 }

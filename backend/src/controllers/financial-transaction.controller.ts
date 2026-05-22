@@ -142,6 +142,43 @@ export async function getTransactions(req: Request, res: Response) {
 }
 
 /**
+ * GET /api/financial/credit-card-purchases
+ * Lista compras no cartao agrupadas por compra
+ */
+export async function getCreditCardPurchases(req: Request, res: Response) {
+  try {
+    const { companyId } = getUserContext(req);
+    // @ts-ignore - auth middleware adiciona
+    const { userId, role } = req.user;
+    const { accountIds, page, pageSize } = req.body;
+
+    const accessibleAccountIds =
+      role === 'ADMIN' || role === 'SUPERUSER'
+        ? undefined
+        : await UserFinancialAccountAccessService.getUserAccessibleAccounts(
+            userId,
+            role,
+            companyId
+          );
+
+    const result = await FinancialTransactionService.listCreditCardPurchases({
+      companyId,
+      accountIds,
+      page,
+      pageSize,
+      accessibleAccountIds
+    });
+
+    return res.status(200).json(result);
+  } catch (error: any) {
+    logger.error('Erro ao listar compras no cartao:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao listar compras no cartao'
+    });
+  }
+}
+
+/**
  * GET /api/financial/transactions/:id
  * ObtÃ©m uma transaÃ§Ã£o financeira especÃ­fica pelo ID
  */

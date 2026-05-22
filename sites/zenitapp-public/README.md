@@ -1,13 +1,24 @@
 # zenitapp.net (site publico estatico)
 
-Conteudo institucional e de compliance para o dominio `zenitapp.net`.
+Conteudo institucional, paginas de aplicacoes e materiais de compliance para o dominio `zenitapp.net`.
 
 ## Rotas
 
-- `/` pagina institucional
+- `/` home institucional da Zenit App e apresentacao do ecossistema
+- `/zenitcalc` pagina dedicada ao ZenitCalc
+- `/cash` pagina dedicada ao Cash
+- `/orcamento-mobile` pagina dedicada ao Orcamento Mobile
 - `/privacy` politica de privacidade
 - `/terms` termos de servico
 - `/login` redireciona para `https://calc.zenitapp.net/login`
+
+## Estrutura
+
+- `index.html`: landing institucional da marca e links para as aplicacoes
+- `zenitcalc/index.html`: pagina publica do ZenitCalc
+- `cash/index.html`: pagina publica do Cash
+- `orcamento-mobile/index.html`: pagina publica do Orcamento Mobile
+- `styles.css`: estilos compartilhados por toda a experiencia publica
 
 ## Deploy no Render (Static Site)
 
@@ -18,4 +29,4 @@ Conteudo institucional e de compliance para o dominio `zenitapp.net`.
 
 ## Observacao
 
-O app autenticado fica em `calc.zenitapp.net` (servico Next.js separado).
+O app autenticado do ZenitCalc continua em `calc.zenitapp.net` (servico Next.js separado).

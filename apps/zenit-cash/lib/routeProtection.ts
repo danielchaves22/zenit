@@ -113,10 +113,13 @@ export function getAllowedRoutes(userRole: UserRole | null): string[] {
   // Rotas financeiras para todos
   allowedRoutes.push(
     '/financial/dashboard',
+    '/financial/budgets',
+    '/financial/budgets/*',
     '/financial/accounts', 
     '/financial/credit-cards',
     '/financial/credit-cards/*',
     '/financial/credit-cards/new',
+    '/financial/credit-cards/purchases',
     '/financial/transactions',
     '/financial/transactions/new-credit-card-purchase',
     '/financial/fixed-transactions',

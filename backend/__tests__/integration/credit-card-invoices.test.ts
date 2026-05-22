@@ -16,11 +16,19 @@ describe('Credit card invoices', () => {
   let companyId: number;
   let userId: number;
   let token: string;
+  let regularUserId: number;
+  let regularUserToken: string;
   let expenseCategoryId: number;
   let payerAccountId: number;
 
   const authHeaders = () => ({
     Authorization: `Bearer ${token}`,
+    'X-Company-Id': companyId.toString(),
+    [APP_KEY_HEADER]: APP_KEY_VALUE
+  });
+
+  const regularUserAuthHeaders = () => ({
+    Authorization: `Bearer ${regularUserToken}`,
     'X-Company-Id': companyId.toString(),
     [APP_KEY_HEADER]: APP_KEY_VALUE
   });
@@ -41,6 +49,33 @@ describe('Credit card invoices', () => {
 
     expect(response.status).toBe(201);
     return response.body;
+  };
+
+  const createLegacyCreditCardPurchase = async (cardId: number, data?: {
+    amount?: number;
+    description?: string;
+    notes?: string;
+    purchaseDate?: Date;
+    dueDate?: Date;
+  }) => {
+    const purchaseDate = data?.purchaseDate || new Date();
+
+    return prisma.financialTransaction.create({
+      data: {
+        description: data?.description || `Compra Legada ${Date.now()}`,
+        amount: data?.amount ?? 75,
+        date: purchaseDate,
+        dueDate: data?.dueDate || purchaseDate,
+        effectiveDate: purchaseDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        notes: data?.notes || '',
+        fromAccountId: cardId,
+        categoryId: expenseCategoryId,
+        companyId,
+        createdBy: userId
+      }
+    });
   };
 
   const buildMonthDate = (monthOffset: number, day: number) => {
@@ -70,6 +105,16 @@ describe('Credit card invoices', () => {
     });
     userId = user.id;
 
+    const regularUser = await prisma.user.create({
+      data: {
+        email: `credit-card-user-${Date.now()}@test.com`,
+        password: passwordHash,
+        name: 'Credit Card User',
+        role: 'USER'
+      }
+    });
+    regularUserId = regularUser.id;
+
     await prisma.userCompany.create({
       data: {
         userId,
@@ -78,6 +123,16 @@ describe('Credit card invoices', () => {
         role: 'ADMIN',
         manageFinancialAccounts: true,
         manageFinancialCategories: true
+      }
+    });
+    await prisma.userCompany.create({
+      data: {
+        userId: regularUserId,
+        companyId,
+        isDefault: false,
+        role: 'USER',
+        manageFinancialAccounts: true,
+        manageFinancialCategories: false
       }
     });
 
@@ -109,11 +164,24 @@ describe('Credit card invoices', () => {
       update: { granted: true },
       create: { userId, companyId, appId: ecosystemApp.id, granted: true }
     });
+    await prisma.userAppGrant.upsert({
+      where: {
+        unique_user_company_app_grant: {
+          userId: regularUserId,
+          companyId,
+          appId: ecosystemApp.id
+        }
+      },
+      update: { granted: true },
+      create: { userId: regularUserId, companyId, appId: ecosystemApp.id, granted: true }
+    });
 
     token = generateToken({ userId });
+    regularUserToken = generateToken({ userId: regularUserId });
   });
 
   beforeEach(async () => {
+    await prisma.userFinancialAccountAccess.deleteMany({ where: { companyId } });
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.creditCardInvoice.deleteMany({ where: { account: { companyId } } });
     await prisma.financialTag.deleteMany({ where: { companyId } });
@@ -143,16 +211,17 @@ describe('Credit card invoices', () => {
   });
 
   afterAll(async () => {
+    await prisma.userFinancialAccountAccess.deleteMany({ where: { companyId } });
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.creditCardInvoice.deleteMany({ where: { account: { companyId } } });
     await prisma.financialTag.deleteMany({ where: { companyId } });
     await prisma.financialCategory.deleteMany({ where: { companyId } });
     await prisma.financialAccount.deleteMany({ where: { companyId } });
-    await prisma.userAppGrant.deleteMany({ where: { userId, companyId } });
+    await prisma.userAppGrant.deleteMany({ where: { companyId } });
     await prisma.companyAppEntitlement.deleteMany({ where: { companyId } });
-    await prisma.userCompany.deleteMany({ where: { userId, companyId } });
+    await prisma.userCompany.deleteMany({ where: { companyId } });
     await prisma.company.deleteMany({ where: { id: companyId } });
-    await prisma.user.deleteMany({ where: { id: userId } });
+    await prisma.user.deleteMany({ where: { id: { in: [userId, regularUserId] } } });
     await prisma.$disconnect();
   });
 
@@ -628,6 +697,138 @@ describe('Credit card invoices', () => {
           transaction.fixedTemplateId === fixedResponse.body.id
       )
     ).toBe(true);
+  });
+
+  it('lists credit card purchases grouped by purchase and supports multi-card filters', async () => {
+    const firstCard = await createCreditCardAccount();
+    const secondCard = await createCreditCardAccount();
+    const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Notebook Parcelado',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: firstCard.id,
+        categoryId: expenseCategoryId,
+        installmentCount: 3
+      });
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Avista Cartao',
+        amount: 50,
+        date: '2099-05-06T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: secondCard.id,
+        categoryId: expenseCategoryId
+      });
+
+    await createLegacyCreditCardPurchase(secondCard.id, {
+      description: 'Compra Legada',
+      amount: 75,
+      purchaseDate: new Date('2099-05-07T12:00:00.000Z'),
+      dueDate: new Date('2099-05-15T12:00:00.000Z')
+    });
+
+    const response = await request(app)
+      .get('/api/financial/credit-card-purchases')
+      .query({
+        accountIds: [firstCard.id, secondCard.id],
+        page: 1,
+        pageSize: 20
+      })
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBe(3);
+    expect(response.body.pages).toBe(1);
+
+    const installmentPurchase = response.body.data.find(
+      (item: any) => item.description === 'Notebook Parcelado'
+    );
+    expect(installmentPurchase).toBeTruthy();
+    expect(installmentPurchase.purchaseGroupId).toBeTruthy();
+    expect(Number(installmentPurchase.totalAmount)).toBe(300);
+    expect(installmentPurchase.installmentCount).toBe(3);
+    expect(installmentPurchase.installments).toHaveLength(3);
+    expect(
+      installmentPurchase.installments.map((installment: any) => installment.installmentNumber)
+    ).toEqual([1, 2, 3]);
+
+    const singlePurchase = response.body.data.find(
+      (item: any) => item.description === 'Compra Avista Cartao'
+    );
+    expect(singlePurchase).toBeTruthy();
+    expect(Number(singlePurchase.totalAmount)).toBe(50);
+    expect(singlePurchase.installmentCount).toBe(1);
+    expect(singlePurchase.purchaseGroupId).toBeTruthy();
+
+    const legacyPurchase = response.body.data.find(
+      (item: any) => item.description === 'Compra Legada'
+    );
+    expect(legacyPurchase).toBeTruthy();
+    expect(legacyPurchase.purchaseGroupId).toBeNull();
+    expect(legacyPurchase.groupKey).toBe(`single:${legacyPurchase.representativeTransactionId}`);
+    expect(Number(legacyPurchase.totalAmount)).toBe(75);
+    expect(legacyPurchase.installments).toHaveLength(1);
+  });
+
+  it('returns only purchases from accessible credit cards for regular users', async () => {
+    const allowedCard = await createCreditCardAccount();
+    const restrictedCard = await createCreditCardAccount();
+
+    await prisma.userFinancialAccountAccess.create({
+      data: {
+        userId: regularUserId,
+        financialAccountId: allowedCard.id,
+        companyId,
+        grantedBy: userId
+      }
+    });
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Permitida',
+        amount: 120,
+        date: '2099-05-08T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: allowedCard.id,
+        categoryId: expenseCategoryId
+      });
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Restrita',
+        amount: 90,
+        date: '2099-05-09T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: restrictedCard.id,
+        categoryId: expenseCategoryId
+      });
+
+    const response = await request(app)
+      .get('/api/financial/credit-card-purchases')
+      .set(regularUserAuthHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].description).toBe('Compra Permitida');
+    expect(response.body.data[0].card.id).toBe(allowedCard.id);
   });
 
   it('lists synthetic projected invoices for the next 10 competencies and returns projected detail', async () => {

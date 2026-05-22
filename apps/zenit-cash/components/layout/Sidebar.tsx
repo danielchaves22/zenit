@@ -5,7 +5,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   PieChart, CreditCard, Building2, Receipt, Home,
-  Users, Settings, ChevronLeft, ChevronRight, Shield, BarChart3, Repeat
+  Users, Settings, ChevronLeft, ChevronRight, Shield, BarChart3, Repeat, PiggyBank
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useConfirmation } from '@/hooks/useConfirmation';
@@ -163,6 +163,13 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       ],
     },
     {
+      icon: <PiggyBank size={20} />,
+      label: 'Orçamentos',
+      subItems: [
+        { label: 'Orçamentos', href: '/financial/budgets' },
+      ],
+    },
+    {
       icon: <CreditCard size={20} />,
       label: 'Contas',
       subItems: [
@@ -175,6 +182,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       label: 'Cartões',
       subItems: [
         { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
+        { label: 'Compras no Cartão', href: '/financial/credit-cards/purchases' },
         { label: 'Novo Cartão', href: '/financial/credit-cards/new' },
       ],
       requiredPermission: 'FINANCIAL_ACCOUNTS'

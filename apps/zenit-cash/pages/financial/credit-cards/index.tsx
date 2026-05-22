@@ -140,6 +140,12 @@ function CreditCardsPageInner() {
               Nova Compra no Cartao
             </Button>
           </Link>
+          <Link href="/financial/credit-cards/purchases">
+            <Button variant="outline" className="flex items-center gap-2">
+              <CreditCard size={16} />
+              Compras no Cartao
+            </Button>
+          </Link>
           <Link href="/financial/credit-cards/new">
             <Button variant="accent" className="flex items-center gap-2">
               <Plus size={16} />
@@ -235,6 +241,11 @@ function CreditCardsPageInner() {
                       <Link href={`/financial/credit-cards/${card.id}/invoices`}>
                         <Button variant="outline" className={cardTheme.actionClassName}>
                           Faturas
+                        </Button>
+                      </Link>
+                      <Link href={`/financial/credit-cards/purchases?cardId=${card.id}`}>
+                        <Button variant="outline" className={cardTheme.actionClassName}>
+                          Compras
                         </Button>
                       </Link>
                       <button

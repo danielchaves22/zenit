@@ -83,6 +83,13 @@ const quickNavigationItems: NavigationItem[] = [
     icon: <CreditCard size={20} />,
     description: 'Acompanhar limite, faturas e pagamentos',
     category: 'financeiro'
+  },
+  {
+    label: 'Compras no Cartão',
+    href: '/financial/credit-cards/purchases',
+    icon: <Receipt size={20} />,
+    description: 'Ver compras agrupadas por cartão com valor total',
+    category: 'financeiro'
   }
 ];
 
@@ -168,6 +175,13 @@ const navigationItems: NavigationItem[] = [
     href: '/financial/credit-cards',
     icon: <CreditCard size={20} />,
     description: 'Acompanhar limite, faturas e pagamentos',
+    category: 'financeiro'
+  },
+  {
+    label: 'Compras no Cartão',
+    href: '/financial/credit-cards/purchases',
+    icon: <Receipt size={20} />,
+    description: 'Ver compras agrupadas por cartão com valor total',
     category: 'financeiro'
   },
   {

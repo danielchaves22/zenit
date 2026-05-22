@@ -98,6 +98,77 @@ type TransactionListSummary = {
   expenseTotal: string;
 };
 
+type CreditCardPurchaseInstallmentItem = {
+  id: number;
+  installmentNumber: number;
+  totalInstallments: number;
+  amount: string;
+  dueDate: Date | null;
+  scheduledDate: Date | null;
+  status: TransactionStatus;
+  creditCardInvoice: {
+    id?: number;
+    referenceYear: number;
+    referenceMonth: number;
+    dueDate: Date | null;
+    status: string;
+  } | null;
+};
+
+type CreditCardPurchaseListItem = {
+  groupKey: string;
+  purchaseGroupId: string | null;
+  representativeTransactionId: number;
+  description: string;
+  notes: string;
+  purchaseDate: Date;
+  installmentAmount: string;
+  totalAmount: string;
+  installmentCount: number;
+  card: {
+    id: number;
+    name: string;
+  };
+  category: {
+    id: number;
+    name: string;
+    color: string;
+    icon?: string | null;
+  } | null;
+  installments: CreditCardPurchaseInstallmentItem[];
+};
+
+type CreditCardPurchaseBaseTransaction = {
+  id: number;
+  purchaseGroupId: string | null;
+  description: string;
+  notes: string | null;
+  date: Date;
+  amount: Prisma.Decimal;
+  installmentNumber: number | null;
+  totalInstallments: number | null;
+  dueDate: Date | null;
+  scheduledDate: Date | null;
+  status: TransactionStatus;
+  fromAccount: {
+    id: number;
+    name: string;
+  };
+  category: {
+    id: number;
+    name: string;
+    color: string;
+    icon: string | null;
+  } | null;
+  creditCardInvoice: {
+    id: number;
+    referenceYear: number;
+    referenceMonth: number;
+    dueDate: Date | null;
+    status: string;
+  } | null;
+};
+
 // ============================================
 // CRITICAL: FINANCIAL DATA INTEGRITY CLASS
 // ============================================
@@ -2562,6 +2633,244 @@ export default class FinancialTransactionService {
     return {
       ...transaction,
       purchaseGroupTransactions
+    };
+  }
+
+  static async listCreditCardPurchases(params: {
+    companyId: number;
+    accountIds?: number[];
+    page?: number;
+    pageSize?: number;
+    accessibleAccountIds?: number[];
+  }): Promise<{ data: CreditCardPurchaseListItem[]; total: number; pages: number }> {
+    const {
+      companyId,
+      page = 1,
+      pageSize = 20,
+      accessibleAccountIds
+    } = params;
+
+    const hasExplicitAccountIds = Array.isArray(params.accountIds);
+    let effectiveAccountIds = hasExplicitAccountIds
+      ? Array.from(new Set(params.accountIds || []))
+      : undefined;
+
+    if (hasExplicitAccountIds && effectiveAccountIds && effectiveAccountIds.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        pages: 1
+      };
+    }
+
+    if (accessibleAccountIds) {
+      if (accessibleAccountIds.length === 0) {
+        return {
+          data: [],
+          total: 0,
+          pages: 1
+        };
+      }
+
+      const accessibleAccountIdSet = new Set(accessibleAccountIds);
+      effectiveAccountIds = effectiveAccountIds
+        ? effectiveAccountIds.filter((accountId) => accessibleAccountIdSet.has(accountId))
+        : accessibleAccountIds;
+
+      if (effectiveAccountIds.length === 0) {
+        return {
+          data: [],
+          total: 0,
+          pages: 1
+        };
+      }
+    }
+
+    const select = {
+      id: true,
+      purchaseGroupId: true,
+      description: true,
+      notes: true,
+      date: true,
+      amount: true,
+      installmentNumber: true,
+      totalInstallments: true,
+      dueDate: true,
+      scheduledDate: true,
+      status: true,
+      fromAccount: {
+        select: {
+          id: true,
+          name: true
+        }
+      },
+      category: {
+        select: {
+          id: true,
+          name: true,
+          color: true,
+          icon: true
+        }
+      },
+      creditCardInvoice: {
+        select: {
+          id: true,
+          referenceYear: true,
+          referenceMonth: true,
+          dueDate: true,
+          status: true
+        }
+      }
+    };
+
+    const baseWhere: Prisma.FinancialTransactionWhereInput = {
+      companyId,
+      type: TransactionType.EXPENSE,
+      fromAccount: {
+        is: {
+          type: AccountType.CREDIT_CARD
+        }
+      },
+      ...(effectiveAccountIds
+        ? {
+            fromAccountId: {
+              in: effectiveAccountIds
+            }
+          }
+        : {})
+    };
+
+    const [groupHeaders, legacySingles] = await Promise.all([
+      prisma.financialTransaction.findMany({
+        where: {
+          AND: [
+            baseWhere,
+            { purchaseGroupId: { not: null } },
+            { installmentNumber: 1 }
+          ]
+        },
+        select
+      }),
+      prisma.financialTransaction.findMany({
+        where: {
+          AND: [
+            baseWhere,
+            { purchaseGroupId: null }
+          ]
+        },
+        select
+      })
+    ]);
+
+    const candidates = [...groupHeaders, ...legacySingles]
+      .map((transaction) => transaction as CreditCardPurchaseBaseTransaction)
+      .sort((left, right) => {
+        const dateDiff = right.date.getTime() - left.date.getTime();
+
+        if (dateDiff !== 0) {
+          return dateDiff;
+        }
+
+        return right.id - left.id;
+      });
+
+    const total = candidates.length;
+    const pages = Math.ceil(total / pageSize) || 1;
+    const pagedCandidates = candidates.slice((page - 1) * pageSize, page * pageSize);
+    const groupedPurchaseIds = Array.from(
+      new Set(
+        pagedCandidates
+          .map((transaction) => transaction.purchaseGroupId)
+          .filter((purchaseGroupId): purchaseGroupId is string => Boolean(purchaseGroupId))
+      )
+    );
+
+    const groupedInstallments = groupedPurchaseIds.length > 0
+      ? (await prisma.financialTransaction.findMany({
+          where: {
+            companyId,
+            purchaseGroupId: {
+              in: groupedPurchaseIds
+            }
+          },
+          select,
+          orderBy: [
+            { purchaseGroupId: 'asc' },
+            { installmentNumber: 'asc' },
+            { id: 'asc' }
+          ]
+        })) as CreditCardPurchaseBaseTransaction[]
+      : [];
+
+    const installmentsByPurchaseGroup = new Map<string, CreditCardPurchaseBaseTransaction[]>();
+
+    for (const installment of groupedInstallments) {
+      if (!installment.purchaseGroupId) {
+        continue;
+      }
+
+      const items = installmentsByPurchaseGroup.get(installment.purchaseGroupId) || [];
+      items.push(installment);
+      installmentsByPurchaseGroup.set(installment.purchaseGroupId, items);
+    }
+
+    const data = pagedCandidates.map((transaction) => {
+      const installmentSource = transaction.purchaseGroupId
+        ? installmentsByPurchaseGroup.get(transaction.purchaseGroupId) || [transaction]
+        : [transaction];
+      const installments = installmentSource.map((item) => ({
+        id: item.id,
+        installmentNumber: item.installmentNumber ?? 1,
+        totalInstallments: item.totalInstallments ?? installmentSource.length,
+        amount: item.amount.toString(),
+        dueDate: item.dueDate,
+        scheduledDate: item.scheduledDate,
+        status: item.status,
+        creditCardInvoice: item.creditCardInvoice
+          ? {
+              id: item.creditCardInvoice.id,
+              referenceYear: item.creditCardInvoice.referenceYear,
+              referenceMonth: item.creditCardInvoice.referenceMonth,
+              dueDate: item.creditCardInvoice.dueDate,
+              status: item.creditCardInvoice.status
+            }
+          : null
+      }));
+      const totalAmount = installments.reduce(
+        (sum, item) => sum.plus(this.parseTransactionListSummaryAmount(item.amount)),
+        new Prisma.Decimal(0)
+      );
+
+      return {
+        groupKey: transaction.purchaseGroupId || `single:${transaction.id}`,
+        purchaseGroupId: transaction.purchaseGroupId,
+        representativeTransactionId: transaction.id,
+        description: transaction.description,
+        notes: transaction.notes || '',
+        purchaseDate: transaction.date,
+        installmentAmount: installments[0]?.amount || transaction.amount.toString(),
+        totalAmount: totalAmount.toString(),
+        installmentCount: installments.length,
+        card: {
+          id: transaction.fromAccount.id,
+          name: transaction.fromAccount.name
+        },
+        category: transaction.category
+          ? {
+              id: transaction.category.id,
+              name: transaction.category.name,
+              color: transaction.category.color,
+              icon: transaction.category.icon
+            }
+          : null,
+        installments
+      };
+    });
+
+    return {
+      data,
+      total,
+      pages
     };
   }
 

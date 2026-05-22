@@ -16,6 +16,7 @@ import {
   createTransactionSchema,
   updateTransactionSchema,
   listTransactionsSchema,
+  listCreditCardPurchasesSchema,
   updateTransactionStatusSchema,
   autocompleteQuerySchema
 } from '../validators/financial-transaction.validator';
@@ -60,6 +61,7 @@ import {
 
 import {
   createTransaction,
+  getCreditCardPurchases,
   getTransactions,
   getTransactionById,
   updateTransaction,
@@ -105,6 +107,7 @@ router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultA
 
 // Credit cards and invoices
 router.get('/credit-cards', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listCreditCards);
+router.get('/credit-card-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(listCreditCardPurchasesSchema), getCreditCardPurchases);
 router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
 router.get('/credit-cards/:accountId/invoices/projected/:projectionKey', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(getProjectedCreditCardInvoiceSchema), getProjectedCreditCardInvoice);
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);

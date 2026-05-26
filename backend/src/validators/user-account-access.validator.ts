@@ -40,7 +40,10 @@ export const userCreationWithPermissionsSchema = z
       .array(
         z.object({
           companyId: z.number(),
-          role: z.enum(['ADMIN', 'SUPERUSER', 'USER'])
+          role: z.enum(['ADMIN', 'SUPERUSER', 'USER']),
+          isCompanyOwner: z.boolean().optional(),
+          manageFinancialAccounts: z.boolean().optional(),
+          manageFinancialCategories: z.boolean().optional()
         })
       )
       .optional(),

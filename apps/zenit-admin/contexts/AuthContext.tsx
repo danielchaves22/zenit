@@ -22,6 +22,7 @@ interface CompanyRole {
   id: number
   name: string
   role: string
+  isCompanyOwner?: boolean
   manageFinancialAccounts?: boolean
   manageFinancialCategories?: boolean
 }
@@ -46,6 +47,7 @@ interface AuthContextData {
   companyId: number | null
   userName: string | null
   companyName: string | null
+  isCompanyOwner: boolean
   manageFinancialAccounts: boolean
   manageFinancialCategories: boolean
   refreshToken: () => Promise<boolean>
@@ -305,6 +307,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         companyId,
         userName: user?.name || null,
         companyName: user && companyId ? user.companies.find(c => c.id === companyId)?.name || null : null,
+        isCompanyOwner:
+          user && companyId
+            ? user.companies.find(c => c.id === companyId)?.isCompanyOwner || false
+            : false,
         manageFinancialAccounts:
           user && companyId
             ? user.companies.find(c => c.id === companyId)?.manageFinancialAccounts || false

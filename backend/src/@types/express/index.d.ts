@@ -16,6 +16,7 @@ declare global {
         userId: number;
         exp?: number;
         role: Role;
+        isCompanyOwner?: boolean;
         appKey?: AppKey;
       };
     }

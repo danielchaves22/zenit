@@ -47,6 +47,7 @@ type AuthCompanyView = {
   name: string;
   role: string;
   isDefault: boolean;
+  isCompanyOwner: boolean;
   manageFinancialAccounts: boolean;
   manageFinancialCategories: boolean;
 };
@@ -93,6 +94,7 @@ async function buildAuthPayload(
     name: uc.company.name,
     role: uc.role,
     isDefault: uc.isDefault,
+    isCompanyOwner: uc.isCompanyOwner,
     manageFinancialAccounts: uc.manageFinancialAccounts,
     manageFinancialCategories: uc.manageFinancialCategories
   }));

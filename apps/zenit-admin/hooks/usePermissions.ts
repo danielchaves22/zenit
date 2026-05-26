@@ -1,4 +1,3 @@
-// frontend/hooks/usePermissions.ts - VERSÃO ATUALIZADA
 import { useAuth } from '@/contexts/AuthContext';
 
 export type UserRole = 'ADMIN' | 'SUPERUSER' | 'USER';
@@ -10,58 +9,57 @@ interface PermissionConfig {
 }
 
 export function usePermissions() {
-  const { userRole, manageFinancialAccounts, manageFinancialCategories } = useAuth();
+  const {
+    userRole,
+    isCompanyOwner,
+    manageFinancialAccounts,
+    manageFinancialCategories
+  } = useAuth();
 
-  // ✅ HIERARQUIA DE ROLES
   const roleHierarchy: Record<UserRole, number> = {
-    'ADMIN': 3,
-    'SUPERUSER': 2,
-    'USER': 1
+    ADMIN: 3,
+    SUPERUSER: 2,
+    USER: 1
   };
 
-  // ✅ VERIFICAR SE TEM PERMISSÃO BASEADO EM ROLE MÍNIMO
   const hasRole = (requiredRole: UserRole): boolean => {
     if (!userRole) return false;
-    
+
     const userLevel = roleHierarchy[userRole as UserRole] || 0;
     const requiredLevel = roleHierarchy[requiredRole] || 0;
-    
+
     return userLevel >= requiredLevel;
   };
 
-  // ✅ VERIFICAR PERMISSÕES COMPLEXAS
   const hasPermission = (config: PermissionConfig): boolean => {
     if (!userRole) return false;
 
     const currentRole = userRole as UserRole;
 
-    // Se tem roles negados, verificar se o usuário não está na lista
     if (config.deniedRoles?.includes(currentRole)) {
       return false;
     }
 
-    // Se tem roles específicos permitidos, verificar se o usuário está na lista
     if (config.allowedRoles) {
       return config.allowedRoles.includes(currentRole);
     }
 
-    // Se tem role mínimo necessário, verificar hierarquia
     if (config.requiredRole) {
       return hasRole(config.requiredRole);
     }
 
-    // Se não tem restrições, é permitido para todos
     return true;
   };
 
-  const hasAppPermission = (perm: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES'): boolean => {
+  const hasAppPermission = (
+    perm: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES'
+  ): boolean => {
     if (hasRole('ADMIN') || hasRole('SUPERUSER')) return true;
     if (perm === 'FINANCIAL_ACCOUNTS') return manageFinancialAccounts || false;
     if (perm === 'FINANCIAL_CATEGORIES') return manageFinancialCategories || false;
     return false;
   };
 
-  // ✅ VERIFICAÇÕES ESPECÍFICAS PARA FUNCIONALIDADES DO SISTEMA
   const canManageCompanies = (): boolean => {
     return hasRole('ADMIN');
   };
@@ -74,12 +72,20 @@ export function usePermissions() {
     return hasRole('SUPERUSER');
   };
 
+  const canManageCompanyOwnership = (): boolean => {
+    return isAdmin() || isCompanyOwner;
+  };
+
+  const canResetFinancialHistory = (): boolean => {
+    return isAdmin() || isCompanyOwner;
+  };
+
   const canAccessFinancialReports = (): boolean => {
-    return hasRole('USER'); // Todos podem ver relatórios financeiros
+    return hasRole('USER');
   };
 
   const canCreateTransactions = (): boolean => {
-    return hasRole('USER'); // Todos podem criar transações
+    return hasRole('USER');
   };
 
   const canManageFinancialAccounts = (): boolean => {
@@ -92,63 +98,52 @@ export function usePermissions() {
     return manageFinancialCategories || false;
   };
 
-  // ✅ VERIFICAR SE É ADMIN
   const isAdmin = (): boolean => {
     return userRole === 'ADMIN';
   };
 
-  // ✅ VERIFICAR SE É SUPERUSER OU ACIMA
   const isSuperUserOrAbove = (): boolean => {
     return hasRole('SUPERUSER');
   };
 
-  // ✅ VERIFICAR SE É USER COMUM
   const isRegularUser = (): boolean => {
     return userRole === 'USER';
   };
 
-  // ✅ OBTER NÍVEL NUMÉRICO DO ROLE
   const getRoleLevel = (): number => {
     return roleHierarchy[userRole as UserRole] || 0;
   };
 
-  // ✅ OBTER LABEL AMIGÁVEL DO ROLE
   const getRoleLabel = (): string => {
     const labels: Record<UserRole, string> = {
-      'ADMIN': 'Administrador',
-      'SUPERUSER': 'Superusuário',
-      'USER': 'Usuário'
+      ADMIN: 'Administrador',
+      SUPERUSER: 'Superusuario',
+      USER: 'Usuario'
     };
-    
+
     return labels[userRole as UserRole] || 'Desconhecido';
   };
 
   return {
-    // Verificações básicas
     hasRole,
     hasPermission,
-    
-    // Verificações específicas
     canManageCompanies,
     canManageUsers,
     canAccessSettings,
+    canManageCompanyOwnership,
+    canResetFinancialHistory,
     canAccessFinancialReports,
     canCreateTransactions,
     canManageFinancialAccounts,
     canManageCategories,
     hasAppPermission,
-    
-    // Verificações de tipo de usuário
     isAdmin,
     isSuperUserOrAbove,
     isRegularUser,
-    
-    // Utilitários
     getRoleLevel,
     getRoleLabel,
-    
-    // Estado atual
     currentRole: userRole as UserRole,
+    isCompanyOwner,
     isAuthenticated: !!userRole
   };
 }

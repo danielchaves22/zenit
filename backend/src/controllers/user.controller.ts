@@ -8,106 +8,194 @@ import { toPrismaAppKey } from '../constants/app-access';
 const prisma = new PrismaClient();
 const EQUINOX_COMPANY_CODE = 0;
 
-/**
- * Extrai do token os dados de contexto do usuário autenticado.
- * Versão simplificada: um usuário pertence a apenas uma empresa.
- */
-function getUserContext(req: Request): { userId: number; role: Role; companyId: number } {
+type CompanyMembershipInput = {
+  companyId: number;
+  role: Role;
+  isDefault?: boolean;
+  isCompanyOwner?: boolean;
+  manageFinancialAccounts?: boolean;
+  manageFinancialCategories?: boolean;
+};
+
+function getUserContext(req: Request): {
+  userId: number;
+  role: Role;
+  companyId: number;
+  isCompanyOwner: boolean;
+} {
   // @ts-ignore
-  const { userId, role, companyId } = req.user;
+  const { userId, role, companyId, isCompanyOwner } = req.user;
+
   return {
     userId: userId as number,
     role: role as Role,
-    companyId: companyId as number
+    companyId: companyId as number,
+    isCompanyOwner: Boolean(isCompanyOwner)
   };
 }
 
-/**
- * POST /api/users
- * Simplificado: garante que cada usuário pertence a apenas uma empresa.
- */
-export const createUser = async (req: Request, res: Response) => {
-  const { role, companyId } = getUserContext(req);
-  const { email, password, name, newRole, companyId: targetCompanyId, companies, appGrants } = req.body;
+function canManageCompanyOwnership(actor: {
+  role: Role;
+  isCompanyOwner: boolean;
+}): boolean {
+  return actor.role === 'ADMIN' || actor.isCompanyOwner;
+}
 
-  // Validações de campos obrigatórios
-  if (!email || !password || !name) {
-    return res.status(400).json({ error: 'Email, password e name são obrigatórios.' });
+function normalizeCompanyMemberships(companies: any[] | undefined): CompanyMembershipInput[] {
+  if (!Array.isArray(companies)) {
+    return [];
   }
-  
-  // Validações de permissão
+
+  return companies.map((company) => ({
+    companyId: Number(company.companyId),
+    role: company.role as Role,
+    isDefault: company.isDefault,
+    isCompanyOwner: company.isCompanyOwner === true,
+    manageFinancialAccounts: company.manageFinancialAccounts,
+    manageFinancialCategories: company.manageFinancialCategories
+  }));
+}
+
+function toAppGrantPayload(appGrants: any[] | undefined): Array<{
+  companyId: number;
+  appKey: AppKey;
+  granted: boolean;
+}> {
+  if (!Array.isArray(appGrants)) {
+    return [];
+  }
+
+  return appGrants
+    .map((grant) => {
+      const appKey = toPrismaAppKey(grant.appKey);
+      if (!appKey) return null;
+
+      return {
+        companyId: Number(grant.companyId),
+        appKey,
+        granted: grant.granted !== false
+      };
+    })
+    .filter((grant): grant is { companyId: number; appKey: AppKey; granted: boolean } => grant !== null);
+}
+
+function getBusinessErrorStatus(error: unknown): number | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+
+  if (
+    error.message.includes('Company owner') ||
+    error.message.includes('ultimo company owner') ||
+    error.message.includes('ja esta associado') ||
+    error.message.includes('associado a uma empresa')
+  ) {
+    return 400;
+  }
+
+  return null;
+}
+
+export const createUser = async (req: Request, res: Response) => {
+  const actor = getUserContext(req);
+  const { role, companyId } = actor;
+  const { email, password, name, newRole, companyId: targetCompanyId, companies, appGrants } = req.body;
+  const requestedCompanies = normalizeCompanyMemberships(companies);
+  const mayManageOwnership = canManageCompanyOwnership(actor);
+
+  if (!email || !password || !name) {
+    return res.status(400).json({ error: 'Email, password e name sao obrigatorios.' });
+  }
+
   if (role === 'USER') {
-    return res.status(403).json({ error: 'Acesso negado: USER não pode criar usuários.' });
+    return res.status(403).json({ error: 'Acesso negado: USER nao pode criar usuarios.' });
   }
 
   if (role === 'ADMIN' && newRole !== 'ADMIN' && newRole !== 'SUPERUSER') {
     return res.status(403).json({
-      error: 'ADMIN só pode criar usuários ADMIN ou SUPERUSER.'
+      error: 'ADMIN so pode criar usuarios ADMIN ou SUPERUSER.'
     });
   }
 
   if (role === 'SUPERUSER' && newRole === 'ADMIN') {
     return res.status(403).json({
-      error: 'SUPERUSER não pode criar usuários ADMIN.'
+      error: 'SUPERUSER nao pode criar usuarios ADMIN.'
     });
   }
 
-  let companiesToCreate: { companyId: number; role: Role; manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean }[] = [];
-
-  // Definição do role a ser atribuído
-  let roleToAssign: Role;
-  if (role === 'ADMIN') {
-    roleToAssign = newRole as Role; // validado anteriormente
-  } else {
-    roleToAssign = newRole === 'SUPERUSER' ? 'SUPERUSER' : 'USER';
-  }
+  let companiesToCreate: CompanyMembershipInput[] = [];
+  const roleToAssign: Role =
+    role === 'ADMIN'
+      ? (newRole as Role)
+      : newRole === 'SUPERUSER'
+        ? 'SUPERUSER'
+        : 'USER';
 
   if (role === 'SUPERUSER') {
     let targetId = targetCompanyId !== undefined ? Number(targetCompanyId) : undefined;
-    let accountOpts: { manageFinancialAccounts?: boolean; manageFinancialCategories?: boolean } = {};
+    let requestedCompany = requestedCompanies.length === 1 ? requestedCompanies[0] : undefined;
+
     if (targetId === undefined) {
-      if (Array.isArray(companies) && companies.length === 1) {
-        targetId = Number(companies[0].companyId);
-        accountOpts.manageFinancialAccounts = companies[0].manageFinancialAccounts;
-        accountOpts.manageFinancialCategories = companies[0].manageFinancialCategories;
-      } else {
-        return res.status(400).json({ error: 'É necessário informar companyId ou companies com uma empresa.' });
+      if (!requestedCompany) {
+        return res.status(400).json({
+          error: 'E necessario informar companyId ou companies com uma empresa.'
+        });
       }
+
+      targetId = requestedCompany.companyId;
     }
+
     if (companyId !== targetId) {
-      return res.status(403).json({ error: 'SUPERUSER não pode criar usuário em outra empresa.' });
+      return res.status(403).json({ error: 'SUPERUSER nao pode criar usuario em outra empresa.' });
     }
+
+    if (requestedCompanies.some((company) => company.companyId !== companyId)) {
+      return res.status(403).json({ error: 'SUPERUSER nao pode criar usuario em outra empresa.' });
+    }
+
+    if (!mayManageOwnership && requestedCompany?.isCompanyOwner) {
+      return res.status(403).json({
+        error: 'Apenas ADMIN ou company owner podem conceder company owner.'
+      });
+    }
+
+    requestedCompany = requestedCompany ?? {
+      companyId: targetId,
+      role: roleToAssign
+    };
+
     companiesToCreate.push({
       companyId: targetId,
       role: roleToAssign,
-      ...accountOpts
+      isCompanyOwner: mayManageOwnership ? requestedCompany.isCompanyOwner ?? false : false,
+      manageFinancialAccounts: requestedCompany.manageFinancialAccounts,
+      manageFinancialCategories: requestedCompany.manageFinancialCategories
     });
-  } else if (role === 'ADMIN') {
-    if (Array.isArray(companies) && companies.length > 0) {
-      companiesToCreate = companies.map((c: any) => ({
-        companyId: Number(c.companyId),
-        role: c.role as Role,
-        manageFinancialAccounts: c.manageFinancialAccounts,
-        manageFinancialCategories: c.manageFinancialCategories
-      }));
-      const adminCompanies = companiesToCreate.filter(c => c.role === 'ADMIN');
-      if (adminCompanies.length > 0) {
-        const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
-        if (!equinox || adminCompanies.some(c => c.companyId !== equinox.id)) {
-          return res.status(403).json({ error: 'ADMIN só pode criar ADMIN vinculado à Equinox.' });
-        }
+  } else if (requestedCompanies.length > 0) {
+    companiesToCreate = requestedCompanies;
+
+    const adminCompanies = companiesToCreate.filter((company) => company.role === 'ADMIN');
+    if (adminCompanies.length > 0) {
+      const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
+      if (!equinox || adminCompanies.some((company) => company.companyId !== equinox.id)) {
+        return res.status(403).json({ error: 'ADMIN so pode criar ADMIN vinculado a Equinox.' });
       }
-    } else if (targetCompanyId !== undefined) {
-      if (roleToAssign === 'ADMIN') {
-        const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
-        if (!equinox || Number(targetCompanyId) !== equinox.id) {
-          return res.status(403).json({ error: 'ADMIN só pode criar ADMIN vinculado à Equinox.' });
-        }
-      }
-      companiesToCreate.push({ companyId: Number(targetCompanyId), role: roleToAssign });
-    } else {
-      return res.status(400).json({ error: 'É necessário informar companies ou companyId.' });
     }
+  } else if (targetCompanyId !== undefined) {
+    if (roleToAssign === 'ADMIN') {
+      const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
+      if (!equinox || Number(targetCompanyId) !== equinox.id) {
+        return res.status(403).json({ error: 'ADMIN so pode criar ADMIN vinculado a Equinox.' });
+      }
+    }
+
+    companiesToCreate.push({
+      companyId: Number(targetCompanyId),
+      role: roleToAssign,
+      isCompanyOwner: false
+    });
+  } else {
+    return res.status(400).json({ error: 'E necessario informar companies ou companyId.' });
   }
 
   try {
@@ -118,63 +206,45 @@ export const createUser = async (req: Request, res: Response) => {
       companies: companiesToCreate
     });
 
-    let grantsPayload: Array<{ companyId: number; appKey: AppKey; granted: boolean }> = []
-    if (Array.isArray(appGrants)) {
-      grantsPayload = appGrants
-        .map((grant: any) => {
-          const appKey = toPrismaAppKey(grant.appKey)
-          if (!appKey) return null
-          return {
-            companyId: Number(grant.companyId),
-            appKey,
-            granted: grant.granted !== false
-          }
-        })
-        .filter((grant): grant is { companyId: number; appKey: AppKey; granted: boolean } => grant !== null)
-    } else {
-      grantsPayload = await AppAccessService.buildDefaultGrantsForCompanies(
-        companiesToCreate.map(company => company.companyId)
-      )
-    }
+    const grantsPayload =
+      Array.isArray(appGrants) && appGrants.length > 0
+        ? toAppGrantPayload(appGrants)
+        : await AppAccessService.buildDefaultGrantsForCompanies(
+            companiesToCreate.map((company) => company.companyId)
+          );
 
     if (grantsPayload.length > 0) {
-      await AppAccessService.setUserGrantsForManyCompanies(created.id, grantsPayload)
+      await AppAccessService.setUserGrantsForManyCompanies(created.id, grantsPayload);
     }
 
     return res.status(201).json(created);
-  } catch (error: any) {
-    logger.error('Erro ao criar usuário:', error);
-    
-    // Erro específico: usuário já tem uma empresa
-    if (error.message.includes('já está associado')) {
-      return res.status(400).json({ error: error.message });
+  } catch (error) {
+    logger.error('Erro ao criar usuario:', error);
+
+    const status = getBusinessErrorStatus(error);
+    if (status && error instanceof Error) {
+      return res.status(status).json({ error: error.message });
     }
-    
-    return res.status(500).json({ error: 'Erro interno ao criar usuário.' });
+
+    return res.status(500).json({ error: 'Erro interno ao criar usuario.' });
   }
 };
 
-/**
- * GET /api/users
- * Lista usuários de acordo com permissões
- */
 export const getUsers = async (req: Request, res: Response) => {
   const { role, companyId, userId: me } = getUserContext(req);
 
-  let filterCompanyId: number | undefined = undefined;
-
+  let filterCompanyId: number | undefined;
   if (role === 'ADMIN' && req.query.companyId !== undefined) {
     const parsed = Number(req.query.companyId);
     if (isNaN(parsed)) {
-      return res.status(400).json({ error: 'companyId inválido.' });
+      return res.status(400).json({ error: 'companyId invalido.' });
     }
+
     filterCompanyId = parsed;
   }
 
   try {
     let users;
-    
-    // Base de seleção para todos os casos
     const baseSelect = {
       select: {
         id: true,
@@ -194,6 +264,7 @@ export const getUsers = async (req: Request, res: Response) => {
           select: {
             role: true,
             isDefault: true,
+            isCompanyOwner: true,
             manageFinancialAccounts: true,
             manageFinancialCategories: true,
             company: { select: { id: true, name: true, code: true } }
@@ -202,53 +273,44 @@ export const getUsers = async (req: Request, res: Response) => {
       }
     };
 
-    // ADMIN pode ver todos os usuários (com filtro opcional por empresa)
     if (role === 'ADMIN') {
       users = await UserService.listUsers(baseSelect, filterCompanyId);
-    }
-    // SUPERUSER vê usuários da mesma empresa
-    else if (role === 'SUPERUSER') {
+    } else if (role === 'SUPERUSER') {
       users = await UserService.listUsers(baseSelect, companyId);
-    }
-    // USER vê apenas seu próprio perfil
-    else {
-      users = await UserService.listUsers({
-        ...baseSelect,
-        where: { id: me }
-      }, companyId);
+    } else {
+      users = await UserService.listUsers(
+        {
+          ...baseSelect,
+          where: { id: me }
+        },
+        companyId
+      );
     }
 
     return res.status(200).json(users);
   } catch (error) {
-    logger.error('Erro ao listar usuários:', error);
-    return res.status(500).json({ error: 'Erro interno ao listar usuários.' });
+    logger.error('Erro ao listar usuarios:', error);
+    return res.status(500).json({ error: 'Erro interno ao listar usuarios.' });
   }
 };
 
-/**
- * GET /api/users/:id
- * Obtém um usuário específico de acordo com permissões
- */
 export const getUserById = async (req: Request, res: Response) => {
   const { role, companyId, userId: me } = getUserContext(req);
   const id = Number(req.params.id);
-  
+
   if (isNaN(id)) {
-    return res.status(400).json({ error: 'ID de usuário inválido.' });
+    return res.status(400).json({ error: 'ID de usuario invalido.' });
   }
 
   try {
-    // Verifica se o usuário existe e tem acesso à empresa
     const userExists = await UserService.userBelongsToCompany(id, companyId);
-    
-    // Se não for admin, não pode ver usuários de outras empresas
+
     if (role !== 'ADMIN' && !userExists) {
-      return res.status(403).json({ error: 'Acesso negado a este usuário.' });
+      return res.status(403).json({ error: 'Acesso negado a este usuario.' });
     }
-    
-    // Se for USER, só pode ver seu próprio perfil
+
     if (role === 'USER' && id !== me) {
-      return res.status(403).json({ error: 'Acesso negado: só pode ver seu próprio perfil.' });
+      return res.status(403).json({ error: 'Acesso negado: so pode ver seu proprio perfil.' });
     }
 
     const user = await UserService.findUnique({
@@ -269,6 +331,7 @@ export const getUserById = async (req: Request, res: Response) => {
           select: {
             role: true,
             isDefault: true,
+            isCompanyOwner: true,
             manageFinancialAccounts: true,
             manageFinancialCategories: true,
             company: { select: { id: true, name: true, code: true } }
@@ -278,58 +341,52 @@ export const getUserById = async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'Usuário não encontrado.' });
+      return res.status(404).json({ error: 'Usuario nao encontrado.' });
     }
 
     return res.status(200).json(user);
   } catch (error) {
-    logger.error(`Erro ao buscar usuário ${id}:`, error);
-    return res.status(500).json({ error: 'Erro interno ao buscar usuário.' });
+    logger.error(`Erro ao buscar usuario ${id}:`, error);
+    return res.status(500).json({ error: 'Erro interno ao buscar usuario.' });
   }
 };
 
-/**
- * PUT /api/users/:id
- * Atualiza um usuário
- */
 export const updateUser = async (req: Request, res: Response) => {
-  const { role, companyId, userId: me } = getUserContext(req);
+  const actor = getUserContext(req);
+  const { role, companyId, userId: me } = actor;
   const id = Number(req.params.id);
   const { email, password, name, newRole, companies, appGrants } = req.body;
+  const requestedCompanies = normalizeCompanyMemberships(companies);
+  const mayManageOwnership = canManageCompanyOwnership(actor);
 
   if (isNaN(id)) {
-    return res.status(400).json({ error: 'ID inválido.' });
+    return res.status(400).json({ error: 'ID invalido.' });
   }
-  
+
   if (newRole && id === me) {
-    return res.status(403).json({ error: 'Você não pode alterar seu próprio role.' });
+    return res.status(403).json({ error: 'Voce nao pode alterar seu proprio role.' });
   }
 
   try {
-    // Verifica se o usuário existe e tem acesso à empresa
     const userExists = await UserService.userBelongsToCompany(id, companyId);
-    
-    // Se não for admin, não pode editar usuários de outras empresas
+
     if (role !== 'ADMIN' && !userExists) {
-      return res.status(403).json({ error: 'Acesso negado a este usuário.' });
+      return res.status(403).json({ error: 'Acesso negado a este usuario.' });
     }
-    
-    // Se for SUPERUSER, pode editar usuários da mesma empresa
+
     if (role === 'SUPERUSER' && !userExists) {
-      return res.status(403).json({ error: 'SUPERUSER não pode editar usuário de outra empresa.' });
+      return res.status(403).json({ error: 'SUPERUSER nao pode editar usuario de outra empresa.' });
     }
-    
-    // Se for USER, só pode editar seu próprio perfil
+
     if (role === 'USER') {
       if (id !== me) {
-        return res.status(403).json({ error: 'USER só pode editar seu próprio perfil.' });
+        return res.status(403).json({ error: 'USER so pode editar seu proprio perfil.' });
       }
       if (newRole) {
-        return res.status(403).json({ error: 'USER não pode alterar role.' });
+        return res.status(403).json({ error: 'USER nao pode alterar role.' });
       }
     }
 
-    // Preparar objeto de atualização
     const updateData: any = {};
     if (email) updateData.email = email;
     if (name) updateData.name = name;
@@ -341,92 +398,110 @@ export const updateUser = async (req: Request, res: Response) => {
       updateData.role = newRole;
     }
 
-    // Realizar a atualização
-    let ctx: number | { companyId: number; role: Role }[] | undefined = companyId;
+    let ctx: number | CompanyMembershipInput[] | undefined = companyId;
     const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
-    if (role === 'ADMIN' && Array.isArray(companies)) {
+
+    if (role === 'ADMIN' && requestedCompanies.length > 0) {
       if (!equinox) {
-        return res.status(500).json({ error: 'Empresa Equinox não encontrada' });
+        return res.status(500).json({ error: 'Empresa Equinox nao encontrada' });
       }
-      const invalidAdmin = companies.some((c: any) => c.role === 'ADMIN' && Number(c.companyId) !== equinox.id);
+
+      const invalidAdmin = requestedCompanies.some(
+        (company) => company.role === 'ADMIN' && company.companyId !== equinox.id
+      );
       if (invalidAdmin) {
-        return res.status(403).json({ error: 'ADMIN só pode vincular ADMIN à Equinox.' });
+        return res.status(403).json({ error: 'ADMIN so pode vincular ADMIN a Equinox.' });
       }
-      ctx = companies.map((c: any) => ({
-        companyId: Number(c.companyId),
-        role: c.role as Role,
-        manageFinancialAccounts: c.manageFinancialAccounts,
-        manageFinancialCategories: c.manageFinancialCategories
-      }));
+
+      ctx = requestedCompanies;
+    } else if (role === 'SUPERUSER' && actor.isCompanyOwner && requestedCompanies.length > 0) {
+      if (requestedCompanies.some((company) => company.companyId !== companyId)) {
+        return res.status(403).json({ error: 'SUPERUSER nao pode editar usuario em outra empresa.' });
+      }
+
+      if (requestedCompanies.some((company) => company.role === 'ADMIN')) {
+        return res.status(403).json({ error: 'SUPERUSER nao pode promover usuario a ADMIN.' });
+      }
+
+      ctx = requestedCompanies;
+    } else {
+      if (!mayManageOwnership && requestedCompanies.some((company) => company.isCompanyOwner)) {
+        return res.status(403).json({
+          error: 'Apenas ADMIN ou company owner podem conceder company owner.'
+        });
+      }
+
+      if (requestedCompanies.some((company) => company.companyId !== companyId)) {
+        return res.status(403).json({ error: 'SUPERUSER nao pode editar usuario em outra empresa.' });
+      }
     }
+
     if (newRole === 'ADMIN' && role === 'ADMIN') {
       if (!equinox) {
-        return res.status(500).json({ error: 'Empresa Equinox não encontrada' });
+        return res.status(500).json({ error: 'Empresa Equinox nao encontrada' });
       }
-      if (Array.isArray(companies)) {
-        const hasEquinoxAdmin = companies.some((c: any) => c.role === 'ADMIN' && Number(c.companyId) === equinox.id);
+
+      if (Array.isArray(ctx)) {
+        const hasEquinoxAdmin = ctx.some(
+          (company) => company.role === 'ADMIN' && company.companyId === equinox.id
+        );
         if (!hasEquinoxAdmin) {
-          return res.status(403).json({ error: 'Usuário ADMIN deve estar vinculado à Equinox.' });
+          return res.status(403).json({ error: 'Usuario ADMIN deve estar vinculado a Equinox.' });
         }
       } else if (ctx && typeof ctx === 'number' && ctx !== equinox.id) {
-        return res.status(403).json({ error: 'Usuário ADMIN deve estar vinculado à Equinox.' });
+        return res.status(403).json({ error: 'Usuario ADMIN deve estar vinculado a Equinox.' });
       }
     }
+
     const updated = await UserService.updateUser(id, updateData, ctx);
+    const grantsPayload = toAppGrantPayload(appGrants);
 
-    if (Array.isArray(appGrants)) {
-      const grantsPayload = appGrants
-        .map((grant: any) => {
-          const appKey = toPrismaAppKey(grant.appKey)
-          if (!appKey) return null
-          return {
-            companyId: Number(grant.companyId),
-            appKey,
-            granted: grant.granted !== false
-          }
-        })
-        .filter((grant): grant is { companyId: number; appKey: AppKey; granted: boolean } => grant !== null)
-
-      await AppAccessService.setUserGrantsForManyCompanies(id, grantsPayload)
+    if (grantsPayload.length > 0) {
+      await AppAccessService.setUserGrantsForManyCompanies(id, grantsPayload);
     }
 
     return res.status(200).json(updated);
   } catch (error) {
-    logger.error(`Erro ao atualizar usuário ${id}:`, error);
-    return res.status(500).json({ error: 'Erro interno ao atualizar usuário.' });
+    logger.error(`Erro ao atualizar usuario ${id}:`, error);
+
+    const status = getBusinessErrorStatus(error);
+    if (status && error instanceof Error) {
+      return res.status(status).json({ error: error.message });
+    }
+
+    return res.status(500).json({ error: 'Erro interno ao atualizar usuario.' });
   }
 };
 
-/**
- * DELETE /api/users/:id
- * Exclui um usuário
- */
 export const deleteUser = async (req: Request, res: Response) => {
   const { role, companyId } = getUserContext(req);
   const id = Number(req.params.id);
-  
+
   if (isNaN(id)) {
-    return res.status(400).json({ error: 'ID de usuário inválido.' });
+    return res.status(400).json({ error: 'ID de usuario invalido.' });
   }
-  
+
   if (role === 'USER') {
-    return res.status(403).json({ error: 'USER não pode excluir usuários.' });
+    return res.status(403).json({ error: 'USER nao pode excluir usuarios.' });
   }
 
   try {
-    // Verifica se o usuário existe e tem acesso à empresa
     const userExists = await UserService.userBelongsToCompany(id, companyId);
-    
-    // Se não for admin, não pode excluir usuários de outras empresas
+
     if (role !== 'ADMIN' && !userExists) {
-      return res.status(403).json({ error: 'Acesso negado a este usuário.' });
+      return res.status(403).json({ error: 'Acesso negado a este usuario.' });
     }
-    
-    // Realizar a exclusão
+
     await UserService.deleteUser(id);
     return res.status(204).send();
   } catch (error) {
-    logger.error(`Erro ao excluir usuário ${id}:`, error);
-    return res.status(500).json({ error: 'Erro interno ao excluir usuário.' });
+    logger.error(`Erro ao excluir usuario ${id}:`, error);
+
+    const status = getBusinessErrorStatus(error);
+    if (status && error instanceof Error) {
+      return res.status(status).json({ error: error.message });
+    }
+
+    return res.status(500).json({ error: 'Erro interno ao excluir usuario.' });
   }
 };

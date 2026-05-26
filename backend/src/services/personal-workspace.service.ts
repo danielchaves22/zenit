@@ -224,6 +224,7 @@ export default class PersonalWorkspaceService {
       },
       update: {
         role: Role.SUPERUSER,
+        isCompanyOwner: true,
         manageFinancialAccounts: true,
         manageFinancialCategories: true
       },
@@ -232,6 +233,7 @@ export default class PersonalWorkspaceService {
         companyId,
         role: Role.SUPERUSER,
         isDefault,
+        isCompanyOwner: true,
         manageFinancialAccounts: true,
         manageFinancialCategories: true
       }

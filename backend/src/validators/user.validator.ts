@@ -16,6 +16,7 @@ export const createUserSchema = z.object({
       z.object({
         companyId: z.number(),
         role: z.enum(['ADMIN', 'SUPERUSER', 'USER']),
+        isCompanyOwner: z.boolean().optional(),
         manageFinancialAccounts: z.boolean().optional(),
         manageFinancialCategories: z.boolean().optional()
       })
@@ -36,6 +37,7 @@ export const updateUserSchema = z
         z.object({
           companyId: z.number(),
           role: z.enum(['ADMIN', 'SUPERUSER', 'USER']),
+          isCompanyOwner: z.boolean().optional(),
           manageFinancialAccounts: z.boolean().optional(),
           manageFinancialCategories: z.boolean().optional()
         })

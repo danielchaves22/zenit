@@ -38,6 +38,7 @@ interface User {
       code: number;
     };
     role: string;
+    isCompanyOwner?: boolean;
     manageFinancialAccounts?: boolean;
     manageFinancialCategories?: boolean;
   }[];
@@ -87,7 +88,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
   const router = useRouter();
   const confirmation = useConfirmation();
   const { userRole, companyId } = useAuth();
-  const { isAdmin } = usePermissions();
+  const { isAdmin, canManageCompanyOwnership } = usePermissions();
   const { addToast } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -106,6 +107,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
     Array<{
       companyId: number;
       role: string;
+      isCompanyOwner: boolean;
       manageFinancialAccounts: boolean;
       manageFinancialCategories: boolean;
     }>
@@ -118,6 +120,14 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
   useEffect(() => {
     void initialize();
   }, [mode, userId, userRole, companyId]);
+
+  function canManageOwnershipForCompany(targetCompanyId: number): boolean {
+    if (isAdmin()) {
+      return true;
+    }
+
+    return canManageCompanyOwnership() && companyId === targetCompanyId;
+  }
 
   async function initialize() {
     setLoading(true);
@@ -243,6 +253,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
         {
           companyId: firstCompany.id,
           role: defaultRole,
+          isCompanyOwner: false,
           manageFinancialAccounts: false,
           manageFinancialCategories: false
         }
@@ -262,17 +273,23 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
   }
 
   function applyEditState(user: User) {
+    const visibleCompanies =
+      !isAdmin() && userRole === 'SUPERUSER'
+        ? user.companies.filter((companyConfig) => companyConfig.company.id === companyId)
+        : user.companies;
+
     setEditingUser(user);
     setFormData({
       name: user.name,
       email: user.email,
       password: '',
-      newRole: (user.companies[0]?.role || 'USER') as Role
+      newRole: (visibleCompanies[0]?.role || 'USER') as Role
     });
     setCompanyConfigs(
-      user.companies.map((companyConfig) => ({
+      visibleCompanies.map((companyConfig) => ({
         companyId: companyConfig.company.id,
         role: companyConfig.role,
+        isCompanyOwner: companyConfig.isCompanyOwner || false,
         manageFinancialAccounts: companyConfig.manageFinancialAccounts || false,
         manageFinancialCategories: companyConfig.manageFinancialCategories || false
       }))
@@ -282,7 +299,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
       number,
       { selectedAccountIds: number[]; grantAllAccess: boolean }
     > = {};
-    user.companies.forEach((companyConfig) => {
+    visibleCompanies.forEach((companyConfig) => {
       initialAccountConfigs[companyConfig.company.id] = {
         selectedAccountIds: [],
         grantAllAccess: false
@@ -374,6 +391,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
       {
         companyId: company.id,
         role,
+        isCompanyOwner: false,
         manageFinancialAccounts: false,
         manageFinancialCategories: false
       }
@@ -406,7 +424,11 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
     setCompanyConfigs((prev) =>
       prev.map((config) =>
         config.companyId === companyIdValue
-          ? { ...config, role }
+          ? {
+              ...config,
+              role,
+              isCompanyOwner: role === 'SUPERUSER' ? config.isCompanyOwner : false
+            }
           : config
       )
     );
@@ -428,6 +450,16 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
       prev.map((config) =>
         config.companyId === companyIdValue
           ? { ...config, [field]: checked }
+          : config
+      )
+    );
+  }
+
+  function updateCompanyOwnerFlag(companyIdValue: number, checked: boolean) {
+    setCompanyConfigs((prev) =>
+      prev.map((config) =>
+        config.companyId === companyIdValue
+          ? { ...config, isCompanyOwner: checked }
           : config
       )
     );
@@ -610,7 +642,11 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
   }
 
   if (loading) {
-    return <PageLoader message={mode === 'edit' ? 'Carregando usuario...' : 'Carregando formulario...'} />;
+    return (
+      <PageLoader
+        message={mode === 'edit' ? 'Carregando usuario...' : 'Carregando formulario...'}
+      />
+    );
   }
 
   return (
@@ -785,6 +821,39 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                           </div>
                         </div>
                       )}
+
+                      {config &&
+                        config.role === 'SUPERUSER' &&
+                        canManageOwnershipForCompany(company.id) && (
+                          <div className="ml-6 mt-2 rounded-lg border border-amber-700/50 bg-amber-900/10 p-3">
+                            <label className="flex items-start gap-3 text-sm text-amber-100">
+                              <input
+                                type="checkbox"
+                                className={checkboxClasses}
+                                checked={config.isCompanyOwner}
+                                onChange={(event) =>
+                                  updateCompanyOwnerFlag(company.id, event.target.checked)
+                                }
+                                disabled={saving}
+                              />
+                              <span>
+                                <span className="block font-medium">Company owner</span>
+                                <span className="block text-xs text-amber-200/80">
+                                  Libera acoes sensiveis da empresa, como o reset financeiro.
+                                </span>
+                              </span>
+                            </label>
+                          </div>
+                        )}
+
+                      {config &&
+                        config.role === 'SUPERUSER' &&
+                        config.isCompanyOwner &&
+                        !canManageOwnershipForCompany(company.id) && (
+                          <div className="ml-6 mt-2 rounded-lg border border-amber-700/50 bg-amber-900/10 px-3 py-2 text-sm text-amber-100">
+                            Este usuario e company owner desta empresa.
+                          </div>
+                        )}
 
                       {config && config.role === 'USER' && (
                         <div className="ml-6 mt-2 space-y-4">

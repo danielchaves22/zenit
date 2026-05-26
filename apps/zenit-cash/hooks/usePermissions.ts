@@ -10,7 +10,7 @@ interface PermissionConfig {
 }
 
 export function usePermissions() {
-  const { userRole, manageFinancialAccounts, manageFinancialCategories } = useAuth();
+  const { userRole, isCompanyOwner, manageFinancialAccounts, manageFinancialCategories } = useAuth();
 
   // ✅ HIERARQUIA DE ROLES
   const roleHierarchy: Record<UserRole, number> = {
@@ -74,6 +74,14 @@ export function usePermissions() {
     return hasRole('SUPERUSER');
   };
 
+  const canManageCompanyOwnership = (): boolean => {
+    return isAdmin() || isCompanyOwner;
+  };
+
+  const canResetFinancialHistory = (): boolean => {
+    return isAdmin() || isCompanyOwner;
+  };
+
   const canAccessFinancialReports = (): boolean => {
     return hasRole('USER'); // Todos podem ver relatórios financeiros
   };
@@ -132,6 +140,8 @@ export function usePermissions() {
     canManageCompanies,
     canManageUsers,
     canAccessSettings,
+    canManageCompanyOwnership,
+    canResetFinancialHistory,
     canAccessFinancialReports,
     canCreateTransactions,
     canManageFinancialAccounts,
@@ -149,6 +159,7 @@ export function usePermissions() {
     
     // Estado atual
     currentRole: userRole as UserRole,
+    isCompanyOwner,
     isAuthenticated: !!userRole
   };
 }

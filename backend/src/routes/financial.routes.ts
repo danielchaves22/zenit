@@ -1,6 +1,10 @@
-﻿import { requireAccountAccess, requireTransactionAccountAccess } from '../middlewares/financial-access.middleware';
-import { requireFeaturePermission } from '../middlewares/feature-permission.middleware';
 import { Router } from 'express';
+import {
+  requireAccountAccess,
+  requireTransactionAccountAccess
+} from '../middlewares/financial-access.middleware';
+import { requireCompanyOwnerOrAdmin } from '../middlewares/company-ownership.middleware';
+import { requireFeaturePermission } from '../middlewares/feature-permission.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import {
   createAccountSchema,
@@ -20,6 +24,7 @@ import {
   updateTransactionStatusSchema,
   autocompleteQuerySchema
 } from '../validators/financial-transaction.validator';
+import { executeFinancialResetSchema } from '../validators/financial-reset.validator';
 import {
   getCreditCardInvoiceSchema,
   getProjectedCreditCardInvoiceSchema,
@@ -32,7 +37,6 @@ import {
   materializeFixedTransactionSchema,
   updateFixedTransactionSchema
 } from '../validators/fixed-transaction.validator';
-
 import {
   createAccount,
   getAccounts,
@@ -42,7 +46,6 @@ import {
   adjustBalance
 } from '../controllers/financial-account.controller';
 import { listFinancialBanks } from '../controllers/bank.controller';
-
 import {
   createCategory,
   getCategories,
@@ -50,7 +53,6 @@ import {
   updateCategory,
   deleteCategory
 } from '../controllers/financial-category.controller';
-
 import {
   setDefaultAccount,
   unsetDefaultAccount,
@@ -58,7 +60,6 @@ import {
   unsetDefaultCategory,
   getCompanyDefaults
 } from '../controllers/default.controller';
-
 import {
   createTransaction,
   getCreditCardPurchases,
@@ -70,7 +71,10 @@ import {
   getFinancialSummary,
   getTransactionAutocomplete
 } from '../controllers/financial-transaction.controller';
-
+import {
+  executeFinancialReset,
+  previewFinancialReset
+} from '../controllers/financial-reset.controller';
 import {
   cancelFixedTransaction,
   createFixedTransaction,
@@ -86,15 +90,15 @@ import {
   listCreditCards,
   payCreditCardInvoice
 } from '../controllers/credit-card-invoice.controller';
-
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 
 const router = Router();
 
 router.get('/defaults', getCompanyDefaults);
 router.get('/banks', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listFinancialBanks);
+router.get('/reset/preview', requireCompanyOwnerOrAdmin, previewFinancialReset);
+router.post('/reset', requireCompanyOwnerOrAdmin, validate(executeFinancialResetSchema), executeFinancialReset);
 
-// Financial accounts
 router.post('/accounts', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(createAccountSchema), createAccount);
 router.get('/accounts', validate(listAccountsSchema), getAccounts);
 router.get('/accounts/:id', requireAccountAccess(), getAccountById);
@@ -105,7 +109,6 @@ router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_
 router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccount);
 router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount);
 
-// Credit cards and invoices
 router.get('/credit-cards', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listCreditCards);
 router.get('/credit-card-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(listCreditCardPurchasesSchema), getCreditCardPurchases);
 router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
@@ -113,7 +116,6 @@ router.get('/credit-cards/:accountId/invoices/projected/:projectionKey', require
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
 router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
 
-// Financial categories
 router.post('/categories', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(createCategorySchema), createCategory);
 router.get('/categories', validate(listCategoriesSchema), getCategories);
 router.get('/categories/:id', getCategoryById);
@@ -123,10 +125,7 @@ router.delete('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'
 router.post('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), setDefaultCategory);
 router.delete('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), unsetDefaultCategory);
 
-// Keep autocomplete before /transactions/:id
 router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);
-
-// Materialized + projected transactions
 router.post('/transactions', requireTransactionAccountAccess(), validate(createTransactionSchema), createTransaction);
 router.get('/transactions', validate(listTransactionsSchema), getTransactions);
 router.get('/transactions/:id', getTransactionById);
@@ -134,7 +133,6 @@ router.put('/transactions/:id', requireTransactionAccountAccess(), validate(upda
 router.patch('/transactions/:id/status', validate(updateTransactionStatusSchema), updateTransactionStatus);
 router.delete('/transactions/:id', deleteTransaction);
 
-// Fixed transaction templates
 router.post('/fixed-transactions', requireTransactionAccountAccess(), validate(createFixedTransactionSchema), createFixedTransaction);
 router.get('/fixed-transactions', validate(listFixedTransactionsSchema), listFixedTransactions);
 router.put('/fixed-transactions/:id', validate(updateFixedTransactionSchema), updateFixedTransaction);
@@ -142,7 +140,6 @@ router.delete('/fixed-transactions/:id', deleteFixedTransaction);
 router.patch('/fixed-transactions/:id/cancel', cancelFixedTransaction);
 router.post('/fixed-transactions/:id/materialize', validate(materializeFixedTransactionSchema), materializeFixedTransactionOccurrence);
 
-// Reports
 router.use('/reports/financial-account-movement', financialAccountMovementRoutes);
 router.get('/summary', getFinancialSummary);
 

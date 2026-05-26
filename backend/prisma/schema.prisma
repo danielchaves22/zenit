@@ -245,12 +245,14 @@ model UserCompany {
   companyId Int
   isDefault Boolean @default(false)
   role      Role    @default(USER)
+  isCompanyOwner           Boolean @default(false)
   manageFinancialAccounts   Boolean @default(false)
   manageFinancialCategories Boolean @default(false)
   user      User    @relation(fields: [userId], references: [id])
   company   Company @relation(fields: [companyId], references: [id])
 
   @@unique([userId, companyId])
+  @@index([companyId, isCompanyOwner])
 }
 
 model EcosystemApp {

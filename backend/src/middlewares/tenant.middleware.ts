@@ -41,6 +41,8 @@ export async function tenantMiddleware(
     // @ts-ignore
     req.user.role = context.role;
     // @ts-ignore
+    req.user.isCompanyOwner = context.isCompanyOwner;
+    // @ts-ignore
     req.user.manageFinancialAccounts = context.manageFinancialAccounts;
     // @ts-ignore
     req.user.manageFinancialCategories = context.manageFinancialCategories;

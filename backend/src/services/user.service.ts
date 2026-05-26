@@ -10,6 +10,7 @@ export interface CompanyRoleInput {
   companyId: number;
   role: Role;
   isDefault?: boolean;
+  isCompanyOwner?: boolean;
   manageFinancialAccounts?: boolean;
   manageFinancialCategories?: boolean;
 }
@@ -22,6 +23,93 @@ export interface CreateUserParams {
 }
 
 export default class UserService {
+  private static ensureOwnerRoleCompatibility(companies: CompanyRoleInput[]): void {
+    const invalidOwner = companies.find(
+      (company) => company.isCompanyOwner && company.role !== Role.SUPERUSER
+    );
+
+    if (invalidOwner) {
+      throw new Error('Company owner deve possuir role SUPERUSER.');
+    }
+  }
+
+  private static async ensureCompanyKeepsAnotherOwner(
+    tx: Prisma.TransactionClient,
+    companyId: number,
+    excludedUserId: number
+  ): Promise<void> {
+    const otherOwnerCount = await tx.userCompany.count({
+      where: {
+        companyId,
+        isCompanyOwner: true,
+        NOT: {
+          userId: excludedUserId
+        }
+      }
+    });
+
+    if (otherOwnerCount === 0) {
+      throw new Error('Nao e possivel remover o ultimo company owner da empresa.');
+    }
+  }
+
+  private static async ensureCompanyOwnerIntegrityForReplacement(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    companies: CompanyRoleInput[]
+  ): Promise<void> {
+    this.ensureOwnerRoleCompatibility(companies);
+
+    const nextMembershipByCompanyId = new Map(
+      companies.map((company) => [company.companyId, company])
+    );
+    const existingOwnerMemberships = await tx.userCompany.findMany({
+      where: {
+        userId,
+        isCompanyOwner: true
+      },
+      select: {
+        companyId: true
+      }
+    });
+
+    for (const membership of existingOwnerMemberships) {
+      const nextMembership = nextMembershipByCompanyId.get(membership.companyId);
+      const keepsOwnership = nextMembership?.isCompanyOwner === true;
+
+      if (!keepsOwnership) {
+        await this.ensureCompanyKeepsAnotherOwner(tx, membership.companyId, userId);
+      }
+    }
+  }
+
+  private static async ensureCompanyOwnerIntegrityForRoleChange(
+    tx: Prisma.TransactionClient,
+    userId: number,
+    companyId: number,
+    newRole: Role
+  ): Promise<void> {
+    if (newRole === Role.SUPERUSER) {
+      return;
+    }
+
+    const membership = await tx.userCompany.findUnique({
+      where: {
+        userId_companyId: {
+          userId,
+          companyId
+        }
+      },
+      select: {
+        isCompanyOwner: true
+      }
+    });
+
+    if (membership?.isCompanyOwner) {
+      await this.ensureCompanyKeepsAnotherOwner(tx, companyId, userId);
+    }
+  }
+
   /**
    * Hashea a senha com bcrypt.
    */
@@ -38,6 +126,7 @@ export default class UserService {
     if (!companies || companies.length === 0) {
       throw new Error('É necessário vincular o usuário a pelo menos uma empresa');
     }
+    this.ensureOwnerRoleCompatibility(companies);
     const hashed = await this.hashPassword(password);
 
     // Verificar se o usuário já tem alguma associação com empresa
@@ -82,6 +171,7 @@ export default class UserService {
             companyId: c.companyId,
             role: c.role,
             isDefault: c.isDefault ?? i === 0,
+            isCompanyOwner: c.isCompanyOwner ?? false,
             manageFinancialAccounts: c.manageFinancialAccounts ?? false,
             manageFinancialCategories: c.manageFinancialCategories ?? false
           }
@@ -158,47 +248,69 @@ export default class UserService {
       newRole = (data as any).role as Role;
       delete (data as any).role;
     }
-    const user = await prisma.user.update({
-      where: { id },
-      data
-    });
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id },
+        data
+      });
 
-    if (Array.isArray(companyContext)) {
-      await prisma.userCompany.deleteMany({ where: { userId: id } });
-      for (let i = 0; i < companyContext.length; i++) {
-        const c = companyContext[i];
-        await prisma.userCompany.create({
+      if (Array.isArray(companyContext)) {
+        await this.ensureCompanyOwnerIntegrityForReplacement(tx, id, companyContext);
+        await tx.userCompany.deleteMany({ where: { userId: id } });
+        for (let i = 0; i < companyContext.length; i++) {
+          const c = companyContext[i];
+          await tx.userCompany.create({
+            data: {
+              userId: id,
+              companyId: c.companyId,
+              role: c.role,
+              isDefault: c.isDefault ?? i === 0,
+              isCompanyOwner: c.isCompanyOwner ?? false,
+              manageFinancialAccounts: c.manageFinancialAccounts ?? false,
+              manageFinancialCategories: c.manageFinancialCategories ?? false
+            }
+          });
+        }
+      } else if (newRole && companyContext) {
+        await this.ensureCompanyOwnerIntegrityForRoleChange(tx, id, companyContext, newRole);
+        await tx.userCompany.update({
+          where: {
+            userId_companyId: { userId: id, companyId: companyContext }
+          },
           data: {
-            userId: id,
-            companyId: c.companyId,
-            role: c.role,
-            isDefault: c.isDefault ?? i === 0,
-            manageFinancialAccounts: c.manageFinancialAccounts ?? false,
-            manageFinancialCategories: c.manageFinancialCategories ?? false
+            role: newRole,
+            ...(newRole === Role.SUPERUSER ? {} : { isCompanyOwner: false })
           }
         });
       }
-    } else if (newRole && companyContext) {
-      await prisma.userCompany.update({
-        where: {
-          userId_companyId: { userId: id, companyId: companyContext }
-        },
-        data: { role: newRole }
-      });
-    }
 
-    const { password: _, ...rest } = user;
-    return rest;
+      const { password: _, ...rest } = user;
+      return rest;
+    });
   }
 
   /**
    * Exclui usuário pelo ID, removendo antes as associações para evitar violação de FK.
    */
   static async deleteUser(id: number): Promise<void> {
-    // Remove associações na tabela UserCompany
-    await prisma.userCompany.deleteMany({ where: { userId: id } });
-    // Agora deleta o usuário
-    await prisma.user.delete({ where: { id } });
+    await prisma.$transaction(async (tx) => {
+      const ownerMemberships = await tx.userCompany.findMany({
+        where: {
+          userId: id,
+          isCompanyOwner: true
+        },
+        select: {
+          companyId: true
+        }
+      });
+
+      for (const membership of ownerMemberships) {
+        await this.ensureCompanyKeepsAnotherOwner(tx, membership.companyId, id);
+      }
+
+      await tx.userCompany.deleteMany({ where: { userId: id } });
+      await tx.user.delete({ where: { id } });
+    });
   }
 
   /**
@@ -214,13 +326,14 @@ export default class UserService {
     return !!association;
   }
 
-  static async getUserCompanyContext(userId: number, companyId: number): Promise<{ role: Role; manageFinancialAccounts: boolean; manageFinancialCategories: boolean } | null> {
+  static async getUserCompanyContext(userId: number, companyId: number): Promise<{ role: Role; isCompanyOwner: boolean; manageFinancialAccounts: boolean; manageFinancialCategories: boolean } | null> {
     const association = await prisma.userCompany.findFirst({
       where: { userId, companyId }
     });
     if (!association) return null;
     return {
       role: association.role,
+      isCompanyOwner: association.isCompanyOwner,
       manageFinancialAccounts: association.manageFinancialAccounts,
       manageFinancialCategories: association.manageFinancialCategories
     };

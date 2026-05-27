@@ -20,7 +20,7 @@ export function Layout({ children }: LayoutProps) {
       {/* Navbar */}
       <header className="bg-white shadow-md py-4 px-6 flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center space-x-4">
-          <img src="/assets/logo.png" alt="Logo" className="h-6" />
+          <img src="/assets/images/logo.png" alt="Logo" className="h-6" />
           {!isHome && (
             <Link href="/">
               <Button variant="outline" className="text-sm px-3 py-1">

@@ -10,6 +10,21 @@ import { useRouter } from 'next/router'
 import api from '@/lib/api'
 import { useTheme } from '@/contexts/ThemeContext'
 import { SSO_STORAGE_KEYS } from '@zenit/shared-users-core'
+import {
+  clearSessionCookie,
+  clearSessionStorage,
+  persistSession,
+  readStoredCompanyId,
+  readStoredMustChangePassword,
+  readStoredRefreshToken,
+  readStoredToken,
+  setSessionCookie,
+  storeCompanyId,
+  storeMustChangePassword,
+  storeThemePreference
+} from '@/lib/auth-storage'
+import { hasAppAccess, pickAccessibleCompanyId } from '@/lib/auth-access'
+import { getErrorStatus } from '@/lib/http-error'
 
 interface AppAccess {
   appKey: string
@@ -58,63 +73,6 @@ interface AuthContextData {
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData)
-const APP_KEY = process.env.NEXT_PUBLIC_APP_KEY || 'zenit-cash'
-
-function setSecureCookie(name: string, value: string, maxAge?: number) {
-  const domain = window.location.hostname
-  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1'
-
-  let cookieString = `${name}=${value}; path=/`
-  if (!isLocalhost) {
-    cookieString += `; domain=${domain}`
-  }
-  cookieString += '; samesite=strict'
-  if (window.location.protocol === 'https:') {
-    cookieString += '; secure'
-  }
-  if (maxAge !== undefined) {
-    cookieString += `; max-age=${maxAge}`
-  }
-  document.cookie = cookieString
-}
-
-function removeSecureCookie(name: string) {
-  const domain = window.location.hostname
-  const isLocalhost = domain === 'localhost' || domain === '127.0.0.1'
-
-  const cookieConfigs = [
-    `${name}=; max-age=0; path=/`,
-    `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
-  ]
-
-  if (!isLocalhost) {
-    cookieConfigs.push(
-      `${name}=; max-age=0; path=/; domain=${domain}`,
-      `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; domain=${domain}`,
-      `${name}=; max-age=0; path=/; domain=.${domain}`
-    )
-  }
-
-  cookieConfigs.forEach(config => {
-    document.cookie = config
-  })
-}
-
-function hasAppAccess(user: User | null, currentCompanyId: number | null): boolean {
-  if (!user || !currentCompanyId) return false
-  const appAccess = user.appAccessByCompany?.[currentCompanyId] || []
-  return appAccess.some(entry => entry.appKey === APP_KEY && entry.allowed)
-}
-
-function pickAccessibleCompanyId(user: User): number | null {
-  for (const company of user.companies) {
-    const access = user.appAccessByCompany?.[company.id] || []
-    if (access.some(entry => entry.appKey === APP_KEY && entry.allowed)) {
-      return company.id
-    }
-  }
-  return null
-}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
@@ -133,12 +91,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true)
 
     try {
-      const storedToken = localStorage.getItem(SSO_STORAGE_KEYS.token)
-      const storedMustChange = localStorage.getItem(SSO_STORAGE_KEYS.mustChangePassword)
+      const storedToken = readStoredToken()
+      const storedMustChange = readStoredMustChangePassword()
 
-      if (storedMustChange) {
-        setMustChangePassword(storedMustChange === 'true')
-      }
+      setMustChangePassword(storedMustChange)
 
       if (storedToken) {
         const response = await api.get('/auth/me', {
@@ -147,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         const userData = {
           ...response.data.user,
-          mustChangePassword: storedMustChange === 'true'
+          mustChangePassword: storedMustChange
         } as User
 
         setToken(storedToken)
@@ -155,11 +111,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (response.data.preferences?.colorScheme) {
           changeTheme(response.data.preferences.colorScheme)
-          localStorage.setItem('selected-theme', response.data.preferences.colorScheme)
+          storeThemePreference(response.data.preferences.colorScheme)
         }
 
-        const storedCompanyId = localStorage.getItem(SSO_STORAGE_KEYS.companyId)
-        const parsedStoredCompany = storedCompanyId ? Number(storedCompanyId) : null
+        const parsedStoredCompany = readStoredCompanyId()
         const accessibleCompany = pickAccessibleCompanyId(userData)
         const selectedCompanyId =
           parsedStoredCompany && hasAppAccess(userData, parsedStoredCompany)
@@ -168,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setCompanyId(selectedCompanyId)
         if (selectedCompanyId !== null) {
-          localStorage.setItem(SSO_STORAGE_KEYS.companyId, String(selectedCompanyId))
+          storeCompanyId(selectedCompanyId)
         }
       }
     } catch (error) {
@@ -186,11 +141,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { token: newToken, user: userData, refreshToken: newRefreshToken, preferences } = response.data
 
-    localStorage.setItem(SSO_STORAGE_KEYS.token, newToken)
-    localStorage.setItem(SSO_STORAGE_KEYS.refreshToken, newRefreshToken)
-    setSecureCookie(SSO_STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7)
-
-    localStorage.setItem(SSO_STORAGE_KEYS.mustChangePassword, String(userData.mustChangePassword))
+    persistSession({
+      token: newToken,
+      refreshToken: newRefreshToken,
+      mustChangePassword: userData.mustChangePassword
+    })
+    setSessionCookie(SSO_STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7)
     setMustChangePassword(userData.mustChangePassword)
 
     setToken(newToken)
@@ -198,13 +154,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (preferences?.colorScheme) {
       changeTheme(preferences.colorScheme)
-      localStorage.setItem('selected-theme', preferences.colorScheme)
+      storeThemePreference(preferences.colorScheme)
     }
 
     const nextCompanyId = pickAccessibleCompanyId(userData)
     setCompanyId(nextCompanyId)
     if (nextCompanyId !== null) {
-      localStorage.setItem(SSO_STORAGE_KEYS.companyId, nextCompanyId.toString())
+      storeCompanyId(nextCompanyId)
     }
 
     return userData
@@ -212,7 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshToken(): Promise<boolean> {
     try {
-      const storedRefreshToken = localStorage.getItem(SSO_STORAGE_KEYS.refreshToken)
+      const storedRefreshToken = readStoredRefreshToken()
       if (!storedRefreshToken) {
         return false
       }
@@ -223,8 +179,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { token: newToken } = response.data
 
-      localStorage.setItem(SSO_STORAGE_KEYS.token, newToken)
-      setSecureCookie(SSO_STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7)
+      persistSession({
+        token: newToken,
+        refreshToken: storedRefreshToken,
+        mustChangePassword
+      })
+      setSessionCookie(SSO_STORAGE_KEYS.token, newToken, 60 * 60 * 24 * 7)
       setToken(newToken)
 
       return true
@@ -235,12 +195,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function safeCleanup() {
-    localStorage.removeItem(SSO_STORAGE_KEYS.token)
-    localStorage.removeItem(SSO_STORAGE_KEYS.refreshToken)
-    localStorage.removeItem(SSO_STORAGE_KEYS.mustChangePassword)
-    localStorage.removeItem(SSO_STORAGE_KEYS.companyId)
-
-    removeSecureCookie(SSO_STORAGE_KEYS.token)
+    clearSessionStorage()
+    clearSessionCookie(SSO_STORAGE_KEYS.token)
 
     setToken(null)
     setUser(null)
@@ -260,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function updateMustChangePassword(value: boolean) {
     setMustChangePassword(value)
-    localStorage.setItem(SSO_STORAGE_KEYS.mustChangePassword, String(value))
+    storeMustChangePassword(value)
     if (user) {
       setUser({ ...user, mustChangePassword: value })
     }
@@ -268,7 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function changeCompany(id: number) {
     setCompanyId(id)
-    localStorage.setItem(SSO_STORAGE_KEYS.companyId, String(id))
+    storeCompanyId(id)
   }
 
   useEffect(() => {
@@ -277,8 +233,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkTokenValidity = async () => {
       try {
         await api.get('/auth/validate')
-      } catch (error: any) {
-        if (error.response?.status === 401) {
+      } catch (error) {
+        if (getErrorStatus(error) === 401) {
           const refreshed = await refreshToken()
           if (!refreshed) {
             logout()

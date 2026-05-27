@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import Image from 'next/image'
+import { getErrorMessage } from '@/lib/http-error'
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -29,8 +30,8 @@ export default function LoginPage() {
         const target = redirect && redirect !== '/' ? redirect : '/';
         router.replace(target);
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Erro ao fazer login');
+    } catch (error) {
+      setError(getErrorMessage(error, 'Erro ao fazer login'));
     } finally {
       setLoading(false);
     }

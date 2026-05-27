@@ -7,6 +7,9 @@
     "packages/*"
   ],
   "scripts": {
+    "test:backend": "npm --workspace backend run test:unit && npm --workspace backend run test:integration",
+    "test:zenit-cash": "npm --workspace apps/zenit-cash run typecheck && npm --workspace apps/zenit-cash run test",
+    "verify": "npm run test:backend && npm run test:zenit-cash",
     "build:backend": "npm --workspace backend run build",
     "build:zenit-cash": "npm --workspace apps/zenit-cash run build",
     "build:zenit-calc": "npm --workspace apps/zenit-calc run build",

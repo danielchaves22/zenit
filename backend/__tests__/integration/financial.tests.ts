@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../src/app';
+import app from '../../src/app';
 import { PrismaClient, AccountType, TransactionType, TransactionStatus } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
@@ -15,6 +15,7 @@ describe('Módulo Financeiro', () => {
   let incomeCategoryId: number;
   let userToken: string;
   let userId: number;
+  let restrictedTransactionId: number;
 
   beforeAll(async () => {
     // Limpeza das tabelas financeiras
@@ -406,6 +407,67 @@ describe('Módulo Financeiro', () => {
         expect(res.body[i].status).toBe('PENDING');
         expect(res.body[i].effectiveDate).toBeNull();
       }
+    });
+
+    it('Deve criar uma transacao em conta sem permissao do usuario comum', async () => {
+      const res = await request(app)
+        .post('/api/financial/transactions')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .set('X-Company-Id', companyId.toString())
+        .send({
+          description: 'Despesa Conta Restrita',
+          amount: 80,
+          date: new Date().toISOString(),
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: savingsAccountId,
+          categoryId: expenseCategoryId
+        });
+
+      expect(res.status).toBe(201);
+      restrictedTransactionId = res.body.id;
+    });
+
+    it('Impede que usuario comum consulte transacao de conta restrita', async () => {
+      const res = await request(app)
+        .get(`/api/financial/transactions/${restrictedTransactionId}`)
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', companyId.toString());
+
+      expect(res.status).toBe(403);
+    });
+
+    it('Impede que usuario comum atualize transacao de conta restrita', async () => {
+      const res = await request(app)
+        .put(`/api/financial/transactions/${restrictedTransactionId}`)
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', companyId.toString())
+        .send({
+          description: 'Tentativa de edicao indevida'
+        });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('Impede que usuario comum altere status de transacao de conta restrita', async () => {
+      const res = await request(app)
+        .patch(`/api/financial/transactions/${restrictedTransactionId}/status`)
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', companyId.toString())
+        .send({
+          status: 'CANCELED'
+        });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('Impede que usuario comum exclua transacao de conta restrita', async () => {
+      const res = await request(app)
+        .delete(`/api/financial/transactions/${restrictedTransactionId}`)
+        .set('Authorization', `Bearer ${userToken}`)
+        .set('X-Company-Id', companyId.toString());
+
+      expect(res.status).toBe(403);
     });
 
     it('Deve obter um resumo financeiro', async () => {

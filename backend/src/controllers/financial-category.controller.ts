@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { ListCategoriesQuery } from '../validators/financial-category.validator';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
@@ -87,7 +88,7 @@ export async function createCategory(req: Request, res: Response) {
 export async function getCategories(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { type, parentId, search } = req.query;
+    const { type, parentId, search } = req.query as unknown as ListCategoriesQuery;
 
     // Constrói os filtros
     const where: any = { companyId };
@@ -97,10 +98,10 @@ export async function getCategories(req: Request, res: Response) {
     }
     
     // Filtra por categorias raiz (sem pai) ou por um pai específico
-    if (parentId === 'null') {
+    if (parentId === null) {
       where.parentId = null;
-    } else if (parentId) {
-      where.parentId = Number(parentId);
+    } else if (typeof parentId === 'number') {
+      where.parentId = parentId;
     }
     
     if (search) {

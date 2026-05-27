@@ -7,39 +7,85 @@ interface CustomError extends Error {
   details?: any;
 }
 
+const REDACTED = '[REDACTED]';
+const MAX_LOG_DEPTH = 6;
+const SENSITIVE_KEY_PATTERN = /(password|passwd|token|secret|authorization|cookie|api[-_]?key|refresh[-_]?token|access[-_]?token|client[-_]?secret)/i;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function shouldRedactKey(key: string): boolean {
+  return SENSITIVE_KEY_PATTERN.test(key);
+}
+
+export function sanitizeForLogging(
+  value: unknown,
+  depth = 0,
+  seen = new WeakSet<object>()
+): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (depth >= MAX_LOG_DEPTH) {
+    return '[Truncated]';
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForLogging(item, depth + 1, seen));
+  }
+
+  if (!isPlainObject(value)) {
+    return value;
+  }
+
+  if (seen.has(value)) {
+    return '[Circular]';
+  }
+
+  seen.add(value);
+
+  const sanitized: Record<string, unknown> = {};
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    sanitized[key] = shouldRedactKey(key)
+      ? REDACTED
+      : sanitizeForLogging(nestedValue, depth + 1, seen);
+  }
+
+  return sanitized;
+}
+
 export function errorHandler(
   err: CustomError,
   req: Request,
   res: Response,
   next: NextFunction
 ) {
-  // Log do erro
+  void next;
+
   logger.error('Unhandled error', {
     error: err.message,
     stack: err.stack,
     path: req.path,
     method: req.method,
-    body: req.body,
-    user: req.user?.id
+    params: sanitizeForLogging(req.params),
+    query: sanitizeForLogging(req.query),
+    body: sanitizeForLogging(req.body),
+    userId: req.user?.userId ?? req.user?.id
   });
 
-  // Não expor detalhes do erro em produção
   const isDevelopment = process.env.NODE_ENV === 'development';
-  
-  // Status code padrão
   const statusCode = err.statusCode || 500;
-  
-  // Mensagem apropriada por tipo de erro
+
   let message = 'Internal Server Error';
   let details = undefined;
-  
-  // Erros conhecidos
+
   if (err.code === 'P2002') {
-    // Prisma unique constraint violation
     message = 'Duplicate entry';
     details = isDevelopment ? err.details : undefined;
   } else if (err.code === 'P2025') {
-    // Prisma record not found
     message = 'Record not found';
   } else if (err.message.includes('JWT')) {
     message = 'Authentication error';
@@ -56,7 +102,7 @@ export function errorHandler(
     details = err.stack;
   }
 
-  res.status(statusCode).json({
+  return res.status(statusCode).json({
     error: {
       message,
       statusCode,

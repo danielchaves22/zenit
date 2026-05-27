@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import FinancialAccountService from '../services/financial-account.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
+import { ListAccountsQuery } from '../validators/financial-account.validator';
 import { logger } from '../utils/logger';
 
 function isAccountValidationError(message?: string): boolean {
@@ -80,7 +81,12 @@ export async function getAccounts(req: Request, res: Response) {
     const { companyId } = getUserContext(req);
     // @ts-ignore auth middleware injects these values
     const { userId, role } = req.user;
-    const { type, isActive, search, allowNegativeBalance } = req.query;
+    const {
+      type,
+      isActive,
+      search,
+      allowNegativeBalance
+    } = req.query as unknown as ListAccountsQuery;
 
     const accessibleAccountIds =
       await UserFinancialAccountAccessService.getUserAccessibleAccounts(
@@ -92,12 +98,9 @@ export async function getAccounts(req: Request, res: Response) {
     const accounts = await FinancialAccountService.listAccounts({
       companyId,
       type: type as any,
-      isActive: typeof isActive === 'string' ? isActive === 'true' : undefined,
-      allowNegativeBalance:
-        typeof allowNegativeBalance === 'string'
-          ? allowNegativeBalance === 'true'
-          : undefined,
-      search: search as string,
+      isActive,
+      allowNegativeBalance,
+      search,
       accountIds: accessibleAccountIds
     });
 

@@ -1,6 +1,7 @@
 ﻿import { Request, Response } from 'express';
 import { ProcessOriginType, ProcessStatus } from '@prisma/client';
 import ProcessService from '../services/process.service';
+import { ListProcessesQuery } from '../validators/process.validator';
 import { logger } from '../utils/logger';
 
 function getUserContext(req: Request): { companyId: number; userId: number } {
@@ -70,6 +71,7 @@ export async function createProcess(req: Request, res: Response) {
 export async function listProcesses(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
+    const query = req.query as unknown as ListProcessesQuery;
     const {
       status,
       startDate,
@@ -79,7 +81,7 @@ export async function listProcesses(req: Request, res: Response) {
       tagMatchMode,
       page,
       pageSize
-    } = req.body;
+    } = query;
 
     const result = await ProcessService.listProcesses({
       companyId,

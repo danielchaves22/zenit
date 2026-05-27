@@ -1,74 +1,54 @@
-// backend/src/controllers/financial-account-movement-report.controller.ts
 import { Request, Response } from 'express';
 import FinancialAccountMovementReportService from '../services/financial-account-movement-report.service';
+import {
+  ExportFinancialAccountMovementData,
+  FinancialAccountMovementReportQuery
+} from '../validators/financial-account-movement-report.validator';
 import { logger } from '../utils/logger';
 
-/**
- * Função helper simplificada: extrai o único companyId e userId do token
- */
 function getUserContext(req: Request): { companyId: number; userId: number } {
-  // @ts-ignore - O middleware já validou a existência desses valores
   const { companyId, userId } = req.user;
-  
+
   if (!companyId) {
-    throw new Error('Contexto de empresa não encontrado');
+    throw new Error('Contexto de empresa nao encontrado');
   }
-  
+
   return { companyId, userId };
 }
 
-/**
- * GET /api/financial/reports/financial-account-movement
- * Gera relatório de movimentação de contas financeiras
- */
 export async function getFinancialAccountMovementReport(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { 
-      startDate, 
-      endDate, 
-      financialAccountIds, 
-      groupBy = 'day' 
-    } = req.query;
-
-    // Validações
-    if (!startDate || !endDate) {
-      return res.status(400).json({ 
-        error: 'startDate e endDate são obrigatórios' 
-      });
-    }
+    const {
+      startDate,
+      endDate,
+      financialAccountIds,
+      groupBy = 'day'
+    } = req.query as unknown as FinancialAccountMovementReportQuery;
 
     if (!financialAccountIds) {
-      return res.status(400).json({ 
-        error: 'financialAccountIds é obrigatório' 
+      return res.status(400).json({
+        error: 'financialAccountIds e obrigatorio'
       });
     }
 
-    // Parse dos parâmetros
-    const accountIds = (financialAccountIds as string)
+    const accountIds = financialAccountIds
       .split(',')
-      .map(id => parseInt(id.trim()))
-      .filter(id => !isNaN(id));
+      .map((id) => parseInt(id.trim(), 10))
+      .filter((id) => !isNaN(id));
 
     if (accountIds.length === 0) {
-      return res.status(400).json({ 
-        error: 'Pelo menos uma conta financeira deve ser selecionada' 
-      });
-    }
-
-    const validGroupBy = ['day', 'week', 'month'];
-    if (!validGroupBy.includes(groupBy as string)) {
-      return res.status(400).json({ 
-        error: 'groupBy deve ser: day, week ou month' 
+      return res.status(400).json({
+        error: 'Pelo menos uma conta financeira deve ser selecionada'
       });
     }
 
     const reportData = await FinancialAccountMovementReportService.generateReport({
       companyId,
-      startDate: new Date(startDate as string),
-      endDate: new Date(endDate as string),
+      startDate,
+      endDate,
       financialAccountIds: accountIds,
-      groupBy: groupBy as 'day' | 'week' | 'month'
+      groupBy
     });
 
     logger.info('Financial account movement report generated', {
@@ -81,43 +61,31 @@ export async function getFinancialAccountMovementReport(req: Request, res: Respo
     });
 
     return res.status(200).json(reportData);
-
   } catch (error: any) {
     logger.error('Error generating financial account movement report', {
       error: error.message,
       stack: error.stack,
       query: req.query
     });
-    
+
     return res.status(500).json({
-      error: 'Erro ao gerar relatório de movimentação'
+      error: 'Erro ao gerar relatorio de movimentacao'
     });
   }
 }
 
-/**
- * POST /api/financial/reports/financial-account-movement/pdf
- * Exporta relatório em PDF
- */
 export async function exportFinancialAccountMovementToPDF(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { 
-      startDate, 
-      endDate, 
-      financialAccountIds, 
+    const {
+      startDate,
+      endDate,
+      financialAccountIds,
       groupBy = 'day',
-      data 
-    } = req.body;
+      data
+    } = req.body as ExportFinancialAccountMovementData;
 
-    // Validações básicas
-    if (!startDate || !endDate || !financialAccountIds || !data) {
-      return res.status(400).json({ 
-        error: 'Dados insuficientes para gerar PDF' 
-      });
-    }
-
-    const pdfBuffer = await FinancialAccountMovementReportService.generatePDF({
+    const textBuffer = await FinancialAccountMovementReportService.generatePDF({
       companyId,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
@@ -130,53 +98,42 @@ export async function exportFinancialAccountMovementToPDF(req: Request, res: Res
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Content-Length', textBuffer.length);
+    res.setHeader('X-Generated-Format', 'txt');
 
-    logger.info('Financial account movement PDF exported', {
+    logger.info('Financial account movement text export generated from pdf endpoint', {
       companyId,
       startDate,
       endDate,
       filename,
-      size: pdfBuffer.length
+      size: textBuffer.length
     });
 
-    return res.send(pdfBuffer);
-
+    return res.send(textBuffer);
   } catch (error: any) {
-    logger.error('Error exporting financial account movement to PDF', {
+    logger.error('Error exporting financial account movement to text from pdf endpoint', {
       error: error.message,
       stack: error.stack
     });
-    
+
     return res.status(500).json({
-      error: 'Erro ao gerar PDF do relatório'
+      error: 'Erro ao gerar exportacao textual do relatorio'
     });
   }
 }
 
-/**
- * POST /api/financial/reports/financial-account-movement/excel
- * Exporta relatório em Excel
- */
 export async function exportFinancialAccountMovementToExcel(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { 
-      startDate, 
-      endDate, 
-      financialAccountIds, 
+    const {
+      startDate,
+      endDate,
+      financialAccountIds,
       groupBy = 'day',
-      data 
-    } = req.body;
+      data
+    } = req.body as ExportFinancialAccountMovementData;
 
-    // Validações básicas
-    if (!startDate || !endDate || !financialAccountIds || !data) {
-      return res.status(400).json({ 
-        error: 'Dados insuficientes para gerar Excel' 
-      });
-    }
-
-    const excelBuffer = await FinancialAccountMovementReportService.generateExcel({
+    const csvBuffer = await FinancialAccountMovementReportService.generateExcel({
       companyId,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
@@ -185,30 +142,30 @@ export async function exportFinancialAccountMovementToExcel(req: Request, res: R
       data
     });
 
-    const filename = `relatorio-movimentacao-contas-${startDate}-${endDate}.xlsx`;
+    const filename = `relatorio-movimentacao-contas-${startDate}-${endDate}.csv`;
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', excelBuffer.length);
+    res.setHeader('Content-Length', csvBuffer.length);
+    res.setHeader('X-Generated-Format', 'csv');
 
-    logger.info('Financial account movement Excel exported', {
+    logger.info('Financial account movement csv export generated from excel endpoint', {
       companyId,
       startDate,
       endDate,
       filename,
-      size: excelBuffer.length
+      size: csvBuffer.length
     });
 
-    return res.send(excelBuffer);
-
+    return res.send(csvBuffer);
   } catch (error: any) {
-    logger.error('Error exporting financial account movement to Excel', {
+    logger.error('Error exporting financial account movement to csv from excel endpoint', {
       error: error.message,
       stack: error.stack
     });
-    
+
     return res.status(500).json({
-      error: 'Erro ao gerar Excel do relatório'
+      error: 'Erro ao gerar CSV do relatorio'
     });
   }
 }

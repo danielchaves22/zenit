@@ -8,3 +8,5 @@ export const listProcessTagsSchema = z.object({
   search: z.string().trim().max(100, 'Busca deve ter no maximo 100 caracteres').optional(),
   limit: z.coerce.number().int('Limit deve ser inteiro').min(1, 'Limit deve ser no minimo 1').max(50, 'Limit deve ser no maximo 50').optional().default(20)
 });
+
+export type ListProcessTagsQuery = z.infer<typeof listProcessTagsSchema>;

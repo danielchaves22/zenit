@@ -28,7 +28,7 @@ interface Transaction {
     id: number;
     name: string;
     color: string;
-  };
+  } | null;
   installmentNumber?: number | null;
   totalInstallments?: number | null;
 }

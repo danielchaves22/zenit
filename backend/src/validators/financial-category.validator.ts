@@ -48,3 +48,5 @@ export const listCategoriesSchema = z.object({
   }),
   search: z.string().optional()
 });
+
+export type ListCategoriesQuery = z.infer<typeof listCategoriesSchema>;

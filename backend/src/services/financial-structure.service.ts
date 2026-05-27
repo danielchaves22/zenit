@@ -1,46 +1,46 @@
-// backend/src/services/financial-structure.service.ts
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
+type PrismaExecutor = PrismaClient | Prisma.TransactionClient;
+
+type FinancialStructureResult = {
+  created: boolean;
+  structure?: {
+    account: any;
+    expenseCategory: any;
+    incomeCategory: any;
+  };
+};
+
 export default class FinancialStructureService {
-  /**
-   * Garante que uma empresa tem estrutura financeira básica
-   * (conta padrão + categorias padrão de receita e despesa)
-   */
-  static async ensureFinancialStructure(companyId: number): Promise<{
-    created: boolean;
-    structure?: {
-      account: any;
-      expenseCategory: any;
-      incomeCategory: any;
-    };
-  }> {
+  private static async ensureFinancialStructureWithDb(
+    db: PrismaExecutor,
+    companyId: number
+  ): Promise<FinancialStructureResult> {
     logger.info('Ensuring financial structure for company', { companyId });
 
-    // Verificar se já existe estrutura básica
     const [existingAccount, existingExpenseCategory, existingIncomeCategory] = await Promise.all([
-      prisma.financialAccount.findFirst({
+      db.financialAccount.findFirst({
         where: { companyId, isDefault: true }
       }),
-      prisma.financialCategory.findFirst({
+      db.financialCategory.findFirst({
         where: { companyId, type: 'EXPENSE', isDefault: true }
       }),
-      prisma.financialCategory.findFirst({
+      db.financialCategory.findFirst({
         where: { companyId, type: 'INCOME', isDefault: true }
       })
     ]);
 
-    // Se já existe estrutura completa, não criar novamente
     if (existingAccount && existingExpenseCategory && existingIncomeCategory) {
-      logger.info('Financial structure already exists', { 
+      logger.info('Financial structure already exists', {
         companyId,
         accountId: existingAccount.id,
         expenseCategoryId: existingExpenseCategory.id,
         incomeCategoryId: existingIncomeCategory.id
       });
-      
+
       return {
         created: false,
         structure: {
@@ -58,84 +58,86 @@ export default class FinancialStructureService {
       needsIncomeCategory: !existingIncomeCategory
     });
 
-    // Criar estrutura em transação para garantir consistência
-    return await prisma.$transaction(async (tx) => {
-      // Criar conta padrão se não existir
-      let account = existingAccount;
-      if (!account) {
-        account = await tx.financialAccount.create({
-          data: {
-            name: 'Conta Principal',
-            type: 'CHECKING',
-            balance: 0,
-            isActive: true,
-            isDefault: true,
-            companyId
-          }
-        });
-        logger.info('Created default financial account', { 
-          companyId, 
-          accountId: account.id 
-        });
-      }
-
-      // Criar categoria de despesa padrão se não existir
-      let expenseCategory = existingExpenseCategory;
-      if (!expenseCategory) {
-        expenseCategory = await tx.financialCategory.create({
-          data: {
-            name: 'Despesas Gerais',
-            type: 'EXPENSE',
-            color: '#ef4444',
-            isDefault: true,
-            companyId
-          }
-        });
-        logger.info('Created default expense category', { 
-          companyId, 
-          categoryId: expenseCategory.id 
-        });
-      }
-
-      // Criar categoria de receita padrão se não existir
-      let incomeCategory = existingIncomeCategory;
-      if (!incomeCategory) {
-        incomeCategory = await tx.financialCategory.create({
-          data: {
-            name: 'Receitas Gerais',
-            type: 'INCOME',
-            color: '#22c55e',
-            isDefault: true,
-            companyId
-          }
-        });
-        logger.info('Created default income category', { 
-          companyId, 
-          categoryId: incomeCategory.id 
-        });
-      }
-
-      logger.info('Financial structure ensured successfully', {
-        companyId,
-        accountId: account.id,
-        expenseCategoryId: expenseCategory.id,
-        incomeCategoryId: incomeCategory.id
-      });
-
-      return {
-        created: true,
-        structure: {
-          account,
-          expenseCategory,
-          incomeCategory
+    let account = existingAccount;
+    if (!account) {
+      account = await db.financialAccount.create({
+        data: {
+          name: 'Conta Principal',
+          type: 'CHECKING',
+          balance: 0,
+          isActive: true,
+          isDefault: true,
+          companyId
         }
-      };
+      });
+      logger.info('Created default financial account', {
+        companyId,
+        accountId: account.id
+      });
+    }
+
+    let expenseCategory = existingExpenseCategory;
+    if (!expenseCategory) {
+      expenseCategory = await db.financialCategory.create({
+        data: {
+          name: 'Despesas Gerais',
+          type: 'EXPENSE',
+          color: '#ef4444',
+          isDefault: true,
+          companyId
+        }
+      });
+      logger.info('Created default expense category', {
+        companyId,
+        categoryId: expenseCategory.id
+      });
+    }
+
+    let incomeCategory = existingIncomeCategory;
+    if (!incomeCategory) {
+      incomeCategory = await db.financialCategory.create({
+        data: {
+          name: 'Receitas Gerais',
+          type: 'INCOME',
+          color: '#22c55e',
+          isDefault: true,
+          companyId
+        }
+      });
+      logger.info('Created default income category', {
+        companyId,
+        categoryId: incomeCategory.id
+      });
+    }
+
+    logger.info('Financial structure ensured successfully', {
+      companyId,
+      accountId: account.id,
+      expenseCategoryId: expenseCategory.id,
+      incomeCategoryId: incomeCategory.id
     });
+
+    return {
+      created: true,
+      structure: {
+        account,
+        expenseCategory,
+        incomeCategory
+      }
+    };
   }
 
-  /**
-   * Verifica se uma empresa tem estrutura financeira completa
-   */
+  static async ensureFinancialStructure(
+    companyId: number,
+    db?: PrismaExecutor
+  ): Promise<FinancialStructureResult> {
+    if (db) {
+      return this.ensureFinancialStructureWithDb(db, companyId);
+    }
+
+    return prisma.$transaction((tx) => this.ensureFinancialStructureWithDb(tx, companyId));
+  }
+
   static async hasCompleteFinancialStructure(companyId: number): Promise<boolean> {
     const [accountCount, expenseCategoryCount, incomeCategoryCount] = await Promise.all([
       prisma.financialAccount.count({
@@ -152,30 +154,22 @@ export default class FinancialStructureService {
     return accountCount > 0 && expenseCategoryCount > 0 && incomeCategoryCount > 0;
   }
 
-  /**
-   * Remove toda a estrutura financeira de uma empresa
-   * (útil para testes ou reset completo)
-   */
   static async removeFinancialStructure(companyId: number): Promise<void> {
     logger.warn('Removing all financial structure for company', { companyId });
 
     await prisma.$transaction(async (tx) => {
-      // Remover transações primeiro (FK constraints)
       await tx.financialTransaction.deleteMany({
         where: { companyId }
       });
 
-      // Remover contas
       await tx.financialAccount.deleteMany({
         where: { companyId }
       });
 
-      // Remover categorias
       await tx.financialCategory.deleteMany({
         where: { companyId }
       });
 
-      // Remover tags
       await tx.financialTag.deleteMany({
         where: { companyId }
       });

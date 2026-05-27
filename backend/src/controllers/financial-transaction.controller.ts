@@ -1,6 +1,11 @@
 ﻿import { Request, Response } from 'express';
 import FinancialTransactionService from '../services/financial-transaction.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
+import {
+  AutocompleteQuery,
+  ListCreditCardPurchasesQuery,
+  ListTransactionsQuery
+} from '../validators/financial-transaction.validator';
 import { logger } from '../utils/logger';
 
 /**
@@ -79,7 +84,8 @@ export async function getTransactions(req: Request, res: Response) {
     const { companyId } = getUserContext(req);
     // @ts-ignore - auth middleware adiciona
     const { userId, role } = req.user;
-    
+
+    const query = req.query as unknown as ListTransactionsQuery;
     const {
       startDate,
       endDate,
@@ -94,7 +100,7 @@ export async function getTransactions(req: Request, res: Response) {
       search,
       page,
       pageSize
-    } = req.body;
+    } = query;
 
     const accessFilter =
       await UserFinancialAccountAccessService.getAccessibleTransactionFilter(
@@ -150,7 +156,12 @@ export async function getCreditCardPurchases(req: Request, res: Response) {
     const { companyId } = getUserContext(req);
     // @ts-ignore - auth middleware adiciona
     const { userId, role } = req.user;
-    const { accountIds, categoryIds, page, pageSize } = req.body;
+    const {
+      accountIds,
+      categoryIds,
+      page,
+      pageSize
+    } = req.query as unknown as ListCreditCardPurchasesQuery;
 
     const accessibleAccountIds =
       role === 'ADMIN' || role === 'SUPERUSER'
@@ -433,10 +444,10 @@ export async function getFinancialSummary(req: Request, res: Response) {
 export async function getTransactionAutocomplete(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { q, type, limit } = req.query; // âœ… ADICIONAR PARÃ‚METRO TYPE
+    const { q, type, limit } = req.query as unknown as AutocompleteQuery;
 
     // ValidaÃ§Ã£o de entrada
-    if (!q || typeof q !== 'string') {
+    if (!q) {
       return res.status(400).json({ 
         error: 'ParÃ¢metro q Ã© obrigatÃ³rio e deve ser uma string' 
       });
@@ -449,7 +460,7 @@ export async function getTransactionAutocomplete(req: Request, res: Response) {
     }
 
     // âœ… VALIDAR TIPO DE TRANSAÃ‡ÃƒO
-    if (!type || typeof type !== 'string') {
+    if (!type) {
       return res.status(400).json({ 
         error: 'ParÃ¢metro type Ã© obrigatÃ³rio (INCOME, EXPENSE, TRANSFER)' 
       });
@@ -465,9 +476,7 @@ export async function getTransactionAutocomplete(req: Request, res: Response) {
     const transactionType = type.toUpperCase() as 'INCOME' | 'EXPENSE' | 'TRANSFER';
 
     // Validar limite (opcional)
-    const maxResults = limit && typeof limit === 'string' 
-      ? Math.min(parseInt(limit), 20) // MÃ¡ximo 20 resultados
-      : 10; // PadrÃ£o 10
+    const maxResults = limit ? Math.min(limit, 20) : 10;
 
     // âœ… DELEGAR LÃ“GICA PARA O SERVICE COM FILTRO POR TIPO
     const suggestions = await FinancialTransactionService.getDescriptionSuggestions(

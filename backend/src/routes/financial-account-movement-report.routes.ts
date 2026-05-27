@@ -1,14 +1,13 @@
-// backend/src/routes/financial-account-movement-report.routes.ts
 import { Router } from 'express';
 import { validate } from '../middlewares/validate.middleware';
-import { 
-  financialAccountMovementReportSchema,
-  exportFinancialAccountMovementSchema
+import {
+  exportFinancialAccountMovementSchema,
+  financialAccountMovementReportSchema
 } from '../validators/financial-account-movement-report.validator';
-import { 
-  getFinancialAccountMovementReport,
+import {
+  exportFinancialAccountMovementToExcel,
   exportFinancialAccountMovementToPDF,
-  exportFinancialAccountMovementToExcel
+  getFinancialAccountMovementReport
 } from '../controllers/financial-account-movement-report.controller';
 
 const router = Router();
@@ -17,7 +16,7 @@ const router = Router();
  * @swagger
  * /api/financial/reports/financial-account-movement:
  *   get:
- *     summary: Gera relatório de movimentação de contas financeiras
+ *     summary: Gera relatÃ³rio de movimentaÃ§Ã£o de contas financeiras
  *     tags: [Financial Reports]
  *     security:
  *       - bearerAuth: []
@@ -28,20 +27,20 @@ const router = Router();
  *         schema:
  *           type: string
  *           format: date
- *         description: Data inicial do período
+ *         description: Data inicial do perÃ­odo
  *       - in: query
  *         name: endDate
  *         required: true
  *         schema:
  *           type: string
  *           format: date
- *         description: Data final do período
+ *         description: Data final do perÃ­odo
  *       - in: query
  *         name: financialAccountIds
  *         required: true
  *         schema:
  *           type: string
- *         description: IDs das contas financeiras separados por vírgula
+ *         description: IDs das contas financeiras separados por vÃ­rgula
  *       - in: query
  *         name: groupBy
  *         required: false
@@ -52,7 +51,7 @@ const router = Router();
  *         description: Forma de agrupamento dos dados
  *     responses:
  *       200:
- *         description: Relatório gerado com sucesso
+ *         description: RelatÃ³rio gerado com sucesso
  *         content:
  *           application/json:
  *             schema:
@@ -62,58 +61,22 @@ const router = Router();
  *                 properties:
  *                   period:
  *                     type: string
- *                     description: Chave do período
  *                   periodLabel:
  *                     type: string
- *                     description: Label formatado do período
  *                   income:
  *                     type: number
- *                     description: Total de entradas no período
  *                   expense:
  *                     type: number
- *                     description: Total de saídas no período
  *                   balance:
  *                     type: number
- *                     description: Saldo do período (entradas - saídas)
  *                   transactions:
  *                     type: array
- *                     description: Lista de transações do período
  *                     items:
  *                       type: object
- *                       properties:
- *                         id:
- *                           type: number
- *                         description:
- *                           type: string
- *                         amount:
- *                           type: number
- *                         date:
- *                           type: string
- *                           format: date-time
- *                         type:
- *                           type: string
- *                           enum: [INCOME, EXPENSE]
- *                         financialAccount:
- *                           type: object
- *                           properties:
- *                             id:
- *                               type: number
- *                             name:
- *                               type: string
- *                         category:
- *                           type: object
- *                           nullable: true
- *                           properties:
- *                             id:
- *                               type: number
- *                             name:
- *                               type: string
- *                             color:
- *                               type: string
  *       400:
- *         description: Parâmetros inválidos
+ *         description: ParÃ¢metros invÃ¡lidos
  *       401:
- *         description: Não autorizado
+ *         description: NÃ£o autorizado
  *       500:
  *         description: Erro interno do servidor
  */
@@ -123,7 +86,7 @@ router.get('/', validate(financialAccountMovementReportSchema), getFinancialAcco
  * @swagger
  * /api/financial/reports/financial-account-movement/pdf:
  *   post:
- *     summary: Exporta relatório de movimentação em PDF
+ *     summary: Exporta relatÃ³rio textual estruturado pelo endpoint legado de PDF
  *     tags: [Financial Reports]
  *     security:
  *       - bearerAuth: []
@@ -155,29 +118,29 @@ router.get('/', validate(financialAccountMovementReportSchema), getFinancialAcco
  *                 default: day
  *               data:
  *                 type: array
- *                 description: Dados do relatório já processados
+ *                 description: Dados do relatÃ³rio jÃ¡ processados
  *     responses:
  *       200:
- *         description: PDF gerado com sucesso
+ *         description: Arquivo TXT gerado com sucesso
  *         content:
- *           application/pdf:
+ *           text/plain:
  *             schema:
  *               type: string
  *               format: binary
  *       400:
  *         description: Dados insuficientes
  *       401:
- *         description: Não autorizado
+ *         description: NÃ£o autorizado
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/pdf', validate(exportFinancialAccountMovementSchema), exportFinancialAccountMovementToPDF);
+router.post('/pdf', validate(exportFinancialAccountMovementSchema, { source: 'body' }), exportFinancialAccountMovementToPDF);
 
 /**
  * @swagger
  * /api/financial/reports/financial-account-movement/excel:
  *   post:
- *     summary: Exporta relatório de movimentação em Excel
+ *     summary: Exporta relatÃ³rio CSV compatÃ­vel com Excel
  *     tags: [Financial Reports]
  *     security:
  *       - bearerAuth: []
@@ -209,22 +172,22 @@ router.post('/pdf', validate(exportFinancialAccountMovementSchema), exportFinanc
  *                 default: day
  *               data:
  *                 type: array
- *                 description: Dados do relatório já processados
+ *                 description: Dados do relatÃ³rio jÃ¡ processados
  *     responses:
  *       200:
- *         description: Excel gerado com sucesso
+ *         description: CSV gerado com sucesso
  *         content:
- *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *           text/csv:
  *             schema:
  *               type: string
  *               format: binary
  *       400:
  *         description: Dados insuficientes
  *       401:
- *         description: Não autorizado
+ *         description: NÃ£o autorizado
  *       500:
  *         description: Erro interno do servidor
  */
-router.post('/excel', validate(exportFinancialAccountMovementSchema), exportFinancialAccountMovementToExcel);
+router.post('/excel', validate(exportFinancialAccountMovementSchema, { source: 'body' }), exportFinancialAccountMovementToExcel);
 
 export default router;

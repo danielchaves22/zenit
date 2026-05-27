@@ -1,7 +1,8 @@
-import { AppKey, PrismaClient } from '@prisma/client'
+import { AppKey, Prisma, PrismaClient } from '@prisma/client'
 import { APP_HEADER_BY_KEY } from '../constants/app-access'
 
 const prisma = new PrismaClient()
+type PrismaExecutor = PrismaClient | Prisma.TransactionClient
 
 export interface AppAccessView {
   appKey: string
@@ -11,7 +12,7 @@ export interface AppAccessView {
 }
 
 export default class AppAccessService {
-  static async ensureCatalog(): Promise<void> {
+  static async ensureCatalog(db: PrismaExecutor = prisma): Promise<void> {
     const catalog = [
       { appKey: AppKey.ZENIT_CASH, name: 'Zenit Cash' },
       { appKey: AppKey.ZENIT_CALC, name: 'Zenit Calc' },
@@ -19,7 +20,7 @@ export default class AppAccessService {
     ]
 
     for (const item of catalog) {
-      await prisma.ecosystemApp.upsert({
+      await db.ecosystemApp.upsert({
         where: { appKey: item.appKey },
         update: { name: item.name, isActive: true },
         create: { appKey: item.appKey, name: item.name, isActive: true }
@@ -63,25 +64,29 @@ export default class AppAccessService {
     })
   }
 
-  static async setCompanyEntitlements(companyId: number, payload: Array<{ appKey: AppKey; enabled: boolean }>) {
-    await this.ensureCatalog()
-    const apps = await prisma.ecosystemApp.findMany({
+  static async setCompanyEntitlements(
+    companyId: number,
+    payload: Array<{ appKey: AppKey; enabled: boolean }>,
+    db: PrismaExecutor = prisma
+  ) {
+    await this.ensureCatalog(db)
+
+    const apps = await db.ecosystemApp.findMany({
       where: { appKey: { in: payload.map(item => item.appKey) } }
     })
 
-    await prisma.$transaction(
-      payload.map(item => {
-        const app = apps.find(candidate => candidate.appKey === item.appKey)
-        if (!app) {
-          throw new Error(`Aplicacao ${item.appKey} nao encontrada`)
-        }
-        return prisma.companyAppEntitlement.upsert({
-          where: { unique_company_app_entitlement: { companyId, appId: app.id } },
-          update: { enabled: item.enabled },
-          create: { companyId, appId: app.id, enabled: item.enabled }
-        })
+    for (const item of payload) {
+      const app = apps.find(candidate => candidate.appKey === item.appKey)
+      if (!app) {
+        throw new Error(`Aplicacao ${item.appKey} nao encontrada`)
+      }
+
+      await db.companyAppEntitlement.upsert({
+        where: { unique_company_app_entitlement: { companyId, appId: app.id } },
+        update: { enabled: item.enabled },
+        create: { companyId, appId: app.id, enabled: item.enabled }
       })
-    )
+    }
   }
 
   static async getUserGrants(userId: number, companyId: number) {

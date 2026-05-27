@@ -5,6 +5,7 @@ import {
   Prisma
 } from '@prisma/client';
 import InboundImportService from '../services/inbound-import.service';
+import { ListInboundImportsQuery } from '../validators/inbound-import.validator';
 import { logger } from '../utils/logger';
 
 function getUserContext(req: Request): { companyId: number } {
@@ -61,6 +62,7 @@ export async function createInboundImport(req: Request, res: Response) {
 export async function listInboundImports(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
+    const query = req.query as unknown as ListInboundImportsQuery;
     const {
       sourceType,
       destinationType,
@@ -68,7 +70,7 @@ export async function listInboundImports(req: Request, res: Response) {
       search,
       page,
       pageSize
-    } = req.body;
+    } = query;
 
     const result = await InboundImportService.listInboundImports({
       companyId,
@@ -115,4 +117,3 @@ export async function updateInboundImportDestination(req: Request, res: Response
     return res.status(400).json({ error: error.message || 'Erro ao atualizar destino de importação.' });
   }
 }
-

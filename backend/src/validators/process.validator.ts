@@ -54,3 +54,5 @@ export const listProcessesSchema = z.object({
   message: 'Data final deve ser posterior ou igual a data inicial',
   path: ['endDate']
 });
+
+export type ListProcessesQuery = z.infer<typeof listProcessesSchema>;

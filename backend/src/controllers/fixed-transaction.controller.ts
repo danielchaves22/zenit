@@ -2,6 +2,7 @@
 import { TransactionType } from '@prisma/client';
 import FixedTransactionService from '../services/fixed-transaction.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
+import { ListFixedTransactionsQuery } from '../validators/fixed-transaction.validator';
 import { logger } from '../utils/logger';
 
 function getUserContext(req: Request): { companyId: number; userId: number; role: string } {
@@ -94,8 +95,7 @@ export async function createFixedTransaction(req: Request, res: Response) {
 export async function listFixedTransactions(req: Request, res: Response) {
   try {
     const { companyId, role, userId } = getUserContext(req);
-    const includeInactive = req.body.includeInactive as boolean;
-    const type = req.body.type as TransactionType | undefined;
+    const { includeInactive, type } = req.query as unknown as ListFixedTransactionsQuery;
 
     const templates = await FixedTransactionService.listFixedTransactions({
       companyId,

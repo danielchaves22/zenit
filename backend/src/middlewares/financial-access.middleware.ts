@@ -1,6 +1,7 @@
 // backend/src/middlewares/financial-access.middleware.ts
 import { Request, Response, NextFunction } from 'express';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
+import FinancialTransactionService from '../services/financial-transaction.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -127,6 +128,73 @@ export function requireTransactionAccountAccess() {
       logger.error('Error in transaction access middleware', { error });
       return res.status(500).json({ 
         error: 'Erro interno ao verificar permissões da transação' 
+      });
+    }
+  };
+}
+
+/**
+ * Middleware para verificar acesso às contas já vinculadas a uma transação existente.
+ * Fecha o caminho em operações por ID quando o caller não envia novos accountIds no body.
+ */
+export function requireExistingTransactionAccountAccess(transactionIdParam: string = 'id') {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const transactionId = Number(req.params[transactionIdParam]);
+
+      if (isNaN(transactionId)) {
+        return res.status(400).json({ error: 'ID de transação inválido' });
+      }
+
+      const { userId, role, companyId } = req.user;
+
+      if (!companyId) {
+        return res.status(403).json({ error: 'Contexto de empresa não encontrado' });
+      }
+
+      const transaction = await FinancialTransactionService.getTransactionById(transactionId);
+
+      if (!transaction) {
+        return res.status(404).json({ error: 'Transação não encontrada' });
+      }
+
+      if (transaction.companyId !== companyId) {
+        return res.status(403).json({ error: 'Acesso negado' });
+      }
+
+      const accountIds = [transaction.fromAccountId, transaction.toAccountId].filter(
+        (accountId): accountId is number => typeof accountId === 'number'
+      );
+
+      for (const accountId of accountIds) {
+        const hasAccess = await UserFinancialAccountAccessService.checkUserAccountAccess(
+          userId,
+          accountId,
+          role,
+          companyId
+        );
+
+        if (!hasAccess) {
+          logger.warn('Unauthorized transaction access attempt', {
+            userId,
+            transactionId,
+            accountId,
+            role,
+            companyId,
+            ip: req.ip
+          });
+
+          return res.status(403).json({
+            error: 'Acesso negado às contas desta transação'
+          });
+        }
+      }
+
+      return next();
+    } catch (error) {
+      logger.error('Error in existing transaction access middleware', { error });
+      return res.status(500).json({
+        error: 'Erro interno ao verificar permissões da transação'
       });
     }
   };

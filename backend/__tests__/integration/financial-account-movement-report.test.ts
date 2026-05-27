@@ -305,6 +305,7 @@ describe('Financial Account Movement Report', () => {
         .expect(200);
 
       expect(response.headers['content-type']).toContain('text/plain');
+      expect(response.headers['x-generated-format']).toBe('txt');
       expect(response.headers['content-disposition']).toMatch(
         /attachment; filename="relatorio-movimentacao-contas-2024-01-01-2024-01-31\.txt"/
       );
@@ -323,7 +324,7 @@ describe('Financial Account Movement Report', () => {
   });
 
   describe('POST /api/financial/reports/financial-account-movement/excel', () => {
-    it('should export report to Excel mime type', async () => {
+    it('should export report to CSV compatible with Excel', async () => {
       const response = await request(app)
         .post('/api/financial/reports/financial-account-movement/excel')
         .set(authHeaders(authToken, companyId))
@@ -336,10 +337,9 @@ describe('Financial Account Movement Report', () => {
         })
         .expect(200);
 
-      expect(response.headers['content-type']).toBe(
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      );
-      expect(response.headers['content-disposition']).toMatch(/attachment; filename=".*\.xlsx"/);
+      expect(response.headers['content-type']).toContain('text/csv');
+      expect(response.headers['x-generated-format']).toBe('csv');
+      expect(response.headers['content-disposition']).toMatch(/attachment; filename=".*\.csv"/);
     });
   });
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   requireAccountAccess,
+  requireExistingTransactionAccountAccess,
   requireTransactionAccountAccess
 } from '../middlewares/financial-access.middleware';
 import { requireCompanyOwnerOrAdmin } from '../middlewares/company-ownership.middleware';
@@ -126,12 +127,12 @@ router.post('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_C
 router.delete('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), unsetDefaultCategory);
 
 router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);
-router.post('/transactions', requireTransactionAccountAccess(), validate(createTransactionSchema), createTransaction);
+router.post('/transactions', validate(createTransactionSchema), requireTransactionAccountAccess(), createTransaction);
 router.get('/transactions', validate(listTransactionsSchema), getTransactions);
-router.get('/transactions/:id', getTransactionById);
-router.put('/transactions/:id', requireTransactionAccountAccess(), validate(updateTransactionSchema), updateTransaction);
-router.patch('/transactions/:id/status', validate(updateTransactionStatusSchema), updateTransactionStatus);
-router.delete('/transactions/:id', deleteTransaction);
+router.get('/transactions/:id', requireExistingTransactionAccountAccess(), getTransactionById);
+router.put('/transactions/:id', requireExistingTransactionAccountAccess(), validate(updateTransactionSchema), requireTransactionAccountAccess(), updateTransaction);
+router.patch('/transactions/:id/status', requireExistingTransactionAccountAccess(), validate(updateTransactionStatusSchema), updateTransactionStatus);
+router.delete('/transactions/:id', requireExistingTransactionAccountAccess(), deleteTransaction);
 
 router.post('/fixed-transactions', requireTransactionAccountAccess(), validate(createFixedTransactionSchema), createFixedTransaction);
 router.get('/fixed-transactions', validate(listFixedTransactionsSchema), listFixedTransactions);

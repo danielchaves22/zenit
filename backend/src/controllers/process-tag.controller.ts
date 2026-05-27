@@ -1,5 +1,6 @@
 ﻿import { Request, Response } from 'express';
 import ProcessTagService from '../services/process-tag.service';
+import { ListProcessTagsQuery } from '../validators/process-tag.validator';
 import { logger } from '../utils/logger';
 
 function getUserContext(req: Request): { companyId: number } {
@@ -34,7 +35,7 @@ export async function createProcessTag(req: Request, res: Response) {
 export async function listProcessTags(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    const { search, limit } = req.body;
+    const { search, limit } = req.query as unknown as ListProcessTagsQuery;
 
     const tags = await ProcessTagService.listTags(companyId, search, limit);
     return res.status(200).json(tags);

@@ -1,21 +1,34 @@
 import { Request, Response, NextFunction } from 'express';
-import { RateLimiterRedis, RateLimiterMemory } from 'rate-limiter-flexible';
+import { RateLimiterMemory, RateLimiterRedis } from 'rate-limiter-flexible';
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
-import { REDIS_ENABLED, REDIS_CONFIG } from '../config';
+import { REDIS_CONFIG, REDIS_ENABLED } from '../config';
 
-/**
- * Helper para extrair IP de forma segura
- */
 function getClientIP(req: Request): string {
   return req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'unknown';
 }
 
-// ✅ REDIS - CONTROLE DE ATIVAÇÃO/DESATIVAÇÃO
+type RateLimiterSet = {
+  memory: RateLimiterMemory;
+  redis?: RateLimiterRedis;
+};
+
+type RateLimiterConfig = {
+  keyPrefix: string;
+  points: number;
+  duration: number;
+  blockDuration: number;
+};
+
+type RateLimitRejection = {
+  msBeforeNext: number;
+  remainingPoints?: number;
+  consumedPoints?: number;
+};
+
 let redisClient: Redis | null = null;
 let useRedis = false;
 
-// ✅ SÓ TENTAR CONECTAR SE REDIS ESTIVER HABILITADO
 if (REDIS_ENABLED && REDIS_CONFIG) {
   try {
     redisClient = new Redis({
@@ -29,10 +42,9 @@ if (REDIS_ENABLED && REDIS_CONFIG) {
       commandTimeout: 3000
     });
 
-    // Handle Redis connection events
     redisClient.on('error', (err) => {
-      logger.error('Redis connection error - falling back to memory store', { 
-        error: err.message 
+      logger.error('Redis connection error - falling back to memory store', {
+        error: err.message
       });
       useRedis = false;
     });
@@ -47,213 +59,296 @@ if (REDIS_ENABLED && REDIS_CONFIG) {
       useRedis = true;
     });
 
-    // Test connection
-    redisClient.ping().then(() => {
-      useRedis = true;
-      logger.info('Redis ping successful');
-    }).catch((err) => {
-      logger.warn('Redis ping failed, using memory store', { error: err.message });
+    redisClient.on('close', () => {
+      logger.warn('Redis connection closed - falling back to memory store');
       useRedis = false;
     });
 
+    redisClient.on('end', () => {
+      logger.warn('Redis connection ended - falling back to memory store');
+      useRedis = false;
+    });
+
+    void redisClient.connect().catch((err) => {
+      logger.warn('Redis connect failed, using memory store', { error: err.message });
+      useRedis = false;
+    });
   } catch (error) {
-    logger.warn('Failed to initialize Redis, using memory store', { 
-      error: error instanceof Error ? error.message : String(error) 
+    logger.warn('Failed to initialize Redis, using memory store', {
+      error: error instanceof Error ? error.message : String(error)
     });
     useRedis = false;
   }
 } else {
-  // ✅ REDIS EXPLICITAMENTE DESABILITADO
   logger.info('Redis explicitly disabled by configuration - using memory store for rate limiting');
-  useRedis = false;
 }
 
-/**
- * Cria um rate limiter com fallback para memory se Redis não estiver disponível
- */
-function createRateLimiter(config: {
-  keyPrefix: string;
-  points: number;
-  duration: number;
-  blockDuration: number;
-}) {
-  if (useRedis && redisClient && REDIS_ENABLED) {
-    return new RateLimiterRedis({
+function createRateLimiterSet(config: RateLimiterConfig): RateLimiterSet {
+  const memory = new RateLimiterMemory({
+    keyPrefix: config.keyPrefix,
+    points: config.points,
+    duration: config.duration,
+    blockDuration: config.blockDuration
+  });
+
+  if (!REDIS_ENABLED || !redisClient) {
+    return { memory };
+  }
+
+  return {
+    memory,
+    redis: new RateLimiterRedis({
       storeClient: redisClient,
       keyPrefix: config.keyPrefix,
       points: config.points,
       duration: config.duration,
-      blockDuration: config.blockDuration,
-    });
-  } else {
-    logger.info(`Using memory store for rate limiter: ${config.keyPrefix} (Redis disabled: ${!REDIS_ENABLED})`);
-    return new RateLimiterMemory({
-      keyPrefix: config.keyPrefix,
-      points: config.points,
-      duration: config.duration,
-      blockDuration: config.blockDuration,
-    });
-  }
+      blockDuration: config.blockDuration
+    })
+  };
 }
 
-// Configurações diferentes por tipo de endpoint
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isRateLimitRejection(error: unknown): error is RateLimitRejection {
+  return Boolean(
+    error &&
+    typeof error === 'object' &&
+    typeof (error as RateLimitRejection).msBeforeNext === 'number'
+  );
+}
+
+function hasRedisLimiter(limiterSet: RateLimiterSet): limiterSet is RateLimiterSet & { redis: RateLimiterRedis } {
+  return Boolean(REDIS_ENABLED && useRedis && limiterSet.redis);
+}
+
+async function consumeWithFallback(
+  limiterSet: RateLimiterSet,
+  key: string,
+  scope: string
+): Promise<'redis' | 'memory'> {
+  if (hasRedisLimiter(limiterSet)) {
+    try {
+      await limiterSet.redis.consume(key);
+      return 'redis';
+    } catch (error) {
+      if (isRateLimitRejection(error)) {
+        throw error;
+      }
+
+      useRedis = false;
+      logger.warn('Redis rate limiter unavailable, falling back to memory store', {
+        scope,
+        error: getErrorMessage(error)
+      });
+    }
+  }
+
+  await limiterSet.memory.consume(key);
+  return 'memory';
+}
+
+async function getLimiterState(limiterSet: RateLimiterSet, key: string) {
+  if (hasRedisLimiter(limiterSet)) {
+    try {
+      return await limiterSet.redis.get(key);
+    } catch (error) {
+      useRedis = false;
+      logger.warn('Redis rate limiter state lookup failed, falling back to memory store', {
+        error: getErrorMessage(error)
+      });
+    }
+  }
+
+  return limiterSet.memory.get(key);
+}
+
+async function blockLimiterKey(
+  limiterSet: RateLimiterSet,
+  key: string,
+  duration: number
+): Promise<void> {
+  if (hasRedisLimiter(limiterSet)) {
+    try {
+      await limiterSet.redis.block(key, duration);
+      return;
+    } catch (error) {
+      useRedis = false;
+      logger.warn('Redis rate limiter block failed, falling back to memory store', {
+        error: getErrorMessage(error)
+      });
+    }
+  }
+
+  await limiterSet.memory.block(key, duration);
+}
+
+async function deleteLimiterKey(limiterSet: RateLimiterSet, key: string): Promise<void> {
+  const operations: Array<Promise<unknown>> = [limiterSet.memory.delete(key)];
+
+  if (limiterSet.redis) {
+    operations.push(
+      limiterSet.redis.delete(key).catch((error) => {
+        useRedis = false;
+        logger.warn('Redis rate limiter delete failed, key removed from memory store only', {
+          error: getErrorMessage(error),
+          key
+        });
+      })
+    );
+  }
+
+  await Promise.all(operations);
+}
+
 const rateLimiters = {
-  // Auth endpoints - mais restritivos
-  auth: createRateLimiter({
+  auth: createRateLimiterSet({
     keyPrefix: 'rl:auth',
-    points: 5, // 5 tentativas
-    duration: 900, // por 15 minutos
-    blockDuration: 900, // bloqueia por 15 minutos
+    points: 5,
+    duration: 900,
+    blockDuration: 900
   }),
-  
-  // API geral - balanceado
-  api: createRateLimiter({
+  api: createRateLimiterSet({
     keyPrefix: 'rl:api',
-    points: 100, // 100 requisições
-    duration: 60, // por minuto
-    blockDuration: 60, // bloqueia por 1 minuto
+    points: 100,
+    duration: 60,
+    blockDuration: 60
   }),
-  
-  // Endpoints financeiros - mais cuidado
-  financial: createRateLimiter({
+  financial: createRateLimiterSet({
     keyPrefix: 'rl:financial',
-    points: 30, // 30 operações
-    duration: 60, // por minuto
-    blockDuration: 300, // bloqueia por 5 minutos
+    points: 30,
+    duration: 60,
+    blockDuration: 300
   }),
-  
-  // Reports/Analytics - pesados
-  reports: createRateLimiter({
+  reports: createRateLimiterSet({
     keyPrefix: 'rl:reports',
-    points: 10, // 10 relatórios
-    duration: 300, // por 5 minutos
-    blockDuration: 600, // bloqueia por 10 minutos
+    points: 10,
+    duration: 300,
+    blockDuration: 600
   })
 };
 
 export function createRateLimitMiddleware(type: keyof typeof rateLimiters) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    //DESATIVADO temporariamente
-    return next();
-
-    // ✅ PULAR RATE LIMITING EM DESENVOLVIMENTO
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
       return next();
     }
-    
+
     try {
-      const limiter = rateLimiters[type];
       const clientIP = getClientIP(req);
-      const key = `${clientIP}:${req.user?.id || 'anonymous'}`;
-      
-      await limiter.consume(key);
-      
-      next();
-    } catch (rejRes: any) {
-      // Log apenas tentativas excessivas (não cada rate limit)
-      if (rejRes.remainingPoints === 0) {
+      const key = `${clientIP}:${req.user?.userId ?? req.user?.id ?? 'anonymous'}`;
+
+      await consumeWithFallback(rateLimiters[type], key, type);
+      return next();
+    } catch (error) {
+      if (!isRateLimitRejection(error)) {
+        logger.error('Unexpected rate limiter failure - request allowed', {
+          ip: getClientIP(req),
+          userId: req.user?.userId,
+          endpoint: req.path,
+          type,
+          error: getErrorMessage(error)
+        });
+        return next();
+      }
+
+      if ((error.remainingPoints ?? 0) === 0) {
         logger.warn('Rate limit exceeded', {
           ip: getClientIP(req),
-          userId: req.user?.id,
+          userId: req.user?.userId,
           endpoint: req.path,
           type,
           storeType: useRedis && REDIS_ENABLED ? 'redis' : 'memory'
         });
       }
-      
+
       res.set({
-        'Retry-After': String(Math.round(rejRes.msBeforeNext / 1000) || 60),
-        'X-RateLimit-Limit': String(rejRes.totalPoints),
-        'X-RateLimit-Remaining': String(rejRes.remainingPoints || 0),
-        'X-RateLimit-Reset': new Date(Date.now() + rejRes.msBeforeNext).toISOString()
+        'Retry-After': String(Math.round(error.msBeforeNext / 1000) || 60),
+        'X-RateLimit-Remaining': String(error.remainingPoints || 0),
+        'X-RateLimit-Reset': new Date(Date.now() + error.msBeforeNext).toISOString()
       });
-      
-      res.status(429).json({
+
+      return res.status(429).json({
         error: 'Too Many Requests',
-        message: `Rate limit exceeded. Try again in ${Math.round(rejRes.msBeforeNext / 1000)} seconds.`,
-        retryAfter: Math.round(rejRes.msBeforeNext / 1000)
+        message: `Rate limit exceeded. Try again in ${Math.round(error.msBeforeNext / 1000)} seconds.`,
+        retryAfter: Math.round(error.msBeforeNext / 1000)
       });
     }
   };
 }
 
-/**
- * Rate limiter específico para proteção contra brute force de login
- */
 export const loginRateLimiter = {
-  byIP: createRateLimiter({
+  byIP: createRateLimiterSet({
     keyPrefix: 'rl:login:ip',
-    points: 10, // 10 tentativas por IP
-    duration: 900, // em 15 minutos
-    blockDuration: 900,
+    points: 10,
+    duration: 900,
+    blockDuration: 900
   }),
-  
-  byEmail: createRateLimiter({
+  byEmail: createRateLimiterSet({
     keyPrefix: 'rl:login:email',
-    points: 5, // 5 tentativas por email
-    duration: 900, // em 15 minutos
-    blockDuration: 1800, // bloqueia por 30 minutos
+    points: 5,
+    duration: 900,
+    blockDuration: 1800
   }),
-  
-  // Penalidade progressiva por falhas consecutivas
-  consecutive: createRateLimiter({
+  consecutive: createRateLimiterSet({
     keyPrefix: 'rl:login:consecutive',
     points: 1,
-    duration: 0, // sem expiração automática
-    blockDuration: 0,
+    duration: 0,
+    blockDuration: 0
   })
 };
 
-/**
- * Middleware específico para proteção de login
- */
 export async function loginRateLimitMiddleware(
   req: Request,
   res: Response,
   next: NextFunction
 ) {
-  // Skip login rate limiting entirely in development
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
     return next();
   }
 
   const email = req.body.email?.toLowerCase?.();
   const ip = getClientIP(req);
-  
+
   try {
-    // Verifica limite por IP
-    await loginRateLimiter.byIP.consume(ip);
-    
-    // Verifica limite por email (se fornecido)
+    await consumeWithFallback(loginRateLimiter.byIP, ip, 'login:ip');
+
     if (email) {
-      await loginRateLimiter.byEmail.consume(email);
+      await consumeWithFallback(loginRateLimiter.byEmail, email, 'login:email');
     }
-    
-    next();
-  } catch (rejRes: any) {
+
+    return next();
+  } catch (error) {
+    if (!isRateLimitRejection(error)) {
+      logger.error('Unexpected login rate limiter failure - request allowed', {
+        ip,
+        email,
+        error: getErrorMessage(error)
+      });
+      return next();
+    }
+
     logger.warn('Login rate limit exceeded', {
       ip,
       email,
-      remainingPoints: rejRes.remainingPoints,
+      remainingPoints: error.remainingPoints,
       storeType: useRedis && REDIS_ENABLED ? 'redis' : 'memory'
     });
-    
-    res.status(429).json({
+
+    return res.status(429).json({
       error: 'Too Many Login Attempts',
       message: 'Too many failed login attempts. Please try again later.',
-      retryAfter: Math.round(rejRes.msBeforeNext / 1000)
+      retryAfter: Math.round(error.msBeforeNext / 1000)
     });
   }
 }
 
-/**
- * Registra tentativa de login bem-sucedida (reseta contadores)
- */
 export async function resetLoginAttempts(email: string, ip: string) {
   try {
     await Promise.all([
-      loginRateLimiter.byEmail.delete(email),
-      loginRateLimiter.consecutive.delete(email)
+      deleteLimiterKey(loginRateLimiter.byEmail, email),
+      deleteLimiterKey(loginRateLimiter.consecutive, email)
     ]);
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -261,20 +356,16 @@ export async function resetLoginAttempts(email: string, ip: string) {
   }
 }
 
-/**
- * Registra tentativa de login falha (incrementa penalidade)
- */
 export async function recordFailedLogin(email: string, ip: string) {
   try {
     const consecutiveKey = email;
-    const consecutive = await loginRateLimiter.consecutive.get(consecutiveKey);
-    
+    const consecutive = await getLimiterState(loginRateLimiter.consecutive, consecutiveKey);
+
     if (consecutive && consecutive.consumedPoints >= 3) {
-      // Após 3 falhas consecutivas, aumenta o tempo de bloqueio
-      await loginRateLimiter.byEmail.block(email, 3600); // 1 hora
+      await blockLimiterKey(loginRateLimiter.byEmail, email, 3600);
       logger.warn('Account temporarily locked due to failed attempts', { email });
     } else {
-      await loginRateLimiter.consecutive.consume(consecutiveKey);
+      await consumeWithFallback(loginRateLimiter.consecutive, consecutiveKey, 'login:consecutive');
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -282,7 +373,6 @@ export async function recordFailedLogin(email: string, ip: string) {
   }
 }
 
-// ✅ EXPORTAR STATUS DO REDIS PARA MONITORAMENTO
 export function getRedisStatus() {
   return {
     enabled: REDIS_ENABLED,

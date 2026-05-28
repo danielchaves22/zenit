@@ -37,6 +37,7 @@ interface Account {
   allowNegativeBalance: boolean;
 }
 
+
 function formatCurrency(value: string | number): string {
   const numericValue = typeof value === 'string' ? parseFloat(value) : value;
   return new Intl.NumberFormat('pt-BR', {
@@ -190,8 +191,17 @@ function AccountsPageInner() {
   }
 
   async function handleBalanceAdjust() {
-    if (!adjustingAccount || !balanceData.reason.trim()) {
+    if (!adjustingAccount) {
+      return;
+    }
+
+    if (!balanceData.reason.trim()) {
       addToast('Motivo do ajuste é obrigatório', 'error');
+      return;
+    }
+
+    if (!balanceAdjustmentPreview.type || balanceAdjustmentPreview.amount === 0) {
+      addToast('Informe um saldo diferente do atual para criar o ajuste', 'error');
       return;
     }
 
@@ -252,6 +262,21 @@ function AccountsPageInner() {
       .filter((account) => account.isActive)
       .reduce((sum, account) => sum + parseFloat(account.balance), 0);
   }, [filteredAccounts]);
+
+  const balanceAdjustmentPreview = useMemo(() => {
+    const currentBalance = Number(adjustingAccount?.balance || 0);
+    const targetBalance = Number(balanceData.newBalance.replace(/[^\d.-]/g, '') || 0);
+    const difference = targetBalance - currentBalance;
+
+    return {
+      currentBalance,
+      targetBalance,
+      difference,
+      amount: Math.abs(difference),
+      type:
+        difference > 0 ? 'INCOME' : difference < 0 ? 'EXPENSE' : null
+    } as const;
+  }, [adjustingAccount?.balance, balanceData.newBalance]);
 
   return (
     <DashboardLayout title="Contas Financeiras">
@@ -522,6 +547,18 @@ function AccountsPageInner() {
                 />
               </div>
 
+              <div className="rounded border border-blue-600/40 bg-blue-900/20 p-3">
+                <div className="text-sm font-medium text-blue-100">Prévia do ajuste</div>
+                <div className="mt-2 text-sm text-blue-100/90">
+                  {balanceAdjustmentPreview.type === 'INCOME' &&
+                    `Será criada uma entrada de ${formatCurrency(balanceAdjustmentPreview.amount)}.`}
+                  {balanceAdjustmentPreview.type === 'EXPENSE' &&
+                    `Será criada uma saída de ${formatCurrency(balanceAdjustmentPreview.amount)}.`}
+                  {!balanceAdjustmentPreview.type &&
+                    'O saldo informado já coincide com o saldo atual da conta.'}
+                </div>
+              </div>
+
               <div className="rounded border border-yellow-600 bg-yellow-900/20 p-3">
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={16} className="mt-0.5 text-yellow-400" />
@@ -548,7 +585,13 @@ function AccountsPageInner() {
                 variant="accent"
                 onClick={() => void handleBalanceAdjust()}
                 className="flex items-center gap-2"
-                disabled={formLoading}
+                disabled={
+                  formLoading ||
+                  !balanceData.reason.trim() ||
+                  !balanceData.categoryId ||
+                  !balanceAdjustmentPreview.type ||
+                  availableAdjustmentCategories.length === 0
+                }
               >
                 Ajustar Saldo
               </Button>

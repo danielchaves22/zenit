@@ -131,6 +131,23 @@ export const listAccountsSchema = z.object({
   search: z.string().optional()
 });
 
+export const adjustBalanceSchema = z.object({
+  newBalance: z
+    .union([z.string(), z.number()])
+    .transform((value) => {
+      const numericValue =
+        typeof value === 'string'
+          ? Number(value.replace(/[^\d.-]/g, ''))
+          : value;
+
+      return Number(numericValue);
+    })
+    .refine((value) => !Number.isNaN(value), {
+      message: 'Novo saldo deve ser um valor numerico valido'
+    }),
+  reason: z.string().trim().min(1, 'Motivo do ajuste e obrigatorio')
+});
+
 export const toggleNegativeBalanceSchema = z.object({
   allowNegativeBalance: z.boolean({
     required_error: 'allowNegativeBalance é obrigatório',
@@ -142,3 +159,4 @@ export type CreateAccountData = z.infer<typeof createAccountSchema>;
 export type UpdateAccountData = z.infer<typeof updateAccountSchema>;
 export type ListAccountsQuery = z.infer<typeof listAccountsSchema>;
 export type ToggleNegativeBalanceData = z.infer<typeof toggleNegativeBalanceSchema>;
+export type AdjustBalanceData = z.infer<typeof adjustBalanceSchema>;

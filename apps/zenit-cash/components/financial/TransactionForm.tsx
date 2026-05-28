@@ -66,6 +66,7 @@ interface Category {
   id: number;
   name: string;
   type: string;
+  nature: 'OPERATIONAL' | 'CONCILIATION';
   color: string;
   icon?: string;
   isDefault: boolean;
@@ -117,7 +118,13 @@ interface Transaction {
   repeatTimes?: number | null;
   fromAccount?: { id: number; name: string; type?: string };
   toAccount?: { id: number; name: string; type?: string };
-  category?: { id: number; name: string; color: string; icon?: string };
+  category?: {
+    id: number;
+    name: string;
+    color: string;
+    icon?: string;
+    nature?: 'OPERATIONAL' | 'CONCILIATION';
+  };
   tags: { id: number; name: string }[];
   installmentNumber?: number | null;
   totalInstallments?: number | null;
@@ -425,6 +432,18 @@ export default function TransactionForm({
   const isExpense = formData.type === 'EXPENSE';
   const isIncome = formData.type === 'INCOME';
   const isTransfer = formData.type === 'TRANSFER';
+  const activeCategoryNature =
+    categories.find((category) => category.id.toString() === formData.categoryId)?.nature ||
+    'OPERATIONAL';
+  const availableCategories = useMemo(
+    () =>
+      categories.filter(
+        (category) =>
+          category.type === formData.type &&
+          category.nature === activeCategoryNature
+      ),
+    [activeCategoryNature, categories, formData.type]
+  );
   const showCreditCardPurchasePreview = mode === 'create' && isCreditCardPurchaseFlow;
   const shouldRedirectToCreditCardInvoices =
     formData.type === 'EXPENSE' &&
@@ -685,8 +704,15 @@ export default function TransactionForm({
   }
 
   function getDefaultCategoryId(type: TransactionKind) {
-    const defaultCategory = categories.find((category) => category.isDefault && category.type === type);
-    const fallbackCategory = categories.find((category) => category.type === type);
+    const defaultCategory = categories.find(
+      (category) =>
+        category.isDefault &&
+        category.type === type &&
+        category.nature === 'OPERATIONAL'
+    );
+    const fallbackCategory = categories.find(
+      (category) => category.type === type && category.nature === 'OPERATIONAL'
+    );
 
     return defaultCategory?.id.toString() || fallbackCategory?.id.toString() || '';
   }
@@ -1525,7 +1551,7 @@ export default function TransactionForm({
               <div>
                 <CategorySelect
                   label="Categoria"
-                  categories={categories.filter((category) => category.type === formData.type)}
+                  categories={availableCategories}
                   value={formData.categoryId}
                   onChange={(categoryId) =>
                     setFormData((prev) => ({ ...prev, categoryId }))

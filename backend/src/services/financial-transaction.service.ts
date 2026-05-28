@@ -1,13 +1,15 @@
 ﻿import { PrismaClient, FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
-import { FinancialAccountPurpose } from '@prisma/client';
+import {
+  AccountType,
+  CreditCardInvoiceStatus,
+  CreditCardInvoiceSettlementType,
+  FinancialAccountPurpose,
+  FinancialTransactionEntryKind
+} from '@prisma/client';
 import { parseDecimal } from '../utils/money';
 import cacheService from './cache.service';
 import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
-import {
-  CreditCardInvoiceStatus,
-  CreditCardInvoiceSettlementType
-} from '@prisma/client';
 import {
   addMonthsClamped,
   CreditCardInvoiceReference,
@@ -16,9 +18,6 @@ import {
 } from '../utils/credit-card';
 
 import { randomUUID } from 'crypto';
-import {
-  AccountType
-} from '@prisma/client';
 
 const prisma = new PrismaClient();
 type PurchaseScope = 'SINGLE' | 'FUTURE' | 'PURCHASE';
@@ -169,6 +168,12 @@ type CreditCardPurchaseBaseTransaction = {
   } | null;
 };
 
+function buildOperationalTransactionWhere(): Prisma.FinancialTransactionWhereInput {
+  return {
+    entryKind: FinancialTransactionEntryKind.NORMAL
+  };
+}
+
 // ============================================
 // CRITICAL: FINANCIAL DATA INTEGRITY CLASS
 // ============================================
@@ -189,6 +194,7 @@ export default class FinancialTransactionService {
     fromAccountId?: number | null;
     toAccountId?: number | null;
     categoryId?: number | null;
+    entryKind?: FinancialTransactionEntryKind;
     companyId: number;
     createdBy: number;
     tags?: string[];
@@ -268,6 +274,38 @@ export default class FinancialTransactionService {
     return repeatTimes === 1 ? transactions[0] : transactions;
   }
 
+  private static async validateCategoryAssignmentTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      companyId: number;
+      transactionType: TransactionType;
+      categoryId?: number | null;
+    }
+  ): Promise<void> {
+    if (!params.categoryId) {
+      return;
+    }
+
+    const category = await tx.financialCategory.findFirst({
+      where: {
+        id: params.categoryId,
+        companyId: params.companyId
+      },
+      select: {
+        id: true,
+        type: true
+      }
+    });
+
+    if (!category) {
+      throw new Error('Categoria financeira nao encontrada para a empresa');
+    }
+
+    if (category.type !== params.transactionType) {
+      throw new Error('Categoria financeira incompativel com o tipo da transacao');
+    }
+  }
+
   private static addMonths(date: Date, months: number): Date {
     const d = new Date(date);
     d.setMonth(d.getMonth() + months);
@@ -287,6 +325,7 @@ export default class FinancialTransactionService {
       fromAccountId?: number | null;
       toAccountId?: number | null;
       categoryId?: number | null;
+      entryKind?: FinancialTransactionEntryKind;
       companyId: number;
       createdBy: number;
       tags?: string[];
@@ -357,6 +396,7 @@ export default class FinancialTransactionService {
     fromAccountId?: number | null;
     toAccountId?: number | null;
     categoryId?: number | null;
+    entryKind?: FinancialTransactionEntryKind;
     companyId: number;
     createdBy: number;
     tags?: string[];
@@ -501,6 +541,12 @@ export default class FinancialTransactionService {
         await this.validateBusinessRules(data, parsedAmount, lockedAccounts);
       }
 
+      await this.validateCategoryAssignmentTx(tx, {
+        companyId: data.companyId,
+        transactionType: data.type,
+        categoryId: data.categoryId
+      });
+
       let creditCardInvoiceId: number | null = null;
       let isExternalCreditCardSettlement = false;
       if (data.creditCardInvoiceReference) {
@@ -521,6 +567,7 @@ export default class FinancialTransactionService {
           dueDate: data.dueDate || null,
           effectiveDate: data.effectiveDate || null,
           type: data.type,
+          entryKind: data.entryKind ?? FinancialTransactionEntryKind.NORMAL,
           status: data.status || 'PENDING',
           notes: data.notes,
           installmentNumber: data.installmentNumber ?? null,
@@ -1178,6 +1225,15 @@ export default class FinancialTransactionService {
         toAccountId: originalTxn.toAccountId
       });
     }
+
+    const nextType = data.type ?? originalTxn.type;
+    const nextCategoryId = data.categoryId !== undefined ? data.categoryId : originalTxn.categoryId;
+
+    await this.validateCategoryAssignmentTx(tx, {
+      companyId,
+      transactionType: nextType,
+      categoryId: nextCategoryId
+    });
 
     const updatedData: Prisma.FinancialTransactionUpdateInput = {};
 
@@ -2306,12 +2362,17 @@ export default class FinancialTransactionService {
 
   private static buildTransactionListSummary(transactions: Array<{
     type?: TransactionType;
+    entryKind?: FinancialTransactionEntryKind;
     amount?: Prisma.Decimal | string | number | null;
   }>): TransactionListSummary {
     let incomeTotal = new Prisma.Decimal(0);
     let expenseTotal = new Prisma.Decimal(0);
 
     for (const transaction of transactions) {
+      if (transaction.entryKind === FinancialTransactionEntryKind.BALANCE_ADJUSTMENT) {
+        continue;
+      }
+
       if (transaction.type !== TransactionType.INCOME && transaction.type !== TransactionType.EXPENSE) {
         continue;
       }
@@ -3010,10 +3071,13 @@ export default class FinancialTransactionService {
       ];
     }
 
+    const operationalTransactionWhere = buildOperationalTransactionWhere();
+
     const incomeAggregate = await prisma.financialTransaction.aggregate({
       where: {
         ...transactionWhere,
-        type: 'INCOME'
+        type: 'INCOME',
+        ...operationalTransactionWhere
       },
       _sum: { amount: true }
     });
@@ -3021,7 +3085,8 @@ export default class FinancialTransactionService {
     const expenseAggregate = await prisma.financialTransaction.aggregate({
       where: {
         ...transactionWhere,
-        type: 'EXPENSE'
+        type: 'EXPENSE',
+        ...operationalTransactionWhere
       },
       _sum: { amount: true }
     });
@@ -3055,6 +3120,7 @@ export default class FinancialTransactionService {
       where: {
         ...transactionWhere,
         type: 'EXPENSE',
+        ...operationalTransactionWhere,
         categoryId: { not: null }
       },
       _sum: { amount: true },
@@ -3153,6 +3219,7 @@ export default class FinancialTransactionService {
         where: {
           companyId,
           type: transactionType, // âœ… FILTRO POR TIPO DE TRANSAÃ‡ÃƒO
+          ...buildOperationalTransactionWhere(),
           description: {
             contains: normalizedQuery,
             mode: 'insensitive' // Case-insensitive search

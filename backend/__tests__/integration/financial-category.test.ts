@@ -143,6 +143,64 @@ describe('Financial categories', () => {
     expect(storedCategories.map((category) => category.icon)).toEqual(['car', 'receipt']);
   });
 
+  it('persists category nature and supports filtering by nature', async () => {
+    const operationalResponse = await request(app)
+      .post('/api/financial/categories')
+      .set(authHeaders())
+      .send({
+        name: `Categoria Operacional ${Date.now()}`,
+        type: 'EXPENSE',
+        color: '#2563EB',
+        icon: 'wallet'
+      });
+
+    expect(operationalResponse.status).toBe(201);
+    expect(operationalResponse.body.nature).toBe('OPERATIONAL');
+
+    const conciliationResponse = await request(app)
+      .post('/api/financial/categories')
+      .set(authHeaders())
+      .send({
+        name: `Categoria Conciliacao ${Date.now()}`,
+        type: 'EXPENSE',
+        nature: 'CONCILIATION',
+        color: '#F59E0B',
+        icon: 'tag'
+      });
+
+    expect(conciliationResponse.status).toBe(201);
+    expect(conciliationResponse.body.nature).toBe('CONCILIATION');
+
+    const filteredResponse = await request(app)
+      .get('/api/financial/categories')
+      .set(authHeaders())
+      .query({ nature: 'CONCILIATION' });
+
+    expect(filteredResponse.status).toBe(200);
+    expect(filteredResponse.body).toHaveLength(1);
+    expect(filteredResponse.body[0].id).toBe(conciliationResponse.body.id);
+    expect(filteredResponse.body[0].nature).toBe('CONCILIATION');
+  });
+
+  it('does not allow conciliation categories to become defaults', async () => {
+    const conciliationCategory = await prisma.financialCategory.create({
+      data: {
+        name: `Categoria Conciliacao Default ${Date.now()}`,
+        type: 'EXPENSE',
+        nature: 'CONCILIATION',
+        color: '#F59E0B',
+        companyId
+      }
+    });
+
+    const response = await request(app)
+      .post(`/api/financial/categories/${conciliationCategory.id}/set-default`)
+      .set(authHeaders());
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('operacionais');
+  });
+
   it('keeps a single default category per type when switching the default', async () => {
     const firstCategory = await prisma.financialCategory.create({
       data: {

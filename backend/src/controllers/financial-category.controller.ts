@@ -1,49 +1,72 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, TransactionType } from '@prisma/client';
 import { ListCategoriesQuery } from '../validators/financial-category.validator';
 import { logger } from '../utils/logger';
 
 const prisma = new PrismaClient();
 
-/**
- * Função helper simplificada: extrai o único companyId do token
- */
 function getUserContext(req: Request): { companyId: number; userId: number } {
-  // @ts-ignore - O middleware já validou a existência desses valores
+  // @ts-ignore - O middleware ja validou a existencia desses valores
   const { companyId, userId } = req.user;
-  
+
   if (!companyId) {
-    throw new Error('Contexto de empresa não encontrado');
+    throw new Error('Contexto de empresa nao encontrado');
   }
-  
+
   return { companyId, userId };
 }
 
-/**
- * POST /api/financial/categories
- * Cria uma nova categoria financeira
- */
+function getCategoryTypeLabel(type: TransactionType): string {
+  switch (type) {
+    case 'INCOME':
+      return 'receita';
+    case 'TRANSFER':
+      return 'transferencia';
+    case 'EXPENSE':
+    default:
+      return 'despesa';
+  }
+}
+
+function ensureParentCompatibility(params: {
+  parentCategory: { type: TransactionType };
+  type: TransactionType;
+}): string | null {
+  if (params.parentCategory.type !== params.type) {
+    return `Categoria pai deve ser do tipo ${getCategoryTypeLabel(params.type)}`;
+  }
+
+  return null;
+}
+
 export async function createCategory(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
     const { name, type, color, icon, parentId, accountingCode } = req.body;
 
-    // Se parentId for fornecido, verificar se existe e pertence à mesma empresa
     if (parentId) {
       const parentCategory = await prisma.financialCategory.findUnique({
         where: { id: parentId }
       });
 
       if (!parentCategory) {
-        return res.status(400).json({ error: 'Categoria pai não encontrada' });
+        return res.status(400).json({ error: 'Categoria pai nao encontrada' });
       }
 
       if (parentCategory.companyId !== companyId) {
         return res.status(403).json({ error: 'Categoria pai pertence a outra empresa' });
       }
+
+      const parentCompatibilityError = ensureParentCompatibility({
+        parentCategory,
+        type
+      });
+
+      if (parentCompatibilityError) {
+        return res.status(400).json({ error: parentCompatibilityError });
+      }
     }
 
-    // Verificar se já existe categoria com mesmo nome no mesmo nível
     const existingCategory = await prisma.financialCategory.findFirst({
       where: {
         name,
@@ -53,21 +76,19 @@ export async function createCategory(req: Request, res: Response) {
     });
 
     if (existingCategory) {
-      return res.status(400).json({ 
-        error: `Já existe uma categoria '${name}' nesse nível` 
+      return res.status(400).json({
+        error: `Ja existe uma categoria '${name}' nesse nivel`
       });
     }
 
-    // ✅ CRIAR A CATEGORIA COM SINTAXE CORRETA DO PRISMA
     const category = await prisma.financialCategory.create({
       data: {
         name,
         type,
         color,
         icon: icon || 'tag',
-        // ✅ USAR CONNECT QUANDO parentId EXISTE, SENÃO OMITIR
         ...(parentId && { parent: { connect: { id: parentId } } }),
-        accountingCode: accountingCode || null, // ✅ TRATAR STRING VAZIA
+        accountingCode: accountingCode || null,
         company: { connect: { id: companyId } }
       }
     });
@@ -81,34 +102,27 @@ export async function createCategory(req: Request, res: Response) {
   }
 }
 
-/**
- * GET /api/financial/categories
- * Lista categorias financeiras com suporte a filtros
- */
 export async function getCategories(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
     const { type, parentId, search } = req.query as unknown as ListCategoriesQuery;
 
-    // Constrói os filtros
     const where: any = { companyId };
-    
+
     if (type) {
       where.type = type;
     }
-    
-    // Filtra por categorias raiz (sem pai) ou por um pai específico
+
     if (parentId === null) {
       where.parentId = null;
     } else if (typeof parentId === 'number') {
       where.parentId = parentId;
     }
-    
+
     if (search) {
       where.name = { contains: search, mode: 'insensitive' };
     }
 
-    // Busca categorias com informações de pai e filhos
     const categories = await prisma.financialCategory.findMany({
       where,
       include: {
@@ -127,15 +141,11 @@ export async function getCategories(req: Request, res: Response) {
   }
 }
 
-/**
- * GET /api/financial/categories/:id
- * Obtém uma categoria financeira específica pelo ID
- */
 export async function getCategoryById(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
     }
 
     const { companyId } = getUserContext(req);
@@ -151,98 +161,123 @@ export async function getCategoryById(req: Request, res: Response) {
     });
 
     if (!category) {
-      return res.status(404).json({ error: 'Categoria não encontrada' });
+      return res.status(404).json({ error: 'Categoria nao encontrada' });
     }
 
-    // Verificar se pertence à empresa do usuário
     if (category.companyId !== companyId) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
     return res.status(200).json(category);
   } catch (error) {
-    logger.error(`Erro ao buscar categoria financeira:`, error);
+    logger.error('Erro ao buscar categoria financeira:', error);
     return res.status(500).json({
       error: 'Erro ao buscar categoria financeira'
     });
   }
 }
 
-/**
- * PUT /api/financial/categories/:id
- * Atualiza uma categoria financeira
- */
 export async function updateCategory(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
     }
 
     const { companyId } = getUserContext(req);
     const { name, type, color, icon, parentId, accountingCode } = req.body;
 
-    // Verificar se a categoria existe e pertence à empresa
     const existingCategory = await prisma.financialCategory.findUnique({
       where: { id }
     });
 
     if (!existingCategory) {
-      return res.status(404).json({ error: 'Categoria não encontrada' });
+      return res.status(404).json({ error: 'Categoria nao encontrada' });
     }
 
     if (existingCategory.companyId !== companyId) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    // Evitar ciclos: uma categoria não pode ser sua própria descendente
+    const nextType = type ?? existingCategory.type;
+    const nextParentId = parentId !== undefined ? parentId : existingCategory.parentId;
+
     if (parentId) {
-      // Verificar se o parentId não é a própria categoria
-      if (parentId === id) {
-        return res.status(400).json({ 
-          error: 'Uma categoria não pode ser sua própria categoria pai' 
+      if (nextParentId === id) {
+        return res.status(400).json({
+          error: 'Uma categoria nao pode ser sua propria categoria pai'
         });
       }
 
-      // Verificar recursivamente para evitar ciclos na hierarquia
-      let currentParentId = parentId;
+      let currentParentId = nextParentId;
       while (currentParentId) {
         const parent = await prisma.financialCategory.findUnique({
           where: { id: currentParentId },
-          select: { id: true, parentId: true }
+          select: { id: true, parentId: true, companyId: true, type: true }
         });
 
-        if (!parent) break;
-        
+        if (!parent) {
+          return res.status(400).json({ error: 'Categoria pai nao encontrada' });
+        }
+
+        if (parent.companyId !== companyId) {
+          return res.status(403).json({ error: 'Categoria pai pertence a outra empresa' });
+        }
+
         if (parent.id === id) {
-          return res.status(400).json({ 
-            error: 'Essa relação criaria um ciclo na hierarquia de categorias' 
+          return res.status(400).json({
+            error: 'Essa relacao criaria um ciclo na hierarquia de categorias'
           });
+        }
+
+        if (parent.id === nextParentId) {
+          const parentCompatibilityError = ensureParentCompatibility({
+            parentCategory: parent,
+            type: nextType
+          });
+
+          if (parentCompatibilityError) {
+            return res.status(400).json({ error: parentCompatibilityError });
+          }
         }
 
         currentParentId = parent.parentId;
       }
     }
 
-    // Verificar unicidade do nome no mesmo nível
-    if (name && name !== existingCategory.name) {
-      const categoryWithSameName = await prisma.financialCategory.findFirst({
+    if (nextType !== existingCategory.type) {
+      const incompatibleChildrenCount = await prisma.financialCategory.count({
         where: {
-          name,
-          parentId: parentId !== undefined ? parentId : existingCategory.parentId,
-          companyId,
-          id: { not: id } // excluir a própria categoria da verificação
+          parentId: id,
+          type: { not: nextType }
         }
       });
 
-      if (categoryWithSameName) {
-        return res.status(400).json({ 
-          error: `Já existe uma categoria '${name}' nesse nível` 
+      if (incompatibleChildrenCount > 0) {
+        return res.status(400).json({
+          error:
+            'Nao e possivel alterar o tipo enquanto houver subcategorias com configuracao diferente'
         });
       }
     }
 
-    // ✅ ATUALIZAR A CATEGORIA COM SINTAXE CORRETA
+    if (name && name !== existingCategory.name) {
+      const categoryWithSameName = await prisma.financialCategory.findFirst({
+        where: {
+          name,
+          parentId: nextParentId,
+          companyId,
+          id: { not: id }
+        }
+      });
+
+      if (categoryWithSameName) {
+        return res.status(400).json({
+          error: `Ja existe uma categoria '${name}' nesse nivel`
+        });
+      }
+    }
+
     const updatedCategory = await prisma.financialCategory.update({
       where: { id },
       data: {
@@ -250,37 +285,31 @@ export async function updateCategory(req: Request, res: Response) {
         type,
         color,
         icon,
-        // ✅ LÓGICA CORRETA PARA PARENT
         ...(parentId !== undefined && {
           parent: parentId ? { connect: { id: parentId } } : { disconnect: true }
         }),
-        accountingCode: accountingCode || null
+        accountingCode: accountingCode === undefined ? existingCategory.accountingCode : accountingCode || null
       }
     });
 
     return res.status(200).json(updatedCategory);
   } catch (error) {
-    logger.error(`Erro ao atualizar categoria financeira:`, error);
+    logger.error('Erro ao atualizar categoria financeira:', error);
     return res.status(500).json({
       error: 'Erro ao atualizar categoria financeira'
     });
   }
 }
 
-/**
- * DELETE /api/financial/categories/:id
- * Exclui uma categoria financeira se não tiver transações ou subcategorias
- */
 export async function deleteCategory(req: Request, res: Response) {
   try {
     const id = Number(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'ID inválido' });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
     }
 
     const { companyId } = getUserContext(req);
 
-    // Verificar se a categoria existe e pertence à empresa
     const category = await prisma.financialCategory.findUnique({
       where: { id },
       include: {
@@ -294,35 +323,32 @@ export async function deleteCategory(req: Request, res: Response) {
     });
 
     if (!category) {
-      return res.status(404).json({ error: 'Categoria não encontrada' });
+      return res.status(404).json({ error: 'Categoria nao encontrada' });
     }
 
     if (category.companyId !== companyId) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
-    // Verificar se possui subcategorias
     if (category._count.children > 0) {
-      return res.status(400).json({ 
-        error: 'Não é possível excluir uma categoria que possui subcategorias' 
+      return res.status(400).json({
+        error: 'Nao e possivel excluir uma categoria que possui subcategorias'
       });
     }
 
-    // Verificar se possui transações associadas
     if (category._count.transactions > 0) {
-      return res.status(400).json({ 
-        error: 'Não é possível excluir uma categoria que possui transações associadas' 
+      return res.status(400).json({
+        error: 'Nao e possivel excluir uma categoria que possui transacoes associadas'
       });
     }
 
-    // Excluir a categoria
     await prisma.financialCategory.delete({
       where: { id }
     });
 
     return res.status(204).send();
   } catch (error) {
-    logger.error(`Erro ao excluir categoria financeira:`, error);
+    logger.error('Erro ao excluir categoria financeira:', error);
     return res.status(500).json({
       error: 'Erro ao excluir categoria financeira'
     });

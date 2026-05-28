@@ -41,6 +41,7 @@ interface ExpenseCategory {
   id: number;
   name: string;
   type: string;
+  nature: 'OPERATIONAL' | 'CONCILIATION';
   color: string;
   icon?: string | null;
 }
@@ -326,7 +327,8 @@ function CreditCardPurchasesPageInner() {
     try {
       const response = await api.get('/financial/categories', {
         params: {
-          type: 'EXPENSE'
+          type: 'EXPENSE',
+          nature: 'OPERATIONAL'
         }
       });
       setCategories(response.data || []);

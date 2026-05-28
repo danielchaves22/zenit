@@ -10,7 +10,8 @@ import { validate } from '../middlewares/validate.middleware';
 import {
   createAccountSchema,
   updateAccountSchema,
-  listAccountsSchema
+  listAccountsSchema,
+  adjustBalanceSchema
 } from '../validators/financial-account.validator';
 import {
   createCategorySchema,
@@ -105,7 +106,7 @@ router.get('/accounts', validate(listAccountsSchema), getAccounts);
 router.get('/accounts/:id', requireAccountAccess(), getAccountById);
 router.put('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), validate(updateAccountSchema), updateAccount);
 router.delete('/accounts/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), deleteAccount);
-router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), adjustBalance);
+router.post('/accounts/:id/adjust-balance', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess(), validate(adjustBalanceSchema), adjustBalance);
 
 router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccount);
 router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount);

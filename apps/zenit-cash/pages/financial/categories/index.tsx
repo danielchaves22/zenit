@@ -89,21 +89,21 @@ function CategoriesPageInner() {
     if (category.isDefault) {
       confirmation.confirm(
         {
-          title: 'Remover Categoria Padrão',
-          message: `Tem certeza que deseja remover "${category.name}" como categoria padrão para ${
+          title: 'Remover Categoria Padrao',
+          message: `Tem certeza que deseja remover "${category.name}" como categoria padrao para ${
             category.type === 'EXPENSE' ? 'despesas' : 'receitas'
           }?`,
-          confirmText: 'Remover Padrão',
+          confirmText: 'Remover Padrao',
           cancelText: 'Cancelar',
           type: 'warning'
         },
         async () => {
           try {
             await api.delete(`/financial/categories/${category.id}/set-default`);
-            addToast('Categoria padrão removida com sucesso', 'success');
+            addToast('Categoria padrao removida com sucesso', 'success');
             await fetchCategories();
           } catch (error: any) {
-            addToast(error.response?.data?.error || 'Erro ao remover categoria padrão', 'error');
+            addToast(error.response?.data?.error || 'Erro ao remover categoria padrao', 'error');
             throw error;
           }
         }
@@ -116,24 +116,24 @@ function CategoriesPageInner() {
     );
     const typeLabel = category.type === 'EXPENSE' ? 'despesas' : 'receitas';
     const message = currentDefault
-      ? `Definir "${category.name}" como categoria padrão para ${typeLabel}? A categoria "${currentDefault.name}" deixará de ser padrão.`
-      : `Definir "${category.name}" como categoria padrão para ${typeLabel}?`;
+      ? `Definir "${category.name}" como categoria padrao para ${typeLabel}? A categoria "${currentDefault.name}" deixara de ser padrao.`
+      : `Definir "${category.name}" como categoria padrao para ${typeLabel}?`;
 
     confirmation.confirm(
       {
-        title: 'Definir Categoria Padrão',
+        title: 'Definir Categoria Padrao',
         message,
-        confirmText: 'Definir como Padrão',
+        confirmText: 'Definir como Padrao',
         cancelText: 'Cancelar',
         type: 'info'
       },
       async () => {
         try {
           await api.post(`/financial/categories/${category.id}/set-default`);
-          addToast('Categoria definida como padrão com sucesso', 'success');
+          addToast('Categoria definida como padrao com sucesso', 'success');
           await fetchCategories();
         } catch (error: any) {
-          addToast(error.response?.data?.error || 'Erro ao definir categoria padrão', 'error');
+          addToast(error.response?.data?.error || 'Erro ao definir categoria padrao', 'error');
           throw error;
         }
       }
@@ -143,8 +143,8 @@ function CategoriesPageInner() {
   async function handleDelete(category: Category) {
     confirmation.confirm(
       {
-        title: 'Confirmar Exclusão',
-        message: `Tem certeza que deseja excluir a categoria "${category.name}"? Esta ação não pode ser desfeita.`,
+        title: 'Confirmar Exclusao',
+        message: `Tem certeza que deseja excluir a categoria "${category.name}"? Esta acao nao pode ser desfeita.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         type: 'danger'
@@ -152,7 +152,7 @@ function CategoriesPageInner() {
       async () => {
         try {
           await api.delete(`/financial/categories/${category.id}`);
-          addToast('Categoria excluída com sucesso', 'success');
+          addToast('Categoria excluida com sucesso', 'success');
           await fetchCategories();
         } catch (err: any) {
           addToast(err.response?.data?.error || 'Erro ao excluir categoria', 'error');
@@ -184,7 +184,7 @@ function CategoriesPageInner() {
     <DashboardLayout>
       <Breadcrumb
         items={[
-          { label: 'Início', href: '/' },
+          { label: 'Inicio', href: '/' },
           { label: 'Financeiro' },
           { label: 'Categorias' }
         ]}
@@ -194,16 +194,16 @@ function CategoriesPageInner() {
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-semibold text-white">Categorias Financeiras</h1>
           <InfoModalButton
-            modalTitle="Informações sobre categorias"
-            buttonLabel="Ver informações sobre categorias financeiras"
+            modalTitle="Informacoes sobre categorias"
+            buttonLabel="Ver informacoes sobre categorias financeiras"
           >
             <p>
-              Defina uma categoria padrão para {activeTypeLabel} para que ela seja
-              selecionada automaticamente em novos lançamentos.
+              Defina uma categoria padrao para {activeTypeLabel} para que ela seja
+              selecionada automaticamente em novos lancamentos.
             </p>
             <p>
               Use categorias principais e subcategorias para organizar a listagem e
-              facilitar o preenchimento das movimentações.
+              facilitar o preenchimento das movimentacoes.
             </p>
           </InfoModalButton>
         </div>
@@ -284,11 +284,11 @@ function CategoriesPageInner() {
             <table className="w-full">
               <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                 <tr>
-                  <th className="w-24 px-4 py-3 text-center">Ações</th>
+                  <th className="w-24 px-4 py-3 text-center">Acoes</th>
                   <th className="px-4 py-3 text-left">Categoria</th>
                   <th className="px-4 py-3 text-left">Categoria Pai</th>
-                  <th className="px-4 py-3 text-left">Código</th>
-                  <th className="px-4 py-3 text-center">Padrão</th>
+                  <th className="px-4 py-3 text-left">Codigo</th>
+                  <th className="px-4 py-3 text-center">Padrao</th>
                 </tr>
               </thead>
               <tbody>
@@ -308,7 +308,7 @@ function CategoriesPageInner() {
                                 ? 'text-yellow-400 hover:text-yellow-300'
                                 : 'text-gray-300 hover:text-yellow-400'
                             }`}
-                            title={category.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                            title={category.isDefault ? 'Remover como padrao' : 'Definir como padrao'}
                             disabled={confirmation.loading}
                           >
                             {category.isDefault ? (
@@ -359,7 +359,7 @@ function CategoriesPageInner() {
                       <td className="px-4 py-3 text-center">
                         {category.isDefault && (
                           <span className="rounded-full bg-yellow-700 px-2 py-1 text-xs text-yellow-300">
-                            Padrão
+                            Padrao
                           </span>
                         )}
                       </td>
@@ -381,7 +381,7 @@ function CategoriesPageInner() {
                                   ? 'text-yellow-400 hover:text-yellow-300'
                                   : 'text-gray-300 hover:text-yellow-400'
                               }`}
-                              title={child.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                              title={child.isDefault ? 'Remover como padrao' : 'Definir como padrao'}
                               disabled={confirmation.loading}
                             >
                               {child.isDefault ? (
@@ -430,7 +430,7 @@ function CategoriesPageInner() {
                         <td className="px-4 py-3 text-center">
                           {child.isDefault && (
                             <span className="rounded-full bg-yellow-700 px-2 py-1 text-xs text-yellow-300">
-                              Padrão
+                              Padrao
                             </span>
                           )}
                         </td>
@@ -455,7 +455,7 @@ function CategoriesPageInner() {
                                 ? 'text-yellow-400 hover:text-yellow-300'
                                 : 'text-gray-300 hover:text-yellow-400'
                             }`}
-                            title={orphan.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                            title={orphan.isDefault ? 'Remover como padrao' : 'Definir como padrao'}
                             disabled={confirmation.loading}
                           >
                             {orphan.isDefault ? (
@@ -491,23 +491,23 @@ function CategoriesPageInner() {
                             <div className="flex items-center gap-2 text-white">
                               {orphan.name}
                               <span className="rounded bg-yellow-700 px-2 py-1 text-xs text-yellow-300">
-                                Órfã
+                                Orfa
                               </span>
                               {orphan.isDefault && (
                                 <Star size={12} className="fill-current text-yellow-400" />
                               )}
                             </div>
-                            <div className="text-sm text-yellow-400">Categoria pai foi excluída</div>
+                            <div className="text-sm text-yellow-400">Categoria pai foi excluida</div>
                           </div>
                         </div>
                       </td>
 
-                      <td className="px-4 py-3 text-yellow-400">Categoria pai excluída</td>
+                      <td className="px-4 py-3 text-yellow-400">Categoria pai excluida</td>
                       <td className="px-4 py-3 text-gray-300">{orphan.accountingCode || '-'}</td>
                       <td className="px-4 py-3 text-center">
                         {orphan.isDefault && (
                           <span className="rounded-full bg-yellow-700 px-2 py-1 text-xs text-yellow-300">
-                            Padrão
+                            Padrao
                           </span>
                         )}
                       </td>

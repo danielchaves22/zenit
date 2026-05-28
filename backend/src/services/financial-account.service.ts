@@ -2,6 +2,7 @@ import {
   AccountType,
   FinancialAccount,
   FinancialAccountPurpose,
+  FinancialTransactionEntryKind,
   Prisma,
   PrismaClient
 } from '@prisma/client';
@@ -350,7 +351,7 @@ export default class FinancialAccountService {
     userId: number,
     reason: string
   ): Promise<FinancialAccount> {
-    return prisma.$transaction(async (tx) => {
+    const updatedAccount = await prisma.$transaction(async (tx) => {
       const account = await tx.financialAccount.findUnique({
         where: { id: accountId }
       });
@@ -376,6 +377,7 @@ export default class FinancialAccountService {
           amount: transactionAmount,
           date: new Date(),
           type: transactionType,
+          entryKind: FinancialTransactionEntryKind.BALANCE_ADJUSTMENT,
           status: 'COMPLETED',
           notes: `Ajuste manual. Saldo anterior: ${currentBalance}, Novo saldo: ${targetBalance}`,
           fromAccount:
@@ -392,6 +394,12 @@ export default class FinancialAccountService {
         data: { balance: targetBalance }
       });
     });
+
+    await cacheService.del(cacheService.getAccountBalanceKey(accountId));
+    await cacheService.invalidatePattern(`dashboard:${updatedAccount.companyId}:*`);
+    await cacheService.invalidatePattern(`transactions:${updatedAccount.companyId}:*`);
+
+    return updatedAccount;
   }
 
   static async toggleNegativeBalance(

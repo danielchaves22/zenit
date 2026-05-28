@@ -29,7 +29,11 @@ type FixedTemplateWithRelations = RecurringTransaction & {
     statementClosingDay?: number | null;
     statementDueDay?: number | null;
   } | null;
-  category: { id: number; name: string; color: string } | null;
+  category: {
+    id: number;
+    name: string;
+    color: string;
+  } | null;
 };
 
 type FixedAccountSelection = {
@@ -268,6 +272,36 @@ async function resolveFixedAccounts(params: {
   };
 }
 
+async function ensureCategoryAssignment(params: {
+  companyId: number;
+  transactionType: TransactionType;
+  categoryId?: number | null;
+}): Promise<void> {
+  if (!params.categoryId) {
+    return;
+  }
+
+  const category = await prisma.financialCategory.findFirst({
+    where: {
+      id: params.categoryId,
+      companyId: params.companyId
+    },
+    select: {
+      id: true,
+      type: true
+    }
+  });
+
+  if (!category) {
+    throw new Error('Categoria financeira nao encontrada para a empresa');
+  }
+
+  if (category.type !== params.transactionType) {
+    throw new Error('Categoria financeira incompativel com o tipo da transacao fixa');
+  }
+
+}
+
 function ensureFixedScheduleConfiguration(params: {
   type: TransactionType;
   dayOfMonth?: number | null;
@@ -404,6 +438,11 @@ export default class FixedTransactionService {
       type: data.type,
       dayOfMonth: data.dayOfMonth,
       ...accounts
+    });
+    await ensureCategoryAssignment({
+      companyId: data.companyId,
+      transactionType: data.type,
+      categoryId: data.categoryId
     });
 
     const resolvedDayOfMonth =
@@ -603,6 +642,11 @@ export default class FixedTransactionService {
       type: nextType,
       dayOfMonth: nextDayOfMonth,
       ...nextAccounts
+    });
+    await ensureCategoryAssignment({
+      companyId,
+      transactionType: nextType,
+      categoryId: data.categoryId !== undefined ? data.categoryId : existing.categoryId
     });
 
     const resolvedDayOfMonth =

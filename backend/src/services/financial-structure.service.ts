@@ -26,10 +26,18 @@ export default class FinancialStructureService {
         where: { companyId, isDefault: true }
       }),
       db.financialCategory.findFirst({
-        where: { companyId, type: 'EXPENSE', isDefault: true }
+        where: {
+          companyId,
+          type: 'EXPENSE',
+          isDefault: true
+        }
       }),
       db.financialCategory.findFirst({
-        where: { companyId, type: 'INCOME', isDefault: true }
+        where: {
+          companyId,
+          type: 'INCOME',
+          isDefault: true
+        }
       })
     ]);
 
@@ -144,10 +152,18 @@ export default class FinancialStructureService {
         where: { companyId, isDefault: true }
       }),
       prisma.financialCategory.count({
-        where: { companyId, type: 'EXPENSE', isDefault: true }
+        where: {
+          companyId,
+          type: 'EXPENSE',
+          isDefault: true
+        }
       }),
       prisma.financialCategory.count({
-        where: { companyId, type: 'INCOME', isDefault: true }
+        where: {
+          companyId,
+          type: 'INCOME',
+          isDefault: true
+        }
       })
     ]);
 

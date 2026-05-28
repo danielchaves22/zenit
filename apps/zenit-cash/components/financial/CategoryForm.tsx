@@ -169,9 +169,7 @@ export default function CategoryForm({
     () =>
       categories.filter(
         (category) =>
-          category.type === formData.type &&
-          !category.parentId &&
-          category.id !== editingCategory?.id
+          category.type === formData.type && !category.parentId && category.id !== editingCategory?.id
       ),
     [categories, editingCategory?.id, formData.type]
   );
@@ -323,8 +321,8 @@ export default function CategoryForm({
             <div>
               <div className="text-sm font-medium text-white">Resumo</div>
               <div className="mt-1 text-sm text-gray-400">
-                Categorias ajudam a classificar lancamentos e podem ser definidas como padrao na
-                listagem.
+                Use categorias principais e subcategorias para organizar os lancamentos
+                operacionais do dia a dia.
               </div>
             </div>
 

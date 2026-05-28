@@ -22,6 +22,16 @@ function isAccountDeleteConflict(message?: string): boolean {
   return message.includes('transacoes associadas');
 }
 
+function isAdjustBalanceValidationError(message?: string): boolean {
+  if (!message) {
+    return false;
+  }
+
+  return ['Conta financeira', 'Motivo do ajuste', 'Novo saldo'].some((fragment) =>
+    message.includes(fragment)
+  );
+}
+
 function getUserContext(req: Request): { companyId: number; userId: number } {
   // @ts-ignore auth middleware already injects these values
   const { companyId, userId } = req.user;
@@ -240,11 +250,6 @@ export async function adjustBalance(req: Request, res: Response) {
     }
 
     const { newBalance, reason } = req.body;
-    if (newBalance === undefined || !reason) {
-      return res.status(400).json({
-        error: 'Novo saldo e motivo do ajuste sao obrigatorios'
-      });
-    }
 
     const updatedAccount = await FinancialAccountService.adjustBalance(
       id,
@@ -256,7 +261,7 @@ export async function adjustBalance(req: Request, res: Response) {
     return res.status(200).json(updatedAccount);
   } catch (error: any) {
     logger.error('Erro ao ajustar saldo:', error);
-    return res.status(500).json({
+    return res.status(isAdjustBalanceValidationError(error.message) ? 400 : 500).json({
       error: error.message || 'Erro ao ajustar saldo da conta'
     });
   }

@@ -33,6 +33,7 @@ interface Category {
   id: number;
   name: string;
   type: string;
+  nature: 'OPERATIONAL' | 'CONCILIATION';
   color: string;
   icon?: string;
   isDefault?: boolean;
@@ -135,8 +136,13 @@ export default function FixedTransactionForm({
     useState<AccountAssignmentType>('LIQUID');
 
   const filteredCategories = useMemo(
-    () => categories.filter((category) => category.type === form.type),
-    [categories, form.type]
+    () =>
+      categories.filter(
+        (category) =>
+          category.type === form.type &&
+          (category.nature === 'OPERATIONAL' || String(category.id) === form.categoryId)
+      ),
+    [categories, form.categoryId, form.type]
   );
 
   const currentAccountId = form.type === 'EXPENSE' ? form.fromAccountId : form.toAccountId;

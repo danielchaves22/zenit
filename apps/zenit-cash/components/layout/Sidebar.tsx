@@ -1,5 +1,5 @@
 // frontend/components/layout/Sidebar.tsx - COM REGRAS DE VISIBILIDADE POR ROLE
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -46,6 +46,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
+  const SUBMENU_OVERLAP_PX = 16;
+  const SUBMENU_CLOSE_DELAY_MS = 120;
   const { userRole } = useAuth(); // ✅ OBTER O ROLE DO USUÁRIO
   const { hasAppPermission } = usePermissions();
   
@@ -68,11 +70,35 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   // Coordenadas do submenu flutuante
   const [submenuPosition, setSubmenuPosition] = useState({ top: 0, left: 0 });
+  const closeSubmenuTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Salva o estado atual no localStorage sempre que mudar
   useEffect(() => {
     localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
   }, [collapsed]);
+
+  useEffect(() => {
+    return () => {
+      if (closeSubmenuTimeoutRef.current) {
+        clearTimeout(closeSubmenuTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const clearCloseSubmenuTimeout = () => {
+    if (closeSubmenuTimeoutRef.current) {
+      clearTimeout(closeSubmenuTimeoutRef.current);
+      closeSubmenuTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleCloseSubmenu = () => {
+    clearCloseSubmenuTimeout();
+    closeSubmenuTimeoutRef.current = setTimeout(() => {
+      setActiveSubmenu(null);
+      closeSubmenuTimeoutRef.current = null;
+    }, SUBMENU_CLOSE_DELAY_MS);
+  };
 
   // ✅ FUNÇÃO PARA VERIFICAR SE UM ITEM DEVE SER VISÍVEL
   const isItemVisible = (item: MenuItem | SectionTitle): boolean => {
@@ -245,19 +271,22 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     }
 
     // Fecha qualquer submenu aberto
+    clearCloseSubmenuTimeout();
     setActiveSubmenu(null);
   };
 
   const handleMouseEnter = (item: MenuItem, event: React.MouseEvent) => {
+    clearCloseSubmenuTimeout();
+
     // No modo colapsado, sempre mostrar o submenu flutuante
     // No modo expandido, mostrar apenas para itens com mais de um subitem
     if (collapsed || hasMultipleClickableSubItems(item)) {
       const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
       
-      // Posição diferente dependendo do modo
+      // Sobrepõe levemente a borda direita do sidebar para cobrir scrollbar e toggle
       setSubmenuPosition({ 
         top: rect.top, 
-        left: collapsed ? 64 : 208 // 16px ou 52px + um espaço
+        left: rect.right - SUBMENU_OVERLAP_PX
       });
       
       setActiveSubmenu(item.label);
@@ -265,7 +294,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
   };
 
   const handleMouseLeave = () => {
-    setActiveSubmenu(null);
+    scheduleCloseSubmenu();
   };
 
   // Verifica se um item tem mais de um subitem clicável (com href)
@@ -406,14 +435,17 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       {/* Submenu flutuante - para todos os itens no modo colapsado ou apenas múltiplos subitens no expandido */}
       {activeMenu && (
         <div
-          className="fixed bg-surface border border-gray-700 rounded shadow-lg z-50 transition-opacity duration-200 ease-in-out opacity-100"
+          className="fixed bg-surface border border-gray-700 rounded shadow-lg z-[60] transition-opacity duration-200 ease-in-out opacity-100"
           style={{ 
             left: `${submenuPosition.left}px`,
             top: submenuPosition.top, 
             minWidth: '200px',
             display: 'block'
           }}
-          onMouseEnter={() => setActiveSubmenu(activeMenu.label)}
+          onMouseEnter={() => {
+            clearCloseSubmenuTimeout();
+            setActiveSubmenu(activeMenu.label);
+          }}
           onMouseLeave={handleMouseLeave}
         >
           <div className="py-1">

@@ -71,7 +71,13 @@ interface Transaction {
   repeatTimes?: number | null;
   fromAccount?: { id: number; name: string; type?: string };
   toAccount?: { id: number; name: string; type?: string };
-  category?: { id: number; name: string; color: string; icon?: string };
+  category?: {
+    id: number;
+    name: string;
+    color: string;
+    icon?: string;
+    nature?: 'OPERATIONAL' | 'CONCILIATION';
+  };
   tags: { id: number; name: string }[];
   createdByUser: { id: number; name: string };
   createdAt: string;
@@ -126,6 +132,7 @@ interface Category {
   name: string;
   color: string;
   type: string;
+  nature: 'OPERATIONAL' | 'CONCILIATION';
   icon?: string;
   isDefault?: boolean;
 }
@@ -304,6 +311,12 @@ function canSettleTransaction(transaction: Transaction) {
 
 function shouldAdjustExpenseSummaryWithTransferPayments(types: TransactionTypeFilter[]) {
   return types.includes('TRANSFER');
+}
+
+function isConciliationCategory(category?: {
+  nature?: 'OPERATIONAL' | 'CONCILIATION';
+} | null) {
+  return category?.nature === 'CONCILIATION';
 }
 
 export default function TransactionsListPage() {
@@ -1290,6 +1303,17 @@ export default function TransactionsListPage() {
 	                      );
 	                    }
 
+	                    if (isConciliationCategory(transaction.category)) {
+	                      characteristicBadges.push(
+	                        <span
+	                          key="conciliation"
+	                          className="rounded-full bg-amber-900 px-2 py-0.5 text-[10px] uppercase text-amber-200"
+	                        >
+	                          Conciliação
+	                        </span>
+	                      );
+	                    }
+
 	                    if (
 	                      transaction.purchaseGroupId ||
 	                      transaction.creditCardInvoice ||
@@ -1512,7 +1536,16 @@ export default function TransactionsListPage() {
                                 className="h-3 w-3 rounded-full"
                                 style={{ backgroundColor: transaction.category.color }}
                               />
-                              <span className="text-sm text-gray-300">{transaction.category.name}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-300">
+                                  {transaction.category.name}
+                                </span>
+                                {isConciliationCategory(transaction.category) && (
+                                  <span className="rounded-full bg-amber-900/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
+                                    Conciliação
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           ) : (
                             <span className="text-gray-500">-</span>

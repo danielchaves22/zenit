@@ -39,6 +39,11 @@ enum TransactionType {
   TRANSFER
 }
 
+enum FinancialTransactionEntryKind {
+  NORMAL
+  BALANCE_ADJUSTMENT
+}
+
 enum TransactionStatus {
   PENDING
   COMPLETED
@@ -402,6 +407,7 @@ model FinancialTransaction {
   purchaseGroupId    String?
   
   type            TransactionType
+  entryKind       FinancialTransactionEntryKind @default(NORMAL)
   status          TransactionStatus    @default(COMPLETED) // ✅ MUDANÇA: padrão COMPLETED
   notes           String?
   fromAccountId   Int?
@@ -435,6 +441,7 @@ model FinancialTransaction {
   @@index([date])
   @@index([purchaseGroupId])
   @@index([creditCardInvoiceId])
+  @@index([companyId, entryKind])
   
   // ✅ NOVOS ÍNDICES PARA PERFORMANCE
   @@index([dueDate, status])                              // Relatórios de inadimplência

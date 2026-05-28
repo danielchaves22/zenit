@@ -1,6 +1,6 @@
 import request from 'supertest';
 import bcrypt from 'bcrypt';
-import { AppKey, PrismaClient } from '@prisma/client';
+import { AppKey, FinancialTransactionEntryKind, PrismaClient } from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 
@@ -14,8 +14,6 @@ describe('Financial reconciliation adjustments', () => {
   let token: string;
   let accountId: number;
   let operationalExpenseCategoryId: number;
-  let conciliationExpenseCategoryId: number;
-  let conciliationIncomeCategoryId: number;
 
   const authHeaders = () => ({
     Authorization: `Bearer ${token}`,
@@ -107,34 +105,11 @@ describe('Financial reconciliation adjustments', () => {
       data: {
         name: `Operacional Despesa ${Date.now()}`,
         type: 'EXPENSE',
-        nature: 'OPERATIONAL',
         color: '#EF4444',
         companyId
       }
     });
     operationalExpenseCategoryId = operationalExpenseCategory.id;
-
-    const conciliationExpenseCategory = await prisma.financialCategory.create({
-      data: {
-        name: `Conciliacao Despesa ${Date.now()}`,
-        type: 'EXPENSE',
-        nature: 'CONCILIATION',
-        color: '#F59E0B',
-        companyId
-      }
-    });
-    conciliationExpenseCategoryId = conciliationExpenseCategory.id;
-
-    const conciliationIncomeCategory = await prisma.financialCategory.create({
-      data: {
-        name: `Conciliacao Receita ${Date.now()}`,
-        type: 'INCOME',
-        nature: 'CONCILIATION',
-        color: '#22C55E',
-        companyId
-      }
-    });
-    conciliationIncomeCategoryId = conciliationIncomeCategory.id;
   });
 
   afterAll(async () => {
@@ -155,8 +130,7 @@ describe('Financial reconciliation adjustments', () => {
       .set(authHeaders())
       .send({
         newBalance: 1300,
-        reason: 'Conferencia inicial',
-        categoryId: conciliationIncomeCategoryId
+        reason: 'Conferencia inicial'
       });
 
     expect(incomeAdjustmentResponse.status).toBe(200);
@@ -167,8 +141,7 @@ describe('Financial reconciliation adjustments', () => {
       .set(authHeaders())
       .send({
         newBalance: 1200,
-        reason: 'Tarifa avulsa',
-        categoryId: conciliationExpenseCategoryId
+        reason: 'Tarifa avulsa'
       });
 
     expect(expenseAdjustmentResponse.status).toBe(200);
@@ -181,30 +154,37 @@ describe('Financial reconciliation adjustments', () => {
 
     expect(transactions).toHaveLength(2);
     expect(transactions[0].type).toBe('INCOME');
+    expect(transactions[0].entryKind).toBe(FinancialTransactionEntryKind.BALANCE_ADJUSTMENT);
     expect(transactions[0].amount.toString()).toBe('300');
     expect(transactions[0].toAccountId).toBe(accountId);
-    expect(transactions[0].categoryId).toBe(conciliationIncomeCategoryId);
+    expect(transactions[0].categoryId).toBeNull();
     expect(transactions[1].type).toBe('EXPENSE');
+    expect(transactions[1].entryKind).toBe(FinancialTransactionEntryKind.BALANCE_ADJUSTMENT);
     expect(transactions[1].amount.toString()).toBe('100');
     expect(transactions[1].fromAccountId).toBe(accountId);
-    expect(transactions[1].categoryId).toBe(conciliationExpenseCategoryId);
+    expect(transactions[1].categoryId).toBeNull();
   });
 
-  it('rejects operational categories when adjusting balance', async () => {
+  it('does not create a transaction when the target balance matches the current balance', async () => {
     const response = await request(app)
       .post(`/api/financial/accounts/${accountId}/adjust-balance`)
       .set(authHeaders())
       .send({
-        newBalance: 900,
-        reason: 'Tentativa invalida',
-        categoryId: operationalExpenseCategoryId
+        newBalance: 1000,
+        reason: 'Sem diferenca'
       });
 
-    expect(response.status).toBe(400);
-    expect(response.body.error).toContain('conciliacao');
+    expect(response.status).toBe(200);
+    expect(Number(response.body.balance)).toBe(1000);
+
+    const transactions = await prisma.financialTransaction.findMany({
+      where: { companyId }
+    });
+
+    expect(transactions).toHaveLength(0);
   });
 
-  it('ignores conciliation in financial summary but keeps it in account movement reports', async () => {
+  it('ignores balance adjustments in financial summary but keeps them in account movement reports', async () => {
     const operationalExpenseResponse = await request(app)
       .post('/api/financial/transactions')
       .set(authHeaders())
@@ -225,8 +205,7 @@ describe('Financial reconciliation adjustments', () => {
       .set(authHeaders())
       .send({
         newBalance: 750,
-        reason: 'Tarifa nao lancada',
-        categoryId: conciliationExpenseCategoryId
+        reason: 'Tarifa nao lancada'
       });
 
     expect(adjustmentResponse.status).toBe(200);

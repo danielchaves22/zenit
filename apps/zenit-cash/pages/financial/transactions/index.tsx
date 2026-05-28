@@ -66,6 +66,7 @@ interface Transaction {
   dueDate?: string;
   effectiveDate?: string;
   type: TransactionTypeFilter;
+  entryKind?: 'NORMAL' | 'BALANCE_ADJUSTMENT';
   status: TransactionStatusFilter;
   notes?: string;
   repeatTimes?: number | null;
@@ -76,7 +77,6 @@ interface Transaction {
     name: string;
     color: string;
     icon?: string;
-    nature?: 'OPERATIONAL' | 'CONCILIATION';
   };
   tags: { id: number; name: string }[];
   createdByUser: { id: number; name: string };
@@ -132,7 +132,6 @@ interface Category {
   name: string;
   color: string;
   type: string;
-  nature: 'OPERATIONAL' | 'CONCILIATION';
   icon?: string;
   isDefault?: boolean;
 }
@@ -313,10 +312,10 @@ function shouldAdjustExpenseSummaryWithTransferPayments(types: TransactionTypeFi
   return types.includes('TRANSFER');
 }
 
-function isConciliationCategory(category?: {
-  nature?: 'OPERATIONAL' | 'CONCILIATION';
-} | null) {
-  return category?.nature === 'CONCILIATION';
+function isBalanceAdjustmentTransaction(
+  transaction?: Pick<Transaction, 'entryKind'> | null
+) {
+  return transaction?.entryKind === 'BALANCE_ADJUSTMENT';
 }
 
 export default function TransactionsListPage() {
@@ -1303,7 +1302,7 @@ export default function TransactionsListPage() {
 	                      );
 	                    }
 
-	                    if (isConciliationCategory(transaction.category)) {
+	                    if (isBalanceAdjustmentTransaction(transaction)) {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="conciliation"
@@ -1540,7 +1539,7 @@ export default function TransactionsListPage() {
                                 <span className="text-sm text-gray-300">
                                   {transaction.category.name}
                                 </span>
-                                {isConciliationCategory(transaction.category) && (
+                                {isBalanceAdjustmentTransaction(transaction) && (
                                   <span className="rounded-full bg-amber-900/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
                                     Conciliação
                                   </span>

@@ -14,7 +14,6 @@ import {
   AlertTriangle,
   CreditCard,
   Edit2,
-  HelpCircle,
   MinusCircle,
   Plus,
   Settings,
@@ -37,20 +36,16 @@ interface Account {
   allowNegativeBalance: boolean;
 }
 
-interface ReconciliationCategory {
-  id: number;
-  name: string;
-  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
-  nature: 'OPERATIONAL' | 'CONCILIATION';
-}
-
-
 function formatCurrency(value: string | number): string {
   const numericValue = typeof value === 'string' ? parseFloat(value) : value;
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL'
   }).format(Number.isNaN(numericValue) ? 0 : numericValue);
+}
+
+function parseMoneyInput(value: string): number {
+  return Number(value.replace(/[^\d.-]/g, '') || 0);
 }
 
 function formatBalance(balance: string, allowNegativeBalance: boolean): React.ReactNode {
@@ -77,7 +72,7 @@ function formatBalance(balance: string, allowNegativeBalance: boolean): React.Re
 function getAccountTypeLabel(type: string): string {
   const labels: Record<string, string> = {
     CHECKING: 'Conta Corrente',
-    SAVINGS: 'Poupança',
+    SAVINGS: 'Poupanca',
     INVESTMENT: 'Investimento',
     CASH: 'Dinheiro'
   };
@@ -90,9 +85,6 @@ function AccountsPageInner() {
   const { addToast } = useToast();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [reconciliationCategories, setReconciliationCategories] = useState<
-    ReconciliationCategory[]
-  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState('');
@@ -102,17 +94,12 @@ function AccountsPageInner() {
   const [adjustingAccount, setAdjustingAccount] = useState<Account | null>(null);
   const [balanceData, setBalanceData] = useState({
     newBalance: '0.00',
-    reason: '',
-    categoryId: ''
+    reason: ''
   });
 
   useEffect(() => {
     void fetchAccounts();
   }, [filterStatus, filterType]);
-
-  useEffect(() => {
-    void fetchReconciliationCategories();
-  }, []);
 
   async function fetchAccounts() {
     setLoading(true);
@@ -137,24 +124,11 @@ function AccountsPageInner() {
     }
   }
 
-  async function fetchReconciliationCategories() {
-    try {
-      const response = await api.get('/financial/categories', {
-        params: { nature: 'CONCILIATION' }
-      });
-
-      setReconciliationCategories(response.data || []);
-    } catch (err: any) {
-      addToast(err.response?.data?.error || 'Erro ao carregar categorias de conciliacao', 'error');
-    }
-  }
-
   function openBalanceModal(account: Account) {
     setAdjustingAccount(account);
     setBalanceData({
       newBalance: account.balance,
-      reason: '',
-      categoryId: ''
+      reason: ''
     });
     setShowBalanceModal(true);
   }
@@ -164,8 +138,7 @@ function AccountsPageInner() {
     setAdjustingAccount(null);
     setBalanceData({
       newBalance: '0.00',
-      reason: '',
-      categoryId: ''
+      reason: ''
     });
   }
 
@@ -173,20 +146,23 @@ function AccountsPageInner() {
     if (account.isDefault) {
       confirmation.confirm(
         {
-          title: 'Remover Conta Padrão',
-          message: `Tem certeza que deseja remover "${account.name}" como conta padrão?`,
-          confirmText: 'Remover Padrão',
+          title: 'Remover Conta Padrao',
+          message: `Tem certeza que deseja remover "${account.name}" como conta padrao?`,
+          confirmText: 'Remover Padrao',
           cancelText: 'Cancelar',
           type: 'warning'
         },
         async () => {
           try {
             await api.delete(`/financial/accounts/${account.id}/set-default`);
-            addToast('Conta padrão removida com sucesso', 'success');
+            addToast('Conta padrao removida com sucesso', 'success');
             await fetchAccounts();
-          } catch (error: any) {
-            addToast(error.response?.data?.error || 'Erro ao remover conta padrão', 'error');
-            throw error;
+          } catch (requestError: any) {
+            addToast(
+              requestError.response?.data?.error || 'Erro ao remover conta padrao',
+              'error'
+            );
+            throw requestError;
           }
         }
       );
@@ -195,25 +171,28 @@ function AccountsPageInner() {
 
     const currentDefault = accounts.find((currentAccount) => currentAccount.isDefault);
     const message = currentDefault
-      ? `Definir "${account.name}" como conta padrão? A conta "${currentDefault.name}" deixará de ser padrão.`
-      : `Definir "${account.name}" como conta padrão da empresa?`;
+      ? `Definir "${account.name}" como conta padrao? A conta "${currentDefault.name}" deixara de ser padrao.`
+      : `Definir "${account.name}" como conta padrao da empresa?`;
 
     confirmation.confirm(
       {
-        title: 'Definir Conta Padrão',
+        title: 'Definir Conta Padrao',
         message,
-        confirmText: 'Definir como Padrão',
+        confirmText: 'Definir como Padrao',
         cancelText: 'Cancelar',
         type: 'info'
       },
       async () => {
         try {
           await api.post(`/financial/accounts/${account.id}/set-default`);
-          addToast('Conta definida como padrão com sucesso', 'success');
+          addToast('Conta definida como padrao com sucesso', 'success');
           await fetchAccounts();
-        } catch (error: any) {
-          addToast(error.response?.data?.error || 'Erro ao definir conta padrão', 'error');
-          throw error;
+        } catch (requestError: any) {
+          addToast(
+            requestError.response?.data?.error || 'Erro ao definir conta padrao',
+            'error'
+          );
+          throw requestError;
         }
       }
     );
@@ -225,12 +204,7 @@ function AccountsPageInner() {
     }
 
     if (!balanceData.reason.trim()) {
-      addToast('Motivo do ajuste é obrigatório', 'error');
-      return;
-    }
-
-    if (!balanceData.categoryId) {
-      addToast('Selecione uma categoria de conciliaÃ§Ã£o', 'error');
+      addToast('Motivo do ajuste e obrigatorio', 'error');
       return;
     }
 
@@ -243,9 +217,8 @@ function AccountsPageInner() {
 
     try {
       await api.post(`/financial/accounts/${adjustingAccount.id}/adjust-balance`, {
-        newBalance: parseFloat(balanceData.newBalance.replace(/[^\d.-]/g, '')),
-        reason: balanceData.reason,
-        categoryId: Number(balanceData.categoryId)
+        newBalance: parseMoneyInput(balanceData.newBalance),
+        reason: balanceData.reason
       });
 
       addToast('Saldo ajustado com sucesso', 'success');
@@ -261,8 +234,8 @@ function AccountsPageInner() {
   async function handleDelete(account: Account) {
     confirmation.confirm(
       {
-        title: 'Confirmar Exclusão',
-        message: `Tem certeza que deseja excluir a conta "${account.name}"? Esta ação não pode ser desfeita.`,
+        title: 'Confirmar Exclusao',
+        message: `Tem certeza que deseja excluir a conta "${account.name}"? Esta acao nao pode ser desfeita.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         type: 'danger'
@@ -270,7 +243,7 @@ function AccountsPageInner() {
       async () => {
         try {
           await api.delete(`/financial/accounts/${account.id}`);
-          addToast('Conta excluída com sucesso', 'success');
+          addToast('Conta excluida com sucesso', 'success');
           await fetchAccounts();
         } catch (err: any) {
           addToast(err.response?.data?.error || 'Erro ao excluir conta', 'error');
@@ -300,7 +273,7 @@ function AccountsPageInner() {
 
   const balanceAdjustmentPreview = useMemo(() => {
     const currentBalance = Number(adjustingAccount?.balance || 0);
-    const targetBalance = Number(balanceData.newBalance.replace(/[^\d.-]/g, '') || 0);
+    const targetBalance = parseMoneyInput(balanceData.newBalance);
     const difference = targetBalance - currentBalance;
 
     return {
@@ -308,34 +281,9 @@ function AccountsPageInner() {
       targetBalance,
       difference,
       amount: Math.abs(difference),
-      type:
-        difference > 0 ? 'INCOME' : difference < 0 ? 'EXPENSE' : null
+      type: difference > 0 ? 'INCOME' : difference < 0 ? 'EXPENSE' : null
     } as const;
   }, [adjustingAccount?.balance, balanceData.newBalance]);
-
-  const availableAdjustmentCategories = useMemo(() => {
-    if (!balanceAdjustmentPreview.type) {
-      return [] as ReconciliationCategory[];
-    }
-
-    return reconciliationCategories.filter(
-      (category) => category.type === balanceAdjustmentPreview.type
-    );
-  }, [balanceAdjustmentPreview.type, reconciliationCategories]);
-
-  useEffect(() => {
-    if (!balanceData.categoryId) {
-      return;
-    }
-
-    const categoryStillAvailable = availableAdjustmentCategories.some(
-      (category) => category.id.toString() === balanceData.categoryId
-    );
-
-    if (!categoryStillAvailable) {
-      setBalanceData((prev) => ({ ...prev, categoryId: '' }));
-    }
-  }, [availableAdjustmentCategories, balanceData.categoryId]);
 
   return (
     <DashboardLayout title="Contas Financeiras">
@@ -353,7 +301,7 @@ function AccountsPageInner() {
           <Link href="/financial/credit-cards">
             <Button variant="outline" className="flex items-center gap-2">
               <CreditCard size={16} />
-              Cartões e Faturas
+              Cartoes e Faturas
             </Button>
           </Link>
           <Link href="/financial/accounts/new">
@@ -376,7 +324,7 @@ function AccountsPageInner() {
             >
               <option value="">Todos os tipos</option>
               <option value="CHECKING">Conta Corrente</option>
-              <option value="SAVINGS">Poupança</option>
+              <option value="SAVINGS">Poupanca</option>
               <option value="INVESTMENT">Investimento</option>
               <option value="CASH">Dinheiro</option>
             </select>
@@ -442,12 +390,12 @@ function AccountsPageInner() {
             <table className="w-full">
               <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                 <tr>
-                  <th className="w-24 px-4 py-3 text-center">Ações</th>
+                  <th className="w-24 px-4 py-3 text-center">Acoes</th>
                   <th className="px-4 py-3 text-left">Conta</th>
                   <th className="px-4 py-3 text-left">Tipo</th>
-                  <th className="px-4 py-3 text-left">Banco / Número</th>
+                  <th className="px-4 py-3 text-left">Banco / Numero</th>
                   <th className="px-4 py-3 text-right">Saldo</th>
-                  <th className="px-4 py-3 text-center">Configurações</th>
+                  <th className="px-4 py-3 text-center">Configuracoes</th>
                   <th className="px-4 py-3 text-center">Status</th>
                 </tr>
               </thead>
@@ -455,7 +403,9 @@ function AccountsPageInner() {
                 {filteredAccounts.map((account) => (
                   <tr
                     key={account.id}
-                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${!account.isActive ? 'opacity-60' : ''}`}
+                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                      !account.isActive ? 'opacity-60' : ''
+                    }`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
@@ -466,7 +416,7 @@ function AccountsPageInner() {
                               ? 'text-yellow-400 hover:text-yellow-300'
                               : 'text-gray-300 hover:text-yellow-400'
                           }`}
-                          title={account.isDefault ? 'Remover como padrão' : 'Definir como padrão'}
+                          title={account.isDefault ? 'Remover como padrao' : 'Definir como padrao'}
                           disabled={formLoading || !account.isActive}
                         >
                           {account.isDefault ? (
@@ -540,7 +490,7 @@ function AccountsPageInner() {
                         {parseFloat(account.balance) < 0 && !account.allowNegativeBalance && (
                           <div
                             className="flex items-center gap-1 rounded border border-red-600 bg-red-900/30 px-2 py-1 text-red-300"
-                            title="Saldo negativo não autorizado"
+                            title="Saldo negativo nao autorizado"
                           >
                             <AlertTriangle size={12} />
                             <span className="text-xs">Problema</span>
@@ -584,7 +534,7 @@ function AccountsPageInner() {
               <CurrencyInput
                 label="Novo Saldo"
                 value={balanceData.newBalance}
-                onChange={(value) => setBalanceData({ ...balanceData, newBalance: value })}
+                onChange={(value) => setBalanceData((prev) => ({ ...prev, newBalance: value }))}
                 required
                 disabled={formLoading}
               />
@@ -596,55 +546,25 @@ function AccountsPageInner() {
                 <textarea
                   value={balanceData.reason}
                   onChange={(event) =>
-                    setBalanceData({ ...balanceData, reason: event.target.value })
+                    setBalanceData((prev) => ({ ...prev, reason: event.target.value }))
                   }
                   rows={3}
                   className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
-                  placeholder="Ex: conciliação bancária"
+                  placeholder="Ex: conciliacao bancaria"
                   required
                   disabled={formLoading}
                 />
               </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">
-                  Categoria de ConciliaÃ§Ã£o *
-                </label>
-                <select
-                  value={balanceData.categoryId}
-                  onChange={(event) =>
-                    setBalanceData((prev) => ({ ...prev, categoryId: event.target.value }))
-                  }
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
-                  disabled={formLoading || !balanceAdjustmentPreview.type}
-                >
-                  <option value="">
-                    {balanceAdjustmentPreview.type
-                      ? 'Selecione uma categoria'
-                      : 'Informe um saldo diferente para continuar'}
-                  </option>
-                  {availableAdjustmentCategories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
-                {balanceAdjustmentPreview.type && availableAdjustmentCategories.length === 0 && (
-                  <div className="mt-1 text-xs text-amber-300">
-                    Nenhuma categoria de conciliaÃ§Ã£o disponÃ­vel para este tipo de ajuste.
-                  </div>
-                )}
-              </div>
-
               <div className="rounded border border-blue-600/40 bg-blue-900/20 p-3">
-                <div className="text-sm font-medium text-blue-100">Prévia do ajuste</div>
+                <div className="text-sm font-medium text-blue-100">Previa do ajuste</div>
                 <div className="mt-2 text-sm text-blue-100/90">
                   {balanceAdjustmentPreview.type === 'INCOME' &&
-                    `Será criada uma entrada de ${formatCurrency(balanceAdjustmentPreview.amount)}.`}
+                    `Sera criada uma entrada de ${formatCurrency(balanceAdjustmentPreview.amount)}.`}
                   {balanceAdjustmentPreview.type === 'EXPENSE' &&
-                    `Será criada uma saída de ${formatCurrency(balanceAdjustmentPreview.amount)}.`}
+                    `Sera criada uma saida de ${formatCurrency(balanceAdjustmentPreview.amount)}.`}
                   {!balanceAdjustmentPreview.type &&
-                    'O saldo informado já coincide com o saldo atual da conta.'}
+                    'O saldo informado ja coincide com o saldo atual da conta.'}
                 </div>
               </div>
 
@@ -652,8 +572,8 @@ function AccountsPageInner() {
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={16} className="mt-0.5 text-yellow-400" />
                   <div className="text-sm text-yellow-300">
-                    <strong>Atenção:</strong> esta operação cria uma transação de ajuste para
-                    manter o histórico.
+                    <strong>Atencao:</strong> esta operacao cria uma transacao de ajuste para
+                    manter o historico.
                   </div>
                 </div>
               </div>
@@ -677,9 +597,7 @@ function AccountsPageInner() {
                 disabled={
                   formLoading ||
                   !balanceData.reason.trim() ||
-                  !balanceData.categoryId ||
-                  !balanceAdjustmentPreview.type ||
-                  availableAdjustmentCategories.length === 0
+                  !balanceAdjustmentPreview.type
                 }
               >
                 Ajustar Saldo

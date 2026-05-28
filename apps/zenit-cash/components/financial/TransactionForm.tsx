@@ -66,7 +66,6 @@ interface Category {
   id: number;
   name: string;
   type: string;
-  nature: 'OPERATIONAL' | 'CONCILIATION';
   color: string;
   icon?: string;
   isDefault: boolean;
@@ -123,7 +122,6 @@ interface Transaction {
     name: string;
     color: string;
     icon?: string;
-    nature?: 'OPERATIONAL' | 'CONCILIATION';
   };
   tags: { id: number; name: string }[];
   installmentNumber?: number | null;
@@ -432,17 +430,10 @@ export default function TransactionForm({
   const isExpense = formData.type === 'EXPENSE';
   const isIncome = formData.type === 'INCOME';
   const isTransfer = formData.type === 'TRANSFER';
-  const activeCategoryNature =
-    categories.find((category) => category.id.toString() === formData.categoryId)?.nature ||
-    'OPERATIONAL';
   const availableCategories = useMemo(
     () =>
-      categories.filter(
-        (category) =>
-          category.type === formData.type &&
-          category.nature === activeCategoryNature
-      ),
-    [activeCategoryNature, categories, formData.type]
+      categories.filter((category) => category.type === formData.type),
+    [categories, formData.type]
   );
   const showCreditCardPurchasePreview = mode === 'create' && isCreditCardPurchaseFlow;
   const shouldRedirectToCreditCardInvoices =
@@ -705,14 +696,9 @@ export default function TransactionForm({
 
   function getDefaultCategoryId(type: TransactionKind) {
     const defaultCategory = categories.find(
-      (category) =>
-        category.isDefault &&
-        category.type === type &&
-        category.nature === 'OPERATIONAL'
+      (category) => category.isDefault && category.type === type
     );
-    const fallbackCategory = categories.find(
-      (category) => category.type === type && category.nature === 'OPERATIONAL'
-    );
+    const fallbackCategory = categories.find((category) => category.type === type);
 
     return defaultCategory?.id.toString() || fallbackCategory?.id.toString() || '';
   }

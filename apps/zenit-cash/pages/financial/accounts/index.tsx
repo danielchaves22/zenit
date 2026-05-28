@@ -37,6 +37,13 @@ interface Account {
   allowNegativeBalance: boolean;
 }
 
+interface ReconciliationCategory {
+  id: number;
+  name: string;
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  nature: 'OPERATIONAL' | 'CONCILIATION';
+}
+
 
 function formatCurrency(value: string | number): string {
   const numericValue = typeof value === 'string' ? parseFloat(value) : value;
@@ -83,6 +90,9 @@ function AccountsPageInner() {
   const { addToast } = useToast();
 
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [reconciliationCategories, setReconciliationCategories] = useState<
+    ReconciliationCategory[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState('');
@@ -92,12 +102,17 @@ function AccountsPageInner() {
   const [adjustingAccount, setAdjustingAccount] = useState<Account | null>(null);
   const [balanceData, setBalanceData] = useState({
     newBalance: '0.00',
-    reason: ''
+    reason: '',
+    categoryId: ''
   });
 
   useEffect(() => {
     void fetchAccounts();
   }, [filterStatus, filterType]);
+
+  useEffect(() => {
+    void fetchReconciliationCategories();
+  }, []);
 
   async function fetchAccounts() {
     setLoading(true);
@@ -122,11 +137,24 @@ function AccountsPageInner() {
     }
   }
 
+  async function fetchReconciliationCategories() {
+    try {
+      const response = await api.get('/financial/categories', {
+        params: { nature: 'CONCILIATION' }
+      });
+
+      setReconciliationCategories(response.data || []);
+    } catch (err: any) {
+      addToast(err.response?.data?.error || 'Erro ao carregar categorias de conciliacao', 'error');
+    }
+  }
+
   function openBalanceModal(account: Account) {
     setAdjustingAccount(account);
     setBalanceData({
       newBalance: account.balance,
-      reason: ''
+      reason: '',
+      categoryId: ''
     });
     setShowBalanceModal(true);
   }
@@ -136,7 +164,8 @@ function AccountsPageInner() {
     setAdjustingAccount(null);
     setBalanceData({
       newBalance: '0.00',
-      reason: ''
+      reason: '',
+      categoryId: ''
     });
   }
 
@@ -200,6 +229,11 @@ function AccountsPageInner() {
       return;
     }
 
+    if (!balanceData.categoryId) {
+      addToast('Selecione uma categoria de conciliaÃ§Ã£o', 'error');
+      return;
+    }
+
     if (!balanceAdjustmentPreview.type || balanceAdjustmentPreview.amount === 0) {
       addToast('Informe um saldo diferente do atual para criar o ajuste', 'error');
       return;
@@ -210,7 +244,8 @@ function AccountsPageInner() {
     try {
       await api.post(`/financial/accounts/${adjustingAccount.id}/adjust-balance`, {
         newBalance: parseFloat(balanceData.newBalance.replace(/[^\d.-]/g, '')),
-        reason: balanceData.reason
+        reason: balanceData.reason,
+        categoryId: Number(balanceData.categoryId)
       });
 
       addToast('Saldo ajustado com sucesso', 'success');
@@ -277,6 +312,30 @@ function AccountsPageInner() {
         difference > 0 ? 'INCOME' : difference < 0 ? 'EXPENSE' : null
     } as const;
   }, [adjustingAccount?.balance, balanceData.newBalance]);
+
+  const availableAdjustmentCategories = useMemo(() => {
+    if (!balanceAdjustmentPreview.type) {
+      return [] as ReconciliationCategory[];
+    }
+
+    return reconciliationCategories.filter(
+      (category) => category.type === balanceAdjustmentPreview.type
+    );
+  }, [balanceAdjustmentPreview.type, reconciliationCategories]);
+
+  useEffect(() => {
+    if (!balanceData.categoryId) {
+      return;
+    }
+
+    const categoryStillAvailable = availableAdjustmentCategories.some(
+      (category) => category.id.toString() === balanceData.categoryId
+    );
+
+    if (!categoryStillAvailable) {
+      setBalanceData((prev) => ({ ...prev, categoryId: '' }));
+    }
+  }, [availableAdjustmentCategories, balanceData.categoryId]);
 
   return (
     <DashboardLayout title="Contas Financeiras">
@@ -545,6 +604,36 @@ function AccountsPageInner() {
                   required
                   disabled={formLoading}
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">
+                  Categoria de ConciliaÃ§Ã£o *
+                </label>
+                <select
+                  value={balanceData.categoryId}
+                  onChange={(event) =>
+                    setBalanceData((prev) => ({ ...prev, categoryId: event.target.value }))
+                  }
+                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  disabled={formLoading || !balanceAdjustmentPreview.type}
+                >
+                  <option value="">
+                    {balanceAdjustmentPreview.type
+                      ? 'Selecione uma categoria'
+                      : 'Informe um saldo diferente para continuar'}
+                  </option>
+                  {availableAdjustmentCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                {balanceAdjustmentPreview.type && availableAdjustmentCategories.length === 0 && (
+                  <div className="mt-1 text-xs text-amber-300">
+                    Nenhuma categoria de conciliaÃ§Ã£o disponÃ­vel para este tipo de ajuste.
+                  </div>
+                )}
               </div>
 
               <div className="rounded border border-blue-600/40 bg-blue-900/20 p-3">

@@ -38,16 +38,19 @@ describe('fixed transactions page helpers', () => {
       {
         id: 3,
         description: 'Zebra',
+        amount: '35.90',
         nextDueDate: '2026-06-20T00:00:00.000Z'
       },
       {
         id: 1,
         description: 'Alpha',
+        amount: '12.50',
         nextDueDate: '2026-06-15T00:00:00.000Z'
       },
       {
         id: 2,
         description: 'beta',
+        amount: '9.90',
         nextDueDate: '2026-06-10T00:00:00.000Z'
       }
     ] as any
@@ -66,16 +69,19 @@ describe('fixed transactions page helpers', () => {
       {
         id: 1,
         description: 'Conta de Luz',
+        amount: '120.00',
         nextDueDate: '2026-06-20T00:00:00.000Z'
       },
       {
         id: 2,
         description: 'Internet',
+        amount: '89.90',
         nextDueDate: '2026-06-05T00:00:00.000Z'
       },
       {
         id: 3,
         description: 'Agua',
+        amount: '65.40',
         nextDueDate: '2026-06-12T00:00:00.000Z'
       }
     ] as any
@@ -86,6 +92,37 @@ describe('fixed transactions page helpers', () => {
 
     expect(
       sortFixedTransactions(items, 'nextDueDate', 'desc').map((item) => item.id)
+    ).toEqual([1, 3, 2])
+  })
+
+  it('sorts fixed transactions by amount', () => {
+    const items = [
+      {
+        id: 1,
+        description: 'Conta de Luz',
+        amount: '120.00',
+        nextDueDate: '2026-06-20T00:00:00.000Z'
+      },
+      {
+        id: 2,
+        description: 'Internet',
+        amount: '9.90',
+        nextDueDate: '2026-06-05T00:00:00.000Z'
+      },
+      {
+        id: 3,
+        description: 'Agua',
+        amount: '65.40',
+        nextDueDate: '2026-06-12T00:00:00.000Z'
+      }
+    ] as any
+
+    expect(
+      sortFixedTransactions(items, 'amount', 'asc').map((item) => item.id)
+    ).toEqual([2, 3, 1])
+
+    expect(
+      sortFixedTransactions(items, 'amount', 'desc').map((item) => item.id)
     ).toEqual([1, 3, 2])
   })
 })

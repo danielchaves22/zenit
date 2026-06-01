@@ -33,7 +33,11 @@ describe('Credit card invoices', () => {
     [APP_KEY_HEADER]: APP_KEY_VALUE
   });
 
-  const createCreditCardAccount = async () => {
+  const createCreditCardAccount = async (overrides?: {
+    creditLimit?: number;
+    statementClosingDay?: number;
+    statementDueDay?: number;
+  }) => {
     const response = await request(app)
       .post('/api/financial/accounts')
       .set(authHeaders())
@@ -42,9 +46,9 @@ describe('Credit card invoices', () => {
         type: 'CREDIT_CARD',
         initialBalance: 0,
         bankName: 'Banco Teste',
-        creditLimit: 1000,
-        statementClosingDay: 10,
-        statementDueDay: 15
+        creditLimit: overrides?.creditLimit ?? 1000,
+        statementClosingDay: overrides?.statementClosingDay ?? 10,
+        statementDueDay: overrides?.statementDueDay ?? 15
       });
 
     expect(response.status).toBe(201);
@@ -82,6 +86,36 @@ describe('Credit card invoices', () => {
   const buildMonthDate = (monthOffset: number, day: number) => {
     const now = new Date();
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, day, 12, 0, 0, 0));
+  };
+
+  const buildDateAtHour = (baseDate: Date, hour: number) => {
+    const value = new Date(baseDate);
+    value.setHours(hour, 0, 0, 0);
+    return value;
+  };
+
+  const buildCurrentCardCycleConfig = () => {
+    const purchaseDate = new Date();
+    purchaseDate.setHours(12, 0, 0, 0);
+    const lastDayOfCurrentMonth = new Date(
+      purchaseDate.getFullYear(),
+      purchaseDate.getMonth() + 1,
+      0
+    ).getDate();
+    const closingDay = Math.min(purchaseDate.getDate() + 1, lastDayOfCurrentMonth);
+    const dueDay = closingDay < lastDayOfCurrentMonth ? closingDay + 1 : 5;
+    const currentInvoiceReference = resolveCreditCardInvoiceReference(
+      purchaseDate,
+      closingDay,
+      dueDay
+    );
+
+    return {
+      purchaseDate,
+      closingDay,
+      dueDay,
+      currentInvoiceReference
+    };
   };
 
   beforeAll(async () => {
@@ -712,9 +746,19 @@ describe('Credit card invoices', () => {
   });
 
   it('lists credit card purchases grouped by purchase and supports multi-card filters', async () => {
-    const firstCard = await createCreditCardAccount();
-    const secondCard = await createCreditCardAccount();
-    const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
+    const { purchaseDate, closingDay, dueDay, currentInvoiceReference } =
+      buildCurrentCardCycleConfig();
+    const firstCard = await createCreditCardAccount({
+      statementClosingDay: closingDay,
+      statementDueDay: dueDay
+    });
+    const secondCard = await createCreditCardAccount({
+      statementClosingDay: closingDay,
+      statementDueDay: dueDay
+    });
+    const installmentPurchaseDate = buildDateAtHour(purchaseDate, 12);
+    const singlePurchaseDate = buildDateAtHour(purchaseDate, 13);
+    const legacyPurchaseDate = buildDateAtHour(purchaseDate, 14);
 
     await request(app)
       .post('/api/financial/transactions')
@@ -722,7 +766,7 @@ describe('Credit card invoices', () => {
       .send({
         description: 'Notebook Parcelado',
         amount: 100,
-        date: purchaseDate.toISOString(),
+        date: installmentPurchaseDate.toISOString(),
         type: 'EXPENSE',
         status: 'COMPLETED',
         fromAccountId: firstCard.id,
@@ -736,7 +780,7 @@ describe('Credit card invoices', () => {
       .send({
         description: 'Compra Avista Cartao',
         amount: 50,
-        date: '2099-05-06T12:00:00.000Z',
+        date: singlePurchaseDate.toISOString(),
         type: 'EXPENSE',
         status: 'COMPLETED',
         fromAccountId: secondCard.id,
@@ -746,8 +790,8 @@ describe('Credit card invoices', () => {
     await createLegacyCreditCardPurchase(secondCard.id, {
       description: 'Compra Legada',
       amount: 75,
-      purchaseDate: new Date('2099-05-07T12:00:00.000Z'),
-      dueDate: new Date('2099-05-15T12:00:00.000Z')
+      purchaseDate: legacyPurchaseDate,
+      dueDate: currentInvoiceReference.dueDate
     });
 
     const response = await request(app)
@@ -793,8 +837,170 @@ describe('Credit card invoices', () => {
     expect(legacyPurchase.installments).toHaveLength(1);
   });
 
+  it('lists only purchases that are active in the current credit card invoice window', async () => {
+    const { purchaseDate, closingDay, dueDay } = buildCurrentCardCycleConfig();
+    const card = await createCreditCardAccount({
+      creditLimit: 3000,
+      statementClosingDay: closingDay,
+      statementDueDay: dueDay
+    });
+    const futureOnlyPurchaseDate = buildDateAtHour(purchaseDate, 13);
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Ainda Ativa',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        installmentCount: 3
+      });
+
+    const farFutureInstallmentDate = addMonthsClamped(purchaseDate, 4);
+    const farFutureInvoiceReference = resolveCreditCardInvoiceReference(
+      farFutureInstallmentDate,
+      closingDay,
+      dueDay
+    );
+    const farFutureInvoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear: farFutureInvoiceReference.referenceYear,
+        referenceMonth: farFutureInvoiceReference.referenceMonth,
+        closingDate: farFutureInvoiceReference.closingDate,
+        dueDate: farFutureInvoiceReference.dueDate,
+        status: 'OPEN',
+        totalAmount: 60
+      }
+    });
+
+    await prisma.financialTransaction.create({
+      data: {
+        description: 'Compra Somente Futura',
+        amount: 60,
+        date: futureOnlyPurchaseDate,
+        dueDate: farFutureInvoiceReference.dueDate,
+        effectiveDate: futureOnlyPurchaseDate,
+        scheduledDate: farFutureInstallmentDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        companyId,
+        createdBy: userId,
+        purchaseGroupId: `future-only-${Date.now()}`,
+        installmentNumber: 3,
+        totalInstallments: 3,
+        creditCardInvoiceId: farFutureInvoice.id
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/financial/credit-card-purchases')
+      .query({
+        accountIds: [card.id],
+        page: 1,
+        pageSize: 20
+      })
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].description).toBe('Compra Ainda Ativa');
+    expect(response.body.data[0].installments).toHaveLength(3);
+  });
+
+  it('keeps only purchases with remaining unpaid installments when the current invoice is already paid', async () => {
+    const { purchaseDate, closingDay, dueDay, currentInvoiceReference } =
+      buildCurrentCardCycleConfig();
+    const card = await createCreditCardAccount({
+      creditLimit: 3000,
+      statementClosingDay: closingDay,
+      statementDueDay: dueDay
+    });
+    const settledPurchaseDate = buildDateAtHour(purchaseDate, 13);
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Segue Ativa',
+        amount: 140,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        installmentCount: 2
+      });
+
+    await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Quitada No Ciclo',
+        amount: 55,
+        date: settledPurchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    const currentInvoice = await prisma.creditCardInvoice.findUnique({
+      where: {
+        unique_credit_card_invoice_reference: {
+          accountId: card.id,
+          referenceYear: currentInvoiceReference.referenceYear,
+          referenceMonth: currentInvoiceReference.referenceMonth
+        }
+      }
+    });
+
+    expect(currentInvoice).toBeTruthy();
+
+    await prisma.creditCardInvoice.update({
+      where: {
+        id: currentInvoice!.id
+      },
+      data: {
+        status: 'PAID',
+        settlementType: 'EXTERNAL',
+        settledAt: currentInvoiceReference.dueDate
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/financial/credit-card-purchases')
+      .query({
+        accountIds: [card.id],
+        page: 1,
+        pageSize: 20
+      })
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.total).toBe(1);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].description).toBe('Compra Segue Ativa');
+    expect(response.body.data[0].installmentCount).toBe(2);
+    expect(
+      response.body.data.some((item: any) => item.description === 'Compra Quitada No Ciclo')
+    ).toBe(false);
+  });
+
   it('filters credit card purchases by category ids', async () => {
-    const card = await createCreditCardAccount();
+    const { purchaseDate, closingDay, dueDay, currentInvoiceReference } =
+      buildCurrentCardCycleConfig();
+    const card = await createCreditCardAccount({
+      statementClosingDay: closingDay,
+      statementDueDay: dueDay
+    });
     const travelCategory = await prisma.financialCategory.create({
       data: {
         name: `Categoria Viagem ${Date.now()}`,
@@ -803,6 +1009,9 @@ describe('Credit card invoices', () => {
         companyId
       }
     });
+    const defaultCategoryPurchaseDate = buildDateAtHour(purchaseDate, 12);
+    const travelCategoryPurchaseDate = buildDateAtHour(purchaseDate, 13);
+    const legacyTravelPurchaseDate = buildDateAtHour(purchaseDate, 14);
 
     await request(app)
       .post('/api/financial/transactions')
@@ -810,7 +1019,7 @@ describe('Credit card invoices', () => {
       .send({
         description: 'Compra Categoria Padrao',
         amount: 120,
-        date: '2099-05-08T12:00:00.000Z',
+        date: defaultCategoryPurchaseDate.toISOString(),
         type: 'EXPENSE',
         status: 'COMPLETED',
         fromAccountId: card.id,
@@ -824,7 +1033,7 @@ describe('Credit card invoices', () => {
       .send({
         description: 'Compra Categoria Viagem',
         amount: 80,
-        date: '2099-05-09T12:00:00.000Z',
+        date: travelCategoryPurchaseDate.toISOString(),
         type: 'EXPENSE',
         status: 'COMPLETED',
         fromAccountId: card.id,
@@ -835,8 +1044,8 @@ describe('Credit card invoices', () => {
       description: 'Compra Legada Viagem',
       amount: 65,
       categoryId: travelCategory.id,
-      purchaseDate: new Date('2099-05-10T12:00:00.000Z'),
-      dueDate: new Date('2099-05-15T12:00:00.000Z')
+      purchaseDate: legacyTravelPurchaseDate,
+      dueDate: currentInvoiceReference.dueDate
     });
 
     const response = await request(app)
@@ -862,8 +1071,17 @@ describe('Credit card invoices', () => {
   });
 
   it('returns only purchases from accessible credit cards for regular users', async () => {
-    const allowedCard = await createCreditCardAccount();
-    const restrictedCard = await createCreditCardAccount();
+    const { purchaseDate, closingDay, dueDay } = buildCurrentCardCycleConfig();
+    const allowedCard = await createCreditCardAccount({
+      statementClosingDay: closingDay,
+      statementDueDay: dueDay
+    });
+    const restrictedCard = await createCreditCardAccount({
+      statementClosingDay: closingDay,
+      statementDueDay: dueDay
+    });
+    const allowedPurchaseDate = buildDateAtHour(purchaseDate, 12);
+    const restrictedPurchaseDate = buildDateAtHour(purchaseDate, 13);
 
     await prisma.userFinancialAccountAccess.create({
       data: {
@@ -880,7 +1098,7 @@ describe('Credit card invoices', () => {
       .send({
         description: 'Compra Permitida',
         amount: 120,
-        date: '2099-05-08T12:00:00.000Z',
+        date: allowedPurchaseDate.toISOString(),
         type: 'EXPENSE',
         status: 'COMPLETED',
         fromAccountId: allowedCard.id,
@@ -893,7 +1111,7 @@ describe('Credit card invoices', () => {
       .send({
         description: 'Compra Restrita',
         amount: 90,
-        date: '2099-05-09T12:00:00.000Z',
+        date: restrictedPurchaseDate.toISOString(),
         type: 'EXPENSE',
         status: 'COMPLETED',
         fromAccountId: restrictedCard.id,

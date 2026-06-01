@@ -28,7 +28,7 @@ import { formatAccountDisplayName } from '@/utils/accounts';
 
 type FixedTransactionType = 'INCOME' | 'EXPENSE';
 type FixedTransactionAccountScope = 'LIQUID' | 'CREDIT_CARD';
-export type FixedTransactionSortKey = 'description' | 'nextDueDate';
+export type FixedTransactionSortKey = 'description' | 'amount' | 'nextDueDate';
 export type FixedTransactionSortDirection = 'asc' | 'desc';
 
 export interface FixedTransaction {
@@ -105,6 +105,14 @@ export function sortFixedTransactions(
 
       if (comparison === 0) {
         comparison = compareFixedTransactionDates(left.nextDueDate, right.nextDueDate);
+      }
+    } else if (sortKey === 'amount') {
+      comparison = Number(left.amount || 0) - Number(right.amount || 0);
+
+      if (comparison === 0) {
+        comparison = left.description.localeCompare(right.description, 'pt-BR', {
+          sensitivity: 'base'
+        });
       }
     } else {
       comparison = compareFixedTransactionDates(left.nextDueDate, right.nextDueDate);
@@ -378,7 +386,21 @@ function FixedTransactionsPageInner() {
                     </button>
                   </th>
                   <th className="px-4 py-3 text-left">Tipo</th>
-                  <th className="px-4 py-3 text-right">Valor</th>
+                  <th className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleSortChange('amount')}
+                      className="inline-flex items-center gap-1 transition-colors hover:text-white"
+                      aria-label={`Ordenar por valor ${
+                        sortKey === 'amount' && sortDirection === 'asc'
+                          ? 'decrescente'
+                          : 'crescente'
+                      }`}
+                    >
+                      Valor
+                      {renderSortIcon('amount')}
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-center">Dia</th>
                   <th className="px-4 py-3 text-left">Conta</th>
                   <th className="px-4 py-3 text-left">Categoria</th>

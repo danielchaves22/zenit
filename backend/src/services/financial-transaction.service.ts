@@ -2760,6 +2760,184 @@ export default class FinancialTransactionService {
       }
     }
 
+    const cardAccounts = await prisma.financialAccount.findMany({
+      where: {
+        companyId,
+        type: AccountType.CREDIT_CARD,
+        ...(effectiveAccountIds
+          ? {
+              id: {
+                in: effectiveAccountIds
+              }
+            }
+          : {})
+      },
+      select: {
+        id: true,
+        statementClosingDay: true,
+        statementDueDay: true
+      }
+    });
+
+    const normalizedNow = new Date();
+    normalizedNow.setHours(12, 0, 0, 0);
+
+    const accountCycleConfigs = cardAccounts
+      .filter(
+        (account): account is typeof account & {
+          statementClosingDay: number;
+          statementDueDay: number;
+        } => Boolean(account.statementClosingDay && account.statementDueDay)
+      )
+      .map((account) => {
+        const currentCycleDate = new Date(
+          normalizedNow.getFullYear(),
+          normalizedNow.getMonth(),
+          Math.min(
+            account.statementClosingDay,
+            new Date(normalizedNow.getFullYear(), normalizedNow.getMonth() + 1, 0).getDate()
+          ),
+          12,
+          0,
+          0,
+          0
+        );
+        const currentReference = resolveCreditCardInvoiceReference(
+          currentCycleDate,
+          account.statementClosingDay,
+          account.statementDueDay
+        );
+        const nextReference = resolveCreditCardInvoiceReference(
+          addMonthsClamped(currentCycleDate, 1),
+          account.statementClosingDay,
+          account.statementDueDay
+        );
+
+        return {
+          accountId: account.id,
+          currentReference,
+          nextReference
+        };
+      });
+
+    if (accountCycleConfigs.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        pages: 1
+      };
+    }
+
+    const currentInvoiceRecords = await prisma.creditCardInvoice.findMany({
+      where: {
+        OR: accountCycleConfigs.map((config) => ({
+          accountId: config.accountId,
+          referenceYear: config.currentReference.referenceYear,
+          referenceMonth: config.currentReference.referenceMonth
+        }))
+      },
+      select: {
+        accountId: true,
+        referenceYear: true,
+        referenceMonth: true,
+        status: true
+      }
+    });
+    const currentInvoiceStatusByReference = new Map(
+      currentInvoiceRecords.map((invoice) => [
+        `${invoice.accountId}:${invoice.referenceYear}:${invoice.referenceMonth}`,
+        invoice.status
+      ])
+    );
+
+    const activePurchaseWindows = new Map<
+      number,
+      {
+        references: Array<{ referenceYear: number; referenceMonth: number }>;
+        dueDates: Date[];
+      }
+    >();
+    for (const config of accountCycleConfigs) {
+      const currentReferenceStatus =
+        currentInvoiceStatusByReference.get(
+          `${config.accountId}:${config.currentReference.referenceYear}:${config.currentReference.referenceMonth}`
+        ) ||
+        resolveCreditCardInvoiceStatus(config.currentReference.closingDate, false, normalizedNow);
+      const references =
+        currentReferenceStatus === CreditCardInvoiceStatus.OPEN
+          ? [config.currentReference]
+          : currentReferenceStatus === CreditCardInvoiceStatus.CLOSED
+            ? [config.currentReference, config.nextReference]
+            : [config.nextReference];
+      const dueDatesMap = new Map<string, Date>();
+      const referenceMap = new Map<string, { referenceYear: number; referenceMonth: number }>();
+
+      for (const reference of references) {
+        referenceMap.set(
+          `${reference.referenceYear}:${reference.referenceMonth}`,
+          {
+            referenceYear: reference.referenceYear,
+            referenceMonth: reference.referenceMonth
+          }
+        );
+        dueDatesMap.set(reference.dueDate.toISOString(), reference.dueDate);
+      }
+
+      activePurchaseWindows.set(config.accountId, {
+        references: Array.from(referenceMap.values()),
+        dueDates: Array.from(dueDatesMap.values())
+      });
+    }
+
+    if (activePurchaseWindows.size === 0) {
+      return {
+        data: [],
+        total: 0,
+        pages: 1
+      };
+    }
+
+    const activePurchaseClauses: Prisma.FinancialTransactionWhereInput[] = [];
+
+    for (const [accountId, window] of activePurchaseWindows.entries()) {
+      if (window.references.length > 0) {
+        activePurchaseClauses.push({
+          fromAccountId: accountId,
+          creditCardInvoice: {
+            is: {
+              status: {
+                not: CreditCardInvoiceStatus.PAID
+              },
+              OR: window.references.map((reference) => ({
+                referenceYear: reference.referenceYear,
+                referenceMonth: reference.referenceMonth
+              }))
+            }
+          }
+        });
+      }
+
+      if (window.dueDates.length > 0) {
+        activePurchaseClauses.push({
+          fromAccountId: accountId,
+          creditCardInvoice: {
+            is: null
+          },
+          dueDate: {
+            in: window.dueDates
+          }
+        });
+      }
+    }
+
+    if (activePurchaseClauses.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        pages: 1
+      };
+    }
+
     const select = {
       id: true,
       purchaseGroupId: true,
@@ -2800,6 +2978,9 @@ export default class FinancialTransactionService {
     const baseWhere: Prisma.FinancialTransactionWhereInput = {
       companyId,
       type: TransactionType.EXPENSE,
+      status: {
+        not: TransactionStatus.CANCELED
+      },
       fromAccount: {
         is: {
           type: AccountType.CREDIT_CARD
@@ -2821,60 +3002,83 @@ export default class FinancialTransactionService {
         : {})
     };
 
-    const accountFilter = effectiveAccountIds
-      ? Prisma.sql`AND ft."fromAccountId" IN (${Prisma.join(effectiveAccountIds)})`
-      : Prisma.empty;
-    const categoryFilter = effectiveCategoryIds
-      ? Prisma.sql`AND ft."categoryId" IN (${Prisma.join(effectiveCategoryIds)})`
-      : Prisma.empty;
-    const candidatesCte = Prisma.sql`
-      WITH candidates AS (
-        SELECT ft.id, ft.date
-        FROM "FinancialTransaction" ft
-        INNER JOIN "FinancialAccount" fa ON fa.id = ft."fromAccountId"
-        WHERE ft."companyId" = ${companyId}
-          AND ft.type = ${TransactionType.EXPENSE}::"TransactionType"
-          AND fa.type = ${AccountType.CREDIT_CARD}::"AccountType"
-          AND ft."purchaseGroupId" IS NOT NULL
-          AND ft."installmentNumber" = 1
-          ${accountFilter}
-          ${categoryFilter}
+    const activeTransactionsRaw = (await prisma.financialTransaction.findMany({
+      where: {
+        AND: [
+          baseWhere,
+          {
+            OR: activePurchaseClauses
+          }
+        ]
+      },
+      select,
+      orderBy: [
+        { date: 'desc' },
+        { id: 'desc' }
+      ]
+    })) as CreditCardPurchaseBaseTransaction[];
 
-        UNION ALL
+    const activeTransactionsByPurchaseGroup = new Map<string, CreditCardPurchaseBaseTransaction[]>();
+    const activeSingles: CreditCardPurchaseBaseTransaction[] = [];
 
-        SELECT ft.id, ft.date
-        FROM "FinancialTransaction" ft
-        INNER JOIN "FinancialAccount" fa ON fa.id = ft."fromAccountId"
-        WHERE ft."companyId" = ${companyId}
-          AND ft.type = ${TransactionType.EXPENSE}::"TransactionType"
-          AND fa.type = ${AccountType.CREDIT_CARD}::"AccountType"
-          AND ft."purchaseGroupId" IS NULL
-          ${accountFilter}
-          ${categoryFilter}
-      )
-    `;
-    const offset = (page - 1) * pageSize;
-    const [countRows, pageRows] = await Promise.all([
-      prisma.$queryRaw<Array<{ total: number }>>(Prisma.sql`
-        ${candidatesCte}
-        SELECT COUNT(*)::int AS total
-        FROM candidates
-      `),
-      prisma.$queryRaw<Array<{ id: number }>>(Prisma.sql`
-        ${candidatesCte}
-        SELECT id
-        FROM candidates
-        ORDER BY date DESC, id DESC
-        LIMIT ${pageSize}
-        OFFSET ${offset}
-      `)
-    ]);
+    for (const transaction of activeTransactionsRaw) {
+      if (!transaction.purchaseGroupId) {
+        activeSingles.push(transaction);
+        continue;
+      }
 
-    const total = Number(countRows[0]?.total || 0);
+      const items = activeTransactionsByPurchaseGroup.get(transaction.purchaseGroupId) || [];
+      items.push(transaction);
+      activeTransactionsByPurchaseGroup.set(transaction.purchaseGroupId, items);
+    }
+
+    const candidateEntries: Array<{
+      groupKey: string;
+      representativeTransaction: CreditCardPurchaseBaseTransaction;
+    }> = [];
+
+    for (const [purchaseGroupId, transactions] of activeTransactionsByPurchaseGroup.entries()) {
+      const representativeTransaction = [...transactions].sort((left, right) => {
+        const leftInstallment = left.installmentNumber ?? Number.MAX_SAFE_INTEGER;
+        const rightInstallment = right.installmentNumber ?? Number.MAX_SAFE_INTEGER;
+
+        if (leftInstallment !== rightInstallment) {
+          return leftInstallment - rightInstallment;
+        }
+
+        return left.id - right.id;
+      })[0];
+
+      candidateEntries.push({
+        groupKey: purchaseGroupId,
+        representativeTransaction
+      });
+    }
+
+    for (const transaction of activeSingles) {
+      candidateEntries.push({
+        groupKey: `single:${transaction.id}`,
+        representativeTransaction: transaction
+      });
+    }
+
+    candidateEntries.sort((left, right) => {
+      const dateDifference =
+        right.representativeTransaction.date.getTime() - left.representativeTransaction.date.getTime();
+
+      if (dateDifference !== 0) {
+        return dateDifference;
+      }
+
+      return right.representativeTransaction.id - left.representativeTransaction.id;
+    });
+
+    const total = candidateEntries.length;
     const pages = Math.ceil(total / pageSize) || 1;
-    const pagedCandidateIds = pageRows.map((row) => row.id);
+    const offset = (page - 1) * pageSize;
+    const pagedCandidates = candidateEntries.slice(offset, offset + pageSize);
 
-    if (pagedCandidateIds.length === 0) {
+    if (pagedCandidates.length === 0) {
       return {
         data: [],
         total,
@@ -2882,32 +3086,10 @@ export default class FinancialTransactionService {
       };
     }
 
-    const pagedCandidatesRaw = await prisma.financialTransaction.findMany({
-      where: {
-        AND: [
-          baseWhere,
-          {
-            id: {
-              in: pagedCandidateIds
-            }
-          }
-        ]
-      },
-      select
-    });
-    const pagedCandidatesById = new Map(
-      (pagedCandidatesRaw as CreditCardPurchaseBaseTransaction[]).map((transaction) => [
-        transaction.id,
-        transaction
-      ])
-    );
-    const pagedCandidates = pagedCandidateIds
-      .map((id) => pagedCandidatesById.get(id))
-      .filter((transaction): transaction is CreditCardPurchaseBaseTransaction => Boolean(transaction));
     const groupedPurchaseIds = Array.from(
       new Set(
         pagedCandidates
-          .map((transaction) => transaction.purchaseGroupId)
+          .map((entry) => entry.representativeTransaction.purchaseGroupId)
           .filter((purchaseGroupId): purchaseGroupId is string => Boolean(purchaseGroupId))
       )
     );
@@ -2918,6 +3100,9 @@ export default class FinancialTransactionService {
             companyId,
             purchaseGroupId: {
               in: groupedPurchaseIds
+            },
+            status: {
+              not: TransactionStatus.CANCELED
             }
           },
           select,
@@ -2941,7 +3126,8 @@ export default class FinancialTransactionService {
       installmentsByPurchaseGroup.set(installment.purchaseGroupId, items);
     }
 
-    const data = pagedCandidates.map((transaction) => {
+    const data = pagedCandidates.map(({ groupKey, representativeTransaction }) => {
+      const transaction = representativeTransaction;
       const installmentSource = transaction.purchaseGroupId
         ? installmentsByPurchaseGroup.get(transaction.purchaseGroupId) || [transaction]
         : [transaction];
@@ -2969,7 +3155,7 @@ export default class FinancialTransactionService {
       );
 
       return {
-        groupKey: transaction.purchaseGroupId || `single:${transaction.id}`,
+        groupKey,
         purchaseGroupId: transaction.purchaseGroupId,
         representativeTransactionId: transaction.id,
         description: transaction.description,

@@ -7,7 +7,8 @@ import {
   CreditCard,
   ExternalLink,
   Loader2,
-  Receipt
+  Receipt,
+  Trash2
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageGuard } from '@/components/ui/AccessGuard';
@@ -16,6 +17,8 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { useToast } from '@/components/ui/ToastContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
 import {
   getAvailableCreditLimit,
@@ -28,6 +31,7 @@ import {
   getTransactionDisplayStatusClasses,
   getTransactionDisplayStatusLabel
 } from '@/utils/financialStatus';
+import { formatTransactionDescription } from '@/utils/transactions';
 
 interface CreditCardAccount {
   id: number;
@@ -124,6 +128,8 @@ function getInstallmentStatus(installment: PurchaseInstallment) {
 
 function CreditCardPurchasesPageInner() {
   const router = useRouter();
+  const confirmation = useConfirmation();
+  const { isCompanyOwner } = useAuth();
   const { addToast } = useToast();
   const [cards, setCards] = useState<CreditCardAccount[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
@@ -139,6 +145,7 @@ function CreditCardPurchasesPageInner() {
   const [cardGroupsInitialized, setCardGroupsInitialized] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [deletingPurchaseKey, setDeletingPurchaseKey] = useState<string | null>(null);
 
   const requestedCardId =
     typeof router.query.cardId === 'string' && router.query.cardId.length > 0
@@ -393,6 +400,40 @@ function CreditCardPurchasesPageInner() {
     );
   }
 
+  function handleDeletePurchase(purchase: CreditCardPurchaseListItem) {
+    const scopeLabel = purchase.purchaseGroupId ? 'a compra inteira' : 'a compra';
+
+    confirmation.confirm(
+      {
+        title: 'Confirmar Exclusao',
+        message: `Tem certeza que deseja excluir ${scopeLabel} "${formatTransactionDescription(
+          purchase.description
+        )}"? Esta acao nao pode ser desfeita.`,
+        confirmText: 'Excluir',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        setDeletingPurchaseKey(purchase.groupKey);
+
+        try {
+          await api.delete(`/financial/transactions/${purchase.representativeTransactionId}`, {
+            params: purchase.purchaseGroupId ? { scope: 'purchase' } : undefined
+          });
+          addToast('Compra excluida com sucesso', 'success');
+          await fetchPurchases();
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao excluir compra no cartao', 'error');
+          throw error;
+        } finally {
+          setDeletingPurchaseKey((current) =>
+            current === purchase.groupKey ? null : current
+          );
+        }
+      }
+    );
+  }
+
   const selectedCardsSummary = `${selectedCardIds.length} de ${cards.length} cartao${
     cards.length === 1 ? '' : 'es'
   } selecionado${selectedCardIds.length === 1 ? '' : 's'}`;
@@ -591,6 +632,7 @@ function CreditCardPurchasesPageInner() {
                         <tbody>
                           {group.purchases.map((purchase) => {
                             const isPurchaseExpanded = expandedPurchaseKeys.includes(purchase.groupKey);
+                            const isDeletingPurchase = deletingPurchaseKey === purchase.groupKey;
 
                             return (
                               <React.Fragment key={purchase.groupKey}>
@@ -645,12 +687,30 @@ function CreditCardPurchasesPageInner() {
                                     )}
                                   </td>
                                   <td className="px-4 py-4 text-right">
-                                    <Link href={`/financial/transactions/${purchase.representativeTransactionId}`}>
-                                      <Button variant="outline" className="inline-flex items-center gap-2">
-                                        <ExternalLink size={14} />
-                                        Abrir compra
-                                      </Button>
-                                    </Link>
+                                    <div className="flex flex-col items-end gap-2">
+                                      <Link href={`/financial/transactions/${purchase.representativeTransactionId}`}>
+                                        <Button variant="outline" className="inline-flex items-center gap-2">
+                                          <ExternalLink size={14} />
+                                          Abrir compra
+                                        </Button>
+                                      </Link>
+                                      {isCompanyOwner && (
+                                        <Button
+                                          type="button"
+                                          variant="danger"
+                                          onClick={() => handleDeletePurchase(purchase)}
+                                          disabled={isDeletingPurchase}
+                                          className="inline-flex items-center gap-2"
+                                        >
+                                          {isDeletingPurchase ? (
+                                            <Loader2 size={14} className="animate-spin" />
+                                          ) : (
+                                            <Trash2 size={14} />
+                                          )}
+                                          {isDeletingPurchase ? 'Excluindo...' : 'Excluir compra'}
+                                        </Button>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
 

@@ -975,7 +975,7 @@ export default class FixedTransactionService {
 
       const createdResult = await FinancialTransactionService.createTransaction({
         description: template.description,
-        amount: template.amount.toString(),
+        amount: Number(template.amount),
         date: occurrenceDate,
         dueDate: occurrenceDate,
         effectiveDate: isCreditCardFixedExpense ? occurrenceDate : null,

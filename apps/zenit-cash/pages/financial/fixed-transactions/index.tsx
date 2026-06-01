@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Ban,
   CalendarDays,
   Edit2,
@@ -25,8 +28,10 @@ import { formatAccountDisplayName } from '@/utils/accounts';
 
 type FixedTransactionType = 'INCOME' | 'EXPENSE';
 type FixedTransactionAccountScope = 'LIQUID' | 'CREDIT_CARD';
+export type FixedTransactionSortKey = 'description' | 'nextDueDate';
+export type FixedTransactionSortDirection = 'asc' | 'desc';
 
-interface FixedTransaction {
+export interface FixedTransaction {
   id: number;
   description: string;
   amount: string;
@@ -63,6 +68,13 @@ const FIXED_TRANSACTION_ACCOUNT_SCOPE_OPTIONS = [
   { value: 'CREDIT_CARD', label: 'Cartões' }
 ];
 
+function compareFixedTransactionDates(left?: string | null, right?: string | null) {
+  const leftTime = left ? new Date(left).getTime() : Number.POSITIVE_INFINITY;
+  const rightTime = right ? new Date(right).getTime() : Number.POSITIVE_INFINITY;
+
+  return leftTime - rightTime;
+}
+
 export function getFixedTransactionAccountScope(
   item: Pick<FixedTransaction, 'type' | 'fromAccount' | 'toAccount'>
 ): FixedTransactionAccountScope {
@@ -70,6 +82,48 @@ export function getFixedTransactionAccountScope(
     item.type === 'EXPENSE' ? item.fromAccount?.type : item.toAccount?.type;
 
   return linkedAccountType === 'CREDIT_CARD' ? 'CREDIT_CARD' : 'LIQUID';
+}
+
+export function sortFixedTransactions(
+  items: FixedTransaction[],
+  sortKey: FixedTransactionSortKey | null,
+  direction: FixedTransactionSortDirection = 'asc'
+) {
+  const sortedItems = [...items];
+
+  if (!sortKey) {
+    return sortedItems;
+  }
+
+  sortedItems.sort((left, right) => {
+    let comparison = 0;
+
+    if (sortKey === 'description') {
+      comparison = left.description.localeCompare(right.description, 'pt-BR', {
+        sensitivity: 'base'
+      });
+
+      if (comparison === 0) {
+        comparison = compareFixedTransactionDates(left.nextDueDate, right.nextDueDate);
+      }
+    } else {
+      comparison = compareFixedTransactionDates(left.nextDueDate, right.nextDueDate);
+
+      if (comparison === 0) {
+        comparison = left.description.localeCompare(right.description, 'pt-BR', {
+          sensitivity: 'base'
+        });
+      }
+    }
+
+    if (comparison === 0) {
+      comparison = left.id - right.id;
+    }
+
+    return direction === 'asc' ? comparison : -comparison;
+  });
+
+  return sortedItems;
 }
 
 function FixedTransactionsPageInner() {
@@ -85,6 +139,8 @@ function FixedTransactionsPageInner() {
   const [selectedAccountScopes, setSelectedAccountScopes] = useState<
     FixedTransactionAccountScope[]
   >([...ALL_FIXED_TRANSACTION_ACCOUNT_SCOPES]);
+  const [sortKey, setSortKey] = useState<FixedTransactionSortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<FixedTransactionSortDirection>('asc');
 
   const filteredItems = useMemo(() => {
     if (selectedTypes.length === 0 || selectedAccountScopes.length === 0) {
@@ -97,6 +153,11 @@ function FixedTransactionsPageInner() {
         selectedAccountScopes.includes(getFixedTransactionAccountScope(item))
     );
   }, [items, selectedAccountScopes, selectedTypes]);
+
+  const sortedItems = useMemo(
+    () => sortFixedTransactions(filteredItems, sortKey, sortDirection),
+    [filteredItems, sortDirection, sortKey]
+  );
 
   useEffect(() => {
     void fetchFixedTransactions();
@@ -180,6 +241,28 @@ function FixedTransactionsPageInner() {
     }
 
     return `Dia ${item.dayOfMonth ?? '-'}`;
+  }
+
+  function handleSortChange(nextSortKey: FixedTransactionSortKey) {
+    if (sortKey === nextSortKey) {
+      setSortDirection((currentDirection) => (currentDirection === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+
+    setSortKey(nextSortKey);
+    setSortDirection('asc');
+  }
+
+  function renderSortIcon(columnKey: FixedTransactionSortKey) {
+    if (sortKey !== columnKey) {
+      return <ArrowUpDown size={14} className="text-gray-500" />;
+    }
+
+    if (sortDirection === 'asc') {
+      return <ArrowUp size={14} className="text-accent" />;
+    }
+
+    return <ArrowDown size={14} className="text-accent" />;
   }
 
   return (
@@ -271,7 +354,7 @@ function FixedTransactionsPageInner() {
         ) : filteredItems.length === 0 ? (
           <div className="py-12 text-center">
             <Repeat size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="text-gray-400">Nenhuma transação fixa encontrada para os tipos selecionados</p>
+            <p className="text-gray-400">Nenhuma transação fixa encontrada para os filtros selecionados</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -279,18 +362,46 @@ function FixedTransactionsPageInner() {
               <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                 <tr>
                   <th className="w-24 px-4 py-3 text-center">Ações</th>
-                  <th className="px-4 py-3 text-left">Descrição</th>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      type="button"
+                      onClick={() => handleSortChange('description')}
+                      className="inline-flex items-center gap-1 transition-colors hover:text-white"
+                      aria-label={`Ordenar por descrição ${
+                        sortKey === 'description' && sortDirection === 'asc'
+                          ? 'decrescente'
+                          : 'crescente'
+                      }`}
+                    >
+                      Descrição
+                      {renderSortIcon('description')}
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-left">Tipo</th>
                   <th className="px-4 py-3 text-right">Valor</th>
                   <th className="px-4 py-3 text-center">Dia</th>
                   <th className="px-4 py-3 text-left">Conta</th>
                   <th className="px-4 py-3 text-left">Categoria</th>
-                  <th className="px-4 py-3 text-left">Próximo Venc.</th>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      type="button"
+                      onClick={() => handleSortChange('nextDueDate')}
+                      className="inline-flex items-center gap-1 transition-colors hover:text-white"
+                      aria-label={`Ordenar por próximo vencimento ${
+                        sortKey === 'nextDueDate' && sortDirection === 'asc'
+                          ? 'decrescente'
+                          : 'crescente'
+                      }`}
+                    >
+                      Próximo Venc.
+                      {renderSortIcon('nextDueDate')}
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((item) => (
+                {sortedItems.map((item) => (
                   <tr
                     key={item.id}
                     className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${!item.isActive ? 'opacity-60' : ''}`}

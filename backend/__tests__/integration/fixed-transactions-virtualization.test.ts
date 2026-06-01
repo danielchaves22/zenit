@@ -492,6 +492,41 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(materializeResponse.status).toBe(201);
     expect(materializeResponse.body.transaction.fromAccountId).toBe(expenseAccountId);
     expect(materializeResponse.body.transaction.recurringTransactionId).toBe(createResponse.body.id);
+    expect(Number(materializeResponse.body.transaction.amount)).toBeCloseTo(31.7, 5);
+  });
+
+  it('materializes fixed expenses preserving decimal cents from the template amount', async () => {
+    const createResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Creta',
+        amount: 1786.91,
+        type: 'EXPENSE',
+        dayOfMonth: 4,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(createResponse.status).toBe(201);
+
+    const occurrenceDate = buildOccurrenceDate(1, 4);
+    const materializeResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${createResponse.body.id}/materialize`)
+      .set(authHeaders())
+      .send({
+        occurrenceDate: occurrenceDate.toISOString()
+      });
+
+    expect(materializeResponse.status).toBe(201);
+    expect(Number(materializeResponse.body.transaction.amount)).toBeCloseTo(1786.91, 5);
+
+    const storedTransaction = await prisma.financialTransaction.findUnique({
+      where: { id: materializeResponse.body.transaction.id },
+      select: { amount: true }
+    });
+
+    expect(Number(storedTransaction?.amount || 0)).toBeCloseTo(1786.91, 5);
   });
 
   it('rejects fixed incomes linked to credit card accounts', async () => {
@@ -590,6 +625,7 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(materializeResponse.body.transaction.creditCardInvoice).toBeTruthy();
     expect(materializeResponse.body.transaction.fromAccountId).toBe(creditCardAccountId);
     expect(materializeResponse.body.transaction.status).toBe('COMPLETED');
+    expect(Number(materializeResponse.body.transaction.amount)).toBeCloseTo(52.4, 5);
 
     const { start, end } = monthBounds(1);
     const hiddenResponse = await listTransactions(start, end, {

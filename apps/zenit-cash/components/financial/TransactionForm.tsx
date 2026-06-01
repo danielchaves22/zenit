@@ -49,6 +49,9 @@ type TransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED';
 type PurchaseScope = 'SINGLE' | 'FUTURE' | 'PURCHASE';
 type CreateFlow = 'standard' | 'credit-card-purchase';
 type PostCreateAction = 'default' | 'create-another';
+type TransactionFormMode = 'simple' | 'detailed';
+
+const TRANSACTION_FORM_MODE_STORAGE_KEY = 'transactionFormMode';
 
 interface Account {
   id: number;
@@ -145,6 +148,23 @@ interface TransactionFormProps {
 
 function getTodayValue() {
   return getTodayDateValue();
+}
+
+function readStoredTransactionFormMode(): TransactionFormMode {
+  if (typeof window === 'undefined') {
+    return 'detailed';
+  }
+
+  const storedMode = window.localStorage.getItem(TRANSACTION_FORM_MODE_STORAGE_KEY);
+  return storedMode === 'simple' || storedMode === 'detailed' ? storedMode : 'detailed';
+}
+
+function storeTransactionFormMode(nextMode: TransactionFormMode) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.setItem(TRANSACTION_FORM_MODE_STORAGE_KEY, nextMode);
 }
 
 function formatCurrency(value: string | number) {
@@ -259,11 +279,12 @@ export default function TransactionForm({
   const [saving, setSaving] = useState(false);
   const [defaultsLoaded, setDefaultsLoaded] = useState(false);
   const [shouldFocusAmount, setShouldFocusAmount] = useState(mode === 'create');
-  const [formMode, setFormMode] = useState<'simple' | 'detailed'>('detailed');
+  const [formMode, setFormMode] = useState<TransactionFormMode>(readStoredTransactionFormMode);
   const [isInvoicePreviewExpanded, setIsInvoicePreviewExpanded] = useState(false);
   const [existingCreditCardInvoices, setExistingCreditCardInvoices] = useState<CreditCardInvoicePreviewStatus[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const postCreateActionRef = useRef<PostCreateAction>('default');
+  const lastCreateTransactionDateRef = useRef(getTodayValue());
 
   const [formData, setFormData] = useState({
     description: '',
@@ -480,17 +501,6 @@ export default function TransactionForm({
   }, [mode, transactionId]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const storedMode = localStorage.getItem('transactionFormMode');
-    if (storedMode === 'simple' || storedMode === 'detailed') {
-      setFormMode(storedMode);
-    }
-  }, []);
-
-  useEffect(() => {
     if (mode === 'create' && shouldFocusAmount && !loading) {
       const amountInput = document.getElementById('amount');
       if (amountInput) {
@@ -562,6 +572,30 @@ export default function TransactionForm({
       };
     });
   }, [formData.date, isCreditCardPurchaseFlow]);
+
+  useEffect(() => {
+    if (lastCreateTransactionDateRef.current === formData.date) {
+      return;
+    }
+
+    lastCreateTransactionDateRef.current = formData.date;
+
+    if (mode !== 'create' || isCreditCardPurchaseFlow || formData.status !== 'COMPLETED') {
+      return;
+    }
+
+    setFormData((prev) => {
+      if (prev.dueDate === prev.date && prev.liquidationDate === prev.date) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        dueDate: prev.date,
+        liquidationDate: prev.date
+      };
+    });
+  }, [formData.date, formData.status, isCreditCardPurchaseFlow, mode]);
 
   useEffect(() => {
     if (!isCreditCardPurchaseFlow || !defaultCreditCardId || accounts.length === 0 || formData.fromAccountId) {
@@ -725,6 +759,53 @@ export default function TransactionForm({
     setShouldFocusAmount(true);
   }
 
+  function getCreateAnotherAccountsToKeep(type: TransactionKind) {
+    switch (type) {
+      case 'INCOME':
+        return {
+          fromAccountId: '',
+          toAccountId: formData.toAccountId
+        };
+      case 'TRANSFER':
+        return {
+          fromAccountId: formData.fromAccountId,
+          toAccountId: formData.toAccountId
+        };
+      case 'EXPENSE':
+      default:
+        return {
+          fromAccountId: formData.fromAccountId,
+          toAccountId: ''
+        };
+    }
+  }
+
+  function resetStandardTransactionForm(type: TransactionKind, status: TransactionStatus) {
+    const today = getTodayValue();
+    const nextStatus = status === 'CANCELED' ? 'PENDING' : status;
+    const preservedAccounts = getCreateAnotherAccountsToKeep(type);
+
+    setFormData({
+      description: '',
+      amount: '0.00',
+      date: today,
+      dueDate: today,
+      liquidationDate: nextStatus === 'COMPLETED' ? today : '',
+      type,
+      status: nextStatus,
+      notes: '',
+      fromAccountId: preservedAccounts.fromAccountId,
+      toAccountId: preservedAccounts.toAccountId,
+      categoryId: type === 'TRANSFER' ? '' : getDefaultCategoryId(type),
+      tags: '',
+      repeatTimes: '',
+      installmentCount: '1',
+      purchaseScope: 'PURCHASE'
+    });
+    setIsRecurring(false);
+    setShouldFocusAmount(true);
+  }
+
   function autoSelectDefaults() {
     const updates: Partial<typeof formData> = {};
 
@@ -821,8 +902,23 @@ export default function TransactionForm({
     setFormData((prev) => {
       const updated = { ...prev, [name]: value };
 
-      if (name === 'date' && isCreditCardPurchaseFlow) {
-        updated.liquidationDate = value;
+      if (name === 'status') {
+        if (value === 'COMPLETED') {
+          updated.liquidationDate = prev.liquidationDate || prev.date || getTodayValue();
+        }
+
+        if (value === 'PENDING' || value === 'CANCELED') {
+          updated.liquidationDate = '';
+        }
+      }
+
+      if (name === 'date') {
+        if (isCreditCardPurchaseFlow) {
+          updated.liquidationDate = value;
+        } else if (prev.status === 'COMPLETED') {
+          updated.dueDate = value;
+          updated.liquidationDate = value;
+        }
       }
 
       return updated;
@@ -850,16 +946,13 @@ export default function TransactionForm({
     setFormData((prev) => ({ ...prev, amount: value }));
   };
 
-  const handleFormModeChange = (nextMode: 'simple' | 'detailed') => {
+  const handleFormModeChange = (nextMode: TransactionFormMode) => {
     if (saving) {
       return;
     }
 
     setFormMode(nextMode);
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('transactionFormMode', nextMode);
-    }
+    storeTransactionFormMode(nextMode);
   };
 
   const handleRecurringChange = (checked: boolean) => {
@@ -1061,8 +1154,12 @@ export default function TransactionForm({
           isCreditCardPurchaseFlow ? 'Compra no cartão registrada com sucesso' : 'Transação criada com sucesso',
           'success'
         );
-        if (isCreditCardPurchaseFlow && postCreateAction === 'create-another') {
-          resetCreditCardPurchaseForm(formData.fromAccountId);
+        if (postCreateAction === 'create-another') {
+          if (isCreditCardPurchaseFlow) {
+            resetCreditCardPurchaseForm(formData.fromAccountId);
+          } else {
+            resetStandardTransactionForm(formData.type, normalizedStatus);
+          }
           return;
         }
       } else {
@@ -1189,8 +1286,12 @@ export default function TransactionForm({
         : 'Criar Transação'
       : 'Salvar Alterações';
 
-  const saveAndAddAnotherLabel = saving ? 'Salvando...' : 'Registrar e Adicionar Outra';
-  const showSaveAndAddAnotherAction = mode === 'create' && isCreditCardPurchaseFlow;
+  const saveAndAddAnotherLabel = saving
+    ? 'Salvando...'
+    : isCreditCardPurchaseFlow
+      ? 'Registrar e Adicionar Outra'
+      : 'Salvar e Criar Nova';
+  const showSaveAndAddAnotherAction = mode === 'create';
 
   const scopeMessage = currentScopeBlocked
     ? activePurchaseScope === 'PURCHASE'

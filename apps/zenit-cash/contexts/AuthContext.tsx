@@ -15,6 +15,8 @@ import {
   clearSessionStorage,
   persistSession,
   readStoredCompanyId,
+  storeHomeBalancesVisibility,
+  storeHomeScreenPreference,
   readStoredMustChangePassword,
   readStoredRefreshToken,
   readStoredToken,
@@ -114,6 +116,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           storeThemePreference(response.data.preferences.colorScheme)
         }
 
+        if (
+          response.data.preferences?.homeScreen === 'quick-access' ||
+          response.data.preferences?.homeScreen === 'accounts-overview'
+        ) {
+          storeHomeScreenPreference(response.data.preferences.homeScreen)
+        }
+
+        if (typeof response.data.preferences?.showHomeBalances === 'boolean') {
+          storeHomeBalancesVisibility(response.data.preferences.showHomeBalances)
+        }
+
         const parsedStoredCompany = readStoredCompanyId()
         const accessibleCompany = pickAccessibleCompanyId(userData)
         const selectedCompanyId =
@@ -155,6 +168,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (preferences?.colorScheme) {
       changeTheme(preferences.colorScheme)
       storeThemePreference(preferences.colorScheme)
+    }
+
+    if (
+      preferences?.homeScreen === 'quick-access' ||
+      preferences?.homeScreen === 'accounts-overview'
+    ) {
+      storeHomeScreenPreference(preferences.homeScreen)
+    }
+
+    if (typeof preferences?.showHomeBalances === 'boolean') {
+      storeHomeBalancesVisibility(preferences.showHomeBalances)
     }
 
     const nextCompanyId = pickAccessibleCompanyId(userData)

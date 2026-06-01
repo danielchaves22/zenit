@@ -1,5 +1,10 @@
 import { SSO_STORAGE_KEYS } from '@zenit/shared-users-core'
 
+export type HomeScreenPreference = 'quick-access' | 'accounts-overview'
+
+const HOME_SCREEN_STORAGE_KEY = 'home-screen-preference'
+const HOME_BALANCES_VISIBLE_STORAGE_KEY = 'home-balances-visible'
+
 function getBrowserStorage(): Storage | null {
   if (typeof window === 'undefined') {
     return null
@@ -68,6 +73,32 @@ export function storeCompanyId(companyId: number): void {
 
 export function storeThemePreference(themeKey: string): void {
   writeStorageItem('selected-theme', themeKey)
+}
+
+export function readStoredHomeScreenPreference(): HomeScreenPreference | null {
+  const storedValue = readStorageItem(HOME_SCREEN_STORAGE_KEY)
+  if (storedValue === 'quick-access' || storedValue === 'accounts-overview') {
+    return storedValue
+  }
+
+  return null
+}
+
+export function storeHomeScreenPreference(homeScreen: HomeScreenPreference): void {
+  writeStorageItem(HOME_SCREEN_STORAGE_KEY, homeScreen)
+}
+
+export function readStoredHomeBalancesVisibility(): boolean {
+  const storedValue = readStorageItem(HOME_BALANCES_VISIBLE_STORAGE_KEY)
+  if (storedValue === 'false') {
+    return false
+  }
+
+  return true
+}
+
+export function storeHomeBalancesVisibility(isVisible: boolean): void {
+  writeStorageItem(HOME_BALANCES_VISIBLE_STORAGE_KEY, String(isVisible))
 }
 
 export function setSessionCookie(name: string, value: string, maxAge?: number): void {

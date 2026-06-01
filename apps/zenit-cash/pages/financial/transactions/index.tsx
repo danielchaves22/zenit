@@ -274,6 +274,14 @@ function getTransactionInvoiceHref(
   return `/financial/credit-cards/${transaction.fromAccount.id}/invoices?invoiceKey=${encodeURIComponent(invoiceKey)}`;
 }
 
+function getSingleQueryValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) {
+    return value[0] || '';
+  }
+
+  return value || '';
+}
+
 function getTransactionAccountDisplay(transaction: Pick<Transaction, 'fromAccount' | 'toAccount'>) {
   const accountLabel = formatAccountDisplayName(transaction.fromAccount || transaction.toAccount);
   return accountLabel === '-' ? 'A definir' : accountLabel;
@@ -335,6 +343,7 @@ export default function TransactionsListPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showOnlyMaterialized, setShowOnlyMaterialized] = useState(false);
+  const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [materializingVirtualKey, setMaterializingVirtualKey] = useState<string | null>(null);
   const [dateField, setDateField] = useState<TransactionDateFieldFilter>(DEFAULT_DATE_FIELD);
   const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('CURRENT_MONTH');
@@ -427,12 +436,57 @@ export default function TransactionsListPage() {
   }, []);
 
   useEffect(() => {
+    if (!router.isReady) {
+      return;
+    }
+
+    const nextAccountId = getSingleQueryValue(router.query.accountId);
+    const nextCategoryId = getSingleQueryValue(router.query.categoryId);
+    const nextSearch = getSingleQueryValue(router.query.search);
+    const nextStatus = getSingleQueryValue(router.query.status);
+    const hasQueryFilters = Boolean(
+      nextAccountId || nextCategoryId || nextSearch.trim() || nextStatus
+    );
+
+    setCurrentPage(1);
+    setShowMoreFilters(hasQueryFilters);
+    setFilters((prev) => ({
+      ...prev,
+      accountId: nextAccountId,
+      categoryId: nextCategoryId,
+      search: nextSearch,
+      status: nextStatus
+    }));
+    setFiltersInitialized(true);
+  }, [
+    router.isReady,
+    router.query.accountId,
+    router.query.categoryId,
+    router.query.search,
+    router.query.status
+  ]);
+
+  useEffect(() => {
+    if (!router.isReady || !filtersInitialized) {
+      return;
+    }
+
     if (isCustomPeriod && customPeriodError) {
       return;
     }
 
     void fetchData();
-  }, [activePeriod, currentPage, customPeriodError, dateField, filters, isCustomPeriod, showOnlyMaterialized]);
+  }, [
+    activePeriod,
+    currentPage,
+    customPeriodError,
+    dateField,
+    filters,
+    filtersInitialized,
+    isCustomPeriod,
+    router.isReady,
+    showOnlyMaterialized
+  ]);
 
   async function fetchTransferPaymentExpenseAdjustment(baseParams: URLSearchParams): Promise<number> {
     if (!shouldAdjustExpenseSummaryWithTransferPayments(filters.types)) {

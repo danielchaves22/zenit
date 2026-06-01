@@ -4,11 +4,15 @@ import {
   clearSessionCookie,
   clearSessionStorage,
   persistSession,
+  readStoredHomeBalancesVisibility,
+  readStoredHomeScreenPreference,
   readStoredCompanyId,
   readStoredMustChangePassword,
   readStoredRefreshToken,
   readStoredToken,
   setSessionCookie,
+  storeHomeBalancesVisibility,
+  storeHomeScreenPreference,
   storeCompanyId,
   storeMustChangePassword
 } from '@/lib/auth-storage'
@@ -55,6 +59,24 @@ describe('auth storage helpers', () => {
 
     expect(localStorage.getItem(SSO_STORAGE_KEYS.companyId)).toBe('15')
     expect(localStorage.getItem(SSO_STORAGE_KEYS.mustChangePassword)).toBe('true')
+  })
+
+  it('stores the preferred home screen and normalizes invalid values', () => {
+    storeHomeScreenPreference('accounts-overview')
+    expect(readStoredHomeScreenPreference()).toBe('accounts-overview')
+
+    localStorage.setItem('home-screen-preference', 'unexpected')
+    expect(readStoredHomeScreenPreference()).toBeNull()
+  })
+
+  it('stores the visibility of values on the financial home view', () => {
+    expect(readStoredHomeBalancesVisibility()).toBe(true)
+
+    storeHomeBalancesVisibility(false)
+    expect(readStoredHomeBalancesVisibility()).toBe(false)
+
+    storeHomeBalancesVisibility(true)
+    expect(readStoredHomeBalancesVisibility()).toBe(true)
   })
 
   it('writes and clears the session cookie', () => {

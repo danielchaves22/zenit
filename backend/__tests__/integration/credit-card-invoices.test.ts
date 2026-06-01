@@ -677,6 +677,17 @@ describe('Credit card invoices', () => {
     expect(currentInvoice.itemCount).toBe(1);
     expect(currentInvoice.fixedItemCount).toBe(1);
 
+    const cardsResponse = await request(app)
+      .get('/api/financial/credit-cards')
+      .set(authHeaders());
+
+    expect(cardsResponse.status).toBe(200);
+    expect(cardsResponse.body).toHaveLength(1);
+    expect(Number(cardsResponse.body[0].nextInvoice.itemsSubtotal)).toBeCloseTo(24.5, 5);
+    expect(Number(cardsResponse.body[0].nextInvoice.fixedSubtotal)).toBeCloseTo(75.5, 5);
+    expect(Number(cardsResponse.body[0].nextInvoice.totalAmount)).toBeCloseTo(100, 5);
+    expect(cardsResponse.body[0].nextInvoice.hasProjectedTransactions).toBe(true);
+
     const invoiceDetail = await request(app)
       .get(`/api/financial/credit-card-invoices/${currentInvoice.id}`)
       .set(authHeaders());

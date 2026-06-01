@@ -43,6 +43,7 @@ import {
   normalizeDateInputValue
 } from '@/utils/financialStatus';
 import { buildTransactionUpsertPayload } from '@/utils/transactionPayload';
+import { resolveTransactionListPath } from '@/utils/transactionNavigation';
 
 type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED';
@@ -457,10 +458,25 @@ export default function TransactionForm({
     [categories, formData.type]
   );
   const showCreditCardPurchasePreview = mode === 'create' && isCreditCardPurchaseFlow;
-  const shouldRedirectToCreditCardInvoices =
-    formData.type === 'EXPENSE' &&
-    selectedFromAccount?.type === 'CREDIT_CARD' &&
-    Boolean(formData.fromAccountId);
+  const listReturnPath = useMemo(
+    () =>
+      resolveTransactionListPath({
+        createFlow,
+        defaultCreditCardId,
+        fromAccountId: formData.fromAccountId,
+        selectedFromAccountType: selectedFromAccount?.type ?? null,
+        transactionFromAccountId: transaction?.fromAccount?.id ?? null,
+        transactionFromAccountType: transaction?.fromAccount?.type ?? null
+      }),
+    [
+      createFlow,
+      defaultCreditCardId,
+      formData.fromAccountId,
+      selectedFromAccount?.type,
+      transaction?.fromAccount?.id,
+      transaction?.fromAccount?.type
+    ]
+  );
   const completionHint = getCompletionHint(formData.type, isCompleted, formData.liquidationDate);
   const primaryDateLabel = getPrimaryDateLabel(formData.type, isCreditCardContext);
   const settlementToggleLabel = getSettlementToggleLabel(formData.type);
@@ -1169,10 +1185,8 @@ export default function TransactionForm({
 
       if (onSuccess) {
         onSuccess();
-      } else if (shouldRedirectToCreditCardInvoices) {
-        router.push(`/financial/credit-cards/${formData.fromAccountId}/invoices`);
       } else {
-        router.push('/financial/transactions');
+        router.push(listReturnPath);
       }
     } catch (error: any) {
       console.error('Erro ao salvar transação:', error);
@@ -1223,7 +1237,7 @@ export default function TransactionForm({
           if (onSuccess) {
             onSuccess();
           } else {
-            router.push('/financial/transactions');
+            router.push(listReturnPath);
           }
         } catch (error: any) {
           addToast(error.response?.data?.error || 'Erro ao excluir transação', 'error');
@@ -1237,7 +1251,7 @@ export default function TransactionForm({
     if (onCancel) {
       onCancel();
     } else {
-      router.push('/financial/transactions');
+      router.push(listReturnPath);
     }
   };
 

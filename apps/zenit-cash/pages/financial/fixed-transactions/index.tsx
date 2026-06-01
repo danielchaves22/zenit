@@ -24,6 +24,7 @@ import api from '@/lib/api';
 import { formatAccountDisplayName } from '@/utils/accounts';
 
 type FixedTransactionType = 'INCOME' | 'EXPENSE';
+type FixedTransactionAccountScope = 'LIQUID' | 'CREDIT_CARD';
 
 interface FixedTransaction {
   id: number;
@@ -47,11 +48,29 @@ interface FixedTransaction {
 }
 
 const ALL_FIXED_TRANSACTION_TYPES: FixedTransactionType[] = ['INCOME', 'EXPENSE'];
+const ALL_FIXED_TRANSACTION_ACCOUNT_SCOPES: FixedTransactionAccountScope[] = [
+  'LIQUID',
+  'CREDIT_CARD'
+];
 
 const FIXED_TRANSACTION_TYPE_OPTIONS = [
   { value: 'INCOME', label: 'Receita' },
   { value: 'EXPENSE', label: 'Despesa' }
 ];
+
+const FIXED_TRANSACTION_ACCOUNT_SCOPE_OPTIONS = [
+  { value: 'LIQUID', label: 'Contas de disponibilidade' },
+  { value: 'CREDIT_CARD', label: 'Cartões' }
+];
+
+export function getFixedTransactionAccountScope(
+  item: Pick<FixedTransaction, 'type' | 'fromAccount' | 'toAccount'>
+): FixedTransactionAccountScope {
+  const linkedAccountType =
+    item.type === 'EXPENSE' ? item.fromAccount?.type : item.toAccount?.type;
+
+  return linkedAccountType === 'CREDIT_CARD' ? 'CREDIT_CARD' : 'LIQUID';
+}
 
 function FixedTransactionsPageInner() {
   const { addToast } = useToast();
@@ -63,14 +82,21 @@ function FixedTransactionsPageInner() {
   const [selectedTypes, setSelectedTypes] = useState<FixedTransactionType[]>([
     ...ALL_FIXED_TRANSACTION_TYPES
   ]);
+  const [selectedAccountScopes, setSelectedAccountScopes] = useState<
+    FixedTransactionAccountScope[]
+  >([...ALL_FIXED_TRANSACTION_ACCOUNT_SCOPES]);
 
   const filteredItems = useMemo(() => {
-    if (selectedTypes.length === 0) {
+    if (selectedTypes.length === 0 || selectedAccountScopes.length === 0) {
       return [];
     }
 
-    return items.filter((item) => selectedTypes.includes(item.type));
-  }, [items, selectedTypes]);
+    return items.filter(
+      (item) =>
+        selectedTypes.includes(item.type) &&
+        selectedAccountScopes.includes(getFixedTransactionAccountScope(item))
+    );
+  }, [items, selectedAccountScopes, selectedTypes]);
 
   useEffect(() => {
     void fetchFixedTransactions();
@@ -202,7 +228,7 @@ function FixedTransactionsPageInner() {
       </div>
 
       <Card>
-        <div className="mb-4 grid grid-cols-1 gap-4 border-b border-gray-700 pb-4 md:grid-cols-[minmax(240px,360px)_1fr]">
+        <div className="mb-4 grid grid-cols-1 gap-4 border-b border-gray-700 pb-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,360px)_minmax(280px,420px)_1fr]">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-300">Tipo</label>
             <MultiSelect
@@ -210,6 +236,19 @@ function FixedTransactionsPageInner() {
               values={selectedTypes}
               onChange={(values) => setSelectedTypes(values as FixedTransactionType[])}
               placeholder="Selecione os tipos"
+              className="mb-0"
+              triggerClassName="h-10"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Origem das fixas</label>
+            <MultiSelect
+              options={FIXED_TRANSACTION_ACCOUNT_SCOPE_OPTIONS}
+              values={selectedAccountScopes}
+              onChange={(values) =>
+                setSelectedAccountScopes(values as FixedTransactionAccountScope[])
+              }
+              placeholder="Selecione as origens"
               className="mb-0"
               triggerClassName="h-10"
             />

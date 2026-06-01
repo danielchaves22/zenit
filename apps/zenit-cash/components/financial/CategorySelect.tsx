@@ -1,14 +1,95 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { Check, ChevronDown, Star } from 'lucide-react';
+import { Check, ChevronDown, CornerDownRight, Star } from 'lucide-react';
 import { CategoryIcon } from '@/utils/categoryIcons';
 
-interface CategoryOption {
+export interface CategoryOption {
   id: number;
   name: string;
   color: string;
   icon?: string | null;
   isDefault?: boolean;
+  parentId?: number | null;
+}
+
+export interface OrderedCategoryOption {
+  category: CategoryOption;
+  level: number;
+  lineage: string[];
+}
+
+function compareCategoryNames(left: CategoryOption, right: CategoryOption) {
+  return left.name.localeCompare(right.name, 'pt-BR', { sensitivity: 'base' });
+}
+
+export function orderCategoriesForSelect(categories: CategoryOption[]): OrderedCategoryOption[] {
+  const categoriesById = new Map(categories.map((category) => [category.id, category]));
+  const roots: CategoryOption[] = [];
+  const childrenByParentId = new Map<number, CategoryOption[]>();
+
+  categories.forEach((category) => {
+    const parentId = category.parentId ?? null;
+
+    if (parentId !== null && categoriesById.has(parentId)) {
+      const siblings = childrenByParentId.get(parentId) || [];
+      siblings.push(category);
+      childrenByParentId.set(parentId, siblings);
+      return;
+    }
+
+    roots.push(category);
+  });
+
+  roots.sort(compareCategoryNames);
+  childrenByParentId.forEach((siblings) => siblings.sort(compareCategoryNames));
+
+  const orderedCategories: OrderedCategoryOption[] = [];
+  const visited = new Set<number>();
+  const visiting = new Set<number>();
+
+  function visitCategory(category: CategoryOption, lineage: string[]) {
+    if (visited.has(category.id) || visiting.has(category.id)) {
+      return;
+    }
+
+    visiting.add(category.id);
+    orderedCategories.push({
+      category,
+      level: lineage.length,
+      lineage
+    });
+
+    const children = childrenByParentId.get(category.id) || [];
+    children.forEach((child) => {
+      visitCategory(child, [...lineage, category.name]);
+    });
+
+    visiting.delete(category.id);
+    visited.add(category.id);
+  }
+
+  roots.forEach((rootCategory) => {
+    visitCategory(rootCategory, []);
+  });
+
+  categories
+    .slice()
+    .sort(compareCategoryNames)
+    .forEach((category) => {
+      if (!visited.has(category.id)) {
+        visitCategory(category, []);
+      }
+    });
+
+  return orderedCategories;
+}
+
+function getCategoryTriggerLabel(categoryOption: OrderedCategoryOption) {
+  if (categoryOption.lineage.length === 0) {
+    return categoryOption.category.name;
+  }
+
+  return `${categoryOption.lineage.join(' / ')} / ${categoryOption.category.name}`;
 }
 
 interface CategorySelectProps {
@@ -28,23 +109,42 @@ function CategoryRow({
   showCheck = false,
   compact = false
 }: {
-  category: CategoryOption;
+  category: OrderedCategoryOption;
   showCheck?: boolean;
   compact?: boolean;
 }) {
+  const parentTrail = category.lineage.join(' / ');
+  const isNestedCategory = category.level > 0;
+  const triggerLabel = getCategoryTriggerLabel(category);
+  const indentStyle = compact
+    ? undefined
+    : {
+        paddingLeft: `${Math.min(category.level, 3) * 14}px`
+      };
+
   return (
-    <div className={`flex min-w-0 items-center ${compact ? 'gap-2.5' : 'gap-3'}`}>
+    <div
+      className={`flex min-w-0 items-center ${compact ? 'gap-2.5' : 'gap-3'}`}
+      style={indentStyle}
+    >
+      {!compact && isNestedCategory && (
+        <CornerDownRight size={14} className="shrink-0 text-gray-500" />
+      )}
       <div
         className={`flex shrink-0 items-center justify-center rounded border border-gray-700 bg-[#11161d] ${
           compact ? 'h-6 w-6' : 'h-8 w-8'
         }`}
       >
-        <CategoryIcon icon={category.icon} size={compact ? 14 : 16} color={category.color} />
+        <CategoryIcon
+          icon={category.category.icon}
+          size={compact ? 14 : 16}
+          color={category.category.color}
+        />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="truncate">{category.name}</span>
-          {category.isDefault && (
+          <span className="truncate">{compact ? triggerLabel : category.category.name}</span>
+          {category.category.isDefault && (
             <span
               className={`inline-flex items-center rounded-full bg-yellow-700/20 uppercase tracking-wide text-yellow-300 ${
                 compact ? 'gap-1 px-1.5 py-0 text-[9px]' : 'gap-1 px-2 py-0.5 text-[10px]'
@@ -55,6 +155,9 @@ function CategoryRow({
             </span>
           )}
         </div>
+        {!compact && parentTrail && (
+          <div className="mt-0.5 truncate text-xs text-gray-500">{parentTrail}</div>
+        )}
       </div>
       {showCheck && <Check size={16} className="shrink-0 text-accent" />}
     </div>
@@ -79,9 +182,10 @@ export default function CategorySelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const portalRef = useRef<HTMLDivElement>(null);
 
+  const orderedCategories = useMemo(() => orderCategoriesForSelect(categories), [categories]);
   const selectedCategory = useMemo(
-    () => categories.find((category) => String(category.id) === value) || null,
-    [categories, value]
+    () => orderedCategories.find((category) => String(category.category.id) === value) || null,
+    [orderedCategories, value]
   );
 
   useEffect(() => {
@@ -194,17 +298,17 @@ export default function CategorySelect({
               <span>{emptyLabel || placeholder}</span>
             </button>
 
-            {categories.length === 0 ? (
+            {orderedCategories.length === 0 ? (
               <div className="px-3 py-3 text-sm text-gray-400">Nenhuma categoria disponivel</div>
             ) : (
-              categories.map((category) => {
-                const isSelected = String(category.id) === value;
+              orderedCategories.map((category) => {
+                const isSelected = String(category.category.id) === value;
 
                 return (
                   <button
-                    key={category.id}
+                    key={category.category.id}
                     type="button"
-                    onClick={() => handleSelect(String(category.id))}
+                    onClick={() => handleSelect(String(category.category.id))}
                     className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
                       isSelected
                         ? 'bg-accent/10 text-accent'

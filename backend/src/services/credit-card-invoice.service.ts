@@ -138,6 +138,15 @@ type InvoiceProjectionBucket = {
   projectedTransactions: ProjectedFixedInvoiceTransaction[];
 };
 
+function sumProjectedTransactionAmounts(
+  projectedTransactions: Array<{ amount: Prisma.Decimal | number | string | null | undefined }>
+) {
+  return projectedTransactions.reduce(
+    (sum, transaction) => sum.plus(toDecimal(transaction.amount)),
+    new Prisma.Decimal(0)
+  );
+}
+
 export default class CreditCardInvoiceService {
   private static async syncInvoice(invoiceId: number) {
     const invoice = await prisma.creditCardInvoice.findUnique({
@@ -498,10 +507,46 @@ export default class CreditCardInvoiceService {
       }
     }
 
+    const projectedSubtotalByInvoiceKey = new Map<string, Prisma.Decimal>();
+
+    await Promise.all(
+      cards.map(async (card) => {
+        const nextInvoice = nextInvoiceByAccountId.get(card.id);
+        if (!nextInvoice || !card.statementClosingDay || !card.statementDueDay) {
+          return;
+        }
+
+        const projectionKey = buildProjectionKey(
+          nextInvoice.referenceYear,
+          nextInvoice.referenceMonth
+        );
+        const projectedBucket = (await this.buildProjectedInvoiceBuckets({
+          account: card as CardAccountWithConfig,
+          companyId: params.companyId
+        })).get(projectionKey);
+
+        if (!projectedBucket || projectedBucket.projectedTransactions.length === 0) {
+          return;
+        }
+
+        projectedSubtotalByInvoiceKey.set(
+          `${card.id}:${projectionKey}`,
+          sumProjectedTransactionAmounts(projectedBucket.projectedTransactions)
+        );
+      })
+    );
+
     const result = [];
 
     for (const card of cards) {
       const nextInvoice = nextInvoiceByAccountId.get(card.id) || null;
+      const nextInvoiceProjectionKey = nextInvoice
+        ? buildProjectionKey(nextInvoice.referenceYear, nextInvoice.referenceMonth)
+        : null;
+      const projectedSubtotal = nextInvoiceProjectionKey
+        ? projectedSubtotalByInvoiceKey.get(`${card.id}:${nextInvoiceProjectionKey}`) ??
+          new Prisma.Decimal(0)
+        : new Prisma.Decimal(0);
 
       const balance = normalizeMoney(card.balance);
       const creditLimit = normalizeMoney(card.creditLimit);
@@ -523,6 +568,10 @@ export default class CreditCardInvoiceService {
         nextInvoice: nextInvoice
           ? {
               ...nextInvoice,
+              itemsSubtotal: nextInvoice.totalAmount.toString(),
+              fixedSubtotal: projectedSubtotal.toString(),
+              totalAmount: toDecimal(nextInvoice.totalAmount).plus(projectedSubtotal).toString(),
+              hasProjectedTransactions: projectedSubtotal.gt(0),
               displayStatus: getDerivedInvoiceStatus(nextInvoice.status, nextInvoice.dueDate)
             }
           : null
@@ -614,10 +663,7 @@ export default class CreditCardInvoiceService {
     for (const invoice of invoices) {
       const projectionKey = buildProjectionKey(invoice.referenceYear, invoice.referenceMonth);
       const projectedTransactions = projectedBuckets.get(projectionKey)?.projectedTransactions ?? [];
-      const fixedSubtotalValue = projectedTransactions.reduce(
-        (sum, transaction) => sum.plus(toDecimal(transaction.amount)),
-        new Prisma.Decimal(0)
-      );
+      const fixedSubtotalValue = sumProjectedTransactionAmounts(projectedTransactions);
 
       mergedInvoices.set(projectionKey, {
         ...invoice,
@@ -640,10 +686,7 @@ export default class CreditCardInvoiceService {
         continue;
       }
 
-      const fixedSubtotalValue = bucket.projectedTransactions.reduce(
-        (sum, transaction) => sum.plus(toDecimal(transaction.amount)),
-        new Prisma.Decimal(0)
-      );
+      const fixedSubtotalValue = sumProjectedTransactionAmounts(bucket.projectedTransactions);
       const status = resolveCreditCardInvoiceStatus(bucket.closingDate, false);
 
       mergedInvoices.set(bucket.projectionKey, {
@@ -751,10 +794,7 @@ export default class CreditCardInvoiceService {
           companyId
         })).get(projectionKey)?.projectedTransactions ?? []
       : [];
-    const fixedSubtotalValue = projectedTransactions.reduce(
-      (sum, transaction) => sum.plus(toDecimal(transaction.amount)),
-      new Prisma.Decimal(0)
-    );
+    const fixedSubtotalValue = sumProjectedTransactionAmounts(projectedTransactions);
 
     return {
       ...invoice,
@@ -803,10 +843,7 @@ export default class CreditCardInvoiceService {
       return null;
     }
 
-    const fixedSubtotalValue = bucket.projectedTransactions.reduce(
-      (sum, transaction) => sum.plus(toDecimal(transaction.amount)),
-      new Prisma.Decimal(0)
-    );
+    const fixedSubtotalValue = sumProjectedTransactionAmounts(bucket.projectedTransactions);
     const status = resolveCreditCardInvoiceStatus(bucket.closingDate, false);
 
     return {

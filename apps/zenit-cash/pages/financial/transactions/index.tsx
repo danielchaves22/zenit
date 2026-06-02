@@ -4,7 +4,9 @@ import { useRouter } from 'next/router';
 import {
   AlertTriangle,
   ArrowUpDown,
+  BookmarkPlus,
   CheckCircle,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +28,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { MultiSelect } from '@/components/ui/MultiSelect';
+import { Modal } from '@/components/ui/Modal';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
@@ -34,6 +37,14 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import CategorySelect from '@/components/financial/CategorySelect';
 import TransactionSettlementModal from '@/components/financial/TransactionSettlementModal';
 import api from '@/lib/api';
+import {
+  FILTER_PRESET_FEATURE_KEYS,
+  createSavedFilterPreset,
+  deleteSavedFilterPreset,
+  listSavedFilterPresets,
+  markLastUsedFilterPreset,
+  type SavedFilterPreset
+} from '@/lib/filter-presets';
 import { formatAccountDisplayName } from '@/utils/accounts';
 import { formatTransactionDescription } from '@/utils/transactions';
 import { getInvoiceReferenceLabel } from '@/utils/creditCards';
@@ -47,16 +58,24 @@ import {
   type TransactionDisplayStatus
 } from '@/utils/financialStatus';
 import { buildTransactionUpsertPayload } from '@/utils/transactionPayload';
+import {
+  ALL_TRANSACTION_TYPES,
+  applyTransactionsPresetPayload,
+  buildTransactionsPresetPayload,
+  countAdvancedTransactionFilters,
+  getDefaultTransactionsFilterState,
+  getPeriodRange,
+  parseInputDate,
+  resolveInitialTransactionsFilterState,
+  type PeriodPreset,
+  type PeriodRange,
+  type TransactionDateFieldFilter,
+  type TransactionFilters,
+  type TransactionTypeFilter,
+  type TransactionsPresetPayload
+} from '@/utils/transactionFilterPresets';
 
-type TransactionTypeFilter = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatusFilter = 'PENDING' | 'COMPLETED' | 'CANCELED';
-type TransactionDateFieldFilter = 'dueDate' | 'date' | 'effectiveDate' | 'createdAt';
-type PeriodPreset = 'CURRENT_MONTH' | 'CURRENT_WEEK' | 'CUSTOM';
-
-interface PeriodRange {
-  startDate: string;
-  endDate: string;
-}
 
 interface Transaction {
   id: number | null;
@@ -107,14 +126,6 @@ interface Transaction {
   fixedSubtotal?: string;
 }
 
-interface TransactionFilters {
-  types: TransactionTypeFilter[];
-  status: string;
-  accountId: string;
-  categoryId: string;
-  search: string;
-}
-
 interface TransactionSummary {
   incomeTotal: string;
   expenseTotal: string;
@@ -136,8 +147,11 @@ interface Category {
   isDefault?: boolean;
 }
 
-const ALL_TRANSACTION_TYPES: TransactionTypeFilter[] = ['INCOME', 'EXPENSE', 'TRANSFER'];
-const DEFAULT_DATE_FIELD: TransactionDateFieldFilter = 'dueDate';
+interface ActiveFilterBadge {
+  key: string;
+  label: string;
+  value: string;
+}
 
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'INCOME', label: 'Receita' },
@@ -154,58 +168,6 @@ const TRANSACTION_DATE_FIELD_OPTIONS: Array<{
   { value: 'effectiveDate', label: 'Data de liquidação' },
   { value: 'createdAt', label: 'Data de criação' }
 ];
-
-function formatDateForInput(date: Date): string {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
-function parseInputDate(value: string): Date {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function startOfWeek(date: Date): Date {
-  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const weekday = normalized.getDay();
-  const diff = weekday === 0 ? -6 : 1 - weekday;
-
-  normalized.setDate(normalized.getDate() + diff);
-  normalized.setHours(0, 0, 0, 0);
-
-  return normalized;
-}
-
-function getPeriodRange(
-  preset: Exclude<PeriodPreset, 'CUSTOM'>,
-  offset: number
-): PeriodRange {
-  const today = new Date();
-
-  if (preset === 'CURRENT_WEEK') {
-    const start = startOfWeek(today);
-    start.setDate(start.getDate() + offset * 7);
-
-    const end = new Date(start);
-    end.setDate(end.getDate() + 6);
-
-    return {
-      startDate: formatDateForInput(start),
-      endDate: formatDateForInput(end)
-    };
-  }
-
-  const start = new Date(today.getFullYear(), today.getMonth() + offset, 1);
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
-
-  return {
-    startDate: formatDateForInput(start),
-    endDate: formatDateForInput(end)
-  };
-}
 
 function formatPeriodSummary(startDate: string, endDate: string): string {
   return `${parseInputDate(startDate).toLocaleDateString('pt-BR')} a ${parseInputDate(endDate).toLocaleDateString('pt-BR')}`;
@@ -274,14 +236,6 @@ function getTransactionInvoiceHref(
   return `/financial/credit-cards/${transaction.fromAccount.id}/invoices?invoiceKey=${encodeURIComponent(invoiceKey)}`;
 }
 
-function getSingleQueryValue(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) {
-    return value[0] || '';
-  }
-
-  return value || '';
-}
-
 function getTransactionAccountDisplay(transaction: Pick<Transaction, 'fromAccount' | 'toAccount'>) {
   const accountLabel = formatAccountDisplayName(transaction.fromAccount || transaction.toAccount);
   return accountLabel === '-' ? 'A definir' : accountLabel;
@@ -330,10 +284,14 @@ export default function TransactionsListPage() {
   const router = useRouter();
   const { addToast } = useToast();
   const confirmation = useConfirmation();
+  const defaultTransactionsState = getDefaultTransactionsFilterState();
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [filterPresets, setFilterPresets] = useState<SavedFilterPreset<TransactionsPresetPayload>[]>([]);
+  const [lastUsedPresetId, setLastUsedPresetId] = useState<number | null>(null);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [summary, setSummary] = useState<TransactionSummary>({
     incomeTotal: '0',
     expenseTotal: '0'
@@ -344,26 +302,34 @@ export default function TransactionsListPage() {
   const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [showOnlyMaterialized, setShowOnlyMaterialized] = useState(false);
   const [filtersInitialized, setFiltersInitialized] = useState(false);
+  const [accountsResolved, setAccountsResolved] = useState(false);
+  const [categoriesResolved, setCategoriesResolved] = useState(false);
+  const [presetsResolved, setPresetsResolved] = useState(false);
+  const [accountsAvailableForValidation, setAccountsAvailableForValidation] = useState(false);
+  const [categoriesAvailableForValidation, setCategoriesAvailableForValidation] = useState(false);
   const [materializingVirtualKey, setMaterializingVirtualKey] = useState<string | null>(null);
-  const [dateField, setDateField] = useState<TransactionDateFieldFilter>(DEFAULT_DATE_FIELD);
-  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>('CURRENT_MONTH');
-  const [periodOffset, setPeriodOffset] = useState(0);
-  const [customPeriod, setCustomPeriod] = useState<PeriodRange>(() =>
-    getPeriodRange('CURRENT_MONTH', 0)
+  const [dateField, setDateField] = useState<TransactionDateFieldFilter>(
+    defaultTransactionsState.dateField
   );
+  const [periodPreset, setPeriodPreset] = useState<PeriodPreset>(
+    defaultTransactionsState.periodPreset
+  );
+  const [periodOffset, setPeriodOffset] = useState(defaultTransactionsState.periodOffset);
+  const [customPeriod, setCustomPeriod] = useState<PeriodRange>(
+    defaultTransactionsState.customPeriod
+  );
+  const [isSavePresetModalOpen, setIsSavePresetModalOpen] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [presetActionLoading, setPresetActionLoading] = useState<
+    null | 'apply' | 'save' | 'delete'
+  >(null);
 
   const [sortConfig, setSortConfig] = useState<{
     key: 'dueDate' | 'effectiveDate' | 'description';
     direction: 'asc' | 'desc';
   }>({ key: 'dueDate', direction: 'desc' });
 
-  const [filters, setFilters] = useState<TransactionFilters>({
-    types: [...ALL_TRANSACTION_TYPES],
-    status: '',
-    accountId: '',
-    categoryId: '',
-    search: ''
-  });
+  const [filters, setFilters] = useState<TransactionFilters>(defaultTransactionsState.filters);
   const [settlementTarget, setSettlementTarget] = useState<Transaction | null>(null);
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [settlementAccountId, setSettlementAccountId] = useState('');
@@ -394,16 +360,67 @@ export default function TransactionsListPage() {
     return '';
   }, [customPeriod.endDate, customPeriod.startDate, isCustomPeriod]);
 
-  const moreFiltersCount = useMemo(() => {
-    let count = 0;
+  const moreFiltersCount = useMemo(() => countAdvancedTransactionFilters(filters), [filters]);
+  const validAccountIds = useMemo(
+    () => (accountsAvailableForValidation ? new Set(accounts.map((account) => account.id.toString())) : null),
+    [accounts, accountsAvailableForValidation]
+  );
+  const validCategoryIds = useMemo(
+    () =>
+      categoriesAvailableForValidation
+        ? new Set(categories.map((category) => category.id.toString()))
+        : null,
+    [categories, categoriesAvailableForValidation]
+  );
+  const selectedPreset = useMemo(
+    () => filterPresets.find((preset) => preset.id.toString() === selectedPresetId) || null,
+    [filterPresets, selectedPresetId]
+  );
+  const activeMoreFilterBadges = useMemo<ActiveFilterBadge[]>(() => {
+    const badges: ActiveFilterBadge[] = [];
 
-    if (filters.search.trim()) count += 1;
-    if (filters.status) count += 1;
-    if (filters.accountId) count += 1;
-    if (filters.categoryId) count += 1;
+    if (filters.accountId) {
+      const account = accounts.find((item) => item.id.toString() === filters.accountId);
+      badges.push({
+        key: 'account',
+        label: 'Conta',
+        value: account ? formatAccountDisplayName(account) : `Conta #${filters.accountId}`
+      });
+    }
 
-    return count;
-  }, [filters]);
+    if (filters.categoryId) {
+      const category = categories.find((item) => item.id.toString() === filters.categoryId);
+      badges.push({
+        key: 'category',
+        label: 'Categoria',
+        value: category?.name || `Categoria #${filters.categoryId}`
+      });
+    }
+
+    if (filters.status) {
+      const statusLabels: Record<string, string> = {
+        PENDING: 'Em aberto / vencida',
+        COMPLETED: 'Concluida',
+        CANCELED: 'Cancelada'
+      };
+
+      badges.push({
+        key: 'status',
+        label: 'Status',
+        value: statusLabels[filters.status] || filters.status
+      });
+    }
+
+    if (filters.search.trim()) {
+      badges.push({
+        key: 'search',
+        label: 'Busca',
+        value: filters.search.trim()
+      });
+    }
+
+    return badges;
+  }, [accounts, categories, filters.accountId, filters.categoryId, filters.search, filters.status]);
   const projectedSavings = useMemo(
     () => Number(summary.incomeTotal || 0) - Number(summary.expenseTotal || 0),
     [summary]
@@ -433,37 +450,46 @@ export default function TransactionsListPage() {
   useEffect(() => {
     void fetchAccounts();
     void fetchCategories();
+    void fetchFilterPresets();
   }, []);
 
   useEffect(() => {
-    if (!router.isReady) {
+    if (
+      !router.isReady ||
+      !accountsResolved ||
+      !categoriesResolved ||
+      !presetsResolved ||
+      filtersInitialized
+    ) {
       return;
     }
 
-    const nextAccountId = getSingleQueryValue(router.query.accountId);
-    const nextCategoryId = getSingleQueryValue(router.query.categoryId);
-    const nextSearch = getSingleQueryValue(router.query.search);
-    const nextStatus = getSingleQueryValue(router.query.status);
-    const hasQueryFilters = Boolean(
-      nextAccountId || nextCategoryId || nextSearch.trim() || nextStatus
-    );
+    const resolvedInitialState = resolveInitialTransactionsFilterState({
+      query: router.query,
+      presets: filterPresets,
+      lastUsedPresetId,
+      validAccountIds,
+      validCategoryIds
+    });
 
-    setCurrentPage(1);
-    setShowMoreFilters(hasQueryFilters);
-    setFilters((prev) => ({
-      ...prev,
-      accountId: nextAccountId,
-      categoryId: nextCategoryId,
-      search: nextSearch,
-      status: nextStatus
-    }));
+    applyTransactionsFilterState(resolvedInitialState.state);
+    setSelectedPresetId(resolvedInitialState.selectedPresetId);
+
     setFiltersInitialized(true);
   }, [
-    router.isReady,
+    accountsResolved,
+    categoriesResolved,
+    filterPresets,
+    filtersInitialized,
+    lastUsedPresetId,
+    presetsResolved,
     router.query.accountId,
     router.query.categoryId,
     router.query.search,
-    router.query.status
+    router.query.status,
+    router.isReady,
+    validAccountIds,
+    validCategoryIds
   ]);
 
   useEffect(() => {
@@ -583,8 +609,11 @@ export default function TransactionsListPage() {
     try {
       const response = await api.get('/financial/accounts');
       setAccounts(response.data || []);
+      setAccountsAvailableForValidation(true);
     } catch (error) {
       console.error('Erro ao carregar contas:', error);
+    } finally {
+      setAccountsResolved(true);
     }
   }
 
@@ -592,9 +621,57 @@ export default function TransactionsListPage() {
     try {
       const response = await api.get('/financial/categories');
       setCategories(response.data || []);
+      setCategoriesAvailableForValidation(true);
     } catch (error) {
       console.error('Erro ao carregar categorias:', error);
+    } finally {
+      setCategoriesResolved(true);
     }
+  }
+
+  async function fetchFilterPresets() {
+    try {
+      const response = await listSavedFilterPresets<TransactionsPresetPayload>(
+        FILTER_PRESET_FEATURE_KEYS.financialTransactions
+      );
+      setFilterPresets(response.presets || []);
+      setLastUsedPresetId(response.lastUsedPresetId ?? null);
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao carregar presets de filtro', 'error');
+    } finally {
+      setPresetsResolved(true);
+    }
+  }
+
+  function applyTransactionsFilterState(state: ReturnType<typeof getDefaultTransactionsFilterState>) {
+    setCurrentPage(1);
+    setDateField(state.dateField);
+    setPeriodPreset(state.periodPreset);
+    setPeriodOffset(state.periodOffset);
+    setCustomPeriod(state.customPeriod);
+    setShowOnlyMaterialized(state.showOnlyMaterialized);
+    setFilters(state.filters);
+    setShowMoreFilters(countAdvancedTransactionFilters(state.filters) > 0);
+  }
+
+  function getCurrentTransactionsFilterState(): ReturnType<typeof getDefaultTransactionsFilterState> {
+    return {
+      dateField,
+      periodPreset,
+      periodOffset,
+      customPeriod,
+      filters,
+      showOnlyMaterialized
+    };
+  }
+
+  function closeSavePresetModal() {
+    if (presetActionLoading === 'save') {
+      return;
+    }
+
+    setIsSavePresetModalOpen(false);
+    setPresetName('');
   }
 
   function updateFilters(patch: Partial<TransactionFilters>) {
@@ -603,20 +680,7 @@ export default function TransactionsListPage() {
   }
 
   function resetFilters() {
-    setCurrentPage(1);
-    setDateField(DEFAULT_DATE_FIELD);
-    setPeriodPreset('CURRENT_MONTH');
-    setPeriodOffset(0);
-    setCustomPeriod(getPeriodRange('CURRENT_MONTH', 0));
-    setShowOnlyMaterialized(false);
-    setShowMoreFilters(false);
-    setFilters({
-      types: [...ALL_TRANSACTION_TYPES],
-      status: '',
-      accountId: '',
-      categoryId: '',
-      search: ''
-    });
+    applyTransactionsFilterState(getDefaultTransactionsFilterState());
   }
 
   function shiftPeriod(direction: -1 | 1) {
@@ -652,6 +716,90 @@ export default function TransactionsListPage() {
   function handleDateFieldChange(nextField: TransactionDateFieldFilter) {
     setCurrentPage(1);
     setDateField(nextField);
+  }
+
+  async function handleApplySelectedPreset() {
+    if (!selectedPreset) {
+      return;
+    }
+
+    applyTransactionsFilterState(
+      applyTransactionsPresetPayload(selectedPreset.payload, {
+        validAccountIds,
+        validCategoryIds
+      })
+    );
+    setSelectedPresetId(selectedPreset.id.toString());
+
+    try {
+      setPresetActionLoading('apply');
+      const response = await markLastUsedFilterPreset(selectedPreset.id);
+      setLastUsedPresetId(response.lastUsedPresetId ?? null);
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao aplicar preset de filtro', 'error');
+    } finally {
+      setPresetActionLoading(null);
+    }
+  }
+
+  async function handleSaveCurrentPreset() {
+    const trimmedName = presetName.trim();
+
+    if (!trimmedName) {
+      addToast('Informe um nome para o preset', 'error');
+      return;
+    }
+
+    try {
+      setPresetActionLoading('save');
+      const response = await createSavedFilterPreset<TransactionsPresetPayload>({
+        featureKey: FILTER_PRESET_FEATURE_KEYS.financialTransactions,
+        name: trimmedName,
+        payload: buildTransactionsPresetPayload(getCurrentTransactionsFilterState())
+      });
+
+      setFilterPresets((prev) => [response.preset, ...prev.filter((preset) => preset.id !== response.preset.id)]);
+      setLastUsedPresetId(response.lastUsedPresetId ?? response.preset.id);
+      setSelectedPresetId(response.preset.id.toString());
+      setIsSavePresetModalOpen(false);
+      setPresetName('');
+      addToast('Preset salvo com sucesso', 'success');
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao salvar preset de filtro', 'error');
+    } finally {
+      setPresetActionLoading(null);
+    }
+  }
+
+  async function handleDeleteSelectedPreset() {
+    if (!selectedPreset) {
+      return;
+    }
+
+    confirmation.confirm(
+      {
+        title: 'Excluir Preset',
+        message: `Deseja excluir o preset "${selectedPreset.name}"?`,
+        confirmText: 'Excluir preset',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        try {
+          setPresetActionLoading('delete');
+          const response = await deleteSavedFilterPreset(selectedPreset.id);
+          setFilterPresets((prev) => prev.filter((preset) => preset.id !== selectedPreset.id));
+          setLastUsedPresetId(response.lastUsedPresetId ?? null);
+          setSelectedPresetId('');
+          addToast('Preset excluido com sucesso', 'success');
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao excluir preset de filtro', 'error');
+          throw error;
+        } finally {
+          setPresetActionLoading(null);
+        }
+      }
+    );
   }
 
   async function handleDelete(transaction: Transaction) {
@@ -926,8 +1074,8 @@ export default function TransactionsListPage() {
   const compactCreateButtonClass =
     'flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-sm';
   const filterHeaderGridClass = isCustomPeriod
-    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.85fr)_minmax(220px,0.66fr)_auto_auto]'
-    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_auto_auto]';
+    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(220px,0.7fr)_minmax(260px,0.95fr)_auto_auto]'
+    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(260px,0.95fr)_auto_auto]';
 
   if (loading && transactions.length === 0) {
     return (
@@ -1150,6 +1298,57 @@ export default function TransactionsListPage() {
           </div>
 
           <div className="flex flex-col">
+            <label className={filterLabelClassName}>Presets</label>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
+              <select
+                value={selectedPresetId}
+                onChange={(event) => setSelectedPresetId(event.target.value)}
+                className={filterControlClassName}
+                aria-label="Preset de filtros"
+              >
+                <option value="">Selecione um preset</option>
+                {filterPresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                    {preset.id === lastUsedPresetId ? ' (ultimo usado)' : ''}
+                  </option>
+                ))}
+              </select>
+
+              <Button
+                variant="outline"
+                onClick={() => void handleApplySelectedPreset()}
+                disabled={!selectedPreset || presetActionLoading !== null}
+                className="flex h-10 items-center justify-center gap-1.5 px-3"
+                title="Aplicar preset selecionado"
+              >
+                <Check size={15} />
+                <span className="hidden sm:inline">Aplicar</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => setIsSavePresetModalOpen(true)}
+                disabled={presetActionLoading !== null}
+                className="flex h-10 items-center justify-center px-3"
+                title="Salvar filtros atuais como preset"
+              >
+                <BookmarkPlus size={15} />
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => void handleDeleteSelectedPreset()}
+                disabled={!selectedPreset || presetActionLoading !== null}
+                className="flex h-10 items-center justify-center px-3 text-red-300 hover:border-red-500 hover:text-red-200"
+                title="Excluir preset selecionado"
+              >
+                <Trash2 size={15} />
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex flex-col">
             <label className={filterLabelClassName}>Exibicao</label>
             <Button
               variant={showOnlyMaterialized ? 'accent' : 'outline'}
@@ -1181,6 +1380,23 @@ export default function TransactionsListPage() {
 
         {isCustomPeriod && customPeriodError && (
           <p className="mt-2 text-xs text-red-400">{customPeriodError}</p>
+        )}
+
+        {activeMoreFilterBadges.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+              Filtros ativos
+            </span>
+            {activeMoreFilterBadges.map((badge) => (
+              <span
+                key={badge.key}
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-200"
+              >
+                <span className="text-slate-400">{badge.label}:</span>
+                <span className="max-w-[220px] truncate sm:max-w-[320px]">{badge.value}</span>
+              </span>
+            ))}
+          </div>
         )}
 
         {showMoreFilters && (
@@ -1667,6 +1883,49 @@ export default function TransactionsListPage() {
           onNotesChange={setSettlementNotes}
         />
       )}
+
+      <Modal
+        isOpen={isSavePresetModalOpen}
+        onClose={closeSavePresetModal}
+        title="Salvar preset"
+        loading={presetActionLoading === 'save'}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={closeSavePresetModal}
+              disabled={presetActionLoading === 'save'}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => void handleSaveCurrentPreset()}
+              disabled={presetActionLoading === 'save' || !presetName.trim()}
+              className="flex items-center gap-2"
+            >
+              {presetActionLoading === 'save' && <Loader2 size={16} className="animate-spin" />}
+              Salvar
+            </Button>
+          </div>
+        }
+      >
+        <Input
+          id="transaction-preset-name"
+          label="Nome do preset"
+          value={presetName}
+          onChange={(event) => setPresetName(event.target.value)}
+          placeholder="Ex.: Contas da empresa"
+          autoFocus
+          maxLength={80}
+          className="mb-0"
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              void handleSaveCurrentPreset();
+            }
+          }}
+        />
+      </Modal>
 
       <ConfirmationModal
         isOpen={confirmation.isOpen}

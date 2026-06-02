@@ -201,6 +201,8 @@ model User {
   processStatusChanges   ProcessStatusHistory[] @relation("ProcessStatusHistoryChangedBy")
   personalWorkspaceOwned Company?             @relation("PersonalWorkspaceOwner")
   budgets                Budget[]
+  savedFilterPresets     SavedFilterPreset[]
+  lastUsedFilterPresets  LastUsedFilterPreset[]
 }
 
 model Company {
@@ -234,6 +236,8 @@ model Company {
   userAppGrants       UserAppGrant[]
   personalWorkspaceOwner User?              @relation("PersonalWorkspaceOwner", fields: [personalWorkspaceOwnerId], references: [id], onDelete: SetNull)
   budgets             Budget[]
+  savedFilterPresets  SavedFilterPreset[]
+  lastUsedFilterPresets LastUsedFilterPreset[]
 }
 
 model CompanyGroup {
@@ -937,4 +941,40 @@ model UserPreference {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SavedFilterPreset {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  companyId  Int
+  featureKey String
+  name       String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  lastUsedSelections LastUsedFilterPreset[] @relation("LastUsedPresetSelection")
+
+  @@index([userId, companyId, featureKey, updatedAt])
+  @@index([companyId])
+}
+
+model LastUsedFilterPreset {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  companyId  Int
+  featureKey String
+  presetId   Int?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  preset     SavedFilterPreset? @relation("LastUsedPresetSelection", fields: [presetId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, companyId, featureKey], name: "unique_last_used_filter_preset")
+  @@index([presetId])
+  @@index([companyId])
 }

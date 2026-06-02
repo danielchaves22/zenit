@@ -16,6 +16,7 @@ import {
   Edit2,
   MinusCircle,
   Plus,
+  Receipt,
   Settings,
   Star,
   StarOff,
@@ -390,7 +391,7 @@ function AccountsPageInner() {
             <table className="w-full">
               <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                 <tr>
-                  <th className="w-24 px-4 py-3 text-center">Acoes</th>
+                  <th className="w-32 px-4 py-3 text-center">Acoes</th>
                   <th className="px-4 py-3 text-left">Conta</th>
                   <th className="px-4 py-3 text-left">Tipo</th>
                   <th className="px-4 py-3 text-left">Banco / Numero</th>
@@ -433,6 +434,16 @@ function AccountsPageInner() {
                         >
                           <Settings size={16} />
                         </button>
+                        <Link
+                          href={{
+                            pathname: '/financial/transactions',
+                            query: { accountId: account.id }
+                          }}
+                          className="p-1 text-gray-300 transition-colors hover:text-emerald-400"
+                          title="Ver transacoes da conta"
+                        >
+                          <Receipt size={16} />
+                        </Link>
                         <Link
                           href={`/financial/accounts/${account.id}`}
                           className="p-1 text-gray-300 transition-colors hover:text-[#2563eb]"

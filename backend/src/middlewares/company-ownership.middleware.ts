@@ -1,5 +1,18 @@
 import { NextFunction, Request, Response } from 'express';
 
+export function requireCompanyOwner(req: Request, res: Response, next: NextFunction) {
+  // @ts-ignore - populated by auth + tenant middlewares
+  const { isCompanyOwner } = req.user;
+
+  if (isCompanyOwner) {
+    return next();
+  }
+
+  return res.status(403).json({
+    error: 'Acesso negado: apenas o company owner pode executar esta acao.'
+  });
+}
+
 export function requireCompanyOwnerOrAdmin(req: Request, res: Response, next: NextFunction) {
   // @ts-ignore - populated by auth + tenant middlewares
   const { role, isCompanyOwner } = req.user;

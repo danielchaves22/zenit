@@ -1,13 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
-import { ArrowLeft, CreditCard, Save, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CreditCard,
+  RefreshCw,
+  Save,
+  ShieldAlert,
+  X
+} from 'lucide-react';
 import BankLogo from '@/components/financial/BankLogo';
 import BankSelect from '@/components/financial/BankSelect';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/ToastContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
 import {
   FinancialBank,
@@ -45,6 +56,34 @@ interface CreditCardFormProps {
   onCancel?: () => void;
 }
 
+type CreditCardResetPreview = {
+  card: {
+    id: number;
+    name: string;
+    currentBalance: string;
+    creditLimit: string | null;
+  };
+  preserved: {
+    cardMetadata: true;
+  };
+  deleted: {
+    transactions: number;
+    creditCardPurchases: number;
+    creditCardInvoices: number;
+    fixedTemplates: number;
+    fixedOccurrences: number;
+    invoicePayments: number;
+  };
+  balances: {
+    affectedAccounts: number;
+    cardBalanceAfterReset: '0.00';
+  };
+  safeguards: {
+    affectsOnlySelectedCard: true;
+    budgetsUnaffected: true;
+  };
+};
+
 function formatCurrency(value: string | number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -60,9 +99,16 @@ export default function CreditCardForm({
 }: CreditCardFormProps) {
   const router = useRouter();
   const { addToast } = useToast();
+  const { isCompanyOwner } = useAuth();
+  const confirmation = useConfirmation();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetPreview, setResetPreview] = useState<CreditCardResetPreview | null>(null);
+  const [resetPreviewLoading, setResetPreviewLoading] = useState(false);
+  const [resetExecuting, setResetExecuting] = useState(false);
+  const [resetConfirmationText, setResetConfirmationText] = useState('');
+  const [resetAcknowledged, setResetAcknowledged] = useState(false);
   const [banks, setBanks] = useState<FinancialBank[]>([]);
   const [existingCard, setExistingCard] = useState<CreditCardAccount | null>(null);
   const [legacyBankHint, setLegacyBankHint] = useState<string | null>(null);
@@ -132,6 +178,9 @@ export default function CreditCardForm({
       } else {
         setExistingCard(null);
         setLegacyBankHint(null);
+        setResetPreview(null);
+        setResetConfirmationText('');
+        setResetAcknowledged(false);
       }
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao carregar configuracao do cartao', 'error');
@@ -150,6 +199,68 @@ export default function CreditCardForm({
     }
 
     router.push('/financial/credit-cards');
+  }
+
+  async function loadResetPreview() {
+    if (mode !== 'edit' || !cardId) {
+      return;
+    }
+
+    setResetPreviewLoading(true);
+
+    try {
+      const response = await api.get(`/financial/credit-cards/${cardId}/reset/preview`);
+      setResetPreview(response.data);
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao carregar previa do reset do cartao', 'error');
+    } finally {
+      setResetPreviewLoading(false);
+    }
+  }
+
+  function handleExecuteReset() {
+    if (mode !== 'edit' || !cardId) {
+      return;
+    }
+
+    if (!resetPreview) {
+      addToast('Gere a previa do reset antes de continuar', 'error');
+      return;
+    }
+
+    if (!resetAcknowledged || resetConfirmationText !== 'RESETAR') {
+      addToast('Confirme a acao e digite RESETAR para continuar', 'error');
+      return;
+    }
+
+    confirmation.confirm(
+      {
+        title: 'Resetar historico do cartao',
+        message: `O historico financeiro do cartao ${resetPreview.card.name} sera apagado. Os metadados do cartao serao mantidos, mas compras, faturas, pagamentos e fixas vinculadas serao removidos. Esta acao nao pode ser desfeita pelo sistema.`,
+        confirmText: 'Resetar Cartao',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        setResetExecuting(true);
+
+        try {
+          await api.post(`/financial/credit-cards/${cardId}/reset`, {
+            confirmationText: resetConfirmationText
+          });
+
+          addToast('Historico do cartao resetado com sucesso', 'success');
+          setResetAcknowledged(false);
+          setResetConfirmationText('');
+          await Promise.all([initializeForm(), loadResetPreview()]);
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao resetar historico do cartao', 'error');
+          throw error;
+        } finally {
+          setResetExecuting(false);
+        }
+      }
+    );
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -221,6 +332,13 @@ export default function CreditCardForm({
   const selectedBankName =
     getBankDisplayName(selectedBank, legacyBankHint) || 'Banco emissor';
   const cardTheme = getCreditCardTheme(formData.cardColor);
+  const resetEnabled = mode === 'edit' && Boolean(cardId) && Boolean(isCompanyOwner);
+  const resetReady =
+    Boolean(resetPreview) &&
+    resetAcknowledged &&
+    resetConfirmationText === 'RESETAR' &&
+    !resetExecuting;
+  const actionDisabled = saving || resetExecuting;
 
   return (
     <>
@@ -230,7 +348,7 @@ export default function CreditCardForm({
             variant="outline"
             onClick={handleCancel}
             className="flex items-center gap-2"
-            disabled={saving}
+            disabled={actionDisabled}
           >
             <ArrowLeft size={16} />
             Voltar
@@ -245,7 +363,7 @@ export default function CreditCardForm({
             type="button"
             variant="outline"
             onClick={handleCancel}
-            disabled={saving}
+            disabled={actionDisabled}
             className="flex items-center gap-2"
           >
             <X size={16} />
@@ -255,7 +373,7 @@ export default function CreditCardForm({
             type="submit"
             form="credit-card-form"
             variant="accent"
-            disabled={saving}
+            disabled={actionDisabled}
             className="flex items-center gap-2"
           >
             <Save size={16} />
@@ -270,139 +388,270 @@ export default function CreditCardForm({
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_360px]">
-          <Card>
-            <form id="credit-card-form" onSubmit={handleSubmit} className="space-y-6">
-              <div className="rounded-xl border border-purple-700/50 bg-purple-950/20 p-4">
-                <div className="flex items-start gap-3">
-                  <CreditCard size={18} className="mt-0.5 text-purple-300" />
-                  <div>
-                    <div className="font-medium text-white">Configuracao do cartao</div>
-                    <div className="mt-1 text-sm text-gray-300">
-                      O cartao usa limite, fechamento e vencimento para gerar as faturas.
-                      O pagamento da fatura continua sendo feito na area de Cartoes e Faturas.
+          <div className="space-y-6">
+            <Card>
+              <form id="credit-card-form" onSubmit={handleSubmit} className="space-y-6">
+                <div className="rounded-xl border border-purple-700/50 bg-purple-950/20 p-4">
+                  <div className="flex items-start gap-3">
+                    <CreditCard size={18} className="mt-0.5 text-purple-300" />
+                    <div>
+                      <div className="font-medium text-white">Configuracao do cartao</div>
+                      <div className="mt-1 text-sm text-gray-300">
+                        O cartao usa limite, fechamento e vencimento para gerar as faturas.
+                        O pagamento da fatura continua sendo feito na area de Cartoes e Faturas.
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <Input
-                  label="Nome do cartao"
-                  value={formData.name}
-                  onChange={(event) => setFormData({ ...formData, name: event.target.value })}
-                  required
-                  disabled={saving}
-                  placeholder="Ex: Cartao Empresa Visa"
-                />
-                <BankSelect
-                  label="Banco emissor"
-                  banks={banks}
-                  value={formData.bankId}
-                  onChange={(bankId) => {
-                    setLegacyBankHint(null);
-                    setFormData((previous) => ({ ...previous, bankId }));
-                  }}
-                  disabled={saving}
-                  placeholder={banks.length === 0 ? 'Nenhum banco cadastrado' : 'Selecione um banco'}
-                />
-              </div>
-
-              {legacyBankHint && !selectedBank && (
-                <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
-                  O cartao estava vinculado ao banco legado "{legacyBankHint}". Selecione um banco
-                  do catalogo para atualizar esse vinculo.
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <Input
-                  label="Numero do cartao (opcional)"
-                  value={formData.accountNumber}
-                  onChange={(event) =>
-                    setFormData({ ...formData, accountNumber: event.target.value })
-                  }
-                  disabled={saving}
-                  placeholder="Ex: final 1234"
-                />
-                <CurrencyInput
-                  label="Limite do cartao *"
-                  value={formData.creditLimit}
-                  onChange={(value) => setFormData({ ...formData, creditLimit: value })}
-                  disabled={saving}
-                />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <Input
-                    label="Fechamento *"
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={formData.statementClosingDay}
-                    onChange={(event) =>
-                      setFormData({ ...formData, statementClosingDay: event.target.value })
-                    }
-                    disabled={saving}
+                    label="Nome do cartao"
+                    value={formData.name}
+                    onChange={(event) => setFormData({ ...formData, name: event.target.value })}
+                    required
+                    disabled={actionDisabled}
+                    placeholder="Ex: Cartao Empresa Visa"
                   />
-                  <Input
-                    label="Vencimento *"
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={formData.statementDueDay}
-                    onChange={(event) =>
-                      setFormData({ ...formData, statementDueDay: event.target.value })
-                    }
-                    disabled={saving}
+                  <BankSelect
+                    label="Banco emissor"
+                    banks={banks}
+                    value={formData.bankId}
+                    onChange={(bankId) => {
+                      setLegacyBankHint(null);
+                      setFormData((previous) => ({ ...previous, bankId }));
+                    }}
+                    disabled={actionDisabled}
+                    placeholder={banks.length === 0 ? 'Nenhum banco cadastrado' : 'Selecione um banco'}
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Cor do cartao</label>
+                {legacyBankHint && !selectedBank && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+                    O cartao estava vinculado ao banco legado "{legacyBankHint}". Selecione um banco
+                    do catalogo para atualizar esse vinculo.
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <Input
+                    label="Numero do cartao (opcional)"
+                    value={formData.accountNumber}
+                    onChange={(event) =>
+                      setFormData({ ...formData, accountNumber: event.target.value })
+                    }
+                    disabled={actionDisabled}
+                    placeholder="Ex: final 1234"
+                  />
+                  <CurrencyInput
+                    label="Limite do cartao *"
+                    value={formData.creditLimit}
+                    onChange={(value) => setFormData({ ...formData, creditLimit: value })}
+                    disabled={actionDisabled}
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <Input
+                      label="Fechamento *"
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={formData.statementClosingDay}
+                      onChange={(event) =>
+                        setFormData({ ...formData, statementClosingDay: event.target.value })
+                      }
+                      disabled={actionDisabled}
+                    />
+                    <Input
+                      label="Vencimento *"
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={formData.statementDueDay}
+                      onChange={(event) =>
+                        setFormData({ ...formData, statementDueDay: event.target.value })
+                      }
+                      disabled={actionDisabled}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300">Cor do cartao</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={formData.cardColor}
+                      onChange={(event) =>
+                        setFormData({
+                          ...formData,
+                          cardColor: normalizeHexColor(event.target.value)
+                        })
+                      }
+                      className="h-10 w-12 cursor-pointer rounded border border-gray-700"
+                      disabled={actionDisabled}
+                    />
+                    <Input
+                      value={formData.cardColor}
+                      onChange={(event) =>
+                        setFormData({
+                          ...formData,
+                          cardColor: event.target.value.toUpperCase()
+                        })
+                      }
+                      placeholder="#1D4ED8"
+                      className="mb-0 flex-1"
+                      disabled={actionDisabled}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2">
                   <input
-                    type="color"
-                    value={formData.cardColor}
+                    id="credit-card-is-active"
+                    type="checkbox"
+                    checked={formData.isActive}
                     onChange={(event) =>
-                      setFormData({
-                        ...formData,
-                        cardColor: normalizeHexColor(event.target.value)
-                      })
+                      setFormData({ ...formData, isActive: event.target.checked })
                     }
-                    className="h-10 w-12 cursor-pointer rounded border border-gray-700"
-                    disabled={saving}
+                    className="h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-accent focus:ring-accent"
+                    disabled={actionDisabled}
                   />
-                  <Input
-                    value={formData.cardColor}
-                    onChange={(event) =>
-                      setFormData({
-                        ...formData,
-                        cardColor: event.target.value.toUpperCase()
-                      })
-                    }
-                    placeholder="#1D4ED8"
-                    className="mb-0 flex-1"
-                    disabled={saving}
-                  />
+                  <label htmlFor="credit-card-is-active" className="text-sm text-gray-300">
+                    Cartao ativo
+                  </label>
                 </div>
-              </div>
+              </form>
+            </Card>
 
-              <div className="flex items-center gap-2">
-                <input
-                  id="credit-card-is-active"
-                  type="checkbox"
-                  checked={formData.isActive}
-                  onChange={(event) =>
-                    setFormData({ ...formData, isActive: event.target.checked })
-                  }
-                  className="h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-accent focus:ring-accent"
-                  disabled={saving}
-                />
-                <label htmlFor="credit-card-is-active" className="text-sm text-gray-300">
-                  Cartao ativo
-                </label>
-              </div>
-            </form>
-          </Card>
+            {resetEnabled && (
+              <Card className="border border-red-800/60">
+                <div className="space-y-5 p-6">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg border border-red-700/60 bg-red-900/25 p-2">
+                      <ShieldAlert size={20} className="text-red-300" />
+                    </div>
+                    <div>
+                      <div className="text-lg font-semibold text-white">
+                        Resetar historico deste cartao
+                      </div>
+                      <div className="mt-1 text-sm text-gray-400">
+                        Mantem apenas os dados do cartao. Compras, faturas, pagamentos,
+                        fixas vinculadas e ocorrencias materializadas deste cartao serao removidos.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-red-700/40 bg-red-900/10 p-4 text-sm text-red-100">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={18} className="mt-0.5 text-red-300" />
+                      <div>
+                        <div className="font-medium">Acao irreversivel pelo sistema</div>
+                        <div className="text-red-100/80">
+                          O saldo do cartao volta para zero sem gerar transacao de ajuste. As contas
+                          usadas para pagar faturas deste cartao terao o impacto revertido.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => void loadResetPreview()}
+                      disabled={resetPreviewLoading || actionDisabled}
+                      className="flex items-center gap-2"
+                    >
+                      <RefreshCw size={16} />
+                      {resetPreviewLoading ? 'Carregando previa...' : 'Gerar Previa do Reset'}
+                    </Button>
+                  </div>
+
+                  {resetPreview && (
+                    <>
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
+                          <div className="text-xs uppercase tracking-wide text-gray-400">
+                            Cartao
+                          </div>
+                          <div className="mt-2 space-y-1 text-sm text-white">
+                            <div>{resetPreview.card.name}</div>
+                            <div>Saldo atual: {formatCurrency(resetPreview.card.currentBalance)}</div>
+                            <div>
+                              Limite:{' '}
+                              {resetPreview.card.creditLimit
+                                ? formatCurrency(resetPreview.card.creditLimit)
+                                : 'Nao informado'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
+                          <div className="text-xs uppercase tracking-wide text-gray-400">
+                            Historico Removido
+                          </div>
+                          <div className="mt-2 space-y-1 text-sm text-white">
+                            <div>{resetPreview.deleted.transactions} transacoes</div>
+                            <div>{resetPreview.deleted.creditCardPurchases} compras</div>
+                            <div>{resetPreview.deleted.creditCardInvoices} faturas</div>
+                            <div>{resetPreview.deleted.invoicePayments} pagamentos</div>
+                          </div>
+                        </div>
+
+                        <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
+                          <div className="text-xs uppercase tracking-wide text-gray-400">
+                            Fixas e Saldos
+                          </div>
+                          <div className="mt-2 space-y-1 text-sm text-white">
+                            <div>{resetPreview.deleted.fixedTemplates} fixas vinculadas</div>
+                            <div>{resetPreview.deleted.fixedOccurrences} ocorrencias</div>
+                            <div>{resetPreview.balances.affectedAccounts} contas ajustadas</div>
+                            <div>Saldo final do cartao: R$ 0,00</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-gray-700 bg-[#161a20] p-4">
+                        <label className="flex items-start gap-3 text-sm text-gray-200">
+                          <input
+                            type="checkbox"
+                            checked={resetAcknowledged}
+                            onChange={(event) => setResetAcknowledged(event.target.checked)}
+                            disabled={resetExecuting}
+                            className="mt-0.5 h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-red-500 focus:ring-red-500"
+                          />
+                          <span>
+                            Entendo que este reset afeta apenas o cartao atual e nao pode ser
+                            desfeito pelo sistema.
+                          </span>
+                        </label>
+
+                        <div className="mt-4 max-w-sm">
+                          <Input
+                            label='Digite "RESETAR" para confirmar'
+                            value={resetConfirmationText}
+                            onChange={(event) => setResetConfirmationText(event.target.value)}
+                            disabled={resetExecuting}
+                          />
+                        </div>
+
+                        <div className="flex justify-end">
+                          <Button
+                            variant="danger"
+                            onClick={handleExecuteReset}
+                            disabled={!resetReady}
+                            className="flex items-center gap-2"
+                          >
+                            <AlertTriangle size={16} />
+                            {resetExecuting ? 'Resetando...' : 'Executar Reset do Cartao'}
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </Card>
+            )}
+          </div>
 
           <Card>
             <div className="space-y-4">
@@ -506,6 +755,18 @@ export default function CreditCardForm({
           </Card>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={confirmation.handleClose}
+        onConfirm={confirmation.handleConfirm}
+        title={confirmation.options.title}
+        message={confirmation.options.message}
+        confirmText={confirmation.options.confirmText}
+        cancelText={confirmation.options.cancelText}
+        type={confirmation.options.type}
+        loading={confirmation.loading}
+      />
     </>
   );
 }

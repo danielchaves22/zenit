@@ -4,7 +4,10 @@ import {
   requireExistingTransactionAccountAccess,
   requireTransactionAccountAccess
 } from '../middlewares/financial-access.middleware';
-import { requireCompanyOwnerOrAdmin } from '../middlewares/company-ownership.middleware';
+import {
+  requireCompanyOwner,
+  requireCompanyOwnerOrAdmin
+} from '../middlewares/company-ownership.middleware';
 import { requireFeaturePermission } from '../middlewares/feature-permission.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import {
@@ -74,6 +77,10 @@ import {
   getTransactionAutocomplete
 } from '../controllers/financial-transaction.controller';
 import {
+  executeCreditCardReset,
+  previewCreditCardReset
+} from '../controllers/credit-card-reset.controller';
+import {
   executeFinancialReset,
   previewFinancialReset
 } from '../controllers/financial-reset.controller';
@@ -112,6 +119,8 @@ router.post('/accounts/:id/set-default', requireAccountAccess(), setDefaultAccou
 router.delete('/accounts/:id/set-default', requireAccountAccess(), unsetDefaultAccount);
 
 router.get('/credit-cards', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listCreditCards);
+router.get('/credit-cards/:accountId/reset/preview', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireCompanyOwner, previewCreditCardReset);
+router.post('/credit-cards/:accountId/reset', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireCompanyOwner, validate(executeFinancialResetSchema), executeCreditCardReset);
 router.get('/credit-card-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(listCreditCardPurchasesSchema), getCreditCardPurchases);
 router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
 router.get('/credit-cards/:accountId/invoices/projected/:projectionKey', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(getProjectedCreditCardInvoiceSchema), getProjectedCreditCardInvoice);

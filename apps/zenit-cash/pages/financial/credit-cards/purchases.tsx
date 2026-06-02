@@ -15,6 +15,7 @@ import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { MultiSelect } from '@/components/ui/MultiSelect';
 import { useToast } from '@/components/ui/ToastContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -687,28 +688,32 @@ function CreditCardPurchasesPageInner() {
                                     )}
                                   </td>
                                   <td className="px-4 py-4 text-right">
-                                    <div className="flex flex-col items-end gap-2">
+                                    <div className="flex items-center justify-end gap-1">
                                       <Link href={`/financial/transactions/${purchase.representativeTransactionId}`}>
-                                        <Button variant="outline" className="inline-flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          className="p-1 text-gray-300 transition-colors hover:text-accent"
+                                          title="Abrir compra"
+                                          aria-label="Abrir compra"
+                                        >
                                           <ExternalLink size={14} />
-                                          Abrir compra
-                                        </Button>
+                                        </button>
                                       </Link>
                                       {isCompanyOwner && (
-                                        <Button
+                                        <button
                                           type="button"
-                                          variant="danger"
                                           onClick={() => handleDeletePurchase(purchase)}
                                           disabled={isDeletingPurchase}
-                                          className="inline-flex items-center gap-2"
+                                          className="p-1 text-gray-300 transition-colors hover:text-red-400 disabled:cursor-not-allowed disabled:text-gray-600"
+                                          title={isDeletingPurchase ? 'Excluindo compra' : 'Excluir compra'}
+                                          aria-label={isDeletingPurchase ? 'Excluindo compra' : 'Excluir compra'}
                                         >
                                           {isDeletingPurchase ? (
                                             <Loader2 size={14} className="animate-spin" />
                                           ) : (
                                             <Trash2 size={14} />
                                           )}
-                                          {isDeletingPurchase ? 'Excluindo...' : 'Excluir compra'}
-                                        </Button>
+                                        </button>
                                       )}
                                     </div>
                                   </td>
@@ -821,6 +826,18 @@ function CreditCardPurchasesPageInner() {
           </div>
         </>
       )}
+
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={confirmation.handleClose}
+        onConfirm={confirmation.handleConfirm}
+        title={confirmation.options.title}
+        message={confirmation.options.message}
+        confirmText={confirmation.options.confirmText}
+        cancelText={confirmation.options.cancelText}
+        type={confirmation.options.type}
+        loading={confirmation.loading}
+      />
     </DashboardLayout>
   );
 }

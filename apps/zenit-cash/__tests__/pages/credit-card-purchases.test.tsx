@@ -54,6 +54,10 @@ vi.mock('@/components/ui/Card', () => ({
   Card: ({ children }: { children: ReactNode }) => <div>{children}</div>
 }))
 
+vi.mock('@/components/ui/ConfirmationModal', () => ({
+  ConfirmationModal: () => <div data-testid="confirmation-modal" />
+}))
+
 vi.mock('@/components/ui/MultiSelect', () => ({
   MultiSelect: ({ label }: { label: string }) => <div>{label}</div>
 }))
@@ -194,6 +198,7 @@ describe('CreditCardPurchasesPage', () => {
     render(<CreditCardPurchasesPage />)
 
     expect(await screen.findByText('Notebook Parcelado')).toBeInTheDocument()
+    expect(screen.getByTestId('confirmation-modal')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Excluir compra' })).toBeInTheDocument()
   })
 

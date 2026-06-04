@@ -1,44 +1,73 @@
-# Zenit Docs
+---
+title: Zenit documentation overview
+slug: /docs
+type: overview
+audience: dev
+visibility: internal
+status: active
+owner: engineering
+last_reviewed: 2026-06-04
+summary: Indice editoral do acervo canonicamente mantido em docs/.
+tags:
+  - documentation
+  - governance
+related:
+  - /docs/internal/decisions/docs-governance-overview
+  - /docs/internal/decisions/docs-information-architecture
+---
 
-Esta pasta guarda documentacao de referencia do monorepo.
+# Zenit documentation overview
 
-Regra pratica:
+## Objetivo
 
-- `docs/` nao deve virar deposito de notas soltas;
-- a raiz deve ter apenas este indice e subpastas por dominio;
-- especificacoes funcionais, guias operacionais e decisoes tecnicas duraveis ficam aqui;
-- planos taticos de sprint, cards de implementacao e material ja vencido nao devem permanecer como base de conhecimento.
+Centralizar a documentacao canonica do monorepo em `docs/`, com estrutura estavel, frontmatter padronizado e publicacao renderizada no portal `/docs`.
 
-## Estrutura Atual
+## Escopo
 
-### Cash
+Esta pasta deve conter apenas documentacao duravel e referenciavel.
 
-- [Mobile / Budget Reactivation MVP](cash/mobile/budget-reactivation-mvp.md)
-  Especificacao tecnica da reativacao do app mobile de orcamento, com offline-first, sync Zenit e integracao controlada com o core financeiro.
+Entram aqui:
 
-- [Fixed Transactions / Functional Spec](cash/fixed-transactions/functional-spec.md)
-  Referencia funcional das transacoes fixas mensais, incluindo materializacao e comportamento em relatorios.
+- especificacoes funcionais;
+- especificacoes tecnicas;
+- notas de arquitetura;
+- guias de setup, operacao e testes;
+- exemplos de fluxo;
+- RFCs e decision records internos;
+- material legado que ainda precise ser consultado.
 
-- [UI / Add Theme Colors](cash/ui/add-theme-colors.md)
-  Guia de manutencao do catalogo de temas do `apps/zenit-cash`.
+Nao entram aqui:
 
-### Calc
+- notas soltas de conversa;
+- checklist de sprint;
+- cards de implementacao;
+- rascunhos sem owner;
+- planos taticos que ainda nao viraram referencia duravel.
 
-- [Initial Calculation / Functional Spec](calc/initial-calculation/functional-spec.md)
-  Especificacao funcional e tecnica do calculo inicial do Zenit Calc.
+## Estrutura
 
-### Integrations
+- `help/`: ajuda e onboarding para usuarios finais.
+- `products/`: documentacao funcional por produto.
+- `architecture/`: arquitetura, integracoes e fluxos tecnicos.
+- `operations/`: setup, operacao, testes e troubleshooting.
+- `integrations/`: integracoes externas.
+- `internal/`: RFCs, decision records e normas editoriais.
+- `legacy/`: historico e material legado.
 
-- [Gmail / OAuth Setup](integrations/gmail/oauth-setup.md)
-  Passo a passo operacional para configurar OAuth Gmail no ecossistema Zenit.
+## Regras editoriais
 
-## Decisoes de Saneamento
+- `docs/` e a fonte de verdade.
+- O portal renderiza os Markdown; ele nao e uma segunda fonte.
+- Cada doc precisa de frontmatter valido.
+- Cada doc precisa de `owner`, `status`, `visibility` e `last_reviewed`.
+- `README.md` local fica restrito a contexto curto e execucao.
+- `plans/` fica fora do portal.
 
-- `despesas-fixas-cards.md` foi removido.
-  O arquivo era um plano de execucao por cards para uma implementacao que ja foi absorvida pelo codigo, testes e rotas atuais. Mantinha baixo valor como referencia futura e aumentava ruido na pasta.
+## Leitura recomendada
 
-## Convencoes Recomendadas
-
-- nomear docs por dominio e assunto, nao por momento da conversa;
-- preferir `functional-spec`, `technical-spec`, `setup-guide` e nomes equivalentes;
-- quando um doc deixar de ser referencia e virar apenas historico, remover ou mover para um arquivo de decisao ou registro mais apropriado.
+- [Docs governance overview](internal/decisions/docs-governance-overview.md)
+- [Docs style guide](internal/decisions/docs-style-guide.md)
+- [Docs frontmatter schema](internal/decisions/docs-frontmatter-schema.md)
+- [Docs templates guide](internal/decisions/docs-templates-guide.md)
+- [Docs information architecture](internal/decisions/docs-information-architecture.md)
+- [Docs migration map](internal/decisions/docs-migration-map.md)

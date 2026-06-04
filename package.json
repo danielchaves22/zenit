@@ -14,6 +14,12 @@
     "build:zenit-cash": "npm --workspace apps/zenit-cash run build",
     "build:zenit-cash-mobile": "npm --workspace apps/zenit-cash-mobile run typecheck",
     "build:zenit-calc": "npm --workspace apps/zenit-calc run build",
-    "build:zenit-admin": "npm --workspace apps/zenit-admin run build"
+    "build:zenit-admin": "npm --workspace apps/zenit-admin run build",
+    "build:docs:public": "node ./scripts/generate-docs-site.mjs public",
+    "build:docs:internal": "node ./scripts/generate-docs-site.mjs internal",
+    "build:docs": "npm run build:docs:public && npm run build:docs:internal"
+  },
+  "devDependencies": {
+    "marked": "^18.0.5"
   }
 }

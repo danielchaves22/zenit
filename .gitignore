@@ -28,6 +28,10 @@ build/
 .next/
 out/
 
+# Builds gerados do portal de documentacao
+sites/zenitapp-public/docs/
+sites/zenitapp-internal/
+
 # Configurações de IDE/Editor
 .vscode/
 .idea/

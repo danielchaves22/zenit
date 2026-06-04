@@ -2,6 +2,12 @@
 
 App Flutter `local-first` do ecossistema Zenit para controle de orcamento diario pessoal.
 
+## Documentacao canonica
+
+- visao geral: [`docs/legacy/orcamento-mobile/orcamento-mobile-overview.md`](../docs/legacy/orcamento-mobile/orcamento-mobile-overview.md)
+- nota de reativacao: [`docs/legacy/orcamento-mobile/orcamento-mobile-reactivation-legacy-note.md`](../docs/legacy/orcamento-mobile/orcamento-mobile-reactivation-legacy-note.md)
+- RFC historica: [`docs/internal/rfc/orcamento-mobile-reactivation-rfc.md`](../docs/internal/rfc/orcamento-mobile-reactivation-rfc.md)
+
 O objetivo deste app e ser rapido, simples e util mesmo sem login. O usuario pode abrir, criar um orcamento e usar normalmente offline. Quando quiser backup e sincronizacao, entra com a conta Zenit e o app passa a sincronizar com uma workspace pessoal invisivel dentro do Cash.
 
 ## Proposta do Produto
@@ -187,7 +193,7 @@ O arquivo `test/widget_test.dart` foi reduzido a um placeholder. O ideal agora e
 
 Este app conversa com o dominio backend descrito em:
 
-- `../docs/cash/mobile/budget-reactivation-mvp.md`
+- `../docs/legacy/orcamento-mobile/orcamento-mobile-reactivation-legacy-note.md`
 
 Hoje o contrato esperado inclui:
 

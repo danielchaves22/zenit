@@ -2,6 +2,14 @@
 
 App mobile novo do ecossistema Zenit para `insight + acao`, implementado em `Expo + React Native + TypeScript`.
 
+## Documentacao canonica
+
+- visao de produto: [`docs/products/zenit-cash-mobile/zenit-cash-mobile-product-overview.md`](../../docs/products/zenit-cash-mobile/zenit-cash-mobile-product-overview.md)
+- escopo funcional: [`docs/products/zenit-cash-mobile/zenit-cash-mobile-functional-scope.md`](../../docs/products/zenit-cash-mobile/zenit-cash-mobile-functional-scope.md)
+- stack tecnica: [`docs/architecture/mobile/zenit-cash-mobile-technical-spec.md`](../../docs/architecture/mobile/zenit-cash-mobile-technical-spec.md)
+- assistente e orquestracao: [`docs/architecture/assistant/assistant-runtime-architecture-note.md`](../../docs/architecture/assistant/assistant-runtime-architecture-note.md)
+- setup do app: [`docs/operations/mobile/zenit-cash-mobile-setup-guide.md`](../../docs/operations/mobile/zenit-cash-mobile-setup-guide.md)
+
 Esta V1 entrega apenas a vertical slice do `Operador`:
 
 - autenticacao real;

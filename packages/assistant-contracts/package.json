@@ -2,8 +2,18 @@
   "name": "@zenit/assistant-contracts",
   "version": "1.0.0",
   "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{ recursive: true, force: true })\" && node ../../node_modules/typescript/bin/tsc --project tsconfig.json"
+  },
   "dependencies": {
     "zod": "^3.24.3"
   }

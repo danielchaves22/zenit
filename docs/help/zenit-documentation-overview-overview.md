@@ -41,3 +41,4 @@ O portal `/docs` reune conteudo sobre produtos, operacao, arquitetura e integrac
 ## Links relacionados
 
 - [Zenit documentation overview](../README.md)
+- [Ajuda do Zenit Cash](zenit-cash/zenit-cash-help-overview.md)

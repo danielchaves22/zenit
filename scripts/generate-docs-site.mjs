@@ -68,6 +68,25 @@ function walkMarkdownFiles(dirPath) {
   return files;
 }
 
+function walkAssetFiles(dirPath) {
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const absolutePath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...walkAssetFiles(absolutePath));
+      continue;
+    }
+
+    if (entry.isFile() && !entry.name.endsWith(".md")) {
+      files.push(absolutePath);
+    }
+  }
+
+  return files;
+}
+
 function parseFrontmatter(fileContent, sourcePath) {
   if (!fileContent.startsWith("---\n")) {
     return null;
@@ -575,6 +594,15 @@ code, pre { font-family: "Cascadia Code", "Consolas", monospace; }
 
 .doc-article pre code { background: transparent; padding: 0; }
 
+.doc-article img {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  display: block;
+  margin: 20px 0;
+  max-width: 100%;
+  box-shadow: var(--shadow);
+}
+
 .toc {
   padding: 18px;
   position: sticky;
@@ -653,6 +681,7 @@ code, pre { font-family: "Cascadia Code", "Consolas", monospace; }
 }
 
 const sourceFiles = walkMarkdownFiles(docsRoot);
+const assetFiles = walkAssetFiles(docsRoot);
 const parsedDocuments = [];
 
 for (const sourcePath of sourceFiles) {
@@ -683,6 +712,13 @@ const sections = buildSectionMap(parsedDocuments);
 fs.rmSync(config.outputRoot, { recursive: true, force: true });
 ensureDir(config.outputRoot);
 writeDocsCss(config.outputRoot);
+
+for (const assetPath of assetFiles) {
+  const relativePath = path.relative(docsRoot, assetPath);
+  const outputPath = path.join(config.outputRoot, relativePath);
+  ensureDir(path.dirname(outputPath));
+  fs.copyFileSync(assetPath, outputPath);
+}
 
 for (const document of parsedDocuments) {
   const renderer = createRenderer(documentsBySource, document);

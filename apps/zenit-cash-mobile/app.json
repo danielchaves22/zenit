@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Zenit Cash Mobile",
+    "slug": "zenit-cash-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "zenitcashmobile",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "config": {
+        "usesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.equinox.zenitcashmobile"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true,
+          "faceIDPermission": "Permita que o Zenit Cash Mobile acesse sua biometria."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

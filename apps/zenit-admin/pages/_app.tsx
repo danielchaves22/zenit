@@ -1,6 +1,7 @@
 // frontend/pages/_app.tsx - COM THEME PROVIDER
 import '@/styles/globals.css'
 import { AppProps } from 'next/app'
+import Head from 'next/head'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { ThemeProvider } from '@/contexts/ThemeContext' // ✅ NOVO IMPORT
 import { ToastProvider } from '@/components/ui/ToastContext'
@@ -22,6 +23,15 @@ function AppContent({ Component, pageProps }: AppProps) {
 export default function App(props: AppProps) {
   return (
     <ThemeProvider> {/* ✅ WRAPPER PRINCIPAL PARA TEMAS */}
+      <Head>
+        <title>Zenit Admin</title>
+        <meta name="application-name" content="Zenit Admin" />
+        <meta
+          name="description"
+          content="Zenit Admin, plataforma de administracao."
+        />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+      </Head>
       <AuthProvider>
         <ToastProvider>
           <PageTransition />

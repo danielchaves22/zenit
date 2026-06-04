@@ -23,6 +23,7 @@ import adminBankRoutes from './routes/admin-bank.routes';
 import appAccessRoutes from './routes/app-access.routes';
 import cashBootstrapRoutes from './routes/cash-bootstrap.routes';
 import cashRoutes from './routes/cash.routes';
+import assistantRoutes from './routes/assistant.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
@@ -208,6 +209,7 @@ app.use('/api/admin/companies', createRateLimitMiddleware('api'), adminCompanyOp
 app.use('/api/admin/banks', createRateLimitMiddleware('api'), adminBankRoutes);
 app.use('/api/app-access', createRateLimitMiddleware('api'), appAccessRoutes);
 app.use('/api/cash', createRateLimitMiddleware('financial'), cashRoutes);
+app.use('/api/assistant', createRateLimitMiddleware('financial'), assistantRoutes);
 // Financial routes with cache for read operations
 app.use('/api/financial/summary', createRateLimitMiddleware('financial'), cacheMiddleware(600)); // 10min cache
 app.use('/api/financial/accounts', createRateLimitMiddleware('financial'), cacheMiddleware(300)); // 5min cache

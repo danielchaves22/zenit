@@ -12,6 +12,7 @@
     "verify": "npm run test:backend && npm run test:zenit-cash",
     "build:backend": "npm --workspace backend run build",
     "build:zenit-cash": "npm --workspace apps/zenit-cash run build",
+    "build:zenit-cash-mobile": "npm --workspace apps/zenit-cash-mobile run typecheck",
     "build:zenit-calc": "npm --workspace apps/zenit-calc run build",
     "build:zenit-admin": "npm --workspace apps/zenit-admin run build"
   }

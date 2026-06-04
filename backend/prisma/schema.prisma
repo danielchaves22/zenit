@@ -180,6 +180,40 @@ enum BudgetEntryAllocationMode {
   EXTRA
 }
 
+enum AssistantMode {
+  OPERATOR
+  SPECIALIST
+}
+
+enum AssistantSessionStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum AssistantTurnStatus {
+  STARTED
+  COMPLETED
+  FAILED
+}
+
+enum AssistantMessageRole {
+  USER
+  ASSISTANT
+  TOOL
+}
+
+enum AssistantPendingActionType {
+  CREATE_TRANSACTION_DRAFT
+}
+
+enum AssistantPendingActionStatus {
+  PENDING
+  CONFIRMED
+  CANCELED
+  FAILED
+  EXPIRED
+}
+
 model User {
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
@@ -203,6 +237,11 @@ model User {
   budgets                Budget[]
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
+  assistantSessions      AssistantSession[]
+  assistantTurns         AssistantTurn[]
+  assistantMessages      AssistantMessage[]
+  assistantPendingActions AssistantPendingAction[]
+  assistantToolTraces    AssistantToolTrace[]
 }
 
 model Company {
@@ -238,6 +277,11 @@ model Company {
   budgets             Budget[]
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
+  assistantSessions   AssistantSession[]
+  assistantTurns      AssistantTurn[]
+  assistantMessages   AssistantMessage[]
+  assistantPendingActions AssistantPendingAction[]
+  assistantToolTraces AssistantToolTrace[]
 }
 
 model CompanyGroup {
@@ -433,6 +477,7 @@ model FinancialTransaction {
   recurringTransactionId  Int?
   recurringTransaction    RecurringTransaction? @relation(fields: [recurringTransactionId], references: [id])
   budgetEntry            BudgetEntry?
+  confirmedByPendingAction AssistantPendingAction? @relation("ConfirmedPendingAction")
   occurrenceKey    String?              @unique
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
@@ -859,6 +904,119 @@ model InitialCalculationLine {
 
   @@index([versionVerbaId, sortOrder])
   @@index([lineType])
+}
+
+model AssistantSession {
+  id         Int                    @id @default(autoincrement())
+  userId     Int
+  companyId  Int
+  status     AssistantSessionStatus @default(ACTIVE)
+  title      String?
+  metadata   Json?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  messages   AssistantMessage[]
+  turns      AssistantTurn[]
+  pendingActions AssistantPendingAction[]
+
+  @@index([userId, companyId, status])
+  @@index([companyId, createdAt])
+}
+
+model AssistantTurn {
+  id         Int                 @id @default(autoincrement())
+  sessionId  Int
+  userId     Int
+  companyId  Int
+  mode       AssistantMode       @default(OPERATOR)
+  status     AssistantTurnStatus @default(STARTED)
+  telemetry  Json?
+  errorMessage String?
+  createdAt  DateTime            @default(now())
+  completedAt DateTime?
+
+  session    AssistantSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  messages   AssistantMessage[]
+  pendingAction AssistantPendingAction?
+  toolTraces AssistantToolTrace[]
+
+  @@index([sessionId, createdAt])
+  @@index([companyId, status, createdAt])
+}
+
+model AssistantMessage {
+  id         Int                  @id @default(autoincrement())
+  sessionId  Int
+  turnId     Int?
+  userId     Int
+  companyId  Int
+  role       AssistantMessageRole
+  text       String
+  content    Json?
+  sequence   Int
+  createdAt  DateTime             @default(now())
+
+  session    AssistantSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn       AssistantTurn?       @relation(fields: [turnId], references: [id], onDelete: SetNull)
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, sequence], name: "unique_assistant_message_sequence")
+  @@index([sessionId, createdAt])
+  @@index([turnId])
+}
+
+model AssistantPendingAction {
+  id         Int                          @id @default(autoincrement())
+  sessionId  Int
+  turnId     Int                          @unique
+  userId     Int
+  companyId  Int
+  type       AssistantPendingActionType
+  status     AssistantPendingActionStatus @default(PENDING)
+  summary    Json
+  payload    Json
+  metadata   Json?
+  confirmedTransactionId Int?            @unique
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
+  confirmedAt DateTime?
+  canceledAt DateTime?
+
+  session    AssistantSession             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn       AssistantTurn                @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  user       User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company                      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  confirmedTransaction FinancialTransaction? @relation("ConfirmedPendingAction", fields: [confirmedTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([sessionId, status, createdAt])
+  @@index([companyId, userId, status])
+}
+
+model AssistantToolTrace {
+  id         Int       @id @default(autoincrement())
+  turnId     Int
+  userId     Int
+  companyId  Int
+  toolName   String
+  toolCallId String?
+  status     String
+  input      Json
+  output     Json?
+  errorMessage String?
+  createdAt  DateTime  @default(now())
+
+  turn       AssistantTurn @relation(fields: [turnId], references: [id], onDelete: Cascade)
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([turnId, createdAt])
+  @@index([companyId, toolName, createdAt])
 }
 
 model CompanyAiCredential {

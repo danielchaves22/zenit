@@ -17,6 +17,8 @@ declare global {
         exp?: number;
         role: Role;
         isCompanyOwner?: boolean;
+        manageFinancialAccounts?: boolean;
+        manageFinancialCategories?: boolean;
         appKey?: AppKey;
       };
     }

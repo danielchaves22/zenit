@@ -1,6 +1,15 @@
-import { AssistantMode, AssistantPendingActionType, PrismaClient, Role, TransactionStatus, TransactionType } from '@prisma/client';
+import {
+  AccountType,
+  AssistantMode,
+  AssistantPendingActionType,
+  PrismaClient,
+  Role,
+  TransactionStatus,
+  TransactionType
+} from '@prisma/client';
 import { DraftTransactionSummary, PendingAction } from '@zenit/assistant-contracts';
 import { z } from 'zod';
+import CreditCardInvoiceService from './credit-card-invoice.service';
 import FinancialAccountService from './financial-account.service';
 import PendingActionService, { DraftTransactionPayload } from './pending-action.service';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
@@ -11,25 +20,64 @@ const createTransactionDraftArgsSchema = z.object({
   description: z.string().trim().min(1).max(255),
   amount: z.coerce.number().positive(),
   type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']),
-  date: z.string().min(1),
+  date: z.string().min(1).nullable().optional(),
   dueDate: z.string().nullable().optional(),
   effectiveDate: z.string().nullable().optional(),
-  status: z.enum(['PENDING', 'COMPLETED']).optional(),
+  status: z.enum(['PENDING', 'COMPLETED']).nullable().optional(),
   notes: z.string().nullable().optional(),
   installmentCount: z.coerce.number().int().min(1).max(120).nullable().optional(),
   accountHint: z.string().nullable().optional(),
   fromAccountHint: z.string().nullable().optional(),
   toAccountHint: z.string().nullable().optional(),
-  categoryHint: z.string().nullable().optional()
+  categoryHint: z.string().nullable().optional(),
+  fromAccountId: z.coerce.number().int().positive().nullable().optional(),
+  toAccountId: z.coerce.number().int().positive().nullable().optional(),
+  categoryId: z.coerce.number().int().positive().nullable().optional()
+});
+
+const getPendingActionArgsSchema = z.object({
+  pendingActionId: z.coerce.number().int().positive().nullable().optional()
+});
+
+const updateTransactionDraftArgsSchema = z.object({
+  pendingActionId: z.coerce.number().int().positive().nullable().optional(),
+  description: z.string().trim().min(1).max(255).nullable().optional(),
+  amount: z.coerce.number().positive().nullable().optional(),
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).nullable().optional(),
+  date: z.string().min(1).nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  effectiveDate: z.string().nullable().optional(),
+  status: z.enum(['PENDING', 'COMPLETED']).nullable().optional(),
+  notes: z.string().nullable().optional(),
+  installmentCount: z.coerce.number().int().min(1).max(120).nullable().optional(),
+  accountHint: z.string().nullable().optional(),
+  fromAccountHint: z.string().nullable().optional(),
+  toAccountHint: z.string().nullable().optional(),
+  categoryHint: z.string().nullable().optional(),
+  fromAccountId: z.coerce.number().int().positive().nullable().optional(),
+  toAccountId: z.coerce.number().int().positive().nullable().optional(),
+  categoryId: z.coerce.number().int().positive().nullable().optional()
+});
+
+const searchCategoriesArgsSchema = z.object({
+  query: z.string().trim().min(1).nullable().optional(),
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).nullable().optional(),
+  limit: z.coerce.number().int().nullable().optional()
+});
+
+const searchAccountsArgsSchema = z.object({
+  query: z.string().trim().min(1).nullable().optional(),
+  type: z.enum(['CHECKING', 'SAVINGS', 'CREDIT_CARD', 'INVESTMENT', 'CASH']).nullable().optional(),
+  limit: z.coerce.number().int().nullable().optional()
 });
 
 const cancelPendingActionArgsSchema = z.object({
-  pendingActionId: z.coerce.number().int().positive()
+  pendingActionId: z.coerce.number().int().positive().nullable().optional()
 });
 
 const getRecentTransactionsArgsSchema = z.object({
   type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).nullable().optional(),
-  limit: z.coerce.number().int().min(1).max(10).nullable().optional()
+  limit: z.coerce.number().int().nullable().optional()
 });
 
 export type AssistantToolExecutionContext = {
@@ -47,6 +95,92 @@ export type ToolExecutionResult = {
 };
 
 type AccountCandidate = Awaited<ReturnType<typeof FinancialAccountService.listAccounts>>[number];
+type AccountLike = Pick<AccountCandidate, 'name' | 'bankName' | 'type'>;
+type CategoryLike = {
+  id: number;
+  name: string;
+  isDefault: boolean;
+  parent?: { id: number; name: string } | null;
+};
+
+const CATEGORY_SEMANTIC_ALIASES: Array<{
+  matchers: string[];
+  aliases: string[];
+}> = [
+  {
+    matchers: ['vestuario', 'moda', 'calcado', 'roupa'],
+    aliases: [
+      'roupa',
+      'roupas',
+      'tenis',
+      'sapato',
+      'calcado',
+      'camisa',
+      'camiseta',
+      'calca',
+      'bermuda',
+      'short',
+      'vestido',
+      'blusa',
+      'jaqueta',
+      'moletom',
+      'bolsa',
+      'acessorio'
+    ]
+  },
+  {
+    matchers: ['beleza', 'salao', 'cabeleireiro', 'barbearia'],
+    aliases: [
+      'cabeleireiro',
+      'salao',
+      'barbeiro',
+      'barba',
+      'cabelo',
+      'unha',
+      'manicure',
+      'pedicure',
+      'maquiagem',
+      'estetica'
+    ]
+  },
+  {
+    matchers: ['combustivel', 'posto'],
+    aliases: ['posto', 'gasolina', 'etanol', 'diesel', 'abastecimento', 'combustivel']
+  },
+  {
+    matchers: ['farmacia'],
+    aliases: ['farmacia', 'remedio', 'medicamento']
+  },
+  {
+    matchers: ['educacao'],
+    aliases: ['curso', 'faculdade', 'escola', 'mensalidade', 'livro']
+  },
+  {
+    matchers: ['esporte', 'academia'],
+    aliases: ['academia', 'treino', 'esporte', 'pilates', 'musculacao']
+  },
+  {
+    matchers: ['alimentacao'],
+    aliases: ['restaurante', 'lanche', 'almoco', 'jantar', 'ifood', 'mercado', 'supermercado']
+  },
+  {
+    matchers: ['lanche', 'lanches', 'sorvete', 'sorvetes', 'burger', 'hamburguer', 'hamburger'],
+    aliases: [
+      'lanche',
+      'lanches',
+      'sorvete',
+      'sorvetes',
+      'burger',
+      'hamburguer',
+      'hamburger',
+      'fast food',
+      'milkshake',
+      'acai',
+      'pastel',
+      'cafeteria'
+    ]
+  }
+];
 
 function normalizeText(value: string | null | undefined): string {
   return String(value || '')
@@ -69,6 +203,66 @@ function normalizeDateString(value: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+function getTodayDateString(timeZone = 'America/Sao_Paulo'): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const parts = formatter.formatToParts(new Date());
+  const lookup = (type: string) => parts.find((part) => part.type === type)?.value;
+  return `${lookup('year')}-${lookup('month')}-${lookup('day')}`;
+}
+
+function clampLimit(value: number | null | undefined, fallback: number, max: number): number {
+  const normalized = Number(value ?? fallback);
+  if (!Number.isFinite(normalized)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.min(max, normalized));
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+
+  if (!left.length) {
+    return right.length;
+  }
+
+  if (!right.length) {
+    return left.length;
+  }
+
+  const matrix = Array.from({ length: left.length + 1 }, () =>
+    new Array(right.length + 1).fill(0)
+  );
+
+  for (let row = 0; row <= left.length; row += 1) {
+    matrix[row][0] = row;
+  }
+
+  for (let column = 0; column <= right.length; column += 1) {
+    matrix[0][column] = column;
+  }
+
+  for (let row = 1; row <= left.length; row += 1) {
+    for (let column = 1; column <= right.length; column += 1) {
+      const cost = left[row - 1] === right[column - 1] ? 0 : 1;
+      matrix[row][column] = Math.min(
+        matrix[row - 1][column] + 1,
+        matrix[row][column - 1] + 1,
+        matrix[row - 1][column - 1] + cost
+      );
+    }
+  }
+
+  return matrix[left.length][right.length];
+}
+
 function scoreCandidate(value: string, candidate: string): number {
   if (!value || !candidate) {
     return -1;
@@ -76,6 +270,20 @@ function scoreCandidate(value: string, candidate: string): number {
 
   if (candidate === value) {
     return 100;
+  }
+
+  const valueTokens = value.split(/\s+/).filter(Boolean);
+  const candidateTokens = candidate.split(/\s+/).filter(Boolean);
+  const exactTokenOverlap = valueTokens.filter((token) => candidateTokens.includes(token)).length;
+  if (exactTokenOverlap > 0) {
+    return Math.min(95, 70 + exactTokenOverlap * 10);
+  }
+
+  const partialTokenOverlap = valueTokens.filter((token) =>
+    candidateTokens.some((candidateToken) => candidateToken.startsWith(token) || token.startsWith(candidateToken))
+  ).length;
+  if (partialTokenOverlap > 0) {
+    return Math.min(85, 55 + partialTokenOverlap * 10);
   }
 
   if (candidate.startsWith(value)) {
@@ -87,10 +295,264 @@ function scoreCandidate(value: string, candidate: string): number {
   }
 
   if (value.includes(candidate)) {
-    return 25;
+    return 45;
   }
 
-  return -1;
+  const distance = levenshteinDistance(value, candidate);
+  const maxLength = Math.max(value.length, candidate.length);
+  const similarity = maxLength === 0 ? 0 : (1 - distance / maxLength) * 100;
+
+  if (similarity >= 88) {
+    return Math.round(similarity);
+  }
+
+  const tokenBaseScore = (left: string, right: string) => {
+    if (left === right) {
+      return 100;
+    }
+
+    if (right.startsWith(left)) {
+      return 75;
+    }
+
+    if (right.includes(left) || left.includes(right)) {
+      return 50;
+    }
+
+    const tokenDistance = levenshteinDistance(left, right);
+    const tokenMaxLength = Math.max(left.length, right.length);
+    const tokenSimilarity =
+      tokenMaxLength === 0 ? 0 : (1 - tokenDistance / tokenMaxLength) * 100;
+
+    return tokenSimilarity >= 80 ? Math.round(tokenSimilarity) : -1;
+  };
+  const tokenMatches = valueTokens.filter((token) =>
+    candidateTokens.some((candidateToken) => tokenBaseScore(token, candidateToken) >= 80)
+  ).length;
+
+  if (tokenMatches > 0) {
+    return 40 + tokenMatches * 10;
+  }
+
+  return similarity >= 72 ? Math.round(similarity) : -1;
+}
+
+function hasExplicitHint(value?: string | null): boolean {
+  return Boolean(normalizeText(value));
+}
+
+function getCategorySemanticAliases(categoryName: string): string[] {
+  const normalizedName = normalizeText(categoryName);
+  const aliases = new Set<string>();
+
+  for (const group of CATEGORY_SEMANTIC_ALIASES) {
+    if (group.matchers.some((matcher) => normalizedName.includes(matcher))) {
+      for (const alias of group.aliases) {
+        aliases.add(alias);
+      }
+    }
+  }
+
+  return Array.from(aliases);
+}
+
+function scoreCategoryCandidate(category: CategoryLike, hint?: string | null): number {
+  const normalizedHint = normalizeText(hint);
+  if (!normalizedHint) {
+    return 0;
+  }
+
+  const normalizedName = normalizeText(category.name);
+  const normalizedParentName = normalizeText(category.parent?.name);
+  const directScore = scoreCandidate(normalizedHint, normalizedName);
+  const parentScore = normalizedParentName ? scoreCandidate(normalizedHint, normalizedParentName) : -1;
+  const aliasScores = getCategorySemanticAliases(category.name).map((alias) =>
+    scoreCandidate(normalizedHint, alias)
+  );
+  const parentAliasScores = category.parent
+    ? getCategorySemanticAliases(category.parent.name).map((alias) =>
+        scoreCandidate(normalizedHint, alias)
+      )
+    : [];
+  const bestAliasScore = aliasScores.reduce((best, score) => Math.max(best, score), -1);
+  const bestParentAliasScore = parentAliasScores.reduce((best, score) => Math.max(best, score), -1);
+  const bestParentSignal = Math.max(parentScore, bestParentAliasScore);
+  const baseBestScore = Math.max(directScore, bestAliasScore, bestParentSignal);
+
+  if (bestAliasScore >= 0 && directScore < 0 && bestParentSignal < 0) {
+    return Math.max(60, bestAliasScore);
+  }
+
+  let adjustedScore = baseBestScore;
+  const isSpecificSubcategory = Boolean(category.parent);
+
+  if (isSpecificSubcategory && baseBestScore >= 0) {
+    adjustedScore += 8;
+    if (bestAliasScore >= 0 || directScore >= 0) {
+      adjustedScore += 6;
+    }
+  }
+
+  return adjustedScore;
+}
+
+function inferAccountTypePreference(hint?: string | null) {
+  const normalizedHint = normalizeText(hint);
+  const availabilitySignals = [
+    'pix',
+    'dinheiro',
+    'debito',
+    'conta',
+    'conta corrente',
+    'saldo',
+    'disponibilidade',
+    'corrente'
+  ];
+  const creditSignals = [
+    'cartao',
+    'credito',
+    'fatura',
+    'visa',
+    'master',
+    'mastercard',
+    'amex',
+    'elo',
+    'parcela',
+    'parcelado',
+    'parcelada'
+  ];
+
+  return {
+    prefersAvailability: availabilitySignals.some((signal) => normalizedHint.includes(signal)),
+    prefersCreditCard: creditSignals.some((signal) => normalizedHint.includes(signal))
+  };
+}
+
+function scoreAccountCandidate(account: AccountLike, hint?: string | null): number {
+  const normalizedHint = normalizeText(hint);
+  if (!normalizedHint) {
+    return 0;
+  }
+
+  const baseScore = Math.max(
+    scoreCandidate(normalizedHint, normalizeText(account.name)),
+    scoreCandidate(normalizedHint, normalizeText(account.bankName))
+  );
+
+  if (baseScore < 0) {
+    return baseScore;
+  }
+
+  const { prefersAvailability, prefersCreditCard } = inferAccountTypePreference(normalizedHint);
+  let adjustedScore = baseScore;
+  const isAvailabilityAccount = account.type === 'CHECKING' || account.type === 'SAVINGS' || account.type === 'CASH';
+  const isCreditCard = account.type === 'CREDIT_CARD';
+
+  if (prefersAvailability) {
+    if (isAvailabilityAccount) {
+      adjustedScore += 35;
+    } else if (isCreditCard) {
+      adjustedScore -= 40;
+    }
+  }
+
+  if (prefersCreditCard) {
+    if (isCreditCard) {
+      adjustedScore += 35;
+    } else if (isAvailabilityAccount) {
+      adjustedScore -= 10;
+    }
+  }
+
+  if (normalizedHint.includes('conta') && isAvailabilityAccount) {
+    adjustedScore += 10;
+  }
+
+  if (normalizedHint.includes('cartao') && isCreditCard) {
+    adjustedScore += 10;
+  }
+
+  return adjustedScore;
+}
+
+function inferDraftStatus(
+  draftInput: Pick<
+    z.infer<typeof createTransactionDraftArgsSchema>,
+    | 'status'
+    | 'description'
+    | 'notes'
+    | 'accountHint'
+    | 'fromAccountHint'
+    | 'toAccountHint'
+    | 'dueDate'
+    | 'effectiveDate'
+  >
+): TransactionStatus {
+  const joinedContext = normalizeText(
+    [
+      draftInput.description,
+      draftInput.notes,
+      draftInput.accountHint,
+      draftInput.fromAccountHint,
+      draftInput.toAccountHint
+    ]
+      .filter(Boolean)
+      .join(' ')
+  );
+
+  const immediateSignals = [
+    'pix',
+    'debito',
+    'credito',
+    'cartao',
+    'dinheiro',
+    'gastei',
+    'paguei',
+    'recebi',
+    'transferi',
+    'pago',
+    'recebido',
+    'hoje',
+    'agora'
+  ];
+  const futureSignals = [
+    'amanha',
+    'vencimento',
+    'vence',
+    'vencer',
+    'a pagar',
+    'boleto',
+    'fatura',
+    'pendente',
+    'devo',
+    'vou pagar',
+    'a receber'
+  ];
+
+  const hasImmediateSignal = immediateSignals.some((signal) => joinedContext.includes(signal));
+  const hasFutureSignal = futureSignals.some((signal) => joinedContext.includes(signal));
+
+  if (draftInput.status === 'COMPLETED') {
+    return TransactionStatus.COMPLETED;
+  }
+
+  if (draftInput.status === 'PENDING') {
+    return hasImmediateSignal && !hasFutureSignal
+      ? TransactionStatus.COMPLETED
+      : TransactionStatus.PENDING;
+  }
+
+  if (draftInput.effectiveDate) {
+    return TransactionStatus.COMPLETED;
+  }
+
+  if (draftInput.dueDate && !draftInput.effectiveDate && hasFutureSignal) {
+    return TransactionStatus.PENDING;
+  }
+
+  return hasFutureSignal && !hasImmediateSignal
+    ? TransactionStatus.PENDING
+    : TransactionStatus.COMPLETED;
 }
 
 function chooseBestAccountMatch(accounts: AccountCandidate[], hint?: string | null) {
@@ -101,21 +563,19 @@ function chooseBestAccountMatch(accounts: AccountCandidate[], hint?: string | nu
 
   const ranked = accounts
     .map((account) => {
-      const nameScore = scoreCandidate(normalizedHint, normalizeText(account.name));
-      const bankScore = scoreCandidate(normalizedHint, normalizeText(account.bankName));
       return {
         account,
-        score: Math.max(nameScore, bankScore)
+        score: scoreAccountCandidate(account, normalizedHint)
       };
     })
     .filter((entry) => entry.score >= 0)
     .sort((left, right) => right.score - left.score);
 
-  return ranked[0]?.account ?? null;
+  return ranked[0] && ranked[0].score >= 60 ? ranked[0].account : null;
 }
 
 function chooseBestCategoryMatch(
-  categories: Array<{ id: number; name: string; isDefault: boolean }>,
+  categories: CategoryLike[],
   hint?: string | null
 ) {
   const normalizedHint = normalizeText(hint);
@@ -123,14 +583,30 @@ function chooseBestCategoryMatch(
     const ranked = categories
       .map((category) => ({
         category,
-        score: scoreCandidate(normalizedHint, normalizeText(category.name))
+        score: scoreCategoryCandidate(category, normalizedHint)
       }))
       .filter((entry) => entry.score >= 0)
-      .sort((left, right) => right.score - left.score);
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score;
+        }
 
-    if (ranked[0]) {
+        if (Boolean(left.category.parent) !== Boolean(right.category.parent)) {
+          return Number(Boolean(right.category.parent)) - Number(Boolean(left.category.parent));
+        }
+
+        if (left.category.isDefault !== right.category.isDefault) {
+          return Number(left.category.isDefault) - Number(right.category.isDefault);
+        }
+
+        return left.category.name.localeCompare(right.category.name);
+      });
+
+    if (ranked[0] && ranked[0].score >= 60) {
       return ranked[0].category;
     }
+
+    return null;
   }
 
   return categories.find((category) => category.isDefault) ?? categories[0] ?? null;
@@ -152,7 +628,11 @@ function pickDefaultAccount(accounts: AccountCandidate[], type: TransactionType)
   }
 
   if (type === TransactionType.EXPENSE) {
-    return activeAccounts[0] ?? null;
+    return (
+      activeAccounts.find((account) => account.type !== 'CREDIT_CARD') ??
+      activeAccounts[0] ??
+      null
+    );
   }
 
   return activeAccounts.find((account) => account.type !== 'CREDIT_CARD') ?? activeAccounts[0] ?? null;
@@ -177,6 +657,105 @@ async function getAccessibleAccounts(params: {
     isActive: true,
     accountIds
   });
+}
+
+async function getAccessibleAccountIds(params: {
+  userId: number;
+  role: Role;
+  companyId: number;
+}) {
+  return params.role === 'ADMIN' || params.role === 'SUPERUSER'
+    ? undefined
+    : UserFinancialAccountAccessService.getUserAccessibleAccounts(
+        params.userId,
+        params.role,
+        params.companyId
+      );
+}
+
+async function getSearchableCategories(params: {
+  companyId: number;
+  type?: TransactionType | null;
+}) {
+  return prisma.financialCategory.findMany({
+    where: {
+      companyId: params.companyId,
+      ...(params.type ? { type: params.type } : {})
+    },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      color: true,
+      icon: true,
+      isDefault: true,
+      parent: {
+        select: {
+          id: true,
+          name: true
+        }
+      }
+    },
+    orderBy: [{ isDefault: 'desc' }, { name: 'asc' }]
+  });
+}
+
+async function getSearchableAccounts(params: {
+  userId: number;
+  role: Role;
+  companyId: number;
+  type?: AccountType | null;
+}) {
+  const accessibleAccountIds = await getAccessibleAccountIds(params);
+  const accounts = await FinancialAccountService.listAccounts({
+    companyId: params.companyId,
+    isActive: true,
+    accountIds: accessibleAccountIds,
+    ...(params.type ? { type: params.type } : {})
+  });
+
+  const creditCardIds = accounts
+    .filter((account) => account.type === AccountType.CREDIT_CARD)
+    .map((account) => account.id);
+  const creditCards = await CreditCardInvoiceService.listCreditCards({
+    companyId: params.companyId,
+    accountIds: creditCardIds
+  });
+  const creditCardsById = new Map(creditCards.map((card) => [card.id, card]));
+
+  return accounts.map((account) => {
+    const card = creditCardsById.get(account.id);
+    return {
+      id: account.id,
+      name: account.name,
+      type: account.type,
+      bankName: account.bankName,
+      isDefault: account.isDefault,
+      allowNegativeBalance: account.allowNegativeBalance,
+      balance: Number(account.balance),
+      creditLimit: account.creditLimit ? Number(account.creditLimit) : null,
+      statementClosingDay: account.statementClosingDay,
+      statementDueDay: account.statementDueDay,
+      availableLimit:
+        card && typeof card.availableLimit === 'number' ? card.availableLimit : null,
+      usedLimit: card && typeof card.usedLimit === 'number' ? card.usedLimit : null,
+      nextInvoice: card?.nextInvoice
+        ? {
+            referenceYear: card.nextInvoice.referenceYear,
+            referenceMonth: card.nextInvoice.referenceMonth,
+            dueDate: card.nextInvoice.dueDate instanceof Date
+              ? card.nextInvoice.dueDate.toISOString()
+              : String(card.nextInvoice.dueDate),
+            totalAmount: card.nextInvoice.totalAmount,
+            displayStatus: card.nextInvoice.displayStatus
+          }
+        : null
+    };
+  });
+}
+
+function getPendingActionIdLabel(value?: number | null) {
+  return value ? String(value) : 'mais recente';
 }
 
 function buildDraftSummary(params: {
@@ -220,6 +799,16 @@ export default class ToolExecutorService {
     switch (toolName) {
       case 'create_transaction_draft':
         return this.createTransactionDraft(argumentsJson, context);
+      case 'get_pending_action':
+        return this.getPendingAction(argumentsJson, context);
+      case 'update_transaction_draft':
+        return this.updateTransactionDraft(argumentsJson, context);
+      case 'confirm_pending_action':
+        return this.confirmPendingAction(argumentsJson, context);
+      case 'search_categories':
+        return this.searchCategories(argumentsJson, context);
+      case 'search_accounts':
+        return this.searchAccounts(argumentsJson, context);
       case 'cancel_pending_action':
         return this.cancelPendingAction(argumentsJson, context);
       case 'get_recent_transactions':
@@ -229,26 +818,54 @@ export default class ToolExecutorService {
     }
   }
 
-  private static async createTransactionDraft(
-    rawArguments: Record<string, unknown>,
+  private static async resolvePendingActionRecord(
+    context: AssistantToolExecutionContext,
+    pendingActionId?: number | null
+  ) {
+    if (pendingActionId) {
+      return PendingActionService.getOwnedPendingActionOrThrow({
+        pendingActionId,
+        userId: context.userId,
+        companyId: context.companyId
+      });
+    }
+
+    const pendingAction = await prisma.assistantPendingAction.findFirst({
+      where: {
+        sessionId: context.sessionId,
+        userId: context.userId,
+        companyId: context.companyId,
+        status: 'PENDING'
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }]
+    });
+
+    if (!pendingAction) {
+      throw new Error('Nenhum rascunho pendente encontrado na sessao atual');
+    }
+
+    return pendingAction;
+  }
+
+  private static async buildDraftResolution(
+    draftInput: z.infer<typeof createTransactionDraftArgsSchema>,
     context: AssistantToolExecutionContext
-  ): Promise<ToolExecutionResult> {
-    const args = createTransactionDraftArgsSchema.parse(rawArguments);
-    const normalizedType = args.type as TransactionType;
-    const normalizedStatus = (args.status ?? 'COMPLETED') as TransactionStatus;
-    const normalizedDate = normalizeDateString(args.date);
-    const normalizedDueDate =
-      normalizedStatus === TransactionStatus.PENDING
-        ? normalizeDateString(args.dueDate ?? normalizedDate)
-        : args.dueDate
-          ? normalizeDateString(args.dueDate)
-          : null;
+  ) {
+    const normalizedType = draftInput.type as TransactionType;
+    const normalizedStatus = inferDraftStatus(draftInput);
+    const normalizedDate = normalizeDateString(draftInput.date ?? getTodayDateString());
     const normalizedEffectiveDate =
       normalizedStatus === TransactionStatus.COMPLETED
-        ? normalizeDateString(args.effectiveDate ?? normalizedDate)
-        : args.effectiveDate
-          ? normalizeDateString(args.effectiveDate)
+        ? normalizeDateString(draftInput.effectiveDate ?? normalizedDate)
+        : draftInput.effectiveDate
+          ? normalizeDateString(draftInput.effectiveDate)
           : null;
+    const normalizedDueDate = normalizeDateString(
+      draftInput.dueDate ??
+        (normalizedStatus === TransactionStatus.COMPLETED
+          ? normalizedEffectiveDate ?? normalizedDate
+          : normalizedDate)
+    );
 
     const [accounts, categories] = await Promise.all([
       getAccessibleAccounts(context),
@@ -262,21 +879,38 @@ export default class ToolExecutorService {
             select: {
               id: true,
               name: true,
-              isDefault: true
+              isDefault: true,
+              parent: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
             },
             orderBy: [{ isDefault: 'desc' }, { name: 'asc' }]
           })
     ]);
 
-    const fromHint = args.fromAccountHint ?? args.accountHint ?? null;
-    const toHint = args.toAccountHint ?? args.accountHint ?? null;
+    const fromHint = draftInput.fromAccountHint ?? draftInput.accountHint ?? null;
+    const toHint = draftInput.toAccountHint ?? draftInput.accountHint ?? null;
+    const explicitFromSelection = draftInput.fromAccountId != null || hasExplicitHint(fromHint);
+    const explicitToSelection = draftInput.toAccountId != null || hasExplicitHint(toHint);
+    const explicitCategorySelection =
+      draftInput.categoryId != null || hasExplicitHint(draftInput.categoryHint);
 
     let fromAccount: AccountCandidate | null = null;
     let toAccount: AccountCandidate | null = null;
     const missingFields: string[] = [];
 
     if (normalizedType === TransactionType.EXPENSE || normalizedType === TransactionType.TRANSFER) {
-      fromAccount = chooseBestAccountMatch(accounts, fromHint) ?? pickDefaultAccount(accounts, normalizedType);
+      if (draftInput.fromAccountId != null) {
+        fromAccount = accounts.find((account) => account.id === draftInput.fromAccountId) ?? null;
+      } else if (hasExplicitHint(fromHint)) {
+        fromAccount = chooseBestAccountMatch(accounts, fromHint);
+      } else {
+        fromAccount = pickDefaultAccount(accounts, normalizedType);
+      }
+
       if (!fromAccount) {
         missingFields.push('fromAccount');
       }
@@ -285,9 +919,17 @@ export default class ToolExecutorService {
     if (normalizedType === TransactionType.INCOME || normalizedType === TransactionType.TRANSFER) {
       const accountPool =
         normalizedType === TransactionType.TRANSFER && fromAccount
-          ? accounts.filter((account) => account.id !== fromAccount?.id)
+          ? accounts.filter((account) => account.id !== fromAccount.id)
           : accounts;
-      toAccount = chooseBestAccountMatch(accountPool, toHint) ?? pickDefaultAccount(accountPool, normalizedType);
+
+      if (draftInput.toAccountId != null) {
+        toAccount = accountPool.find((account) => account.id === draftInput.toAccountId) ?? null;
+      } else if (hasExplicitHint(toHint)) {
+        toAccount = chooseBestAccountMatch(accountPool, toHint);
+      } else {
+        toAccount = pickDefaultAccount(accountPool, normalizedType);
+      }
+
       if (!toAccount) {
         missingFields.push('toAccount');
       }
@@ -303,40 +945,36 @@ export default class ToolExecutorService {
       toAccount = null;
     }
 
-    const matchedCategory =
-      normalizedType === TransactionType.TRANSFER
-        ? null
-        : chooseBestCategoryMatch(categories, args.categoryHint ?? args.description);
+    let matchedCategory: { id: number; name: string } | null = null;
+    if (normalizedType !== TransactionType.TRANSFER) {
+      if (draftInput.categoryId != null) {
+        matchedCategory =
+          categories.find((category) => category.id === draftInput.categoryId) ?? null;
+      } else if (hasExplicitHint(draftInput.categoryHint)) {
+        matchedCategory = chooseBestCategoryMatch(categories, draftInput.categoryHint);
+      } else {
+        matchedCategory =
+          chooseBestCategoryMatch(categories, draftInput.description) ??
+          categories.find((category) => category.isDefault) ??
+          categories[0] ??
+          null;
+      }
 
-    if (normalizedType !== TransactionType.TRANSFER && !matchedCategory) {
-      missingFields.push('category');
-    }
-
-    if (missingFields.length > 0) {
-      return {
-        data: {
-          ok: false,
-          type: AssistantPendingActionType.CREATE_TRANSACTION_DRAFT,
-          missingFields,
-          resolved: {
-            fromAccount: fromAccount ? { id: fromAccount.id, name: fromAccount.name } : null,
-            toAccount: toAccount ? { id: toAccount.id, name: toAccount.name } : null,
-            category: matchedCategory
-          }
-        }
-      };
+      if (!matchedCategory) {
+        missingFields.push('category');
+      }
     }
 
     const payload: DraftTransactionPayload = {
-      description: args.description,
-      amount: args.amount,
+      description: draftInput.description,
+      amount: draftInput.amount,
       type: normalizedType,
       status: normalizedStatus,
       date: normalizedDate,
       dueDate: normalizedDueDate,
       effectiveDate: normalizedEffectiveDate,
-      notes: args.notes ?? null,
-      installmentCount: args.installmentCount ?? 1,
+      notes: draftInput.notes ?? null,
+      installmentCount: draftInput.installmentCount ?? 1,
       fromAccountId: fromAccount?.id ?? null,
       toAccountId: toAccount?.id ?? null,
       categoryId: matchedCategory?.id ?? null
@@ -356,6 +994,42 @@ export default class ToolExecutorService {
       toAccount,
       category: matchedCategory
     });
+
+    return {
+      explicitFromSelection,
+      explicitToSelection,
+      explicitCategorySelection,
+      missingFields,
+      payload,
+      summary,
+      fromAccount,
+      toAccount,
+      matchedCategory
+    };
+  }
+
+  private static async createTransactionDraft(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = createTransactionDraftArgsSchema.parse(rawArguments);
+    const { missingFields, payload, summary, fromAccount, toAccount, matchedCategory } =
+      await this.buildDraftResolution(args, context);
+
+    if (missingFields.length > 0) {
+      return {
+        data: {
+          ok: false,
+          type: AssistantPendingActionType.CREATE_TRANSACTION_DRAFT,
+          missingFields,
+          resolved: {
+            fromAccount: fromAccount ? { id: fromAccount.id, name: fromAccount.name } : null,
+            toAccount: toAccount ? { id: toAccount.id, name: toAccount.name } : null,
+            category: matchedCategory
+          }
+        }
+      };
+    }
 
     const pendingAction = await PendingActionService.createTransactionDraftAction({
       sessionId: context.sessionId,
@@ -377,13 +1051,256 @@ export default class ToolExecutorService {
     };
   }
 
+  private static async getPendingAction(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = getPendingActionArgsSchema.parse(rawArguments);
+    const pendingAction = args.pendingActionId
+      ? await PendingActionService.getPendingAction({
+          pendingActionId: args.pendingActionId,
+          userId: context.userId,
+          companyId: context.companyId
+        })
+      : await PendingActionService.getLatestPendingActionForSession({
+          sessionId: context.sessionId,
+          userId: context.userId,
+          companyId: context.companyId
+        });
+
+    return {
+      pendingAction: pendingAction ?? undefined,
+      data: {
+        ok: Boolean(pendingAction),
+        pendingAction
+      }
+    };
+  }
+
+  private static async updateTransactionDraft(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = updateTransactionDraftArgsSchema.parse(rawArguments);
+    const record = await this.resolvePendingActionRecord(context, args.pendingActionId);
+    const existingPayload = record.payload as unknown as DraftTransactionPayload;
+
+    const mergedDraft = createTransactionDraftArgsSchema.parse({
+      description: args.description ?? existingPayload.description,
+      amount: args.amount ?? existingPayload.amount,
+      type: args.type ?? existingPayload.type,
+      date: args.date ?? existingPayload.date,
+      dueDate:
+        args.dueDate !== undefined ? args.dueDate : (existingPayload.dueDate ?? null),
+      effectiveDate:
+        args.effectiveDate !== undefined
+          ? args.effectiveDate
+          : (existingPayload.effectiveDate ?? null),
+      status: args.status ?? existingPayload.status,
+      notes: args.notes !== undefined ? args.notes : (existingPayload.notes ?? null),
+      installmentCount: args.installmentCount ?? existingPayload.installmentCount ?? 1,
+      accountHint: args.accountHint ?? null,
+      fromAccountHint: args.fromAccountHint ?? null,
+      toAccountHint: args.toAccountHint ?? null,
+      categoryHint: args.categoryHint ?? null,
+      fromAccountId:
+        args.fromAccountId !== undefined
+          ? args.fromAccountId
+          : args.fromAccountHint !== undefined || args.accountHint !== undefined
+            ? null
+            : existingPayload.fromAccountId ?? null,
+      toAccountId:
+        args.toAccountId !== undefined
+          ? args.toAccountId
+          : args.toAccountHint !== undefined || args.accountHint !== undefined
+            ? null
+            : existingPayload.toAccountId ?? null,
+      categoryId:
+        args.categoryId !== undefined
+          ? args.categoryId
+          : args.categoryHint !== undefined
+            ? null
+            : existingPayload.categoryId ?? null
+    });
+
+    const { missingFields, payload, summary, fromAccount, toAccount, matchedCategory } =
+      await this.buildDraftResolution(mergedDraft, context);
+
+    if (missingFields.length > 0) {
+      const pendingAction = await PendingActionService.getPendingAction({
+        pendingActionId: record.id,
+        userId: context.userId,
+        companyId: context.companyId
+      });
+
+      return {
+        pendingAction,
+        data: {
+          ok: false,
+          type: AssistantPendingActionType.CREATE_TRANSACTION_DRAFT,
+          pendingAction,
+          missingFields,
+          requestedPendingActionId: record.id,
+          resolved: {
+            fromAccount: fromAccount ? { id: fromAccount.id, name: fromAccount.name } : null,
+            toAccount: toAccount ? { id: toAccount.id, name: toAccount.name } : null,
+            category: matchedCategory
+          }
+        }
+      };
+    }
+
+    const pendingAction = await PendingActionService.updateTransactionDraftAction({
+      pendingActionId: record.id,
+      userId: context.userId,
+      companyId: context.companyId,
+      summary,
+      payload
+    });
+
+    return {
+      pendingAction,
+      data: {
+        ok: true,
+        type: AssistantPendingActionType.CREATE_TRANSACTION_DRAFT,
+        pendingAction,
+        summary
+      }
+    };
+  }
+
+  private static async confirmPendingAction(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = getPendingActionArgsSchema.parse(rawArguments);
+    const record = await this.resolvePendingActionRecord(context, args.pendingActionId);
+    const result = await PendingActionService.confirmTransactionDraft({
+      pendingActionId: record.id,
+      userId: context.userId,
+      companyId: context.companyId,
+      role: context.role
+    });
+
+    return {
+      pendingAction: result.pendingAction,
+      data: {
+        ok: true,
+        pendingAction: result.pendingAction,
+        transaction: result.transaction
+      }
+    };
+  }
+
+  private static async searchCategories(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = searchCategoriesArgsSchema.parse(rawArguments);
+    const limit = clampLimit(args.limit, 10, 20);
+    const categories = await getSearchableCategories({
+      companyId: context.companyId,
+      type: (args.type as TransactionType | null | undefined) ?? null
+    });
+    const query = normalizeText(args.query);
+
+    const scored = categories
+      .map((category) => ({
+        category,
+        score: query ? scoreCategoryCandidate(category, query) : 0
+      }));
+
+    const positiveMatches = scored.filter((entry) => !query || entry.score >= 0);
+    const fallbackPool = positiveMatches.length > 0 ? positiveMatches : scored;
+
+    const ranked = fallbackPool
+      .sort((left, right) => {
+        if (query && right.score !== left.score) {
+          return right.score - left.score;
+        }
+
+        if (left.category.isDefault !== right.category.isDefault) {
+          return Number(right.category.isDefault) - Number(left.category.isDefault);
+        }
+
+        return left.category.name.localeCompare(right.category.name);
+      })
+      .slice(0, limit);
+
+    return {
+      data: {
+        ok: true,
+        categories: ranked.map(({ category, score }) => ({
+          id: category.id,
+          name: category.name,
+          type: category.type,
+          isDefault: category.isDefault,
+          color: category.color,
+          icon: category.icon,
+          parent: category.parent,
+          matchScore: query && score >= 0 ? score : null
+        })),
+        usedFallback: Boolean(query) && positiveMatches.length === 0
+      }
+    };
+  }
+
+  private static async searchAccounts(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = searchAccountsArgsSchema.parse(rawArguments);
+    const limit = clampLimit(args.limit, 10, 20);
+    const accounts = await getSearchableAccounts({
+      userId: context.userId,
+      role: context.role,
+      companyId: context.companyId,
+      type: (args.type as AccountType | null | undefined) ?? null
+    });
+    const query = normalizeText(args.query);
+
+    const ranked = accounts
+      .map((account) => ({
+        account,
+        score: query ? scoreAccountCandidate(account, query) : 0
+      }))
+      .filter((entry) => !query || entry.score >= 0)
+      .sort((left, right) => {
+        if (query && right.score !== left.score) {
+          return right.score - left.score;
+        }
+
+        if (left.account.isDefault !== right.account.isDefault) {
+          return Number(right.account.isDefault) - Number(left.account.isDefault);
+        }
+
+        return left.account.name.localeCompare(right.account.name);
+      })
+      .slice(0, limit);
+
+    return {
+      data: {
+        ok: true,
+        accounts: ranked.map(({ account, score }) => ({
+          ...account,
+          matchScore: query ? score : null
+        }))
+      }
+    };
+  }
+
   private static async cancelPendingAction(
     rawArguments: Record<string, unknown>,
     context: AssistantToolExecutionContext
   ): Promise<ToolExecutionResult> {
     const args = cancelPendingActionArgsSchema.parse(rawArguments);
+    const pendingActionId =
+      args.pendingActionId ??
+      (
+        await this.resolvePendingActionRecord(context, null)
+      ).id;
     const pendingAction = await PendingActionService.cancelPendingAction({
-      pendingActionId: args.pendingActionId,
+      pendingActionId,
       userId: context.userId,
       companyId: context.companyId
     });
@@ -402,14 +1319,8 @@ export default class ToolExecutorService {
     context: AssistantToolExecutionContext
   ): Promise<ToolExecutionResult> {
     const args = getRecentTransactionsArgsSchema.parse(rawArguments);
-    const accountIds =
-      context.role === 'ADMIN' || context.role === 'SUPERUSER'
-        ? undefined
-        : await UserFinancialAccountAccessService.getUserAccessibleAccounts(
-            context.userId,
-            context.role,
-            context.companyId
-          );
+    const accountIds = await getAccessibleAccountIds(context);
+    const limit = clampLimit(args.limit, 5, 10);
 
     const recentTransactions = await prisma.financialTransaction.findMany({
       where: {
@@ -438,7 +1349,7 @@ export default class ToolExecutorService {
       orderBy: {
         date: 'desc'
       },
-      take: args.limit ?? 5
+      take: limit
     });
 
     return {

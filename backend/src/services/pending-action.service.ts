@@ -104,6 +104,69 @@ export default class PendingActionService {
     return pendingAction;
   }
 
+  static async getPendingAction(params: {
+    pendingActionId: number;
+    userId: number;
+    companyId: number;
+  }): Promise<PendingAction> {
+    const pendingAction = await this.getOwnedPendingActionOrThrow(params);
+    return assistantPendingActionToContract(pendingAction);
+  }
+
+  static async getLatestPendingActionForSession(params: {
+    sessionId: number;
+    userId: number;
+    companyId: number;
+  }): Promise<PendingAction | null> {
+    const record = await prisma.assistantPendingAction.findFirst({
+      where: {
+        sessionId: params.sessionId,
+        userId: params.userId,
+        companyId: params.companyId,
+        status: AssistantPendingActionStatus.PENDING
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }]
+    });
+
+    return record ? assistantPendingActionToContract(record) : null;
+  }
+
+  static async updateTransactionDraftAction(params: {
+    pendingActionId: number;
+    userId: number;
+    companyId: number;
+    summary: DraftTransactionSummary;
+    payload: DraftTransactionPayload;
+  }): Promise<PendingAction> {
+    const pendingAction = await this.getOwnedPendingActionOrThrow({
+      pendingActionId: params.pendingActionId,
+      userId: params.userId,
+      companyId: params.companyId
+    });
+
+    if (pendingAction.type !== AssistantPendingActionType.CREATE_TRANSACTION_DRAFT) {
+      throw new Error('Tipo de acao pendente nao suportado para atualizacao');
+    }
+
+    if (pendingAction.status !== AssistantPendingActionStatus.PENDING) {
+      throw new Error('Acao pendente nao pode mais ser atualizada');
+    }
+
+    const parsedPayload = draftTransactionPayloadSchema.parse(params.payload);
+
+    const updated = await prisma.assistantPendingAction.update({
+      where: {
+        id: params.pendingActionId
+      },
+      data: {
+        summary: params.summary,
+        payload: parsedPayload
+      }
+    });
+
+    return assistantPendingActionToContract(updated);
+  }
+
   static async cancelPendingAction(params: {
     pendingActionId: number;
     userId: number;

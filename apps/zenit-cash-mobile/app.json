@@ -23,6 +23,13 @@
           "configureAndroidBackup": true,
           "faceIDPermission": "Permita que o Zenit Cash Mobile acesse sua biometria."
         }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Permita que o Zenit Cash Mobile acesse o microfone para transcrever seus lancamentos.",
+          "speechRecognitionPermission": "Permita que o Zenit Cash Mobile reconheca sua fala para preencher o chat por voz."
+        }
       ]
     ],
     "experiments": {

@@ -37,6 +37,7 @@ zenit/apps/zenit-cash-mobile
 - `TanStack Query`
 - `Zustand`
 - `expo-secure-store`
+- `expo-speech-recognition`
 - `expo-sqlite`
 - `React Hook Form + Zod`
 
@@ -85,7 +86,17 @@ zenit/apps/zenit-cash-mobile
 - Expo CLI via `npx expo`
 - Android Studio e emulador Android, ou
 - iOS Simulator em macOS, ou
-- aparelho fisico com Expo Go na mesma rede local
+- aparelho fisico na mesma rede local
+
+### Observacao sobre voz
+
+O atalho de voz do chat usa `expo-speech-recognition`, que depende de modulo nativo.
+
+Entao:
+
+- o chat por texto continua funcionando no Expo Go;
+- a entrada por voz exige `development build` ou app nativo gerado com `expo run:android` / `expo run:ios`;
+- no Expo Go, o botao de voz mostra mensagem de indisponibilidade em vez de quebrar a tela.
 
 ## Configuracao de ambiente do app
 
@@ -400,7 +411,7 @@ src/
 
 ## Limitacoes atuais da V1
 
-- sem voz;
+- voz apenas como entrada, com transcricao para texto;
 - sem push proativo;
 - sem `Especialista` funcional;
 - sem consultas analiticas abertas;

@@ -5,8 +5,8 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start --clear",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -16,8 +16,11 @@
     "@zenit/shared-users-core": "*",
     "axios": "^1.13.2",
     "expo": "~56.0.8",
+    "expo-constants": "~56.0.16",
+    "expo-linking": "~56.0.13",
     "expo-router": "~56.2.8",
-    "expo-secure-store": "~15.0.7",
+    "expo-secure-store": "~56.0.4",
+    "expo-speech-recognition": "^56.0.0",
     "expo-sqlite": "~56.0.4",
     "expo-status-bar": "~56.0.4",
     "react": "19.2.3",
@@ -26,8 +29,8 @@
     "react-native-gesture-handler": "~2.31.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
-    "zustand": "^5.0.8",
-    "zod": "^4.1.12"
+    "zod": "^4.1.12",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

@@ -13,6 +13,17 @@ export function PendingActionCard({
   onCancel
 }: PendingActionCardProps) {
   const { summary } = pendingAction;
+  const isPending = pendingAction.status === 'PENDING';
+  const statusLabel =
+    pendingAction.status === 'CONFIRMED'
+      ? 'Lancamento confirmado.'
+      : pendingAction.status === 'CANCELED'
+        ? 'Rascunho cancelado.'
+        : pendingAction.status === 'FAILED'
+          ? 'Rascunho com falha.'
+          : pendingAction.status === 'EXPIRED'
+            ? 'Rascunho expirado.'
+            : null;
 
   return (
     <View style={styles.card}>
@@ -26,14 +37,18 @@ export function PendingActionCard({
         <Text style={styles.row}>Origem: {summary.fromAccount.name}</Text>
       ) : null}
       {summary.toAccount ? <Text style={styles.row}>Destino: {summary.toAccount.name}</Text> : null}
-      <View style={styles.actions}>
-        <Pressable onPress={() => onConfirm(pendingAction.id)} style={styles.confirmButton}>
-          <Text style={styles.confirmLabel}>Confirmar</Text>
-        </Pressable>
-        <Pressable onPress={() => onCancel(pendingAction.id)} style={styles.cancelButton}>
-          <Text style={styles.cancelLabel}>Cancelar</Text>
-        </Pressable>
-      </View>
+      {isPending ? (
+        <View style={styles.actions}>
+          <Pressable onPress={() => onConfirm(pendingAction.id)} style={styles.confirmButton}>
+            <Text style={styles.confirmLabel}>Confirmar</Text>
+          </Pressable>
+          <Pressable onPress={() => onCancel(pendingAction.id)} style={styles.cancelButton}>
+            <Text style={styles.cancelLabel}>Cancelar</Text>
+          </Pressable>
+        </View>
+      ) : statusLabel ? (
+        <Text style={styles.status}>{statusLabel}</Text>
+      ) : null}
     </View>
   );
 }
@@ -84,5 +99,11 @@ const styles = StyleSheet.create({
   cancelLabel: {
     color: '#26282b',
     fontWeight: '700'
+  },
+  status: {
+    color: '#204b35',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 8
   }
 });

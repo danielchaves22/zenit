@@ -21,7 +21,7 @@ function splitMessageIntoDeltas(message: string): string[] {
 }
 
 function buildCards(pendingAction?: PendingAction): AssistantCard[] {
-  if (!pendingAction) {
+  if (!pendingAction || pendingAction.status !== 'PENDING') {
     return [];
   }
 
@@ -37,7 +37,7 @@ function buildCards(pendingAction?: PendingAction): AssistantCard[] {
 }
 
 function buildActions(pendingAction?: PendingAction): AssistantAction[] {
-  if (!pendingAction) {
+  if (!pendingAction || pendingAction.status !== 'PENDING') {
     return [];
   }
 

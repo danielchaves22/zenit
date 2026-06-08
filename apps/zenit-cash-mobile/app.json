@@ -10,10 +10,17 @@
       "supportsTablet": true,
       "config": {
         "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Permita que o Zenit Cash Mobile reconheca sua fala para preencher o chat por voz.",
+        "NSMicrophoneUsageDescription": "Permita que o Zenit Cash Mobile acesse o microfone para transcrever seus lancamentos."
       }
     },
     "android": {
-      "package": "com.equinox.zenitcashmobile"
+      "package": "com.equinox.zenitcashmobile",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -34,6 +41,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c32f9fb5-531f-453f-b92e-bdd0b094c61a"
+      }
     }
   }
 }

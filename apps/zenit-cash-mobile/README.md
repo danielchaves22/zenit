@@ -125,6 +125,61 @@ Exemplo:
 EXPO_PUBLIC_API_URL=http://192.168.0.25:3000/api
 ```
 
+## Build Android para uso proprio
+
+Se o backend ja estiver publicado, o caminho mais simples para usar o app sem depender do PC e gerar um APK com `EAS Build`.
+
+### 1. Definir a API de producao no EAS
+
+O app le `EXPO_PUBLIC_API_URL` em [`src/constants/app.ts`](./src/constants/app.ts).
+
+Para builds remotas, prefira cadastrar essa variavel no EAS em vez de depender de `.env` local:
+
+```bash
+npx eas env:create --name EXPO_PUBLIC_API_URL --value https://SUA_API_EM_PRODUCAO/api --environment preview --visibility plaintext
+npx eas env:create --name EXPO_PUBLIC_API_URL --value https://SUA_API_EM_PRODUCAO/api --environment production --visibility plaintext
+```
+
+### 2. Fazer login no EAS
+
+```bash
+npx eas login
+```
+
+Se este app ainda nao estiver vinculado a um projeto Expo/EAS, o primeiro build pode pedir a inicializacao do projeto.
+
+### 3. Gerar o APK
+
+O projeto agora tem [`eas.json`](./eas.json) com dois perfis:
+
+- `preview`: distribuicao `internal` + `apk`, ideal para instalar no proprio aparelho
+- `production`: build Android em `apk`, preparado para um fluxo mais formal depois
+
+Para uso proprio, use:
+
+```bash
+npm run build:android:preview
+```
+
+Ou diretamente:
+
+```bash
+npx eas build --platform android --profile preview
+```
+
+### 4. Instalar no Android
+
+Quando o build terminar, o EAS devolve uma URL.
+
+No celular:
+
+- abra a URL;
+- baixe o APK;
+- permita a instalacao de fontes externas, se o Android pedir;
+- instale o app.
+
+Depois disso, o app abre e funciona sem cabo, sem Metro e sem `expo start`.
+
 ## Configuracao minima do backend para testar o app
 
 No `backend/.env`, garanta pelo menos:

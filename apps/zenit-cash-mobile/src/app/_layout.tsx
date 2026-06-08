@@ -2,6 +2,7 @@ import { Stack, router, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { AppMenuButton } from '@/components/ui/app-menu-button';
 import { AppProviders } from '@/providers/app-providers';
 import { useAuthStore } from '@/store/auth-store';
 
@@ -42,8 +43,51 @@ function LayoutGate() {
 
   return (
     <>
-      <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }} />
+      <StatusBar style={status === 'signed_out' ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          contentStyle: { backgroundColor: '#f4efe7' },
+          headerShadowVisible: false,
+          headerStyle: { backgroundColor: '#f4efe7' },
+          headerTintColor: '#16222f',
+          headerTitleStyle: {
+            color: '#16222f',
+            fontSize: 18,
+            fontWeight: '700'
+          }
+        }}
+      >
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen
+          name="index"
+          options={{
+            title: 'Zenit Cash',
+            headerBackVisible: false,
+            headerRight: () => <AppMenuButton />
+          }}
+        />
+        <Stack.Screen
+          name="assistant"
+          options={{
+            title: 'Novo lancamento',
+            headerRight: () => <AppMenuButton />
+          }}
+        />
+        <Stack.Screen
+          name="company-select"
+          options={{
+            title: 'Trocar empresa',
+            headerBackVisible: status === 'signed_in'
+          }}
+        />
+        <Stack.Screen
+          name="about"
+          options={{
+            title: 'Sobre',
+            headerRight: () => <AppMenuButton />
+          }}
+        />
+      </Stack>
     </>
   );
 }

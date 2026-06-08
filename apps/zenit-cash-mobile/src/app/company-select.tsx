@@ -13,7 +13,6 @@ const styles = StyleSheet.create({
   screen: {
     backgroundColor: '#f2e8db',
     flex: 1,
-    justifyContent: 'center',
     padding: 20
   }
 });

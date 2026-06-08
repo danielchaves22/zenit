@@ -12,6 +12,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@zenit/assistant-contracts": "*",
     "axios": "^1.8.4",
     "html2pdf.js": "^0.10.3",
     "jwt-decode": "^4.0.0",

@@ -43,10 +43,8 @@ export function LoginForm() {
   return (
     <View style={styles.card}>
       <Text style={styles.eyebrow}>Zenit Cash Mobile</Text>
-      <Text style={styles.title}>Entre para operar o caixa do dia</Text>
-      <Text style={styles.subtitle}>
-        O mobile desta V1 foca em visao rapida e lancamento por assistente.
-      </Text>
+      <Text style={styles.title}>Acesse sua operacao financeira</Text>
+      <Text style={styles.subtitle}>Entre com sua conta para continuar.</Text>
 
       <Controller
         control={control}
@@ -109,7 +107,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#1c222c',
     borderRadius: 28,
     gap: 16,
-    padding: 24
+    padding: 24,
+    shadowColor: '#09111a',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.24,
+    shadowRadius: 28
   },
   eyebrow: {
     color: '#8fd6b5',
@@ -121,7 +123,8 @@ const styles = StyleSheet.create({
   title: {
     color: '#f7f8fa',
     fontSize: 28,
-    fontWeight: '700'
+    fontWeight: '700',
+    lineHeight: 34
   },
   subtitle: {
     color: '#c2cad5',

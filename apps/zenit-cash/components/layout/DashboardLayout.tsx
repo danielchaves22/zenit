@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
+import { AssistantFloatingChat } from '@/components/assistant/AssistantFloatingChat';
 import { ThemeSelector } from '@/components/ui/ThemeSelector';
 import { User, Repeat } from 'lucide-react';
 import { RoleBasedItem } from '@/components/navigation/RoleBasedNavigation';
@@ -194,6 +195,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           onClose={() => setCompanyModalOpen(false)}
         />
       )}
+      <AssistantFloatingChat />
     </div>
   );
 }

@@ -6,57 +6,28 @@ export function HomeScreen() {
   const router = useRouter();
   const user = useAuthStore((state) => state.user);
   const companyId = useAuthStore((state) => state.companyId);
-  const logout = useAuthStore((state) => state.logout);
 
   const company = user?.companies.find((item) => item.id === companyId) || null;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.hero}>
-        <Text style={styles.heroEyebrow}>Operador</Text>
-        <Text style={styles.heroTitle}>Visao curta, acao imediata</Text>
+        <Text style={styles.heroEyebrow}>Zenit Cash</Text>
+        <Text style={styles.heroTitle}>{company ? company.name : 'Zenit Cash'}</Text>
         <Text style={styles.heroSubtitle}>
-          {company ? `${company.name}` : 'Selecione uma empresa'}{'\n'}
-          {user ? `Sessao de ${user.name}` : ''}
+          {user ? `Ola, ${user.name}.` : 'Bem-vindo.'}
         </Text>
       </View>
 
-      <View style={styles.metricsRow}>
-        <View style={[styles.metricCard, styles.metricCardMint]}>
-          <Text style={styles.metricLabel}>Foco da V1</Text>
-          <Text style={styles.metricValue}>Lancamento</Text>
-          <Text style={styles.metricHint}>Chat do Operador com confirmacao humana.</Text>
-        </View>
-
-        <View style={[styles.metricCard, styles.metricCardSand]}>
-          <Text style={styles.metricLabel}>Escopo</Text>
-          <Text style={styles.metricValue}>Texto + SSE</Text>
-          <Text style={styles.metricHint}>Sem voz e sem push proativo neste incremento.</Text>
-        </View>
-      </View>
-
       <View style={styles.actionsCard}>
-        <Text style={styles.sectionTitle}>Acoes rapidas</Text>
-        <View style={styles.quickActions}>
-          <Pressable onPress={() => router.push('/assistant')} style={styles.primaryAction}>
-            <Text style={styles.primaryActionLabel}>Novo lancamento</Text>
-            <Text style={styles.primaryActionHint}>Abra o chat e descreva a transacao.</Text>
-          </Pressable>
-
-          <Pressable onPress={() => router.push('/company-select')} style={styles.secondaryAction}>
-            <Text style={styles.secondaryActionLabel}>Trocar empresa</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={async () => {
-              await logout();
-              router.replace('/login');
-            }}
-            style={styles.secondaryAction}
-          >
-            <Text style={styles.secondaryActionLabel}>Sair</Text>
-          </Pressable>
-        </View>
+        <Text style={styles.sectionTitle}>Registrar uma nova movimentacao</Text>
+        <Text style={styles.sectionDescription}>
+          Abra o chat, descreva a transacao e confirme antes de gravar.
+        </Text>
+        <Pressable onPress={() => router.push('/assistant')} style={styles.primaryAction}>
+          <Text style={styles.primaryActionLabel}>Novo lancamento</Text>
+          <Text style={styles.primaryActionHint}>Despesa, receita ou transferencia</Text>
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -65,7 +36,9 @@ export function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#f4efe7',
+    flexGrow: 1,
     gap: 16,
+    justifyContent: 'center',
     padding: 20
   },
   hero: {
@@ -84,48 +57,18 @@ const styles = StyleSheet.create({
   heroTitle: {
     color: '#f7f8fa',
     fontSize: 30,
-    fontWeight: '700'
+    fontWeight: '700',
+    lineHeight: 36
   },
   heroSubtitle: {
     color: '#c9d2de',
     fontSize: 15,
     lineHeight: 22
   },
-  metricsRow: {
-    gap: 16
-  },
-  metricCard: {
-    borderRadius: 24,
-    gap: 8,
-    padding: 20
-  },
-  metricCardMint: {
-    backgroundColor: '#d8f4ec'
-  },
-  metricCardSand: {
-    backgroundColor: '#fce8c8'
-  },
-  metricLabel: {
-    color: '#4e5b62',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase'
-  },
-  metricValue: {
-    color: '#111418',
-    fontSize: 24,
-    fontWeight: '700'
-  },
-  metricHint: {
-    color: '#49545d',
-    fontSize: 14,
-    lineHeight: 21
-  },
   actionsCard: {
     backgroundColor: '#ffffff',
     borderRadius: 30,
-    gap: 16,
+    gap: 14,
     padding: 20
   },
   sectionTitle: {
@@ -133,8 +76,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700'
   },
-  quickActions: {
-    gap: 12
+  sectionDescription: {
+    color: '#57636f',
+    fontSize: 15,
+    lineHeight: 22
   },
   primaryAction: {
     backgroundColor: '#111418',
@@ -150,15 +95,5 @@ const styles = StyleSheet.create({
   primaryActionHint: {
     color: '#b8c1cb',
     fontSize: 14
-  },
-  secondaryAction: {
-    backgroundColor: '#f2f5f7',
-    borderRadius: 18,
-    padding: 16
-  },
-  secondaryActionLabel: {
-    color: '#111418',
-    fontSize: 15,
-    fontWeight: '600'
   }
 });

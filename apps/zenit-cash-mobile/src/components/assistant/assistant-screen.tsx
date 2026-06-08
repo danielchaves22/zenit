@@ -71,6 +71,7 @@ async function createAssistantSession(companyId: number) {
 
 export function AssistantScreen() {
   const companyId = useAuthStore((state) => state.companyId);
+  const user = useAuthStore((state) => state.user);
   const composerText = useUiStore((state) => state.assistantComposerText);
   const setComposerText = useUiStore((state) => state.setAssistantComposerText);
   const speechRecognition = useMemo(() => loadSpeechRecognitionPackage(), []);
@@ -81,6 +82,7 @@ export function AssistantScreen() {
   const [isListening, setIsListening] = useState(false);
   const [speechDraft, setSpeechDraft] = useState('');
   const [speechError, setSpeechError] = useState<string | null>(null);
+  const company = user?.companies.find((item) => item.id === companyId) || null;
 
   useEffect(() => {
     composerTextRef.current = composerText;
@@ -407,10 +409,8 @@ export function AssistantScreen() {
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <View style={styles.headerTextBlock}>
-            <Text style={styles.title}>Operador</Text>
-            <Text style={styles.subtitle}>
-              Descreva uma despesa, receita ou transferencia. O assistente monta o rascunho e voce confirma.
-            </Text>
+            <Text style={styles.title}>Novo lancamento</Text>
+            <Text style={styles.subtitle}>{company ? company.name : 'Zenit Cash'}</Text>
           </View>
           <Pressable
             disabled={isStreaming || isListening}

@@ -48,3 +48,12 @@ coverage/
 
 # Arquivos compactados
 *.zip
+
+# Arquivos locais de acesso por aplicacao
+.codex.access
+
+# Arquivos locais do Expo
+.expo/
+
+# Artefatos locais de automacao/navegador
+.playwright-mcp/

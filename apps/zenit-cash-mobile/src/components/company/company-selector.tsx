@@ -16,10 +16,8 @@ export function CompanySelector() {
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Escolha a empresa ativa</Text>
-      <Text style={styles.subtitle}>
-        O app guarda a ultima empresa valida e so volta para esta tela quando for necessario.
-      </Text>
+      <Text style={styles.title}>Escolha a empresa</Text>
+      <Text style={styles.subtitle}>Selecione a empresa que voce quer usar agora.</Text>
 
       <View style={styles.list}>
         {companies.map((company) => (

@@ -1,0 +1,14 @@
+# Acesso local de desenvolvimento
+
+Frontend:
+- http://localhost:3001
+
+Backend:
+- http://localhost:3000
+
+Credenciais:
+- email: seu-usuario@exemplo.com
+- senha: sua-senha
+
+Empresa padrao:
+- Nome da empresa

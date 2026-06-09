@@ -1,0 +1,51 @@
+import { z } from 'zod';
+
+const sourceTypeSchema = z.enum(['CAIXA_PDF'], {
+  errorMap: () => ({ message: 'Fonte de conciliacao invalida' })
+});
+
+const fileBase64Schema = z
+  .string()
+  .min(1, 'Arquivo da fatura e obrigatorio')
+  .max(10_000_000, 'Arquivo da fatura excede o tamanho suportado');
+
+export const previewCreditCardReconciliationSchema = z.object({
+  accountId: z.coerce.number()
+    .int('ID da conta deve ser um numero inteiro')
+    .positive('ID da conta deve ser positivo'),
+  sourceType: sourceTypeSchema,
+  fileBase64: fileBase64Schema,
+  fileName: z.string()
+    .max(255, 'Nome do arquivo deve ter no maximo 255 caracteres')
+    .optional()
+    .nullable()
+});
+
+export const commitCreditCardReconciliationSchema = z.object({
+  accountId: z.coerce.number()
+    .int('ID da conta deve ser um numero inteiro')
+    .positive('ID da conta deve ser positivo'),
+  sourceType: sourceTypeSchema,
+  fileBase64: fileBase64Schema,
+  fileName: z.string()
+    .max(255, 'Nome do arquivo deve ter no maximo 255 caracteres')
+    .optional()
+    .nullable(),
+  selectedItems: z.array(
+    z.object({
+      itemId: z.string().min(1, 'ID do item selecionado e obrigatorio'),
+      description: z.string()
+        .trim()
+        .min(1, 'Descricao do lancamento e obrigatoria')
+        .max(255, 'Descricao do lancamento deve ter no maximo 255 caracteres'),
+      categoryId: z.coerce.number()
+        .int('Categoria do lancamento deve ser um numero inteiro')
+        .positive('Categoria do lancamento deve ser positiva')
+    })
+  )
+    .min(1, 'Selecione ao menos um item para importar')
+    .max(500, 'Quantidade maxima de itens excedida')
+});
+
+export type PreviewCreditCardReconciliationData = z.infer<typeof previewCreditCardReconciliationSchema>;
+export type CommitCreditCardReconciliationData = z.infer<typeof commitCreditCardReconciliationSchema>;

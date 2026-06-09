@@ -5,6 +5,7 @@ import {
   Edit2,
   Plus,
   Receipt,
+  Scale,
   Trash2,
   Wallet
 } from 'lucide-react';
@@ -18,7 +19,7 @@ import { PageGuard } from '@/components/ui/AccessGuard';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
-import { FinancialBank } from '@/utils/banks';
+import { FinancialBank, isCaixaBankReference } from '@/utils/banks';
 import { getCreditCardTheme } from '@/utils/creditCardAppearance';
 import {
   getAvailableCreditLimit,
@@ -185,6 +186,7 @@ function CreditCardsPageInner() {
               ? getInvoiceDisplayStatus(card.nextInvoice.status, card.nextInvoice.dueDate)
               : 'OPEN';
             const cardTheme = getCreditCardTheme(card.cardColor);
+            const isCaixaCard = isCaixaBankReference(card.bank, card.bankCode, card.bankName);
 
             return (
               <Card
@@ -253,6 +255,17 @@ function CreditCardsPageInner() {
                           Faturas
                         </Button>
                       </Link>
+                      {isCaixaCard && (
+                        <Link href={`/financial/credit-cards/${card.id}/reconciliation`}>
+                          <Button
+                            variant="outline"
+                            className={`flex items-center gap-1.5 px-2.5 py-1 text-[13px] ${cardTheme.actionClassName}`}
+                          >
+                            <Scale size={13} />
+                            Conciliar
+                          </Button>
+                        </Link>
+                      )}
                       <Link href={`/financial/credit-cards/purchases?cardId=${card.id}`}>
                         <Button
                           variant="outline"

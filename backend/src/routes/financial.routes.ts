@@ -37,6 +37,10 @@ import {
   payCreditCardInvoiceSchema
 } from '../validators/credit-card-invoice.validator';
 import {
+  commitCreditCardReconciliationSchema,
+  previewCreditCardReconciliationSchema
+} from '../validators/credit-card-reconciliation.validator';
+import {
   createFixedTransactionSchema,
   listFixedTransactionsSchema,
   materializeFixedTransactionSchema,
@@ -99,6 +103,10 @@ import {
   listCreditCards,
   payCreditCardInvoice
 } from '../controllers/credit-card-invoice.controller';
+import {
+  commitCreditCardReconciliation,
+  previewCreditCardReconciliation
+} from '../controllers/credit-card-reconciliation.controller';
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 
 const router = Router();
@@ -124,6 +132,8 @@ router.post('/credit-cards/:accountId/reset', requireFeaturePermission('FINANCIA
 router.get('/credit-card-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(listCreditCardPurchasesSchema), getCreditCardPurchases);
 router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
 router.get('/credit-cards/:accountId/invoices/projected/:projectionKey', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(getProjectedCreditCardInvoiceSchema), getProjectedCreditCardInvoice);
+router.post('/credit-cards/:accountId/reconciliation/preview', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(previewCreditCardReconciliationSchema), previewCreditCardReconciliation);
+router.post('/credit-cards/:accountId/reconciliation/commit', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(commitCreditCardReconciliationSchema), commitCreditCardReconciliation);
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
 router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
 

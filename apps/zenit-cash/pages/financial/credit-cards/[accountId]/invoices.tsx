@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { ChevronLeft, ChevronRight, CreditCard, Edit2, Receipt } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CreditCard, Edit2, Receipt, Scale } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/ToastContext';
 import api from '@/lib/api';
+import { FinancialBank, isCaixaBankReference } from '@/utils/banks';
 import { formatAccountDisplayName } from '@/utils/accounts';
 import {
   getAvailableCreditLimit,
@@ -69,7 +70,9 @@ interface CreditCardAccount {
   id: number;
   name: string;
   balance: string;
+  bank?: FinancialBank | null;
   bankName?: string | null;
+  bankCode?: string | null;
   accountNumber?: string | null;
   creditLimit?: string | null;
   statementClosingDay?: number | null;
@@ -200,6 +203,10 @@ function InvoicesPageInner() {
     !invoiceDetail.hasProjectedTransactions &&
     !invoiceDetail.paymentTransaction &&
     invoiceDetail.status !== 'PAID'
+  );
+  const isCaixaCard = useMemo(
+    () => isCaixaBankReference(card?.bank, card?.bankCode, card?.bankName),
+    [card]
   );
   const sortedInvoices = useMemo(() => [...invoices].sort(compareInvoicesAscending), [invoices]);
   const firstUnpaidInvoice = useMemo(
@@ -469,6 +476,14 @@ function InvoicesPageInner() {
                 Nova Compra
               </Button>
             </Link>
+            {isCaixaCard && (
+              <Link href={`/financial/credit-cards/${accountId}/reconciliation`}>
+                <Button variant="outline" className="flex items-center gap-2">
+                  <Scale size={16} />
+                  Conciliar Fatura
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 

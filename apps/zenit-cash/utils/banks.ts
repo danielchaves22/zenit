@@ -108,3 +108,17 @@ export function getBankInitials(name?: string | null) {
     .join('')
     .toUpperCase();
 }
+
+export function isCaixaBankReference(
+  bank?: FinancialBankReference | null,
+  fallbackCode?: string | null,
+  fallbackName?: string | null
+) {
+  const normalizedCode = normalizeBankText(bank?.code || fallbackCode || '');
+  const normalizedName = normalizeBankText(bank?.name || fallbackName || '');
+
+  return (
+    normalizedCode === normalizeBankText('CAIXA_ECONOMICA_FEDERAL') ||
+    normalizedName === normalizeBankText('Caixa Economica Federal')
+  );
+}

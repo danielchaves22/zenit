@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { AssistantHistoryMessage, AssistantTurnResponse, PendingAction } from '@zenit/assistant-contracts';
 import type { ExpoSpeechRecognitionErrorEvent, ExpoSpeechRecognitionResultEvent } from 'expo-speech-recognition';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import api from '@/lib/api-client';
 import { appendCachedMessage, cacheRemoteSessionId, getCachedRemoteSessionId, replaceCachedHistory, upsertPendingAction } from '@/lib/database';
 import { streamAssistantTurn } from '@/lib/assistant-stream';
@@ -76,6 +76,7 @@ export function AssistantScreen() {
   const setComposerText = useUiStore((state) => state.setAssistantComposerText);
   const speechRecognition = useMemo(() => loadSpeechRecognitionPackage(), []);
   const composerTextRef = useRef(composerText);
+  const scrollViewRef = useRef<ScrollView | null>(null);
   const [messages, setMessages] = useState<ChatItem[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -193,6 +194,14 @@ export function AssistantScreen() {
       }))
     );
   }, [historyQuery.data]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 40);
+
+    return () => clearTimeout(timeout);
+  }, [messages.length, isStreaming]);
 
   const confirmMutation = useMutation({
     mutationFn: async (pendingActionId: number) => {
@@ -405,7 +414,11 @@ export function AssistantScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
+      style={styles.container}
+    >
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <View style={styles.headerTextBlock}>
@@ -422,7 +435,11 @@ export function AssistantScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.messages}>
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.messages}
+        keyboardShouldPersistTaps="handled"
+      >
         {messages.map((message) => (
           <View
             key={message.id}
@@ -486,7 +503,7 @@ export function AssistantScreen() {
           </Pressable>
         </View>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -626,6 +626,97 @@ describe('Assistant runtime', () => {
     );
   });
 
+  it('prefere conta de disponibilidade quando banco e cartao tem nomes parecidos sem mencao explicita de credito', async () => {
+    const checkingAccount = await prisma.financialAccount.create({
+      data: {
+        companyId,
+        name: 'Bradesco',
+        type: 'CHECKING',
+        balance: 500
+      }
+    });
+
+    await prisma.financialAccount.create({
+      data: {
+        companyId,
+        name: 'Bradesco Visa',
+        type: 'CREDIT_CARD',
+        bankName: 'Bradesco',
+        creditLimit: 3000,
+        allowNegativeBalance: true
+      }
+    });
+
+    const clothingCategory = await prisma.financialCategory.create({
+      data: {
+        companyId,
+        name: 'VestuÃ¡rio',
+        type: 'EXPENSE',
+        color: '#6366F1',
+        icon: 'shirt'
+      }
+    });
+
+    const fetchSpy = jest.spyOn(global as any, 'fetch');
+    fetchSpy
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            id: 'resp_pref_1',
+            output: [
+              {
+                type: 'function_call',
+                name: 'create_transaction_draft',
+                call_id: 'call_pref_1',
+                arguments: JSON.stringify({
+                  description: 'Camisa social',
+                  amount: 120,
+                  type: 'EXPENSE',
+                  date: null,
+                  status: null,
+                  fromAccountHint: 'Bradesco',
+                  categoryId: clothingCategory.id
+                })
+              }
+            ]
+          })
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            id: 'resp_pref_2',
+            output_text: JSON.stringify({
+              mode: 'OPERATOR',
+              message: 'Preparei o rascunho. Revise e confirme.'
+            })
+          })
+      } as any);
+
+    const sessionResponse = await request(app)
+      .post('/api/assistant/sessions')
+      .set(authHeaders(token, companyId))
+      .send({});
+    const sessionId = Number(sessionResponse.body.sessionId);
+
+    const streamResponse = await request(app)
+      .post(`/api/assistant/sessions/${sessionId}/messages/stream`)
+      .set(authHeaders(token, companyId))
+      .send({
+        message: '120 reais de camisa social na conta Bradesco'
+      });
+
+    expect(streamResponse.status).toBe(200);
+    const events = parseSse(streamResponse.text);
+    const completedEvent = events.find((event) => event.event === 'message.completed');
+    expect(completedEvent?.data.response.pendingAction.summary.fromAccount.name).toBe(
+      checkingAccount.name
+    );
+  });
+
   it('prefere subcategoria especifica de alimentacao para life burger', async () => {
     await prisma.financialAccount.create({
       data: {

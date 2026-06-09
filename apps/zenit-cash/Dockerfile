@@ -14,12 +14,13 @@ COPY apps/zenit-admin/package.json ./apps/zenit-admin/package.json
 COPY apps/zenit-calc/package.json ./apps/zenit-calc/package.json
 COPY apps/zenit-cash/package.json ./apps/zenit-cash/package.json
 COPY backend/package.json ./backend/package.json
+COPY packages/assistant-contracts/package.json ./packages/assistant-contracts/package.json
 COPY packages/shared-users-core/package.json ./packages/shared-users-core/package.json
 RUN npm ci
 
 # Copy source and build only zenit-cash workspace.
 COPY . .
-RUN npm --workspace apps/zenit-cash run build
+RUN npm run build:assistant-contracts && npm --workspace apps/zenit-cash run build
 
 EXPOSE 3000
 

@@ -105,7 +105,7 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
     type: 'function',
     name: 'search_accounts',
     description:
-      'Consulta contas e cartoes acessiveis ao usuario, incluindo saldo, tipo e contexto de cartao de credito, para escolher a conta correta do lancamento.',
+      'Consulta contas e cartoes acessiveis ao usuario, incluindo saldo, tipo e contexto de cartao de credito, para escolher a conta correta do lancamento. Na duvida, nomes de banco devem priorizar conta de disponibilidade; so priorize cartao se houver indicacao explicita de credito, fatura, cartao ou parcelamento.',
     strict: true,
     parameters: strictObject({
       query: { type: ['string', 'null'] },

@@ -118,6 +118,7 @@ function buildSystemPrompt(todayDate: string): string {
     'Ao buscar categoria, pense por conceito e nao apenas por string literal. Exemplos: "cabeleireiro" pode virar "salao de beleza" ou "beleza"; "posto" pode virar "combustivel"; "tennis", "roupa" ou "sapato" podem virar "vestuario" ou "moda".',
     'Se search_categories devolver candidatos plausiveis da empresa, escolha a melhor categoria disponivel sem exigir correspondencia textual exata, salvo ambiguidade real entre varias opcoes fortes.',
     'Quando houver duvida sobre conta, banco ou cartao, use search_accounts antes de criar ou atualizar o rascunho.',
+    'Por padrao, nomes de banco como "Bradesco", "Nubank" ou "Itau" devem ser tratados como conta de disponibilidade. So use cartao de credito se o usuario indicar explicitamente cartao, credito, fatura ou parcelamento.',
     'Se a frase mencionar Pix, dinheiro, debito, conta corrente, saldo ou disponibilidade, prefira conta de disponibilidade (CHECKING, CASH ou SAVINGS), nao cartao de credito, salvo indicacao explicita de cartao.',
     'Pix e um meio de pagamento, nao um nome de conta. Se o usuario ja informou uma conta especifica, como "Bradesco", e disser que foi no Pix, use essa conta de disponibilidade e evite buscas redundantes como procurar conta por "Pix" ou mudar para CASH sem indicio explicito.',
     'Use get_recent_transactions apenas para contexto historico, nunca como substituto da busca direta por categorias ou contas.',

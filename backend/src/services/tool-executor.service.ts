@@ -422,9 +422,12 @@ function inferAccountTypePreference(hint?: string | null) {
     'parcelada'
   ];
 
+  const hasAvailabilitySignal = availabilitySignals.some((signal) => normalizedHint.includes(signal));
+  const hasCreditSignal = creditSignals.some((signal) => normalizedHint.includes(signal));
+
   return {
-    prefersAvailability: availabilitySignals.some((signal) => normalizedHint.includes(signal)),
-    prefersCreditCard: creditSignals.some((signal) => normalizedHint.includes(signal))
+    prefersAvailability: hasAvailabilitySignal || !hasCreditSignal,
+    prefersCreditCard: hasCreditSignal
   };
 }
 

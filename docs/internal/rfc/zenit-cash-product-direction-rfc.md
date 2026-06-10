@@ -18,6 +18,7 @@ tags:
   - whatsapp
 related:
   - /docs/products/zenit-cash/fixed-transactions
+  - /docs/products/zenit-cash/availability-accounts-ofx-reconciliation
   - /docs/architecture/assistant/assistant-runtime-architecture-note
 ---
 

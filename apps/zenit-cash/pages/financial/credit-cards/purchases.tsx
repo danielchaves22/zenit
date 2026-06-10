@@ -26,6 +26,7 @@ import {
   getInvoiceReferenceLabel,
   getUsedCreditLimit
 } from '@/utils/creditCards';
+import { getCreditCardTheme } from '@/utils/creditCardAppearance';
 import {
   formatCalendarDate,
   getTransactionDisplayStatus,
@@ -39,6 +40,7 @@ interface CreditCardAccount {
   name: string;
   balance?: string;
   creditLimit?: string | null;
+  cardColor?: string | null;
   isActive?: boolean;
 }
 
@@ -95,6 +97,9 @@ interface CardPurchaseGroup {
   card: CreditCardAccount | null;
   purchases: CreditCardPurchaseListItem[];
   listedTotalAmount: number;
+  totalPurchaseCount: number;
+  currentPage: number;
+  totalPages: number;
 }
 
 const PAGE_SIZE = 20;
@@ -116,6 +121,20 @@ function areStringArraysEqual(left: string[], right: string[]) {
   return left.every((value, index) => value === right[index]);
 }
 
+function areNumberRecordsEqual(
+  left: Record<string, number>,
+  right: Record<string, number>
+) {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  return leftKeys.every((key) => left[key] === right[key]);
+}
+
 function getInstallmentStatus(installment: PurchaseInstallment) {
   const displayStatus = getTransactionDisplayStatus({
     status: installment.status,
@@ -127,6 +146,63 @@ function getInstallmentStatus(installment: PurchaseInstallment) {
     label: getTransactionDisplayStatusLabel(displayStatus.status),
     classes: getTransactionDisplayStatusClasses(displayStatus.status)
   };
+}
+
+function getInstallmentDisplayStatus(installment: PurchaseInstallment) {
+  return getTransactionDisplayStatus({
+    status: installment.status,
+    dueDate: installment.dueDate,
+    creditCardInvoice: installment.creditCardInvoice
+  }).status;
+}
+
+function getRemainingInstallmentCount(purchase: CreditCardPurchaseListItem) {
+  return purchase.installments.filter((installment) => {
+    const status = getInstallmentDisplayStatus(installment);
+    return status !== 'PAID' && status !== 'SETTLED' && status !== 'CANCELED';
+  }).length;
+}
+
+function getRemainingInstallmentsLabel(purchase: CreditCardPurchaseListItem) {
+  const remainingInstallments = getRemainingInstallmentCount(purchase);
+
+  return `${remainingInstallments} restante${remainingInstallments === 1 ? '' : 's'}`;
+}
+
+function getLastInvoiceReferenceLabel(purchase: CreditCardPurchaseListItem) {
+  const lastInstallment = [...purchase.installments].sort((left, right) => {
+    if (left.creditCardInvoice && right.creditCardInvoice) {
+      const leftValue =
+        left.creditCardInvoice.referenceYear * 100 + left.creditCardInvoice.referenceMonth;
+      const rightValue =
+        right.creditCardInvoice.referenceYear * 100 + right.creditCardInvoice.referenceMonth;
+
+      return rightValue - leftValue;
+    }
+
+    const leftDate =
+      left.creditCardInvoice?.dueDate || left.dueDate || left.scheduledDate || '';
+    const rightDate =
+      right.creditCardInvoice?.dueDate || right.dueDate || right.scheduledDate || '';
+
+    return rightDate.localeCompare(leftDate);
+  })[0];
+
+  if (!lastInstallment) {
+    return '-';
+  }
+
+  if (lastInstallment.creditCardInvoice) {
+    return getInvoiceReferenceLabel(
+      lastInstallment.creditCardInvoice.referenceYear,
+      lastInstallment.creditCardInvoice.referenceMonth
+    );
+  }
+
+  return formatCalendarDate(
+    lastInstallment.dueDate || lastInstallment.scheduledDate,
+    { month: '2-digit', year: 'numeric' }
+  );
 }
 
 function isInstallmentPurchase(purchase: CreditCardPurchaseListItem) {
@@ -150,7 +226,7 @@ function CreditCardPurchasesPageInner() {
   const [loading, setLoading] = useState(false);
   const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [cardGroupsInitialized, setCardGroupsInitialized] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPageByCard, setCurrentPageByCard] = useState<Record<string, number>>({});
   const [deletingPurchaseKey, setDeletingPurchaseKey] = useState<string | null>(null);
 
   const requestedCardId =
@@ -186,37 +262,43 @@ function CreditCardPurchasesPageInner() {
     hasCategoryOptions &&
     selectedCategoryIds.length > 0 &&
     selectedCategoryIds.length < categoryOptions.length;
-  const paginatedPurchases = useMemo(
-    () => purchases.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [currentPage, purchases]
-  );
-  const totalPages = useMemo(
-    () => Math.max(Math.ceil(purchases.length / PAGE_SIZE), 1),
-    [purchases.length]
-  );
   const purchaseGroupsByCard = useMemo<CardPurchaseGroup[]>(() => {
-    const groups = new Map<string, CardPurchaseGroup>();
+    const groupedPurchases = new Map<string, CreditCardPurchaseListItem[]>();
 
-    for (const purchase of paginatedPurchases) {
+    for (const purchase of purchases) {
       const cardId = purchase.card.id.toString();
-      const existing = groups.get(cardId);
+      const existing = groupedPurchases.get(cardId);
 
       if (existing) {
-        existing.purchases.push(purchase);
-        existing.listedTotalAmount += Number(purchase.totalAmount || 0);
+        existing.push(purchase);
         continue;
       }
 
-      groups.set(cardId, {
-        cardId,
-        card: cardsById.get(cardId) || null,
-        purchases: [purchase],
-        listedTotalAmount: Number(purchase.totalAmount || 0)
-      });
+      groupedPurchases.set(cardId, [purchase]);
     }
 
-    return Array.from(groups.values());
-  }, [cardsById, paginatedPurchases]);
+    return Array.from(groupedPurchases.entries()).map(([cardId, cardPurchases]) => {
+      const totalPurchaseCount = cardPurchases.length;
+      const totalPages = Math.max(Math.ceil(totalPurchaseCount / PAGE_SIZE), 1);
+      const currentPage = Math.min(currentPageByCard[cardId] || 1, totalPages);
+      const startIndex = (currentPage - 1) * PAGE_SIZE;
+      const paginatedPurchases = cardPurchases.slice(startIndex, startIndex + PAGE_SIZE);
+      const listedTotalAmount = paginatedPurchases.reduce(
+        (total, purchase) => total + Number(purchase.totalAmount || 0),
+        0
+      );
+
+      return {
+        cardId,
+        card: cardsById.get(cardId) || null,
+        purchases: paginatedPurchases,
+        listedTotalAmount,
+        totalPurchaseCount,
+        currentPage,
+        totalPages
+      };
+    });
+  }, [cardsById, currentPageByCard, purchases]);
 
   useEffect(() => {
     void Promise.all([fetchCards(), fetchCategories()]);
@@ -272,6 +354,7 @@ function CreditCardPurchasesPageInner() {
 
     if (shouldBlockPurchaseFetch) {
       setPurchases([]);
+      setCurrentPageByCard({});
       setExpandedPurchaseKeys([]);
       setExpandedCardIds([]);
       setCardGroupsInitialized(false);
@@ -289,19 +372,35 @@ function CreditCardPurchasesPageInner() {
   ]);
 
   useEffect(() => {
-    const availableKeys = new Set(paginatedPurchases.map((purchase) => purchase.groupKey));
+    const availableKeys = new Set(
+      purchaseGroupsByCard.flatMap((group) => group.purchases.map((purchase) => purchase.groupKey))
+    );
 
     setExpandedPurchaseKeys((previous) => {
       const nextValues = previous.filter((key) => availableKeys.has(key));
       return areStringArraysEqual(previous, nextValues) ? previous : nextValues;
     });
-  }, [paginatedPurchases]);
+  }, [purchaseGroupsByCard]);
 
   useEffect(() => {
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
+    const purchaseCountByCard = new Map<string, number>();
+
+    for (const purchase of purchases) {
+      const cardId = purchase.card.id.toString();
+      purchaseCountByCard.set(cardId, (purchaseCountByCard.get(cardId) || 0) + 1);
     }
-  }, [currentPage, totalPages]);
+
+    setCurrentPageByCard((previous) => {
+      const nextValues: Record<string, number> = {};
+
+      purchaseCountByCard.forEach((count, cardId) => {
+        const totalPages = Math.max(Math.ceil(count / PAGE_SIZE), 1);
+        nextValues[cardId] = Math.min(previous[cardId] || 1, totalPages);
+      });
+
+      return areNumberRecordsEqual(previous, nextValues) ? previous : nextValues;
+    });
+  }, [purchases]);
 
   useEffect(() => {
     const visibleCardIds = purchaseGroupsByCard.map((group) => group.cardId);
@@ -409,13 +508,28 @@ function CreditCardPurchasesPageInner() {
   }
 
   function handleCardChange(values: string[]) {
-    setCurrentPage(1);
+    setCurrentPageByCard({});
     setSelectedCardIds(values);
   }
 
   function handleCategoryChange(values: string[]) {
-    setCurrentPage(1);
+    setCurrentPageByCard({});
     setSelectedCategoryIds(values);
+  }
+
+  function handleCardPageChange(cardId: string, nextPage: number) {
+    setCurrentPageByCard((previous) => {
+      const currentPage = previous[cardId] || 1;
+
+      if (currentPage === nextPage) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        [cardId]: nextPage
+      };
+    });
   }
 
   function toggleCardGroup(cardId: string) {
@@ -602,71 +716,127 @@ function CreditCardPurchasesPageInner() {
               const isExpanded = expandedCardIds.includes(group.cardId);
               const usedLimit = card ? getUsedCreditLimit(card) : 0;
               const availableLimit = card ? getAvailableCreditLimit(card) : null;
+              const cardTheme = getCreditCardTheme(card?.cardColor);
 
               return (
-                <Card key={group.cardId} className="overflow-hidden p-0">
-                  <button
-                    type="button"
-                    onClick={() => toggleCardGroup(group.cardId)}
-                    className="flex w-full flex-col gap-4 border-b border-gray-800 bg-[#12161d] px-5 py-4 text-left transition-colors hover:bg-[#171c24]"
-                    aria-expanded={isExpanded}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-lg border border-gray-700 bg-[#0f1419] p-2 text-gray-300">
-                          {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                        </div>
-                        <div>
-                          <div className="text-lg font-semibold text-white">
-                            {card?.name || group.purchases[0].card.name}
+                <Card
+                  key={group.cardId}
+                  className={`overflow-hidden border-transparent p-0 ${card?.isActive === false ? 'opacity-70' : ''}`}
+                >
+                  <div className="rounded-xl border" style={cardTheme.cardStyle}>
+                    <button
+                      type="button"
+                      onClick={() => toggleCardGroup(group.cardId)}
+                      className="flex w-full flex-col gap-4 border-b px-5 py-4 text-left transition-[filter] hover:brightness-[1.03]"
+                      style={{ borderColor: cardTheme.panelStyle.borderColor }}
+                      aria-expanded={isExpanded}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="rounded-lg border p-2"
+                            style={{
+                              ...cardTheme.panelStyle,
+                              color: cardTheme.secondaryTextColor
+                            }}
+                          >
+                            {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                           </div>
-                          <div className="mt-1 text-sm text-gray-400">
-                            {group.purchases.length} compra{group.purchases.length === 1 ? '' : 's'} parcelada{group.purchases.length === 1 ? '' : 's'} nesta pagina
-                            {' '}- Total listado: {formatCurrency(group.listedTotalAmount)}
+                          <div>
+                            <div
+                              className="text-lg font-semibold"
+                              style={{ color: cardTheme.primaryTextColor }}
+                            >
+                              {card?.name || group.purchases[0].card.name}
+                            </div>
+                            <div
+                              className="mt-1 text-sm"
+                              style={{ color: cardTheme.secondaryTextColor }}
+                            >
+                              {group.purchases.length} de {group.totalPurchaseCount} compra
+                              {group.totalPurchaseCount === 1 ? '' : 's'} parcelada
+                              {group.totalPurchaseCount === 1 ? '' : 's'}
+                              {group.totalPages > 1 ? ` - Pagina ${group.currentPage} de ${group.totalPages}` : ''}
+                              {' '}- Total listado: {formatCurrency(group.listedTotalAmount)}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                      <div className="rounded-lg border border-gray-700 bg-[#0f1419] px-4 py-3">
-                        <div className="text-xs uppercase tracking-wide text-gray-400">Limite</div>
-                        <div className="mt-1 text-lg font-semibold text-white">
-                          {card?.creditLimit ? formatCurrency(card.creditLimit) : 'Nao configurado'}
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div className="rounded-lg border px-4 py-3" style={cardTheme.panelStyle}>
+                          <div
+                            className="text-xs uppercase tracking-wide"
+                            style={{ color: cardTheme.tertiaryTextColor }}
+                          >
+                            Limite
+                          </div>
+                          <div
+                            className="mt-1 text-lg font-semibold"
+                            style={{ color: cardTheme.primaryTextColor }}
+                          >
+                            {card?.creditLimit ? formatCurrency(card.creditLimit) : 'Nao configurado'}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border px-4 py-3" style={cardTheme.panelStyle}>
+                          <div
+                            className="text-xs uppercase tracking-wide"
+                            style={{ color: cardTheme.tertiaryTextColor }}
+                          >
+                            Consumido
+                          </div>
+                          <div
+                            className="mt-1 text-lg font-semibold"
+                            style={{ color: cardTheme.primaryTextColor }}
+                          >
+                            {formatCurrency(usedLimit)}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border px-4 py-3" style={cardTheme.panelStyle}>
+                          <div
+                            className="text-xs uppercase tracking-wide"
+                            style={{ color: cardTheme.tertiaryTextColor }}
+                          >
+                            Disponivel
+                          </div>
+                          <div
+                            className="mt-1 text-lg font-semibold"
+                            style={{
+                              color:
+                                availableLimit !== null && availableLimit < 0
+                                  ? '#FDBA74'
+                                  : cardTheme.primaryTextColor
+                            }}
+                          >
+                            {availableLimit === null ? 'Nao configurado' : formatCurrency(availableLimit)}
+                          </div>
                         </div>
                       </div>
-                      <div className="rounded-lg border border-gray-700 bg-[#0f1419] px-4 py-3">
-                        <div className="text-xs uppercase tracking-wide text-gray-400">Consumido</div>
-                        <div className="mt-1 text-lg font-semibold text-white">
-                          {formatCurrency(usedLimit)}
-                        </div>
-                      </div>
-                      <div className="rounded-lg border border-gray-700 bg-[#0f1419] px-4 py-3">
-                        <div className="text-xs uppercase tracking-wide text-gray-400">Disponivel</div>
-                        <div className={`mt-1 text-lg font-semibold ${
-                          availableLimit !== null && availableLimit < 0 ? 'text-orange-300' : 'text-white'
-                        }`}>
-                          {availableLimit === null ? 'Nao configurado' : formatCurrency(availableLimit)}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
+                    </button>
 
-                  {isExpanded && (
-                    <div className="overflow-x-auto">
-                      <table className="w-full min-w-[980px]">
-                        <thead className="bg-[#0f1419] text-left text-xs uppercase tracking-wide text-gray-400">
-                          <tr>
-                            <th className="w-14 px-4 py-3">Detalhe</th>
-                            <th className="px-4 py-3">Descricao</th>
-                            <th className="px-4 py-3">Compra</th>
-                            <th className="px-4 py-3">Parcelas</th>
-                            <th className="px-4 py-3 text-right">Valor da Parcela</th>
-                            <th className="px-4 py-3 text-right">Valor Total</th>
-                            <th className="px-4 py-3">Categoria</th>
-                            <th className="px-4 py-3 text-right">Acao</th>
-                          </tr>
-                        </thead>
+                    {isExpanded && (
+                      <div
+                        className="overflow-x-auto rounded-b-xl"
+                        style={cardTheme.panelStyle}
+                      >
+                        <table className="w-full min-w-[1160px]">
+                          <thead
+                            className="text-left text-xs uppercase tracking-wide"
+                            style={{ color: cardTheme.tertiaryTextColor }}
+                          >
+                            <tr>
+                              <th className="w-14 px-4 py-3">Detalhe</th>
+                              <th className="px-4 py-3">Descricao</th>
+                              <th className="px-4 py-3">Compra</th>
+                              <th className="px-4 py-3">Parcelas</th>
+                              <th className="px-4 py-3">Faltam</th>
+                              <th className="px-4 py-3">Ultima Fatura</th>
+                              <th className="px-4 py-3 text-right">Valor da Parcela</th>
+                              <th className="px-4 py-3 text-right">Valor Total</th>
+                              <th className="px-4 py-3">Categoria</th>
+                              <th className="px-4 py-3 text-right">Acao</th>
+                            </tr>
+                          </thead>
                         <tbody>
                           {group.purchases.map((purchase) => {
                             const isPurchaseExpanded = expandedPurchaseKeys.includes(purchase.groupKey);
@@ -674,12 +844,22 @@ function CreditCardPurchasesPageInner() {
 
                             return (
                               <React.Fragment key={purchase.groupKey}>
-                                <tr className="border-t border-gray-800 bg-[#12161d] align-top text-sm">
+                                <tr
+                                  className="align-top text-sm"
+                                  style={{
+                                    borderTop: `1px solid ${String(cardTheme.panelStyle.borderColor)}`,
+                                    color: cardTheme.secondaryTextColor
+                                  }}
+                                >
                                   <td className="px-4 py-4">
                                     <button
                                       type="button"
                                       onClick={() => togglePurchaseDetails(purchase.groupKey)}
-                                      className="rounded border border-gray-700 p-2 text-gray-300 transition-colors hover:border-accent hover:text-white"
+                                      className="rounded border p-2 transition-colors"
+                                      style={{
+                                        ...cardTheme.panelStyle,
+                                        color: cardTheme.secondaryTextColor
+                                      }}
                                       title={isPurchaseExpanded ? 'Ocultar parcelas' : 'Mostrar parcelas'}
                                     >
                                       {isPurchaseExpanded ? (
@@ -690,24 +870,41 @@ function CreditCardPurchasesPageInner() {
                                     </button>
                                   </td>
                                   <td className="px-4 py-4">
-                                    <div className="font-medium text-white">{purchase.description}</div>
-                                    <div className="mt-1 text-xs text-gray-400">
+                                    <div
+                                      className="font-medium"
+                                      style={{ color: cardTheme.primaryTextColor }}
+                                    >
+                                      {purchase.description}
+                                    </div>
+                                    <div
+                                      className="mt-1 text-xs"
+                                      style={{ color: cardTheme.tertiaryTextColor }}
+                                    >
                                       {purchase.installmentCount} parcela{purchase.installmentCount === 1 ? '' : 's'}
                                     </div>
-                                    {purchase.notes && (
-                                      <div className="mt-2 text-xs text-gray-400">{purchase.notes}</div>
-                                    )}
                                   </td>
-                                  <td className="px-4 py-4 text-gray-300">
+                                  <td className="px-4 py-4">
                                     {formatCalendarDate(purchase.purchaseDate)}
                                   </td>
-                                  <td className="px-4 py-4 text-gray-300">
+                                  <td className="px-4 py-4">
                                     {purchase.installmentCount}x
                                   </td>
-                                  <td className="px-4 py-4 text-right font-medium text-gray-100">
+                                  <td className="px-4 py-4">
+                                    {getRemainingInstallmentsLabel(purchase)}
+                                  </td>
+                                  <td className="px-4 py-4">
+                                    {getLastInvoiceReferenceLabel(purchase)}
+                                  </td>
+                                  <td
+                                    className="px-4 py-4 text-right font-medium"
+                                    style={{ color: cardTheme.primaryTextColor }}
+                                  >
                                     {formatCurrency(purchase.installmentAmount)}
                                   </td>
-                                  <td className="px-4 py-4 text-right font-semibold text-white">
+                                  <td
+                                    className="px-4 py-4 text-right font-semibold"
+                                    style={{ color: cardTheme.primaryTextColor }}
+                                  >
                                     {formatCurrency(purchase.totalAmount)}
                                   </td>
                                   <td className="px-4 py-4">
@@ -727,11 +924,11 @@ function CreditCardPurchasesPageInner() {
                                       <Link href={`/financial/transactions/${purchase.representativeTransactionId}`}>
                                         <button
                                           type="button"
-                                          className="p-1 text-gray-300 transition-colors hover:text-accent"
-                                          title="Abrir compra"
-                                          aria-label="Abrir compra"
-                                        >
-                                          <ExternalLink size={14} />
+                                        className="p-1 text-gray-300 transition-colors hover:text-accent"
+                                        title="Abrir compra"
+                                        aria-label="Abrir compra"
+                                      >
+                                        <ExternalLink size={14} />
                                         </button>
                                       </Link>
                                       {isCompanyOwner && (
@@ -755,23 +952,66 @@ function CreditCardPurchasesPageInner() {
                                 </tr>
 
                                 {isPurchaseExpanded && (
-                                  <tr className="border-t border-gray-800 bg-[#0f1419]">
-                                    <td colSpan={8} className="px-4 py-4">
+                                  <tr
+                                    style={{
+                                      borderTop: `1px solid ${String(cardTheme.panelStyle.borderColor)}`
+                                    }}
+                                  >
+                                    <td colSpan={10} className="px-4 py-4">
                                       <div className="mb-4 flex flex-wrap gap-3 text-sm">
-                                        <div className="rounded-lg border border-gray-700 bg-[#12161d] px-3 py-2 text-gray-300">
-                                          Total: <span className="font-medium text-white">{formatCurrency(purchase.totalAmount)}</span>
+                                        <div
+                                          className="rounded-lg border px-3 py-2"
+                                          style={{
+                                            ...cardTheme.panelStyle,
+                                            color: cardTheme.secondaryTextColor
+                                          }}
+                                        >
+                                          Total:{' '}
+                                          <span
+                                            className="font-medium"
+                                            style={{ color: cardTheme.primaryTextColor }}
+                                          >
+                                            {formatCurrency(purchase.totalAmount)}
+                                          </span>
                                         </div>
-                                        <div className="rounded-lg border border-gray-700 bg-[#12161d] px-3 py-2 text-gray-300">
+                                        <div
+                                          className="rounded-lg border px-3 py-2"
+                                          style={{
+                                            ...cardTheme.panelStyle,
+                                            color: cardTheme.secondaryTextColor
+                                          }}
+                                        >
                                           Compra em:{' '}
-                                          <span className="font-medium text-white">
+                                          <span
+                                            className="font-medium"
+                                            style={{ color: cardTheme.primaryTextColor }}
+                                          >
                                             {formatCalendarDate(purchase.purchaseDate)}
                                           </span>
                                         </div>
                                       </div>
 
-                                      <div className="overflow-x-auto rounded-lg border border-gray-700">
+                                      {purchase.notes && (
+                                        <div
+                                          className="mb-4 rounded-lg border px-3 py-2 text-sm"
+                                          style={{
+                                            ...cardTheme.panelStyle,
+                                            color: cardTheme.secondaryTextColor
+                                          }}
+                                        >
+                                          {purchase.notes}
+                                        </div>
+                                      )}
+
+                                      <div
+                                        className="overflow-x-auto rounded-lg border"
+                                        style={cardTheme.panelStyle}
+                                      >
                                         <table className="w-full min-w-[720px]">
-                                          <thead className="bg-[#12161d] text-left text-xs uppercase tracking-wide text-gray-400">
+                                          <thead
+                                            className="text-left text-xs uppercase tracking-wide"
+                                            style={{ color: cardTheme.tertiaryTextColor }}
+                                          >
                                             <tr>
                                               <th className="px-3 py-2">Parcela</th>
                                               <th className="px-3 py-2">Fatura</th>
@@ -787,7 +1027,11 @@ function CreditCardPurchasesPageInner() {
                                               return (
                                                 <tr
                                                   key={installment.id}
-                                                  className="border-t border-gray-800 text-sm text-gray-300"
+                                                  className="text-sm"
+                                                  style={{
+                                                    borderTop: `1px solid ${String(cardTheme.panelStyle.borderColor)}`,
+                                                    color: cardTheme.secondaryTextColor
+                                                  }}
                                                 >
                                                   <td className="px-3 py-2">
                                                     {installment.installmentNumber}/{installment.totalInstallments}
@@ -812,7 +1056,10 @@ function CreditCardPurchasesPageInner() {
                                                       {installmentStatus.label}
                                                     </span>
                                                   </td>
-                                                  <td className="px-3 py-2 text-right font-medium text-white">
+                                                  <td
+                                                    className="px-3 py-2 text-right font-medium"
+                                                    style={{ color: cardTheme.primaryTextColor }}
+                                                  >
                                                     {formatCurrency(installment.amount)}
                                                   </td>
                                                 </tr>
@@ -829,35 +1076,53 @@ function CreditCardPurchasesPageInner() {
                           })}
                         </tbody>
                       </table>
+
+                      {group.totalPages > 1 && (
+                        <div
+                          className="flex items-center justify-between gap-4 border-t px-4 py-4"
+                          style={{ borderColor: cardTheme.panelStyle.borderColor }}
+                        >
+                          <div
+                            className="text-sm"
+                            style={{ color: cardTheme.secondaryTextColor }}
+                          >
+                            Pagina {group.currentPage} de {group.totalPages} neste cartao
+                          </div>
+                          <div className="flex gap-3">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={group.currentPage <= 1}
+                              aria-label={`Pagina anterior de ${card?.name || group.purchases[0].card.name}`}
+                              onClick={() =>
+                                handleCardPageChange(group.cardId, Math.max(1, group.currentPage - 1))
+                              }
+                            >
+                              Anterior
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={group.currentPage >= group.totalPages}
+                              aria-label={`Proxima pagina de ${card?.name || group.purchases[0].card.name}`}
+                              onClick={() =>
+                                handleCardPageChange(
+                                  group.cardId,
+                                  Math.min(group.totalPages, group.currentPage + 1)
+                                )
+                              }
+                            >
+                              Proxima
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
+                  </div>
                 </Card>
               );
             })}
-          </div>
-
-          <div className="mt-4 flex items-center justify-between gap-4">
-            <div className="text-sm text-gray-400">
-              Pagina {currentPage} de {totalPages}
-            </div>
-            <div className="flex gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={currentPage <= 1}
-                onClick={() => setCurrentPage((previous) => Math.max(1, previous - 1))}
-              >
-                Anterior
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={currentPage >= totalPages}
-                onClick={() => setCurrentPage((previous) => Math.min(totalPages, previous + 1))}
-              >
-                Proxima
-              </Button>
-            </div>
           </div>
         </>
       )}

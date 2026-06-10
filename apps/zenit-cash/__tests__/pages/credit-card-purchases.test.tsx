@@ -10,6 +10,7 @@ const addToastMock = vi.fn()
 const confirmMock = vi.fn()
 
 let isCompanyOwner = false
+let cardsResponse: any[] = []
 let purchasesResponse: any[] = []
 
 vi.mock('next/router', () => ({
@@ -143,6 +144,14 @@ function buildPurchase(overrides?: Partial<any>) {
 describe('CreditCardPurchasesPage', () => {
   beforeEach(() => {
     isCompanyOwner = false
+    cardsResponse = [
+      {
+        id: 1,
+        name: 'Nubank Daniel',
+        balance: '-300.00',
+        creditLimit: '4200.00'
+      }
+    ]
     purchasesResponse = [buildPurchase()]
     pushMock.mockReset()
     addToastMock.mockReset()
@@ -153,14 +162,7 @@ describe('CreditCardPurchasesPage', () => {
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/financial/credit-cards') {
         return Promise.resolve({
-          data: [
-            {
-              id: 1,
-              name: 'Nubank Daniel',
-              balance: '-300.00',
-              creditLimit: '4200.00'
-            }
-          ]
+          data: cardsResponse
         })
       }
 
@@ -252,6 +254,135 @@ describe('CreditCardPurchasesPage', () => {
     expect(await screen.findByRole('heading', { name: 'Compras Parceladas no Cartao' })).toBeInTheDocument()
     expect(await screen.findByText('Notebook Parcelado')).toBeInTheDocument()
     expect(screen.queryByText('Compra a Vista')).not.toBeInTheDocument()
+  })
+
+  it('keeps purchase notes hidden while the row is collapsed', async () => {
+    purchasesResponse = [
+      buildPurchase({
+        notes: 'Importado por conciliacao de cartao'
+      })
+    ]
+
+    render(<CreditCardPurchasesPage />)
+
+    expect(await screen.findByText('Notebook Parcelado')).toBeInTheDocument()
+    expect(screen.queryByText('Importado por conciliacao de cartao')).not.toBeInTheDocument()
+  })
+
+  it('shows the last invoice reference and remaining installments in the collapsed row', async () => {
+    purchasesResponse = [
+      buildPurchase({
+        installments: [
+          {
+            id: 101,
+            installmentNumber: 1,
+            totalInstallments: 3,
+            amount: '100.00',
+            dueDate: '2026-06-17T12:00:00.000Z',
+            scheduledDate: '2026-06-01T12:00:00.000Z',
+            status: 'COMPLETED',
+            creditCardInvoice: {
+              id: 201,
+              referenceYear: 2026,
+              referenceMonth: 6,
+              dueDate: '2026-06-17T12:00:00.000Z',
+              status: 'PAID'
+            }
+          },
+          {
+            id: 102,
+            installmentNumber: 2,
+            totalInstallments: 3,
+            amount: '100.00',
+            dueDate: '2026-07-17T12:00:00.000Z',
+            scheduledDate: '2026-07-01T12:00:00.000Z',
+            status: 'COMPLETED',
+            creditCardInvoice: {
+              id: 202,
+              referenceYear: 2026,
+              referenceMonth: 7,
+              dueDate: '2026-07-17T12:00:00.000Z',
+              status: 'OPEN'
+            }
+          },
+          {
+            id: 103,
+            installmentNumber: 3,
+            totalInstallments: 3,
+            amount: '100.00',
+            dueDate: '2026-08-17T12:00:00.000Z',
+            scheduledDate: '2026-08-01T12:00:00.000Z',
+            status: 'COMPLETED',
+            creditCardInvoice: {
+              id: 203,
+              referenceYear: 2026,
+              referenceMonth: 8,
+              dueDate: '2026-08-17T12:00:00.000Z',
+              status: 'OPEN'
+            }
+          }
+        ]
+      })
+    ]
+
+    render(<CreditCardPurchasesPage />)
+
+    expect(await screen.findByText('Notebook Parcelado')).toBeInTheDocument()
+    expect(screen.getByText('2 restantes')).toBeInTheDocument()
+    expect(screen.getByText('08/2026')).toBeInTheDocument()
+  })
+
+  it('paginates purchases independently for each card', async () => {
+    cardsResponse = [
+      {
+        id: 1,
+        name: 'Nubank Daniel',
+        balance: '-300.00',
+        creditLimit: '4200.00'
+      },
+      {
+        id: 2,
+        name: 'Itau Empresa',
+        balance: '-150.00',
+        creditLimit: '8000.00'
+      }
+    ]
+
+    purchasesResponse = [
+      ...Array.from({ length: 21 }, (_, index) =>
+        buildPurchase({
+          groupKey: `card-1-${index + 1}`,
+          purchaseGroupId: `card-1-${index + 1}`,
+          representativeTransactionId: index + 1,
+          description: `Card 1 Parcelado ${String(index + 1).padStart(2, '0')}`
+        })
+      ),
+      ...Array.from({ length: 2 }, (_, index) =>
+        buildPurchase({
+          groupKey: `card-2-${index + 1}`,
+          purchaseGroupId: `card-2-${index + 1}`,
+          representativeTransactionId: 100 + index,
+          description: `Card 2 Parcelado ${String(index + 1).padStart(2, '0')}`,
+          card: {
+            id: 2,
+            name: 'Itau Empresa'
+          }
+        })
+      )
+    ]
+
+    const user = userEvent.setup()
+
+    render(<CreditCardPurchasesPage />)
+
+    expect(await screen.findByText('Card 1 Parcelado 01')).toBeInTheDocument()
+    expect(screen.getByText('Card 2 Parcelado 01')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Proxima pagina de Nubank Daniel' }))
+
+    expect(await screen.findByText('Card 1 Parcelado 21')).toBeInTheDocument()
+    expect(screen.queryByText('Card 1 Parcelado 01')).not.toBeInTheDocument()
+    expect(screen.getByText('Card 2 Parcelado 01')).toBeInTheDocument()
   })
 
   it('deletes grouped purchases with purchase scope from the list action', async () => {

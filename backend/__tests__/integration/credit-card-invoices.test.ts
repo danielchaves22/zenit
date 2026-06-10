@@ -1,12 +1,13 @@
 import request from 'supertest';
 import bcrypt from 'bcrypt';
-import { AppKey, PrismaClient } from '@prisma/client';
+import { AppKey, PrismaClient, TransactionStatus, TransactionType } from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 import {
   addMonthsClamped,
   resolveCreditCardInvoiceReference
 } from '../../src/utils/credit-card';
+import FinancialTransactionService from '../../src/services/financial-transaction.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -639,6 +640,66 @@ describe('Credit card invoices', () => {
     expect(cardsAfterRetroactivePurchase.status).toBe(200);
     expect(cardsAfterRetroactivePurchase.body[0].usedLimit).toBe(0);
     expect(cardsAfterRetroactivePurchase.body[0].availableLimit).toBe(1000);
+  });
+
+  it('anchors imported installments to the invoice reference selected during reconciliation', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = new Date('2099-06-10T12:00:00.000Z');
+    const anchoredInvoiceReference = resolveCreditCardInvoiceReference(
+      new Date('2099-08-10T12:00:00.000Z'),
+      10,
+      15
+    );
+
+    const created = await FinancialTransactionService.createTransaction({
+      description: 'Compra ancorada pela conciliacao',
+      amount: 120,
+      date: purchaseDate,
+      type: TransactionType.EXPENSE,
+      status: TransactionStatus.COMPLETED,
+      fromAccountId: card.id,
+      categoryId: expenseCategoryId,
+      companyId,
+      createdBy: userId,
+      installmentCount: 3,
+      creditCardInvoiceReference: {
+        ...anchoredInvoiceReference,
+        accountId: card.id
+      },
+      creditCardInvoiceAnchorInstallmentNumber: 2
+    });
+
+    expect(Array.isArray(created)).toBe(true);
+
+    const persistedTransactions = await prisma.financialTransaction.findMany({
+      where: {
+        purchaseGroupId: (created as any[])[0].purchaseGroupId
+      },
+      include: {
+        creditCardInvoice: true
+      },
+      orderBy: {
+        installmentNumber: 'asc'
+      }
+    });
+
+    expect(persistedTransactions).toHaveLength(3);
+    expect(persistedTransactions.map((transaction) => transaction.installmentNumber)).toEqual([1, 2, 3]);
+    expect(
+      persistedTransactions.map((transaction) => [
+        transaction.creditCardInvoice?.referenceYear,
+        transaction.creditCardInvoice?.referenceMonth
+      ])
+    ).toEqual([
+      [2099, 7],
+      [2099, 8],
+      [2099, 9]
+    ]);
+    expect(
+      persistedTransactions.every(
+        (transaction) => transaction.date.toISOString() === purchaseDate.toISOString()
+      )
+    ).toBe(true);
   });
 
   it('combines real invoice items with projected fixed card expenses in the current invoice detail', async () => {

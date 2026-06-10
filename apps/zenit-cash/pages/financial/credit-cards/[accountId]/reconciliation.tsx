@@ -28,6 +28,7 @@ type ReconciliationItemStatus = 'OK' | 'SIMILAR' | 'PENDING' | 'NOT_IMPORTABLE';
 type ReconciliationReason =
   | 'EXACT'
   | 'AMBIGUOUS_EXACT'
+  | 'INVOICE_DIVERGENCE'
   | 'DATE_DIVERGENCE'
   | 'INSTALLMENT_DIVERGENCE'
   | 'NON_IMPORTABLE'
@@ -244,6 +245,8 @@ function getReasonLabel(item: ReconciliationPreviewItem) {
       return hasProjectedFixedMatch
         ? 'Ha mais de uma correspondencia equivalente, incluindo fixas projetadas.'
         : 'Mais de um lancamento ja bate exatamente.';
+    case 'INVOICE_DIVERGENCE':
+      return 'Mesmo valor, data e parcela, mas vinculado a outra fatura.';
     case 'DATE_DIVERGENCE':
       return hasProjectedFixedMatch
         ? 'Existe fixa projetada com mesmo valor nesta fatura; revise a data.'

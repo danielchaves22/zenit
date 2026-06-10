@@ -134,6 +134,48 @@ describe('Credit card statement reconciliation service', () => {
     expect(classification.matchedTransactions).toHaveLength(1);
   });
 
+  it('marks same purchase as similar when it is linked to a different invoice', () => {
+    const parsed = __private__.parseCaixaStatementText(
+      sampleCaixaStatementText,
+      'FaturaCaixa_062026.pdf'
+    );
+    const purchaseItem = parsed.items.find((item) => item.kind === 'PURCHASE');
+
+    expect(purchaseItem).toBeTruthy();
+
+    const classification = __private__.classifyMatches(
+      purchaseItem!,
+      [
+        {
+          matchKey: 'transaction:191',
+          matchSource: 'TRANSACTION',
+          id: 191,
+          fixedTemplateId: null,
+          occurrenceKey: null,
+          description: 'Descricao interna',
+          amount: new Prisma.Decimal('35.48'),
+          date: new Date('2026-05-07T12:00:00.000Z'),
+          installmentNumber: null,
+          totalInstallments: null,
+          status: TransactionStatus.COMPLETED,
+          purchaseGroupId: null,
+          creditCardInvoice: {
+            id: 71,
+            referenceYear: 2026,
+            referenceMonth: 5,
+            status: CreditCardInvoiceStatus.CLOSED
+          }
+        }
+      ],
+      2026,
+      6
+    );
+
+    expect(classification.status).toBe('SIMILAR');
+    expect(classification.reason).toBe('INVOICE_DIVERGENCE');
+    expect(classification.matchedTransactions).toHaveLength(1);
+  });
+
   it('uses persisted source description only as an auxiliary exact-match disambiguator', () => {
     const parsed = __private__.parseCaixaStatementText(
       sampleCaixaStatementText,

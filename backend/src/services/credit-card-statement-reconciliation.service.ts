@@ -13,6 +13,7 @@ import CreditCardReconciliationCategorySuggestionService, {
 } from './credit-card-reconciliation-category-suggestion.service';
 import { parseDecimal } from '../utils/money';
 import {
+  buildCreditCardInvoiceReferenceForMonth,
   resolveCreditCardInvoiceReference,
   resolveCreditCardInvoiceStatus
 } from '../utils/credit-card';
@@ -103,6 +104,7 @@ type ExistingTransactionCandidate = {
 type MatchReason =
   | 'EXACT'
   | 'AMBIGUOUS_EXACT'
+  | 'INVOICE_DIVERGENCE'
   | 'DATE_DIVERGENCE'
   | 'INSTALLMENT_DIVERGENCE'
   | 'NON_IMPORTABLE'
@@ -256,6 +258,15 @@ function isCandidateInStatementReference(
     candidate.creditCardInvoice?.referenceYear === referenceYear &&
     candidate.creditCardInvoice?.referenceMonth === referenceMonth
   );
+}
+
+function hasCandidateInvoiceDivergence(
+  candidate: ExistingTransactionCandidate,
+  referenceYear: number,
+  referenceMonth: number
+) {
+  return Boolean(candidate.creditCardInvoice) &&
+    !isCandidateInStatementReference(candidate, referenceYear, referenceMonth);
 }
 
 function normalizeInstallmentSignature(installmentNumber: number | null, totalInstallments: number | null) {
@@ -1280,7 +1291,10 @@ function classifyMatches(
     }
 
     if (item.datePrecision === 'PURCHASE_DATE' && item.purchaseDate) {
-      return isSameCalendarDate(candidate.date, item.purchaseDate);
+      return (
+        isSameCalendarDate(candidate.date, item.purchaseDate) &&
+        !hasCandidateInvoiceDivergence(candidate, referenceYear, referenceMonth)
+      );
     }
 
     return isCandidateInStatementReference(candidate, referenceYear, referenceMonth);
@@ -1345,6 +1359,14 @@ function classifyMatches(
       const purchaseDate = item.purchaseDate;
       const sameDate = isSameCalendarDate(candidate.date, purchaseDate);
 
+      if (
+        sameInstallmentSignature &&
+        sameDate &&
+        hasCandidateInvoiceDivergence(candidate, referenceYear, referenceMonth)
+      ) {
+        return true;
+      }
+
       if (sameInstallmentSignature && !sameDate) {
         if (Math.abs(differenceInDays(candidate.date, purchaseDate)) <= 15) {
           return true;
@@ -1360,17 +1382,38 @@ function classifyMatches(
       return false;
     }
 
+    if (
+      sameInstallmentSignature &&
+      hasCandidateInvoiceDivergence(candidate, referenceYear, referenceMonth)
+    ) {
+      return true;
+    }
+
     return sameStatementReference && !sameInstallmentSignature;
   });
 
   if (partialMatches.length > 0) {
     const purchaseDate = item.purchaseDate;
+    const hasInvoiceDivergence = partialMatches.some((candidate) => {
+      const candidateInstallments = normalizeInstallmentSignature(
+        candidate.installmentNumber,
+        candidate.totalInstallments
+      );
+
+      return (
+        candidateInstallments.installmentNumber === importInstallments.installmentNumber &&
+        candidateInstallments.totalInstallments === importInstallments.totalInstallments &&
+        hasCandidateInvoiceDivergence(candidate, referenceYear, referenceMonth)
+      );
+    });
     const reason =
-      item.datePrecision === 'PURCHASE_DATE' && purchaseDate
-        ? partialMatches.some((candidate) => isSameCalendarDate(candidate.date, purchaseDate))
-          ? 'INSTALLMENT_DIVERGENCE'
-          : 'DATE_DIVERGENCE'
-        : 'INSTALLMENT_DIVERGENCE';
+      hasInvoiceDivergence
+        ? 'INVOICE_DIVERGENCE'
+        : item.datePrecision === 'PURCHASE_DATE' && purchaseDate
+          ? partialMatches.some((candidate) => isSameCalendarDate(candidate.date, purchaseDate))
+            ? 'INSTALLMENT_DIVERGENCE'
+            : 'DATE_DIVERGENCE'
+          : 'INSTALLMENT_DIVERGENCE';
 
     return {
       status: 'SIMILAR',
@@ -1604,6 +1647,8 @@ async function ensureCreditCardAccount(accountId: number, companyId: number) {
       id: true,
       name: true,
       type: true,
+      statementClosingDay: true,
+      statementDueDay: true,
       bankName: true,
       bankCode: true,
       bank: {
@@ -1651,6 +1696,29 @@ async function ensureCreditCardAccount(accountId: number, companyId: number) {
           : 'CAIXA_PDF'
   } as typeof account & {
     reconciliationSourceType: CreditCardReconciliationSourceType;
+  };
+}
+
+function buildImportedStatementInvoiceReference(
+  statement: ParsedStatement,
+  account: {
+    id: number;
+    statementClosingDay: number | null;
+    statementDueDay: number | null;
+  }
+) {
+  if (!account.statementClosingDay || !account.statementDueDay) {
+    throw new Error('Cartao de credito sem fechamento e vencimento configurados');
+  }
+
+  return {
+    ...buildCreditCardInvoiceReferenceForMonth(
+      statement.referenceYear,
+      statement.referenceMonth,
+      account.statementClosingDay,
+      account.statementDueDay
+    ),
+    accountId: account.id
   };
 }
 
@@ -1839,6 +1907,10 @@ export default class CreditCardStatementReconciliationService {
     );
     const selectedItemIds = selectedItemsInput.map((item) => item.itemId);
     const selectedItems = statement.items.filter((item) => selectedItemIds.includes(item.id));
+    const importedStatementInvoiceReference = buildImportedStatementInvoiceReference(
+      statement,
+      account
+    );
     const results: ReconciliationCommitResult['results'] = [];
     let candidates = await loadCandidateTransactions({
       accountId: params.accountId,
@@ -1920,7 +1992,9 @@ export default class CreditCardStatementReconciliationService {
           categoryId: selectedInput.categoryId,
           companyId: params.companyId,
           createdBy: params.userId,
-          installmentCount: item.totalInstallments ?? 1
+          installmentCount: item.totalInstallments ?? 1,
+          creditCardInvoiceReference: importedStatementInvoiceReference,
+          creditCardInvoiceAnchorInstallmentNumber: item.installmentNumber ?? 1
         });
         const createdTransactions = normalizeCreatedTransactions(created);
 

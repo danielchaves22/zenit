@@ -15,7 +15,8 @@ import {
   addMonthsClamped,
   CreditCardInvoiceReference,
   resolveCreditCardInvoiceReference,
-  resolveCreditCardInvoiceStatus
+  resolveCreditCardInvoiceStatus,
+  shiftCreditCardInvoiceReference
 } from '../utils/credit-card';
 
 import { randomUUID } from 'crypto';
@@ -206,6 +207,8 @@ export default class FinancialTransactionService {
     recurringTransactionId?: number | null;
     occurrenceKey?: string | null;
     allowMissingAccount?: boolean;
+    creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
+    creditCardInvoiceAnchorInstallmentNumber?: number | null;
   }): Promise<FinancialTransaction | FinancialTransaction[]> {
     const installmentCount = data.installmentCount && data.installmentCount > 0
       ? data.installmentCount
@@ -253,6 +256,8 @@ export default class FinancialTransactionService {
     const baseEffectiveDate = baseData.effectiveDate || null;
     delete baseData.repeatTimes;
     delete baseData.installmentCount;
+    delete baseData.creditCardInvoiceReference;
+    delete baseData.creditCardInvoiceAnchorInstallmentNumber;
 
     const transactions: FinancialTransaction[] = [];
 
@@ -337,6 +342,8 @@ export default class FinancialTransactionService {
       recurringTransactionId?: number | null;
       occurrenceKey?: string | null;
       allowMissingAccount?: boolean;
+      creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
+      creditCardInvoiceAnchorInstallmentNumber?: number | null;
     },
     cardAccount: {
       id: number;
@@ -347,20 +354,35 @@ export default class FinancialTransactionService {
   ): Promise<FinancialTransaction | FinancialTransaction[]> {
     const purchaseGroupId = randomUUID();
     const purchaseDate = new Date(data.date);
+    const explicitInvoiceReference = data.creditCardInvoiceReference ?? null;
+    const anchorInstallmentNumber = Math.min(
+      Math.max(data.creditCardInvoiceAnchorInstallmentNumber ?? 1, 1),
+      installmentCount
+    );
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const transactions: FinancialTransaction[] = [];
 
     for (let i = 0; i < installmentCount; i++) {
       const scheduledDate = addMonthsClamped(purchaseDate, i);
-      const invoiceReference = resolveCreditCardInvoiceReference(
-        scheduledDate,
-        cardAccount.statementClosingDay as number,
-        cardAccount.statementDueDay as number
-      );
+      const invoiceReference = explicitInvoiceReference
+        ? shiftCreditCardInvoiceReference(
+            explicitInvoiceReference,
+            i + 1 - anchorInstallmentNumber
+          )
+        : resolveCreditCardInvoiceReference(
+            scheduledDate,
+            cardAccount.statementClosingDay as number,
+            cardAccount.statementDueDay as number
+          );
+      const {
+        creditCardInvoiceReference: _ignoredInvoiceReference,
+        creditCardInvoiceAnchorInstallmentNumber: _ignoredAnchorInstallmentNumber,
+        ...transactionData
+      } = data;
 
       const transaction = await this.createSingleTransaction({
-        ...data,
+        ...transactionData,
         date: purchaseDate,
         dueDate: invoiceReference.dueDate,
         effectiveDate: purchaseDate,

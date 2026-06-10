@@ -62,6 +62,38 @@ export function resolveCreditCardInvoiceReference(
   };
 }
 
+export function buildCreditCardInvoiceReferenceForMonth(
+  referenceYear: number,
+  referenceMonth: number,
+  closingDay: number,
+  dueDay: number
+): CreditCardInvoiceReference {
+  const occurrenceDate = buildDateWithClampedDay(referenceYear, referenceMonth - 1, closingDay);
+  return resolveCreditCardInvoiceReference(occurrenceDate, closingDay, dueDay);
+}
+
+export function shiftCreditCardInvoiceReference(
+  reference: CreditCardInvoiceReference,
+  monthOffset: number
+): CreditCardInvoiceReference {
+  const referenceBase = new Date(
+    reference.referenceYear,
+    reference.referenceMonth - 1 + monthOffset,
+    1,
+    12,
+    0,
+    0,
+    0
+  );
+
+  return {
+    referenceYear: referenceBase.getFullYear(),
+    referenceMonth: referenceBase.getMonth() + 1,
+    closingDate: addMonthsClamped(reference.closingDate, monthOffset),
+    dueDate: addMonthsClamped(reference.dueDate, monthOffset)
+  };
+}
+
 export function resolveCreditCardInvoiceStatus(
   closingDate: Date,
   paymentCompleted: boolean,

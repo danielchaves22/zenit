@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
@@ -310,6 +310,121 @@ function buildItemDrafts(items: ReconciliationPreviewItem[]) {
   }, {});
 }
 
+function parseAmountToCents(value: string | number) {
+  const numericValue = Number(value || 0);
+  return Number.isFinite(numericValue) ? Math.round(numericValue * 100) : 0;
+}
+
+function centsToDecimalString(value: number) {
+  return (value / 100).toFixed(2);
+}
+
+function buildPreviewSummary(items: ReconciliationPreviewItem[]): ReconciliationPreview['summary'] {
+  const okItems = items.filter((item) => item.status === 'OK');
+  const similarItems = items.filter((item) => item.status === 'SIMILAR');
+  const pendingItems = items.filter((item) => item.status === 'PENDING');
+  const notImportableItems = items.filter((item) => item.status === 'NOT_IMPORTABLE');
+  const importableItems = items.filter((item) => item.canImport);
+
+  const sumItems = (entries: ReconciliationPreviewItem[]) =>
+    centsToDecimalString(
+      entries.reduce((sum, entry) => sum + parseAmountToCents(entry.signedAmount), 0)
+    );
+
+  return {
+    totalItems: items.length,
+    okCount: okItems.length,
+    similarCount: similarItems.length,
+    pendingCount: pendingItems.length,
+    notImportableCount: notImportableItems.length,
+    importableCount: importableItems.length,
+    importableAmount: sumItems(importableItems),
+    okAmount: sumItems(okItems),
+    similarAmount: sumItems(similarItems),
+    pendingAmount: sumItems(pendingItems),
+    notImportableAmount: sumItems(notImportableItems)
+  };
+}
+
+function resolveCreatedTransactionId(
+  item: ReconciliationPreviewItem,
+  createdTransactionIds: number[]
+) {
+  if (createdTransactionIds.length === 0) {
+    return null;
+  }
+
+  if (item.installmentNumber && createdTransactionIds.length >= item.installmentNumber) {
+    return createdTransactionIds[item.installmentNumber - 1] ?? createdTransactionIds[0] ?? null;
+  }
+
+  return createdTransactionIds[0] ?? null;
+}
+
+function buildCreatedMatchTransaction(params: {
+  preview: ReconciliationPreview;
+  item: ReconciliationPreviewItem;
+  description: string;
+  createdTransactionIds: number[];
+}): ReconciliationMatchedTransaction[] {
+  const createdTransactionId = resolveCreatedTransactionId(
+    params.item,
+    params.createdTransactionIds
+  );
+
+  return [
+    {
+      matchKey: createdTransactionId
+        ? `transaction:${createdTransactionId}`
+        : `transaction:created:${params.item.id}`,
+      matchSource: 'TRANSACTION',
+      id: createdTransactionId,
+      fixedTemplateId: null,
+      occurrenceKey: null,
+      description: params.description,
+      amount: params.item.amount,
+      date: params.item.purchaseDate || params.preview.statement.dueDate,
+      status: 'COMPLETED',
+      installmentNumber: params.item.installmentNumber,
+      totalInstallments: params.item.totalInstallments,
+      purchaseGroupId: null,
+      invoiceReference: formatReference(
+        params.preview.statement.referenceMonth,
+        params.preview.statement.referenceYear
+      ),
+      invoiceStatus: null
+    }
+  ];
+}
+
+function buildFallbackMatchTransaction(params: {
+  preview: ReconciliationPreview;
+  item: ReconciliationPreviewItem;
+  description: string;
+}): ReconciliationMatchedTransaction[] {
+  return [
+    {
+      matchKey: `transaction:existing:${params.item.id}`,
+      matchSource: 'TRANSACTION',
+      id: null,
+      fixedTemplateId: null,
+      occurrenceKey: null,
+      description: params.description,
+      amount: params.item.amount,
+      date: params.item.purchaseDate || params.preview.statement.dueDate,
+      status: 'COMPLETED',
+      installmentNumber: params.item.installmentNumber,
+      totalInstallments: params.item.totalInstallments,
+      purchaseGroupId: null,
+      invoiceReference: formatReference(
+        params.preview.statement.referenceMonth,
+        params.preview.statement.referenceYear
+      ),
+      invoiceStatus: null
+    }
+  ];
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -346,6 +461,9 @@ function CreditCardReconciliationPageInner() {
   const [statusFilter, setStatusFilter] = useState<ReconciliationFilter>('ALL');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
+  const [committingItemIds, setCommittingItemIds] = useState<string[]>([]);
+  const commitInFlightItemIdsRef = useRef<Set<string>>(new Set());
+  const batchCommitInFlightRef = useRef(false);
 
   const reconciliationSourceType = useMemo(
     () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
@@ -408,6 +526,7 @@ function CreditCardReconciliationPageInner() {
       }
     );
   }, [itemDrafts, selectedItems]);
+  const hasPendingSingleCommit = committingItemIds.length > 0;
 
   useEffect(() => {
     if (!router.isReady || Number.isNaN(accountId)) {
@@ -641,6 +760,72 @@ function CreditCardReconciliationPageInner() {
     });
   }
 
+  function applySingleItemCommitLocally(
+    selectedItem: { itemId: string; description: string; categoryId: number },
+    result: ReconciliationCommitResult['results'][number]
+  ) {
+    if (result.status === 'FAILED') {
+      return;
+    }
+
+    setPreview((currentPreview) => {
+      if (!currentPreview) {
+        return currentPreview;
+      }
+
+      const nextItems = currentPreview.items.map((item) => {
+        if (item.id !== selectedItem.itemId) {
+          return item;
+        }
+
+        if (result.status === 'SKIPPED_NOT_IMPORTABLE') {
+          return {
+            ...item,
+            status: 'NOT_IMPORTABLE' as const,
+            reason: 'NON_IMPORTABLE' as const,
+            canImport: false,
+            nonImportableReason: result.message
+          };
+        }
+
+        const projectedFixedMatches = item.matchedTransactions.filter(
+          (transaction) => transaction.matchSource === 'PROJECTED_FIXED'
+        );
+        const matchedTransactions = result.status === 'CREATED'
+          ? buildCreatedMatchTransaction({
+              preview: currentPreview,
+              item,
+              description: selectedItem.description,
+              createdTransactionIds: result.createdTransactionIds
+            })
+          : projectedFixedMatches.length > 0
+            ? projectedFixedMatches
+            : buildFallbackMatchTransaction({
+                preview: currentPreview,
+                item,
+                description: selectedItem.description
+              });
+
+        return {
+          ...item,
+          status: 'OK' as const,
+          reason: 'EXACT' as const,
+          canImport: false,
+          nonImportableReason: null,
+          matchedTransactions
+        };
+      });
+
+      return {
+        ...currentPreview,
+        items: nextItems,
+        summary: buildPreviewSummary(nextItems)
+      };
+    });
+
+    setSelectedItemIds((current) => current.filter((itemId) => itemId !== selectedItem.itemId));
+  }
+
   async function commitItems(itemIds: string[]) {
     if (!preview || !fileBase64 || !fileName || !reconciliationSourceType) {
       addToast('Analise a fatura antes de importar os lancamentos', 'error');
@@ -660,7 +845,23 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
-    setCommitLoading(true);
+    const isSingleItemCommit = itemIds.length === 1;
+
+    if (isSingleItemCommit) {
+      if (batchCommitInFlightRef.current || commitInFlightItemIdsRef.current.size > 0) {
+        return;
+      }
+
+      commitInFlightItemIdsRef.current.add(itemIds[0]!);
+      setCommittingItemIds((current) => Array.from(new Set([...current, ...itemIds])));
+    } else {
+      if (batchCommitInFlightRef.current || commitInFlightItemIdsRef.current.size > 0) {
+        return;
+      }
+
+      batchCommitInFlightRef.current = true;
+      setCommitLoading(true);
+    }
 
     try {
       const response = await api.post(
@@ -674,15 +875,37 @@ function CreditCardReconciliationPageInner() {
       );
 
       setCommitResult(response.data);
-      addToast(
-        `${response.data.summary.createdCount} lancamento(s) criado(s) na conciliacao`,
-        'success'
-      );
-      await refreshPreviewSilently();
+
+      if (isSingleItemCommit) {
+        const result = response.data.results[0];
+
+        if (result) {
+          if (result.status === 'FAILED') {
+            addToast(result.message || 'Erro ao importar lancamento', 'error');
+          } else {
+            addToast(result.message || 'Lancamento processado na conciliacao', 'success');
+            applySingleItemCommitLocally(selectedItems[0]!, result);
+          }
+        }
+      } else {
+        addToast(
+          `${response.data.summary.createdCount} lancamento(s) criado(s) na conciliacao`,
+          'success'
+        );
+        await refreshPreviewSilently();
+      }
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao importar lancamentos', 'error');
     } finally {
-      setCommitLoading(false);
+      if (isSingleItemCommit) {
+        itemIds.forEach((itemId) => commitInFlightItemIdsRef.current.delete(itemId));
+        setCommittingItemIds((current) =>
+          current.filter((currentItemId) => !itemIds.includes(currentItemId))
+        );
+      } else {
+        batchCommitInFlightRef.current = false;
+        setCommitLoading(false);
+      }
     }
   }
 
@@ -905,6 +1128,7 @@ function CreditCardReconciliationPageInner() {
                       onClick={() => void commitItems(selectedItemIds)}
                       disabled={
                         commitLoading ||
+                        hasPendingSingleCommit ||
                         categoriesLoading ||
                         selectedItemIds.length === 0 ||
                         selectedDraftIssues.missingDescriptionCount > 0 ||
@@ -962,6 +1186,7 @@ function CreditCardReconciliationPageInner() {
                   const suggestionSourceLabel = getSuggestionSourceLabel(
                     item.categorySuggestion.source
                   );
+                  const itemCommitLoading = committingItemIds.includes(item.id);
                   const missingDescription = selectable && !draft.description.trim();
                   const missingCategory = selectable && !draft.categoryId;
 
@@ -973,7 +1198,7 @@ function CreditCardReconciliationPageInner() {
                             <input
                               type="checkbox"
                               checked={selectedItemSet.has(item.id)}
-                              disabled={!selectable || commitLoading}
+                              disabled={!selectable || commitLoading || itemCommitLoading}
                               onChange={(event) =>
                                 handleToggleSelection(item.id, event.target.checked)
                               }
@@ -1017,13 +1242,18 @@ function CreditCardReconciliationPageInner() {
                                 onClick={() => void commitItems([item.id])}
                                 disabled={
                                   commitLoading ||
+                                  hasPendingSingleCommit ||
                                   categoriesLoading ||
+                                  itemCommitLoading ||
                                   missingDescription ||
                                   missingCategory
                                 }
-                                className="text-sm"
+                                className="flex items-center gap-2 text-sm"
                               >
-                                Importar este item
+                                {itemCommitLoading && (
+                                  <RefreshCw size={14} className="animate-spin" />
+                                )}
+                                {itemCommitLoading ? 'Importando...' : 'Importar este item'}
                               </Button>
                             )}
                           </div>
@@ -1086,7 +1316,7 @@ function CreditCardReconciliationPageInner() {
                                 onChange={(event) =>
                                   handleDraftDescriptionChange(item.id, event.target.value)
                                 }
-                                disabled={commitLoading}
+                                disabled={commitLoading || itemCommitLoading}
                                 className={`mt-2 w-full rounded border bg-background px-3 py-2 text-sm text-white focus:outline-none focus:ring ${
                                   missingDescription
                                     ? 'border-amber-500 focus:border-amber-400'
@@ -1114,7 +1344,7 @@ function CreditCardReconciliationPageInner() {
                                       ? 'Carregando categorias...'
                                       : 'Selecione a categoria'
                                   }
-                                  disabled={commitLoading || categoriesLoading}
+                                  disabled={commitLoading || categoriesLoading || itemCommitLoading}
                                 />
                               </div>
                               {suggestionSourceLabel && (

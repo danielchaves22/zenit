@@ -242,19 +242,19 @@ export default function FinancialHomeOverview({
   }, [fixedTransactions]);
 
   return (
-    <div className="space-y-6">
-      <Card className="relative overflow-hidden">
+    <div className="space-y-5">
+      <Card className="relative overflow-hidden p-0">
         <div className="absolute inset-0 bg-gradient-to-r from-accent/10 via-transparent to-transparent" />
-        <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-sm uppercase tracking-[0.22em] text-accent/90">
-              <Landmark size={16} />
+            <div className="flex items-center gap-2 text-xs uppercase tracking-[0.22em] text-accent/90">
+              <Landmark size={14} />
               Resumo das contas e cartoes
             </div>
-            <h3 className="mt-2 text-xl font-semibold text-white">
+            <h3 className="mt-2 text-lg font-semibold text-white sm:text-xl">
               Saldo, recorrencias e atalho direto para a operacao do dia.
             </h3>
-            <p className="mt-2 max-w-2xl text-sm text-gray-400">
+            <p className="mt-1.5 max-w-2xl text-[13px] text-gray-400">
               Acompanhe contas, cartoes e compromissos mensais sem sair da tela inicial.
             </p>
           </div>
@@ -280,76 +280,116 @@ export default function FinancialHomeOverview({
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <Card className="border-gray-700/80 bg-[#11161f] p-0">
+        <div className="flex items-start gap-3 p-4 sm:p-5">
+          <Receipt size={18} className="mt-0.5 text-accent" />
+          <div>
+            <div className="text-sm font-semibold text-white">Leitura rapida do momento</div>
+            <div className="mt-1.5 text-sm text-gray-400">
+              {nextInvoice?.nextInvoice ? (
+                <>
+                  A proxima fatura a vencer e de {nextInvoice.name}, referencia{' '}
+                  {getInvoiceReferenceLabel(
+                    nextInvoice.nextInvoice.referenceYear,
+                    nextInvoice.nextInvoice.referenceMonth
+                  )}
+                  {nextInvoice.nextInvoice.dueDate
+                    ? `, com vencimento em ${formatCalendarDate(nextInvoice.nextInvoice.dueDate)}.`
+                    : '.'}
+                </>
+              ) : (
+                'Nenhuma fatura aberta apareceu nos cartoes ativos.'
+              )}
+            </div>
+            <div className="mt-2 text-sm text-gray-400">
+              O saldo fixo previsto para o mes esta{' '}
+              <span className={fixedNetBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+                {fixedNetBalance >= 0 ? 'positivo' : 'negativo'}
+              </span>
+              , em {formatMoneyValue(fixedNetBalance, showBalances)}.
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         {loading ? (
           [...Array(4)].map((_, index) => (
-            <Skeleton key={index} className="h-32 rounded-xl" />
+            <Skeleton key={index} className="h-28 rounded-xl" />
           ))
         ) : (
           <>
-            <Card className="border-emerald-900/50 bg-emerald-950/20">
-              <div className="text-sm uppercase tracking-wide text-emerald-200/80">
-                Saldo em contas
-              </div>
-              <div className="mt-3 text-2xl font-semibold text-white">
-                {formatMoneyValue(totalAccountsBalance, showBalances)}
-              </div>
-              <div className="mt-2 text-sm text-emerald-100/75">
-                {activeAccounts.length} conta{activeAccounts.length === 1 ? '' : 's'} ativa
-                {activeAccounts.length === 1 ? '' : 's'}
-              </div>
-            </Card>
-
-            <Card className="border-sky-900/50 bg-sky-950/20">
-              <div className="text-sm uppercase tracking-wide text-sky-200/80">
-                Receitas fixas / mes
-              </div>
-              <div className="mt-3 text-2xl font-semibold text-white">
-                {formatMoneyValue(fixedIncomeTotal, showBalances)}
-              </div>
-              <div className="mt-2 text-sm text-sky-100/75">
-                Entradas recorrentes previstas
+            <Card className="border-emerald-900/50 bg-emerald-950/20 p-0">
+              <div className="p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-emerald-200/80">
+                  Saldo em contas
+                </div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  {formatMoneyValue(totalAccountsBalance, showBalances)}
+                </div>
+                <div className="mt-1.5 text-xs text-emerald-100/75">
+                  {activeAccounts.length} conta{activeAccounts.length === 1 ? '' : 's'} ativa
+                  {activeAccounts.length === 1 ? '' : 's'}
+                </div>
               </div>
             </Card>
 
-            <Card className="border-rose-900/50 bg-rose-950/20">
-              <div className="text-sm uppercase tracking-wide text-rose-200/80">
-                Despesas fixas / mes
-              </div>
-              <div className="mt-3 text-2xl font-semibold text-white">
-                {formatMoneyValue(fixedExpenseTotal, showBalances)}
-              </div>
-              <div className="mt-2 text-sm text-rose-100/75">
-                Saidas recorrentes previstas
+            <Card className="border-sky-900/50 bg-sky-950/20 p-0">
+              <div className="p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-sky-200/80">
+                  Receitas fixas / mes
+                </div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  {formatMoneyValue(fixedIncomeTotal, showBalances)}
+                </div>
+                <div className="mt-1.5 text-xs text-sky-100/75">
+                  Entradas recorrentes previstas
+                </div>
               </div>
             </Card>
 
-            <Card className="border-amber-900/50 bg-amber-950/20">
-              <div className="text-sm uppercase tracking-wide text-amber-200/80">
-                Limite disponivel
+            <Card className="border-rose-900/50 bg-rose-950/20 p-0">
+              <div className="p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-rose-200/80">
+                  Despesas fixas / mes
+                </div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  {formatMoneyValue(fixedExpenseTotal, showBalances)}
+                </div>
+                <div className="mt-1.5 text-xs text-rose-100/75">
+                  Saidas recorrentes previstas
+                </div>
               </div>
-              <div className="mt-3 text-2xl font-semibold text-white">
-                {availableCreditTotals.hasConfiguredLimit
-                  ? formatMoneyValue(availableCreditTotals.totalAvailable, showBalances)
-                  : 'Nao configurado'}
-              </div>
-              <div className="mt-2 text-sm text-amber-100/75">
-                Soma dos cartoes com limite definido
+            </Card>
+
+            <Card className="border-amber-900/50 bg-amber-950/20 p-0">
+              <div className="p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-amber-200/80">
+                  Limite disponivel
+                </div>
+                <div className="mt-2 text-xl font-semibold text-white">
+                  {availableCreditTotals.hasConfiguredLimit
+                    ? formatMoneyValue(availableCreditTotals.totalAvailable, showBalances)
+                    : 'Nao configurado'}
+                </div>
+                <div className="mt-1.5 text-xs text-amber-100/75">
+                  Soma dos cartoes com limite definido
+                </div>
               </div>
             </Card>
           </>
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-lg font-semibold text-white">
+              <div className="flex items-center gap-2 text-base font-semibold text-white">
                 <Wallet size={18} className="text-accent" />
                 Contas financeiras
               </div>
-              <p className="mt-1 text-sm text-gray-400">
+              <p className="mt-1 text-[13px] text-gray-400">
                 Cada linha leva para a listagem de transacoes filtrada pela conta.
               </p>
             </div>
@@ -369,7 +409,7 @@ export default function FinancialHomeOverview({
           ) : loading ? (
             <div className="mt-5 space-y-3">
               {[...Array(4)].map((_, index) => (
-                <Skeleton key={index} className="h-24 rounded-xl" />
+                <Skeleton key={index} className="h-20 rounded-xl" />
               ))}
             </div>
           ) : errors.accounts ? (
@@ -385,19 +425,19 @@ export default function FinancialHomeOverview({
               {visibleAccounts.map((account) => (
                 <div
                   key={account.id}
-                  className="rounded-xl border border-gray-700 bg-[#11161f] p-4 transition-colors hover:border-accent/70"
+                  className="rounded-xl border border-gray-700 bg-[#11161f] p-3 transition-colors hover:border-accent/70"
                 >
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-base font-semibold text-white">{account.name}</h4>
+                        <h4 className="text-sm font-semibold text-white">{account.name}</h4>
                         {account.isDefault && (
                           <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-accent">
                             Padrao
                           </span>
                         )}
                       </div>
-                      <div className="mt-1 text-sm text-gray-400">
+                      <div className="mt-1 text-xs text-gray-400">
                         {getAccountTypeLabel(account.type)}
                         {account.bankName ? ` - ${account.bankName}` : ''}
                         {account.accountNumber ? ` - ${account.accountNumber}` : ''}
@@ -408,7 +448,7 @@ export default function FinancialHomeOverview({
                       <div className="text-right">
                         <div className="text-xs uppercase tracking-wide text-gray-500">Saldo</div>
                         <div
-                          className={`text-lg font-semibold ${
+                          className={`text-base font-semibold ${
                             Number(account.balance) >= 0 ? 'text-emerald-300' : 'text-rose-300'
                           }`}
                         >
@@ -435,11 +475,11 @@ export default function FinancialHomeOverview({
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-lg font-semibold text-white">
+                <div className="flex items-center gap-2 text-base font-semibold text-white">
                   <CreditCard size={18} className="text-accent" />
                   Cartoes e faturas
                 </div>
-                <p className="mt-1 text-sm text-gray-400">
+                <p className="mt-1 text-[13px] text-gray-400">
                   Limite usado, disponivel e proxima fatura em um so lugar.
                 </p>
               </div>
@@ -459,7 +499,7 @@ export default function FinancialHomeOverview({
             ) : loading ? (
               <div className="mt-5 space-y-3">
                 {[...Array(3)].map((_, index) => (
-                  <Skeleton key={index} className="h-28 rounded-xl" />
+                  <Skeleton key={index} className="h-24 rounded-xl" />
                 ))}
               </div>
             ) : errors.cards ? (
@@ -480,12 +520,12 @@ export default function FinancialHomeOverview({
                   return (
                     <div
                       key={card.id}
-                      className="rounded-xl border border-gray-700 bg-[#11161f] p-4 transition-colors hover:border-accent/70"
+                      className="rounded-xl border border-gray-700 bg-[#11161f] p-3 transition-colors hover:border-accent/70"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h4 className="text-base font-semibold text-white">{card.name}</h4>
-                          <div className="mt-1 text-sm text-gray-400">
+                          <h4 className="text-sm font-semibold text-white">{card.name}</h4>
+                          <div className="mt-1 text-xs text-gray-400">
                             {card.bankName || 'Cartao sem banco informado'}
                           </div>
                         </div>
@@ -562,11 +602,11 @@ export default function FinancialHomeOverview({
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-lg font-semibold text-white">
+                <div className="flex items-center gap-2 text-base font-semibold text-white">
                   <Repeat size={18} className="text-accent" />
                   Fixas do mes
                 </div>
-                <p className="mt-1 text-sm text-gray-400">
+                <p className="mt-1 text-[13px] text-gray-400">
                   Receitas, despesas e a projecao recorrente mais proxima.
                 </p>
               </div>
@@ -592,30 +632,30 @@ export default function FinancialHomeOverview({
             ) : (
               <>
                 <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-4">
+                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-3">
                     <div className="text-xs uppercase tracking-wide text-gray-500">
                       Receitas fixas
                     </div>
-                    <div className="mt-2 text-lg font-semibold text-emerald-300">
+                    <div className="mt-1.5 text-base font-semibold text-emerald-300">
                       {formatMoneyValue(fixedIncomeTotal, showBalances)}
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-4">
+                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-3">
                     <div className="text-xs uppercase tracking-wide text-gray-500">
                       Despesas fixas
                     </div>
-                    <div className="mt-2 text-lg font-semibold text-rose-300">
+                    <div className="mt-1.5 text-base font-semibold text-rose-300">
                       {formatMoneyValue(fixedExpenseTotal, showBalances)}
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-4">
+                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-3">
                     <div className="text-xs uppercase tracking-wide text-gray-500">
                       Saldo fixo previsto
                     </div>
                     <div
-                      className={`mt-2 text-lg font-semibold ${
+                      className={`mt-1.5 text-base font-semibold ${
                         fixedNetBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'
                       }`}
                     >
@@ -633,7 +673,7 @@ export default function FinancialHomeOverview({
                     upcomingFixedTransactions.map((item) => (
                       <div
                         key={item.id}
-                        className="flex flex-col gap-3 rounded-xl border border-gray-700 bg-[#11161f] p-4 md:flex-row md:items-center md:justify-between"
+                        className="flex flex-col gap-3 rounded-xl border border-gray-700 bg-[#11161f] p-3 md:flex-row md:items-center md:justify-between"
                       >
                         <div>
                           <div className="flex items-center gap-2">
@@ -660,7 +700,7 @@ export default function FinancialHomeOverview({
 
                         <div className="text-right">
                           <div
-                            className={`text-base font-semibold ${
+                            className={`text-sm font-semibold ${
                               item.type === 'INCOME' ? 'text-emerald-300' : 'text-rose-300'
                             }`}
                           >
@@ -676,40 +716,6 @@ export default function FinancialHomeOverview({
                 </div>
               </>
             )}
-          </Card>
-
-          <Card className="border-gray-700/80 bg-[#11161f]">
-            <div className="flex items-start gap-3">
-              <Receipt size={18} className="mt-1 text-accent" />
-              <div>
-                <div className="text-base font-semibold text-white">Leitura rapida do momento</div>
-                <div className="mt-2 text-sm text-gray-400">
-                  {nextInvoice?.nextInvoice ? (
-                    <>
-                      A proxima fatura a vencer e de {nextInvoice.name}, referencia{' '}
-                      {getInvoiceReferenceLabel(
-                        nextInvoice.nextInvoice.referenceYear,
-                        nextInvoice.nextInvoice.referenceMonth
-                      )}
-                      {nextInvoice.nextInvoice.dueDate
-                        ? `, com vencimento em ${formatCalendarDate(nextInvoice.nextInvoice.dueDate)}.`
-                        : '.'}
-                    </>
-                  ) : (
-                    'Nenhuma fatura aberta apareceu nos cartoes ativos.'
-                  )}
-                </div>
-                <div className="mt-2 text-sm text-gray-400">
-                  O saldo fixo previsto para o mes esta{' '}
-                  <span
-                    className={fixedNetBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}
-                  >
-                    {fixedNetBalance >= 0 ? 'positivo' : 'negativo'}
-                  </span>
-                  , em {formatMoneyValue(fixedNetBalance, showBalances)}.
-                </div>
-              </div>
-            </div>
           </Card>
         </div>
       </div>

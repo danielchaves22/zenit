@@ -17,12 +17,14 @@ export async function previewCreditCardReconciliation(req: Request, res: Respons
   try {
     const { companyId } = getUserContext(req);
     const accountId = Number(req.params.accountId);
-    const { sourceType, fileBase64, fileName } = req.body;
+    const { sourceType, targetReferenceYear, targetReferenceMonth, fileBase64, fileName } = req.body;
 
     const preview = await CreditCardStatementReconciliationService.buildPreview({
       accountId,
       companyId,
       sourceType,
+      targetReferenceYear,
+      targetReferenceMonth,
       fileBase64,
       fileName
     });
@@ -40,13 +42,22 @@ export async function commitCreditCardReconciliation(req: Request, res: Response
   try {
     const { companyId, userId } = getUserContext(req);
     const accountId = Number(req.params.accountId);
-    const { sourceType, fileBase64, fileName, selectedItems } = req.body;
+    const {
+      sourceType,
+      targetReferenceYear,
+      targetReferenceMonth,
+      fileBase64,
+      fileName,
+      selectedItems
+    } = req.body;
 
     const result = await CreditCardStatementReconciliationService.commit({
       accountId,
       companyId,
       userId,
       sourceType,
+      targetReferenceYear,
+      targetReferenceMonth,
       fileBase64,
       fileName,
       selectedItems

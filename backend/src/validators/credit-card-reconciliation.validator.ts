@@ -9,11 +9,23 @@ const fileBase64Schema = z
   .min(1, 'Arquivo da fatura e obrigatorio')
   .max(10_000_000, 'Arquivo da fatura excede o tamanho suportado');
 
+const targetReferenceYearSchema = z.coerce.number()
+  .int('Ano da fatura-alvo deve ser um numero inteiro')
+  .min(2000, 'Ano da fatura-alvo invalido')
+  .max(2200, 'Ano da fatura-alvo invalido');
+
+const targetReferenceMonthSchema = z.coerce.number()
+  .int('Mes da fatura-alvo deve ser um numero inteiro')
+  .min(1, 'Mes da fatura-alvo invalido')
+  .max(12, 'Mes da fatura-alvo invalido');
+
 export const previewCreditCardReconciliationSchema = z.object({
   accountId: z.coerce.number()
     .int('ID da conta deve ser um numero inteiro')
     .positive('ID da conta deve ser positivo'),
   sourceType: sourceTypeSchema,
+  targetReferenceYear: targetReferenceYearSchema,
+  targetReferenceMonth: targetReferenceMonthSchema,
   fileBase64: fileBase64Schema,
   fileName: z.string()
     .max(255, 'Nome do arquivo deve ter no maximo 255 caracteres')
@@ -26,6 +38,8 @@ export const commitCreditCardReconciliationSchema = z.object({
     .int('ID da conta deve ser um numero inteiro')
     .positive('ID da conta deve ser positivo'),
   sourceType: sourceTypeSchema,
+  targetReferenceYear: targetReferenceYearSchema,
+  targetReferenceMonth: targetReferenceMonthSchema,
   fileBase64: fileBase64Schema,
   fileName: z.string()
     .max(255, 'Nome do arquivo deve ter no maximo 255 caracteres')

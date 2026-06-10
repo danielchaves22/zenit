@@ -26,6 +26,7 @@ import {
   FinancialBank,
   getCreditCardReconciliationSourceType
 } from '@/utils/banks';
+import { getInvoiceDisplayStatusLabel } from '@/utils/creditCards';
 import { formatCalendarDate } from '@/utils/financialStatus';
 
 type ReconciliationItemStatus = 'OK' | 'SIMILAR' | 'PENDING' | 'NOT_IMPORTABLE';
@@ -43,9 +44,32 @@ type ReconciliationSuggestionSource = 'RULE' | 'HISTORY' | 'AI';
 interface CreditCardAccount {
   id: number;
   name: string;
+  statementClosingDay?: number | null;
+  statementDueDay?: number | null;
   bankName?: string | null;
   bankCode?: string | null;
   bank?: FinancialBank | null;
+}
+
+interface ReconciliationInvoiceListItem {
+  id: number | null;
+  referenceYear: number;
+  referenceMonth: number;
+  closingDate: string;
+  dueDate: string;
+  status: string;
+  isProjected?: boolean;
+}
+
+interface TargetInvoiceOption {
+  key: string;
+  referenceYear: number;
+  referenceMonth: number;
+  closingDate: string;
+  dueDate: string;
+  status: string;
+  isProjected: boolean;
+  source: 'CURRENT_RECOMMENDED' | 'PREVIOUS_RECOMMENDED' | 'INVOICE_HISTORY';
 }
 
 interface ReconciliationMatchedTransaction {
@@ -301,6 +325,191 @@ function formatReference(referenceMonth: number, referenceYear: number) {
   return `${String(referenceMonth).padStart(2, '0')}/${referenceYear}`;
 }
 
+function buildInvoiceReferenceKey(referenceYear: number, referenceMonth: number) {
+  return `${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
+}
+
+function buildDateWithClampedDay(year: number, monthIndex: number, day: number) {
+  const safeDay = Math.max(1, Math.min(day, 31));
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return new Date(year, monthIndex, Math.min(safeDay, lastDay), 12, 0, 0, 0);
+}
+
+function buildInvoiceReferenceForMonth(
+  referenceYear: number,
+  referenceMonth: number,
+  closingDay: number,
+  dueDay: number
+) {
+  const closingDate = buildDateWithClampedDay(referenceYear, referenceMonth - 1, closingDay);
+  const dueMonthOffset = dueDay > closingDay ? 0 : 1;
+  const dueBase = new Date(referenceYear, referenceMonth - 1 + dueMonthOffset, 1, 12, 0, 0, 0);
+  const dueDate = buildDateWithClampedDay(dueBase.getFullYear(), dueBase.getMonth(), dueDay);
+
+  return {
+    referenceYear,
+    referenceMonth,
+    closingDate: closingDate.toISOString(),
+    dueDate: dueDate.toISOString()
+  };
+}
+
+function resolveCurrentOpenInvoiceReference(
+  closingDay: number,
+  dueDay: number,
+  now: Date = new Date()
+) {
+  const referenceBase = new Date(
+    now.getFullYear(),
+    now.getMonth() + (now.getDate() <= closingDay ? 0 : 1),
+    1,
+    12,
+    0,
+    0,
+    0
+  );
+
+  return buildInvoiceReferenceForMonth(
+    referenceBase.getFullYear(),
+    referenceBase.getMonth() + 1,
+    closingDay,
+    dueDay
+  );
+}
+
+function shiftInvoiceReferenceMonth(
+  referenceYear: number,
+  referenceMonth: number,
+  monthOffset: number,
+  closingDay: number,
+  dueDay: number
+) {
+  const referenceBase = new Date(referenceYear, referenceMonth - 1 + monthOffset, 1, 12, 0, 0, 0);
+
+  return buildInvoiceReferenceForMonth(
+    referenceBase.getFullYear(),
+    referenceBase.getMonth() + 1,
+    closingDay,
+    dueDay
+  );
+}
+
+function buildTargetInvoiceOptions(
+  card: CreditCardAccount | null,
+  invoices: ReconciliationInvoiceListItem[]
+): TargetInvoiceOption[] {
+  const optionsByKey = new Map<string, TargetInvoiceOption>();
+  const existingInvoicesByKey = new Map(
+    invoices.map((invoice) => [
+      buildInvoiceReferenceKey(invoice.referenceYear, invoice.referenceMonth),
+      invoice
+    ])
+  );
+
+  const addOption = (option: TargetInvoiceOption) => {
+    if (!optionsByKey.has(option.key)) {
+      optionsByKey.set(option.key, option);
+    }
+  };
+
+  if (card?.statementClosingDay && card?.statementDueDay) {
+    const currentOpenReference = resolveCurrentOpenInvoiceReference(
+      card.statementClosingDay,
+      card.statementDueDay
+    );
+    const currentOpenKey = buildInvoiceReferenceKey(
+      currentOpenReference.referenceYear,
+      currentOpenReference.referenceMonth
+    );
+    const currentOpenInvoice = existingInvoicesByKey.get(currentOpenKey);
+
+    addOption({
+      key: currentOpenKey,
+      referenceYear: currentOpenReference.referenceYear,
+      referenceMonth: currentOpenReference.referenceMonth,
+      closingDate: currentOpenInvoice?.closingDate || currentOpenReference.closingDate,
+      dueDate: currentOpenInvoice?.dueDate || currentOpenReference.dueDate,
+      status: currentOpenInvoice?.status || 'OPEN',
+      isProjected: Boolean(currentOpenInvoice?.isProjected),
+      source: 'CURRENT_RECOMMENDED'
+    });
+
+    const previousReference = shiftInvoiceReferenceMonth(
+      currentOpenReference.referenceYear,
+      currentOpenReference.referenceMonth,
+      -1,
+      card.statementClosingDay,
+      card.statementDueDay
+    );
+    const previousKey = buildInvoiceReferenceKey(
+      previousReference.referenceYear,
+      previousReference.referenceMonth
+    );
+    const previousInvoice = existingInvoicesByKey.get(previousKey);
+
+    addOption({
+      key: previousKey,
+      referenceYear: previousReference.referenceYear,
+      referenceMonth: previousReference.referenceMonth,
+      closingDate: previousInvoice?.closingDate || previousReference.closingDate,
+      dueDate: previousInvoice?.dueDate || previousReference.dueDate,
+      status: previousInvoice?.status || 'CLOSED',
+      isProjected: Boolean(previousInvoice?.isProjected),
+      source: 'PREVIOUS_RECOMMENDED'
+    });
+  }
+
+  invoices.forEach((invoice) => {
+    const key = buildInvoiceReferenceKey(invoice.referenceYear, invoice.referenceMonth);
+
+    addOption({
+      key,
+      referenceYear: invoice.referenceYear,
+      referenceMonth: invoice.referenceMonth,
+      closingDate: invoice.closingDate,
+      dueDate: invoice.dueDate,
+      status: invoice.status,
+      isProjected: Boolean(invoice.isProjected),
+      source: 'INVOICE_HISTORY'
+    });
+  });
+
+  const sourceOrder: Record<TargetInvoiceOption['source'], number> = {
+    CURRENT_RECOMMENDED: 0,
+    PREVIOUS_RECOMMENDED: 1,
+    INVOICE_HISTORY: 2
+  };
+
+  return Array.from(optionsByKey.values()).sort((left: TargetInvoiceOption, right: TargetInvoiceOption) => {
+    if (sourceOrder[left.source] !== sourceOrder[right.source]) {
+      return sourceOrder[left.source] - sourceOrder[right.source];
+    }
+
+    if (left.referenceYear !== right.referenceYear) {
+      return right.referenceYear - left.referenceYear;
+    }
+
+    if (left.referenceMonth !== right.referenceMonth) {
+      return right.referenceMonth - left.referenceMonth;
+    }
+
+    return new Date(right.dueDate).getTime() - new Date(left.dueDate).getTime();
+  });
+}
+
+function getTargetInvoiceOptionLabel(option: TargetInvoiceOption) {
+  const prefix =
+    option.source === 'CURRENT_RECOMMENDED'
+      ? 'Atual recomendada'
+      : option.source === 'PREVIOUS_RECOMMENDED'
+        ? 'Ultima fechada'
+        : 'Outra referencia';
+  const statusLabel = getInvoiceDisplayStatusLabel(option.status);
+  const projectionLabel = option.isProjected ? 'projetada' : 'real';
+
+  return `${prefix} • ${formatReference(option.referenceMonth, option.referenceYear)} • ${statusLabel} • vence ${formatCalendarDate(option.dueDate)} • ${projectionLabel}`;
+}
+
 function isManuallyImportable(item: ReconciliationPreviewItem) {
   return item.canImport && item.status !== 'OK';
 }
@@ -457,6 +666,8 @@ function CreditCardReconciliationPageInner() {
 
   const [card, setCard] = useState<CreditCardAccount | null>(null);
   const [loadingCard, setLoadingCard] = useState(true);
+  const [invoices, setInvoices] = useState<ReconciliationInvoiceListItem[]>([]);
+  const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileBase64, setFileBase64] = useState('');
   const [preview, setPreview] = useState<ReconciliationPreview | null>(null);
@@ -469,6 +680,7 @@ function CreditCardReconciliationPageInner() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
   const [committingItemIds, setCommittingItemIds] = useState<string[]>([]);
+  const [selectedTargetInvoiceKey, setSelectedTargetInvoiceKey] = useState('');
   const commitInFlightItemIdsRef = useRef<Set<string>>(new Set());
   const batchCommitInFlightRef = useRef(false);
 
@@ -479,6 +691,15 @@ function CreditCardReconciliationPageInner() {
   const sourceConfig = reconciliationSourceType
     ? RECONCILIATION_SOURCE_CONFIG[reconciliationSourceType]
     : null;
+  const targetInvoiceOptions = useMemo(
+    () => buildTargetInvoiceOptions(card, invoices),
+    [card, invoices]
+  );
+  const selectedTargetInvoice = useMemo(
+    () =>
+      targetInvoiceOptions.find((option) => option.key === selectedTargetInvoiceKey) || null,
+    [selectedTargetInvoiceKey, targetInvoiceOptions]
+  );
 
   const filteredItems = useMemo(() => {
     if (!preview) {
@@ -541,8 +762,24 @@ function CreditCardReconciliationPageInner() {
     }
 
     void fetchCard();
+    void fetchInvoices();
     void fetchCategories();
   }, [accountId, router.isReady]);
+
+  useEffect(() => {
+    if (targetInvoiceOptions.length === 0) {
+      if (selectedTargetInvoiceKey) {
+        setSelectedTargetInvoiceKey('');
+      }
+      return;
+    }
+
+    if (selectedTargetInvoiceKey && targetInvoiceOptions.some((option) => option.key === selectedTargetInvoiceKey)) {
+      return;
+    }
+
+    setSelectedTargetInvoiceKey(targetInvoiceOptions[0]!.key);
+  }, [selectedTargetInvoiceKey, targetInvoiceOptions]);
 
   async function fetchCard() {
     setLoadingCard(true);
@@ -585,6 +822,20 @@ function CreditCardReconciliationPageInner() {
     }
   }
 
+  async function fetchInvoices() {
+    setInvoicesLoading(true);
+
+    try {
+      const response = await api.get(`/financial/credit-cards/${accountId}/invoices`);
+      setInvoices(response.data || []);
+    } catch (error: any) {
+      setInvoices([]);
+      addToast(error.response?.data?.error || 'Erro ao carregar referencias de fatura', 'error');
+    } finally {
+      setInvoicesLoading(false);
+    }
+  }
+
   function applyDefaultSelection(nextPreview: ReconciliationPreview) {
     setSelectedItemIds(
       nextPreview.items
@@ -605,6 +856,11 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
+    if (!selectedTargetInvoice) {
+      addToast('Selecione a fatura-alvo antes de analisar', 'error');
+      return;
+    }
+
     setPreviewLoading(true);
 
     try {
@@ -612,6 +868,8 @@ function CreditCardReconciliationPageInner() {
         `/financial/credit-cards/${accountId}/reconciliation/preview`,
         {
           sourceType: reconciliationSourceType,
+          targetReferenceYear: selectedTargetInvoice.referenceYear,
+          targetReferenceMonth: selectedTargetInvoice.referenceMonth,
           fileBase64,
           fileName
         }
@@ -629,7 +887,7 @@ function CreditCardReconciliationPageInner() {
   }
 
   async function refreshPreviewSilently() {
-    if (!fileBase64 || !fileName || !reconciliationSourceType) {
+    if (!fileBase64 || !fileName || !reconciliationSourceType || !selectedTargetInvoice) {
       return;
     }
 
@@ -637,6 +895,8 @@ function CreditCardReconciliationPageInner() {
       `/financial/credit-cards/${accountId}/reconciliation/preview`,
       {
         sourceType: reconciliationSourceType,
+        targetReferenceYear: selectedTargetInvoice.referenceYear,
+        targetReferenceMonth: selectedTargetInvoice.referenceMonth,
         fileBase64,
         fileName
       }
@@ -674,6 +934,18 @@ function CreditCardReconciliationPageInner() {
     } catch (error: any) {
       addToast(error.message || 'Erro ao ler arquivo', 'error');
     }
+  }
+
+  function handleTargetInvoiceChange(nextTargetInvoiceKey: string) {
+    if (nextTargetInvoiceKey === selectedTargetInvoiceKey) {
+      return;
+    }
+
+    setSelectedTargetInvoiceKey(nextTargetInvoiceKey);
+    setPreview(null);
+    setCommitResult(null);
+    setItemDrafts({});
+    setSelectedItemIds([]);
   }
 
   function handleToggleSelection(itemId: string, checked: boolean) {
@@ -871,7 +1143,7 @@ function CreditCardReconciliationPageInner() {
   }
 
   async function commitItems(itemIds: string[]) {
-    if (!preview || !fileBase64 || !fileName || !reconciliationSourceType) {
+    if (!preview || !fileBase64 || !fileName || !reconciliationSourceType || !selectedTargetInvoice) {
       addToast('Analise a fatura antes de importar os lancamentos', 'error');
       return;
     }
@@ -912,6 +1184,8 @@ function CreditCardReconciliationPageInner() {
         `/financial/credit-cards/${accountId}/reconciliation/commit`,
         {
           sourceType: reconciliationSourceType,
+          targetReferenceYear: selectedTargetInvoice.referenceYear,
+          targetReferenceMonth: selectedTargetInvoice.referenceMonth,
           fileBase64,
           fileName,
           selectedItems
@@ -1058,10 +1332,56 @@ function CreditCardReconciliationPageInner() {
                   <div>Arquivo: {fileName || `Nenhum ${sourceConfig.fileLabel} selecionado`}</div>
                 </div>
                 <div className="mt-5">
+                  <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
+                    Fatura-alvo da conciliacao
+                  </div>
+                  <select
+                    value={selectedTargetInvoiceKey}
+                    onChange={(event) => handleTargetInvoiceChange(event.target.value)}
+                    disabled={invoicesLoading || targetInvoiceOptions.length === 0}
+                    className="mt-2 w-full rounded border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {targetInvoiceOptions.length === 0 ? (
+                      <option value="">
+                        {invoicesLoading
+                          ? 'Carregando referencias de fatura...'
+                          : 'Nenhuma referencia disponivel'}
+                      </option>
+                    ) : (
+                      targetInvoiceOptions.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {getTargetInvoiceOptionLabel(option)}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <div className="mt-2 text-xs text-gray-400">
+                    {reconciliationSourceType === 'BRADESCO_CSV'
+                      ? 'O CSV do Bradesco nao define a competencia com confianca. Esta selecao determina o OK, os similares e a fatura de destino.'
+                      : 'A selecao determina contra qual fatura os itens serao comparados e em qual fatura novos lancamentos serao incluidos.'}
+                  </div>
+                  {selectedTargetInvoice && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      Referencia escolhida: {formatReference(
+                        selectedTargetInvoice.referenceMonth,
+                        selectedTargetInvoice.referenceYear
+                      )}{' '}
+                      • {getInvoiceDisplayStatusLabel(selectedTargetInvoice.status)} • vence{' '}
+                      {formatCalendarDate(selectedTargetInvoice.dueDate)}
+                      {selectedTargetInvoice.isProjected ? ' • projetada' : ''}
+                    </div>
+                  )}
+                </div>
+                <div className="mt-5">
                   <Button
                     variant="accent"
                     onClick={() => void runPreview()}
-                    disabled={!fileBase64 || previewLoading}
+                    disabled={
+                      !fileBase64 ||
+                      previewLoading ||
+                      invoicesLoading ||
+                      !selectedTargetInvoice
+                    }
                     className="flex w-full items-center justify-center gap-2"
                   >
                     {previewLoading ? (

@@ -13,6 +13,7 @@ import CreditCardReconciliationCategorySuggestionService, {
 } from './credit-card-reconciliation-category-suggestion.service';
 import { parseDecimal } from '../utils/money';
 import {
+  addMonthsClamped,
   buildCreditCardInvoiceReferenceForMonth,
   resolveCreditCardInvoiceReference,
   resolveCreditCardInvoiceStatus
@@ -75,6 +76,11 @@ type ParsedStatement = {
   referenceYear: number;
   referenceMonth: number;
   items: ParsedStatementItem[];
+};
+
+type StatementTargetReference = {
+  referenceYear: number;
+  referenceMonth: number;
 };
 
 type ExistingTransactionCandidate = {
@@ -247,6 +253,45 @@ function buildDateWindow(items: ParsedStatementItem[]) {
   maxDate.setDate(maxDate.getDate() + 31);
 
   return { minDate, maxDate };
+}
+
+function getReferenceMonthOffset(
+  fromReference: StatementTargetReference,
+  toReference: StatementTargetReference
+) {
+  return (
+    (toReference.referenceYear - fromReference.referenceYear) * 12 +
+    (toReference.referenceMonth - fromReference.referenceMonth)
+  );
+}
+
+function applyTargetReferenceToStatement(
+  statement: ParsedStatement,
+  targetReference: StatementTargetReference
+): ParsedStatement {
+  const currentReference = {
+    referenceYear: statement.referenceYear,
+    referenceMonth: statement.referenceMonth
+  };
+  const monthOffset = getReferenceMonthOffset(currentReference, targetReference);
+
+  if (monthOffset === 0) {
+    return statement;
+  }
+
+  return {
+    ...statement,
+    referenceYear: targetReference.referenceYear,
+    referenceMonth: targetReference.referenceMonth,
+    items: statement.items.map((item) =>
+      item.datePrecision === 'STATEMENT_REFERENCE'
+        ? {
+            ...item,
+            createDate: addMonthsClamped(item.createDate, monthOffset)
+          }
+        : item
+    )
+  };
 }
 
 function isCandidateInStatementReference(
@@ -1700,7 +1745,7 @@ async function ensureCreditCardAccount(accountId: number, companyId: number) {
 }
 
 function buildImportedStatementInvoiceReference(
-  statement: ParsedStatement,
+  targetReference: StatementTargetReference,
   account: {
     id: number;
     statementClosingDay: number | null;
@@ -1713,8 +1758,8 @@ function buildImportedStatementInvoiceReference(
 
   return {
     ...buildCreditCardInvoiceReferenceForMonth(
-      statement.referenceYear,
-      statement.referenceMonth,
+      targetReference.referenceYear,
+      targetReference.referenceMonth,
       account.statementClosingDay,
       account.statementDueDay
     ),
@@ -1826,6 +1871,8 @@ export default class CreditCardStatementReconciliationService {
     accountId: number;
     companyId: number;
     sourceType: CreditCardReconciliationSourceType;
+    targetReferenceYear: number;
+    targetReferenceMonth: number;
     fileBase64: string;
     fileName?: string | null;
   }): Promise<ReconciliationPreviewResult> {
@@ -1835,10 +1882,14 @@ export default class CreditCardStatementReconciliationService {
       throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
     }
 
-    const statement = await parseStatementFromSource({
+    const parsedStatement = await parseStatementFromSource({
       sourceType: params.sourceType,
       fileBase64: params.fileBase64,
       fileName: params.fileName
+    });
+    const statement = applyTargetReferenceToStatement(parsedStatement, {
+      referenceYear: params.targetReferenceYear,
+      referenceMonth: params.targetReferenceMonth
     });
     const [candidates, categorySuggestions] = await Promise.all([
       loadCandidateTransactions({
@@ -1883,6 +1934,8 @@ export default class CreditCardStatementReconciliationService {
     companyId: number;
     userId: number;
     sourceType: CreditCardReconciliationSourceType;
+    targetReferenceYear: number;
+    targetReferenceMonth: number;
     fileBase64: string;
     fileName?: string | null;
     selectedItems: Array<{
@@ -1897,10 +1950,14 @@ export default class CreditCardStatementReconciliationService {
       throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
     }
 
-    const statement = await parseStatementFromSource({
+    const parsedStatement = await parseStatementFromSource({
       sourceType: params.sourceType,
       fileBase64: params.fileBase64,
       fileName: params.fileName
+    });
+    const statement = applyTargetReferenceToStatement(parsedStatement, {
+      referenceYear: params.targetReferenceYear,
+      referenceMonth: params.targetReferenceMonth
     });
     const selectedItemsInput = Array.from(
       new Map(params.selectedItems.map((item) => [item.itemId, item])).values()
@@ -1908,7 +1965,10 @@ export default class CreditCardStatementReconciliationService {
     const selectedItemIds = selectedItemsInput.map((item) => item.itemId);
     const selectedItems = statement.items.filter((item) => selectedItemIds.includes(item.id));
     const importedStatementInvoiceReference = buildImportedStatementInvoiceReference(
-      statement,
+      {
+        referenceYear: statement.referenceYear,
+        referenceMonth: statement.referenceMonth
+      },
       account
     );
     const results: ReconciliationCommitResult['results'] = [];
@@ -2063,5 +2123,6 @@ export const __private__ = {
   parseCaixaStatementText,
   parseBradescoStatementText,
   parseNubankStatementText,
-  classifyMatches
+  classifyMatches,
+  applyTargetReferenceToStatement
 };

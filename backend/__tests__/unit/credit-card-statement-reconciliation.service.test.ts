@@ -274,6 +274,35 @@ describe('Credit card statement reconciliation service', () => {
     expect(classification.matchedTransactions[0]?.matchSource).toBe('PROJECTED_FIXED');
   });
 
+  it('shifts statement-reference items when the target invoice reference is changed', () => {
+    const parsed = __private__.parseCaixaStatementText(
+      sampleCaixaStatementText,
+      'FaturaCaixa_062026.pdf'
+    );
+    const shifted = __private__.applyTargetReferenceToStatement(parsed, {
+      referenceYear: 2026,
+      referenceMonth: 7
+    });
+
+    const originalAnnuityItem = parsed.items.find((item) => item.kind === 'ANNUITY');
+    const shiftedAnnuityItem = shifted.items.find((item) => item.kind === 'ANNUITY');
+    const originalPurchaseItem = parsed.items.find((item) => item.kind === 'PURCHASE');
+    const shiftedPurchaseItem = shifted.items.find((item) => item.kind === 'PURCHASE');
+
+    expect(originalAnnuityItem).toBeTruthy();
+    expect(shiftedAnnuityItem).toBeTruthy();
+    expect(originalPurchaseItem).toBeTruthy();
+    expect(shiftedPurchaseItem).toBeTruthy();
+    expect(shifted.referenceYear).toBe(2026);
+    expect(shifted.referenceMonth).toBe(7);
+    expect(shiftedAnnuityItem?.createDate.getFullYear()).toBe(2026);
+    expect(shiftedAnnuityItem?.createDate.getMonth()).toBe(3);
+    expect(shiftedAnnuityItem?.createDate.getDate()).toBe(1);
+    expect(shiftedPurchaseItem?.createDate.getTime()).toBe(
+      originalPurchaseItem?.createDate.getTime()
+    );
+  });
+
   it('parses the Bradesco CSV layout with multiple cards and installment markers', () => {
     const parsed = __private__.parseBradescoStatementText(
       sampleBradescoStatementText,

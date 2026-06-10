@@ -1061,7 +1061,7 @@ export default class FixedTransactionService {
       try {
         const expectedDate = resolveOccurrenceDateForReference(template, today);
 
-        if (expectedDate.getDate() !== today.getDate()) {
+        if (expectedDate.getTime() > today.getTime()) {
           continue;
         }
 

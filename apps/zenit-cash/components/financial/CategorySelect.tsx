@@ -92,6 +92,14 @@ function getCategoryTriggerLabel(categoryOption: OrderedCategoryOption) {
   return `${categoryOption.lineage.join(' / ')} / ${categoryOption.category.name}`;
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 interface CategorySelectProps {
   label?: string;
   categories: CategoryOption[];
@@ -176,13 +184,30 @@ export default function CategorySelect({
   triggerClassName = ''
 }: CategorySelectProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [mounted, setMounted] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const portalRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const orderedCategories = useMemo(() => orderCategoriesForSelect(categories), [categories]);
+  const filteredCategories = useMemo(() => {
+    const normalizedSearch = normalizeSearchText(searchTerm);
+
+    if (!normalizedSearch) {
+      return orderedCategories;
+    }
+
+    return orderedCategories.filter((category) => {
+      const searchableText = normalizeSearchText(
+        `${category.category.name} ${category.lineage.join(' ')} ${getCategoryTriggerLabel(category)}`
+      );
+
+      return searchableText.includes(normalizedSearch);
+    });
+  }, [orderedCategories, searchTerm]);
   const selectedCategory = useMemo(
     () => orderedCategories.find((category) => String(category.category.id) === value) || null,
     [orderedCategories, value]
@@ -246,9 +271,47 @@ export default function CategorySelect({
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchTerm('');
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+      const currentValueLength = searchInputRef.current?.value.length ?? 0;
+      searchInputRef.current?.setSelectionRange(currentValueLength, currentValueLength);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isOpen]);
+
   function handleSelect(nextValue: string) {
     onChange(nextValue);
     setIsOpen(false);
+  }
+
+  function handleTriggerKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (disabled) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setIsOpen(true);
+      return;
+    }
+
+    if (
+      event.key.length === 1 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      setSearchTerm(event.key);
+      setIsOpen(true);
+    }
   }
 
   return (
@@ -260,6 +323,7 @@ export default function CategorySelect({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setIsOpen((previous) => !previous)}
+        onKeyDown={handleTriggerKeyDown}
         className={`flex min-h-10 w-full items-center justify-between gap-2 rounded border border-gray-700 bg-background px-2 py-1.5 text-left text-sm text-white transition-colors focus:border-accent focus:outline-none focus:ring ${
           disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-gray-600'
         } ${triggerClassName}`}
@@ -288,6 +352,18 @@ export default function CategorySelect({
               width: position.width
             }}
           >
+            <div className="sticky top-0 z-10 border-b border-gray-700 bg-[#1e2126] p-2">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Filtrar categorias..."
+                aria-label="Filtrar categorias"
+                className="h-9 w-full rounded border border-gray-700 bg-background px-3 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-accent focus:ring"
+              />
+            </div>
+
             <button
               type="button"
               onClick={() => handleSelect('')}
@@ -298,10 +374,14 @@ export default function CategorySelect({
               <span>{emptyLabel || placeholder}</span>
             </button>
 
-            {orderedCategories.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-gray-400">Nenhuma categoria disponivel</div>
+            {filteredCategories.length === 0 ? (
+              <div className="px-3 py-3 text-sm text-gray-400">
+                {orderedCategories.length === 0
+                  ? 'Nenhuma categoria disponivel'
+                  : 'Nenhuma categoria encontrada'}
+              </div>
             ) : (
-              orderedCategories.map((category) => {
+              filteredCategories.map((category) => {
                 const isSelected = String(category.category.id) === value;
 
                 return (

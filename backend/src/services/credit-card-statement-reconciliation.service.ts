@@ -7,10 +7,15 @@ import {
   TransactionType
 } from '@prisma/client';
 import FinancialTransactionService from './financial-transaction.service';
+import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
 import CreditCardReconciliationCategorySuggestionService, {
   type CreditCardReconciliationCategorySuggestion
 } from './credit-card-reconciliation-category-suggestion.service';
 import { parseDecimal } from '../utils/money';
+import {
+  resolveCreditCardInvoiceReference,
+  resolveCreditCardInvoiceStatus
+} from '../utils/credit-card';
 
 const prisma = new PrismaClient();
 const pdfParse: (dataBuffer: Buffer) => Promise<{ text: string }> = require('pdf-parse');
@@ -72,7 +77,11 @@ type ParsedStatement = {
 };
 
 type ExistingTransactionCandidate = {
-  id: number;
+  matchKey: string;
+  matchSource: 'TRANSACTION' | 'PROJECTED_FIXED';
+  id: number | null;
+  fixedTemplateId: number | null;
+  occurrenceKey: string | null;
   description: string;
   amount: Prisma.Decimal;
   date: Date;
@@ -87,6 +96,7 @@ type ExistingTransactionCandidate = {
     referenceYear: number;
     referenceMonth: number;
     status: CreditCardInvoiceStatus;
+    dueDate?: Date | null;
   } | null;
 };
 
@@ -124,7 +134,11 @@ export type ReconciliationPreviewItem = {
   nonImportableReason: string | null;
   categorySuggestion: CreditCardReconciliationCategorySuggestion;
   matchedTransactions: Array<{
-    id: number;
+    matchKey: string;
+    matchSource: 'TRANSACTION' | 'PROJECTED_FIXED';
+    id: number | null;
+    fixedTemplateId: number | null;
+    occurrenceKey: string | null;
     description: string;
     amount: string;
     date: string;
@@ -215,6 +229,33 @@ function formatReference(referenceYear: number, referenceMonth: number) {
 
 function formatIsoDate(value: Date | null) {
   return value ? value.toISOString() : null;
+}
+
+function buildDateWindow(items: ParsedStatementItem[]) {
+  const explicitDates = items.map((item) => item.purchaseDate || item.createDate);
+
+  const minDate = explicitDates.length > 0
+    ? new Date(Math.min(...explicitDates.map((value) => value.getTime())))
+    : new Date();
+  const maxDate = explicitDates.length > 0
+    ? new Date(Math.max(...explicitDates.map((value) => value.getTime())))
+    : new Date();
+
+  minDate.setDate(minDate.getDate() - 31);
+  maxDate.setDate(maxDate.getDate() + 31);
+
+  return { minDate, maxDate };
+}
+
+function isCandidateInStatementReference(
+  candidate: ExistingTransactionCandidate,
+  referenceYear: number,
+  referenceMonth: number
+) {
+  return (
+    candidate.creditCardInvoice?.referenceYear === referenceYear &&
+    candidate.creditCardInvoice?.referenceMonth === referenceMonth
+  );
 }
 
 function normalizeInstallmentSignature(installmentNumber: number | null, totalInstallments: number | null) {
@@ -1179,7 +1220,11 @@ function parseNubankStatementText(text: string, fileName: string | null): Parsed
 
 function toPreviewMatchTransaction(candidate: ExistingTransactionCandidate) {
   return {
+    matchKey: candidate.matchKey,
+    matchSource: candidate.matchSource,
     id: candidate.id,
+    fixedTemplateId: candidate.fixedTemplateId,
+    occurrenceKey: candidate.occurrenceKey,
     description: candidate.description,
     amount: candidate.amount.toString(),
     date: candidate.date.toISOString(),
@@ -1238,10 +1283,7 @@ function classifyMatches(
       return isSameCalendarDate(candidate.date, item.purchaseDate);
     }
 
-    return (
-      candidate.creditCardInvoice?.referenceYear === referenceYear &&
-      candidate.creditCardInvoice?.referenceMonth === referenceMonth
-    );
+    return isCandidateInStatementReference(candidate, referenceYear, referenceMonth);
   });
 
   const exactMatchesWithSourceDescription = filterCandidatesBySourceDescription(
@@ -1293,13 +1335,22 @@ function classifyMatches(
     const sameInstallmentSignature =
       candidateInstallments.installmentNumber === importInstallments.installmentNumber &&
       candidateInstallments.totalInstallments === importInstallments.totalInstallments;
+    const sameStatementReference = isCandidateInStatementReference(
+      candidate,
+      referenceYear,
+      referenceMonth
+    );
 
     if (item.datePrecision === 'PURCHASE_DATE' && item.purchaseDate) {
       const purchaseDate = item.purchaseDate;
       const sameDate = isSameCalendarDate(candidate.date, purchaseDate);
 
       if (sameInstallmentSignature && !sameDate) {
-        return Math.abs(differenceInDays(candidate.date, purchaseDate)) <= 15;
+        if (Math.abs(differenceInDays(candidate.date, purchaseDate)) <= 15) {
+          return true;
+        }
+
+        return candidate.matchSource === 'PROJECTED_FIXED' && sameStatementReference;
       }
 
       if (!sameInstallmentSignature && sameDate) {
@@ -1309,11 +1360,7 @@ function classifyMatches(
       return false;
     }
 
-    return (
-      candidate.creditCardInvoice?.referenceYear === referenceYear &&
-      candidate.creditCardInvoice?.referenceMonth === referenceMonth &&
-      !sameInstallmentSignature
-    );
+    return sameStatementReference && !sameInstallmentSignature;
   });
 
   if (partialMatches.length > 0) {
@@ -1344,56 +1391,206 @@ async function loadCandidateTransactions(params: {
   companyId: number;
   items: ParsedStatementItem[];
 }) {
-  const explicitDates = params.items.map((item) => item.purchaseDate || item.createDate);
+  const { minDate, maxDate } = buildDateWindow(params.items);
+  const [materializedTransactions, projectedFixedCandidates] = await Promise.all([
+    prisma.financialTransaction.findMany({
+      where: {
+        companyId: params.companyId,
+        fromAccountId: params.accountId,
+        type: TransactionType.EXPENSE,
+        status: {
+          not: TransactionStatus.CANCELED
+        },
+        date: {
+          gte: minDate,
+          lte: maxDate
+        }
+      },
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        date: true,
+        installmentNumber: true,
+        totalInstallments: true,
+        status: true,
+        purchaseGroupId: true,
+        importSourceType: true,
+        importSourceDescription: true,
+        creditCardInvoice: {
+          select: {
+            id: true,
+            referenceYear: true,
+            referenceMonth: true,
+            status: true,
+            dueDate: true
+          }
+        }
+      },
+      orderBy: [
+        { date: 'desc' },
+        { id: 'desc' }
+      ]
+    }),
+    loadProjectedFixedCandidates({
+      accountId: params.accountId,
+      companyId: params.companyId,
+      minDate,
+      maxDate
+    })
+  ]);
 
-  const minDate = explicitDates.length > 0
-    ? new Date(Math.min(...explicitDates.map((value) => value.getTime())))
-    : new Date();
-  const maxDate = explicitDates.length > 0
-    ? new Date(Math.max(...explicitDates.map((value) => value.getTime())))
-    : new Date();
+  return [
+    ...materializedTransactions.map((candidate) => ({
+      ...candidate,
+      matchKey: `transaction:${candidate.id}`,
+      matchSource: 'TRANSACTION' as const,
+      fixedTemplateId: null,
+      occurrenceKey: null
+    })),
+    ...projectedFixedCandidates
+  ] as ExistingTransactionCandidate[];
+}
 
-  minDate.setDate(minDate.getDate() - 31);
-  maxDate.setDate(maxDate.getDate() + 31);
+async function loadProjectedFixedCandidates(params: {
+  accountId: number;
+  companyId: number;
+  minDate: Date;
+  maxDate: Date;
+}) {
+  const rangeStart = new Date(
+    params.minDate.getFullYear(),
+    params.minDate.getMonth(),
+    1,
+    12,
+    0,
+    0,
+    0
+  );
+  const rangeEnd = new Date(
+    params.maxDate.getFullYear(),
+    params.maxDate.getMonth() + 1,
+    0,
+    12,
+    0,
+    0,
+    0
+  );
 
-  return prisma.financialTransaction.findMany({
+  const templates = await FixedTransactionService.getTemplatesForProjection({
+    companyId: params.companyId,
+    rangeStart,
+    rangeEnd,
+    accessibleAccountIds: [params.accountId]
+  });
+
+  const startCursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1, 12, 0, 0, 0);
+  const endCursor = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1, 12, 0, 0, 0);
+  const projectedCandidates: Array<{
+    templateId: number;
+    description: string;
+    amount: Prisma.Decimal;
+    occurrenceDate: Date;
+    occurrenceKey: string;
+    referenceYear: number;
+    referenceMonth: number;
+    dueDate: Date | null;
+    invoiceStatus: CreditCardInvoiceStatus | null;
+  }> = [];
+
+  for (const template of templates) {
+    if (!FixedTransactionService.isCreditCardFixedExpenseTemplate(template)) {
+      continue;
+    }
+
+    if (template.fromAccountId !== params.accountId) {
+      continue;
+    }
+
+    let cursor = new Date(startCursor);
+
+    while (cursor <= endCursor) {
+      const occurrenceDate = FixedTransactionService.buildVirtualDateForMonth(
+        template,
+        cursor.getFullYear(),
+        cursor.getMonth()
+      );
+
+      if (template.startDate <= occurrenceDate && (!template.endDate || template.endDate >= occurrenceDate)) {
+        const occurrenceKey = buildOccurrenceKeyValue(template.id, occurrenceDate);
+        const invoiceReference =
+          template.fromAccount?.statementClosingDay && template.fromAccount?.statementDueDay
+            ? resolveCreditCardInvoiceReference(
+                occurrenceDate,
+                template.fromAccount.statementClosingDay,
+                template.fromAccount.statementDueDay
+              )
+            : null;
+
+        projectedCandidates.push({
+          templateId: template.id,
+          description: template.description,
+          amount: new Prisma.Decimal(template.amount.toString()),
+          occurrenceDate,
+          occurrenceKey,
+          referenceYear: invoiceReference?.referenceYear || occurrenceDate.getFullYear(),
+          referenceMonth: invoiceReference?.referenceMonth || occurrenceDate.getMonth() + 1,
+          dueDate: invoiceReference?.dueDate || null,
+          invoiceStatus: invoiceReference
+            ? resolveCreditCardInvoiceStatus(invoiceReference.closingDate, false)
+            : null
+        });
+      }
+
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12, 0, 0, 0);
+    }
+  }
+
+  if (projectedCandidates.length === 0) {
+    return [] as ExistingTransactionCandidate[];
+  }
+
+  const existingOccurrences = await prisma.financialTransaction.findMany({
     where: {
       companyId: params.companyId,
-      fromAccountId: params.accountId,
-      type: TransactionType.EXPENSE,
-      status: {
-        not: TransactionStatus.CANCELED
-      },
-      date: {
-        gte: minDate,
-        lte: maxDate
+      occurrenceKey: {
+        in: projectedCandidates.map((candidate) => candidate.occurrenceKey)
       }
     },
     select: {
-      id: true,
-      description: true,
-      amount: true,
-      date: true,
-      installmentNumber: true,
-      totalInstallments: true,
-      status: true,
-      purchaseGroupId: true,
-      importSourceType: true,
-      importSourceDescription: true,
+      occurrenceKey: true
+    }
+  });
+  const existingOccurrenceKeys = new Set(
+    existingOccurrences
+      .map((transaction) => transaction.occurrenceKey)
+      .filter((occurrenceKey): occurrenceKey is string => Boolean(occurrenceKey))
+  );
+
+  return projectedCandidates
+    .filter((candidate) => !existingOccurrenceKeys.has(candidate.occurrenceKey))
+    .map((candidate) => ({
+      matchKey: `projected-fixed:${candidate.templateId}:${candidate.occurrenceKey}`,
+      matchSource: 'PROJECTED_FIXED' as const,
+      id: null,
+      fixedTemplateId: candidate.templateId,
+      occurrenceKey: candidate.occurrenceKey,
+      description: candidate.description,
+      amount: candidate.amount,
+      date: candidate.occurrenceDate,
+      installmentNumber: null,
+      totalInstallments: null,
+      status: TransactionStatus.PENDING,
+      purchaseGroupId: null,
+      importSourceDescription: null,
       creditCardInvoice: {
-        select: {
-          id: true,
-          referenceYear: true,
-          referenceMonth: true,
-          status: true
-        }
+        id: 0,
+        referenceYear: candidate.referenceYear,
+        referenceMonth: candidate.referenceMonth,
+        status: candidate.invoiceStatus || CreditCardInvoiceStatus.OPEN,
+        dueDate: candidate.dueDate
       }
-    },
-    orderBy: [
-      { date: 'desc' },
-      { id: 'desc' }
-    ]
-  }) as Promise<ExistingTransactionCandidate[]>;
+    }));
 }
 
 async function ensureCreditCardAccount(accountId: number, companyId: number) {
@@ -1692,10 +1889,16 @@ export default class CreditCardStatementReconciliationService {
       );
 
       if (classification.status === 'OK' || classification.reason === 'AMBIGUOUS_EXACT') {
+        const hasProjectedFixedMatch = classification.matchedTransactions.some(
+          (candidate) => candidate.matchSource === 'PROJECTED_FIXED'
+        );
+
         results.push({
           itemId,
           status: 'SKIPPED_DUPLICATE',
-          message: 'Ja existe lancamento equivalente no cartao',
+          message: hasProjectedFixedMatch
+            ? 'Ja existe fixa equivalente prevista no cartao'
+            : 'Ja existe lancamento equivalente no cartao',
           createdTransactionIds: []
         });
         continue;
@@ -1724,7 +1927,11 @@ export default class CreditCardStatementReconciliationService {
         for (const transaction of createdTransactions) {
           candidates = [
             {
+              matchKey: `transaction:${transaction.id}`,
+              matchSource: 'TRANSACTION',
               id: transaction.id,
+              fixedTemplateId: null,
+              occurrenceKey: null,
               description: transaction.description,
               amount: new Prisma.Decimal(transaction.amount.toString()),
               date: transaction.date,

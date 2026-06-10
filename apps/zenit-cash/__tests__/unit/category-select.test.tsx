@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import CategorySelect, {
   orderCategoriesForSelect,
@@ -8,13 +9,13 @@ import CategorySelect, {
 const categories: CategoryOption[] = [
   {
     id: 2,
-    name: 'Combustível',
+    name: 'Combustivel',
     color: '#ef4444',
     parentId: 1
   },
   {
     id: 3,
-    name: 'Saúde',
+    name: 'Saude',
     color: '#10b981'
   },
   {
@@ -24,7 +25,7 @@ const categories: CategoryOption[] = [
   },
   {
     id: 4,
-    name: 'Farmácia',
+    name: 'Farmacia',
     color: '#22c55e',
     parentId: 3
   }
@@ -36,7 +37,7 @@ describe('CategorySelect', () => {
 
     expect(ordered.map((item) => item.category.id)).toEqual([3, 4, 1, 2])
     expect(ordered.map((item) => item.level)).toEqual([0, 1, 0, 1])
-    expect(ordered[1]?.lineage).toEqual(['Saúde'])
+    expect(ordered[1]?.lineage).toEqual(['Saude'])
     expect(ordered[3]?.lineage).toEqual(['Transporte'])
   })
 
@@ -51,7 +52,49 @@ describe('CategorySelect', () => {
     )
 
     expect(
-      screen.getByRole('button', { name: /Transporte \/ Combustível/i })
+      screen.getByRole('button', { name: /Transporte \/ Combustivel/i })
     ).toBeInTheDocument()
+  })
+
+  it('filters categories through the search field in the dropdown', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <CategorySelect
+        categories={categories}
+        value=""
+        onChange={vi.fn()}
+        placeholder="Sem categoria"
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: /Sem categoria/i }))
+    await user.type(
+      screen.getByRole('textbox', { name: /Filtrar categorias/i }),
+      'Farm'
+    )
+
+    expect(screen.getByRole('button', { name: /Farmacia/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Combustivel/i })).not.toBeInTheDocument()
+  })
+
+  it('opens the dropdown when typing on the trigger and seeds the filter', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <CategorySelect
+        categories={categories}
+        value=""
+        onChange={vi.fn()}
+        placeholder="Sem categoria"
+      />
+    )
+
+    const trigger = screen.getByRole('button', { name: /Sem categoria/i })
+    trigger.focus()
+    await user.keyboard('f')
+
+    expect(screen.getByRole('textbox', { name: /Filtrar categorias/i })).toHaveValue('f')
+    expect(screen.getByRole('button', { name: /Farmacia/i })).toBeInTheDocument()
   })
 })

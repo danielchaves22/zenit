@@ -44,7 +44,11 @@ interface CreditCardAccount {
 }
 
 interface ReconciliationMatchedTransaction {
-  id: number;
+  matchKey: string;
+  matchSource: 'TRANSACTION' | 'PROJECTED_FIXED';
+  id: number | null;
+  fixedTemplateId: number | null;
+  occurrenceKey: string | null;
   description: string;
   amount: string;
   date: string;
@@ -226,14 +230,24 @@ function getStatusClasses(status: ReconciliationItemStatus) {
   return 'border-gray-600 bg-gray-800 text-gray-300';
 }
 
-function getReasonLabel(reason: ReconciliationReason) {
-  switch (reason) {
+function getReasonLabel(item: ReconciliationPreviewItem) {
+  const hasProjectedFixedMatch = item.matchedTransactions.some(
+    (transaction) => transaction.matchSource === 'PROJECTED_FIXED'
+  );
+
+  switch (item.reason) {
     case 'EXACT':
-      return 'Lancamento ja encontrado.';
+      return hasProjectedFixedMatch
+        ? 'Fixa projetada equivalente ja encontrada para esta fatura.'
+        : 'Lancamento ja encontrado.';
     case 'AMBIGUOUS_EXACT':
-      return 'Mais de um lancamento ja bate exatamente.';
+      return hasProjectedFixedMatch
+        ? 'Ha mais de uma correspondencia equivalente, incluindo fixas projetadas.'
+        : 'Mais de um lancamento ja bate exatamente.';
     case 'DATE_DIVERGENCE':
-      return 'Mesmo valor e parcela, com divergencia de data.';
+      return hasProjectedFixedMatch
+        ? 'Existe fixa projetada com mesmo valor nesta fatura; revise a data.'
+        : 'Mesmo valor e parcela, com divergencia de data.';
     case 'INSTALLMENT_DIVERGENCE':
       return 'Mesmo valor, com divergencia de parcelamento.';
     case 'NON_IMPORTABLE':
@@ -983,7 +997,7 @@ function CreditCardReconciliationPageInner() {
                                 {item.sourceDescription}
                               </div>
                               <div className="mt-2 text-sm text-gray-400">
-                                {getReasonLabel(item.reason)}
+                                {getReasonLabel(item)}
                               </div>
                               {item.nonImportableReason && (
                                 <div className="mt-2 text-sm text-amber-300">
@@ -1127,21 +1141,31 @@ function CreditCardReconciliationPageInner() {
                         <div className="border-t border-gray-700 bg-[#11161d] px-5 py-4">
                           <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
                             <CheckCircle2 size={16} className="text-accent" />
-                            Lancamentos encontrados no cartao
+                            Correspondencias encontradas no cartao
                           </div>
                           <div className="space-y-3">
                             {item.matchedTransactions.map((transaction) => (
                               <div
-                                key={`${item.id}-${transaction.id}`}
+                                key={`${item.id}-${transaction.matchKey}`}
                                 className="rounded-lg border border-gray-700 px-4 py-3"
                               >
                                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                                   <div>
-                                    <div className="font-medium text-white">
-                                      {transaction.description}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <div className="font-medium text-white">
+                                        {transaction.description}
+                                      </div>
+                                      {transaction.matchSource === 'PROJECTED_FIXED' && (
+                                        <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
+                                          Fixa projetada
+                                        </span>
+                                      )}
                                     </div>
                                     <div className="mt-1 text-sm text-gray-400">
-                                      Compra em {formatCalendarDate(transaction.date)} • parcela{' '}
+                                      {transaction.matchSource === 'PROJECTED_FIXED'
+                                        ? `Fechamento em ${formatCalendarDate(transaction.date)}`
+                                        : `Compra em ${formatCalendarDate(transaction.date)}`}{' '}
+                                      • parcela{' '}
                                       {formatInstallmentLabel(
                                         transaction.installmentNumber,
                                         transaction.totalInstallments
@@ -1155,12 +1179,23 @@ function CreditCardReconciliationPageInner() {
                                     <div className="text-sm font-semibold text-white">
                                       {formatCurrency(transaction.amount)}
                                     </div>
-                                    <Link
-                                      href={`/financial/transactions/${transaction.id}`}
-                                      className="text-sm font-medium text-accent hover:text-accent-hover"
-                                    >
-                                      Abrir
-                                    </Link>
+                                    {transaction.matchSource === 'TRANSACTION' && transaction.id && (
+                                      <Link
+                                        href={`/financial/transactions/${transaction.id}`}
+                                        className="text-sm font-medium text-accent hover:text-accent-hover"
+                                      >
+                                        Abrir
+                                      </Link>
+                                    )}
+                                    {transaction.matchSource === 'PROJECTED_FIXED' &&
+                                      transaction.fixedTemplateId && (
+                                        <Link
+                                          href={`/financial/fixed-transactions/${transaction.fixedTemplateId}`}
+                                          className="text-sm font-medium text-accent hover:text-accent-hover"
+                                        >
+                                          Abrir fixa
+                                        </Link>
+                                      )}
                                   </div>
                                 </div>
                               </div>

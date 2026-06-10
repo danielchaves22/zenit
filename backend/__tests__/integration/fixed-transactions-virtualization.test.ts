@@ -1077,6 +1077,52 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(count).toBe(1);
   });
 
+  it('daily materialization job backfills missed credit card fixed occurrences in the current month', async () => {
+    const expectedOccurrenceDate = buildOccurrenceDate(1, 10);
+    const referenceDate = buildOccurrenceDate(1, 20);
+
+    const fixed = await prisma.recurringTransaction.create({
+      data: {
+        description: 'Daily Job Backfill Card Fixed',
+        amount: 42,
+        type: 'EXPENSE',
+        frequency: 'MONTHLY',
+        dayOfMonth: null,
+        startDate: new Date(
+          referenceDate.getFullYear(),
+          referenceDate.getMonth(),
+          1,
+          0,
+          0,
+          0,
+          0
+        ),
+        nextDueDate: expectedOccurrenceDate,
+        isActive: true,
+        fromAccountId: creditCardAccountId,
+        categoryId: expenseCategoryId,
+        companyId,
+        createdBy: userId
+      }
+    });
+
+    const occurrenceKey = buildOccurrenceKeyValue(fixed.id, expectedOccurrenceDate);
+
+    await FixedTransactionService.materializeDueOccurrencesForDate(referenceDate);
+
+    const materialized = await prisma.financialTransaction.findFirst({
+      where: {
+        companyId,
+        occurrenceKey
+      }
+    });
+
+    expect(materialized).not.toBeNull();
+    expect(materialized?.fromAccountId).toBe(creditCardAccountId);
+    expect(materialized?.status).toBe('COMPLETED');
+    expect(toDateOnly(new Date(materialized!.date))).toBe(toDateOnly(expectedOccurrenceDate));
+  });
+
   it('template update keeps the same template and updates unmaterialized projections', async () => {
     const currentMonthLastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const projectedDay = Math.min(now.getDate() + 1, currentMonthLastDay);

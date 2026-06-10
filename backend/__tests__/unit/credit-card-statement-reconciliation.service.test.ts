@@ -1,4 +1,4 @@
-import { Prisma, TransactionStatus } from '@prisma/client';
+import { CreditCardInvoiceStatus, Prisma, TransactionStatus } from '@prisma/client';
 import { __private__ } from '../../src/services/credit-card-statement-reconciliation.service';
 
 const sampleCaixaStatementText = `
@@ -110,7 +110,11 @@ describe('Credit card statement reconciliation service', () => {
       purchaseItem!,
       [
         {
+          matchKey: 'transaction:91',
+          matchSource: 'TRANSACTION',
           id: 91,
+          fixedTemplateId: null,
+          occurrenceKey: null,
           description: 'Descricao interna completamente diferente',
           amount: new Prisma.Decimal('35.48'),
           date: new Date('2026-05-07T12:00:00.000Z'),
@@ -143,7 +147,11 @@ describe('Credit card statement reconciliation service', () => {
       purchaseItem!,
       [
         {
+          matchKey: 'transaction:91',
+          matchSource: 'TRANSACTION',
           id: 91,
+          fixedTemplateId: null,
+          occurrenceKey: null,
           description: 'Descricao interna A',
           amount: new Prisma.Decimal('35.48'),
           date: new Date('2026-05-07T12:00:00.000Z'),
@@ -155,7 +163,11 @@ describe('Credit card statement reconciliation service', () => {
           creditCardInvoice: null
         },
         {
+          matchKey: 'transaction:92',
+          matchSource: 'TRANSACTION',
           id: 92,
+          fixedTemplateId: null,
+          occurrenceKey: null,
           description: 'Descricao interna B',
           amount: new Prisma.Decimal('35.48'),
           date: new Date('2026-05-07T12:00:00.000Z'),
@@ -175,6 +187,49 @@ describe('Credit card statement reconciliation service', () => {
     expect(classification.reason).toBe('EXACT');
     expect(classification.matchedTransactions).toHaveLength(1);
     expect(classification.matchedTransactions[0]?.id).toBe(92);
+  });
+
+  it('marks projected fixed card expenses as similar when amount matches the statement month', () => {
+    const parsed = __private__.parseCaixaStatementText(
+      sampleCaixaStatementText,
+      'FaturaCaixa_062026.pdf'
+    );
+    const purchaseItem = parsed.items.find((item) => item.kind === 'PURCHASE');
+
+    expect(purchaseItem).toBeTruthy();
+
+    const classification = __private__.classifyMatches(
+      purchaseItem!,
+      [
+        {
+          matchKey: 'projected-fixed:18:18:2026-06',
+          matchSource: 'PROJECTED_FIXED',
+          id: null,
+          fixedTemplateId: 18,
+          occurrenceKey: '18:2026-06',
+          description: 'Assinatura recorrente',
+          amount: new Prisma.Decimal('35.48'),
+          date: new Date('2026-06-10T12:00:00.000Z'),
+          installmentNumber: null,
+          totalInstallments: null,
+          status: TransactionStatus.PENDING,
+          purchaseGroupId: null,
+          creditCardInvoice: {
+            id: 0,
+            referenceYear: 2026,
+            referenceMonth: 6,
+            status: CreditCardInvoiceStatus.OPEN
+          }
+        }
+      ],
+      2026,
+      6
+    );
+
+    expect(classification.status).toBe('SIMILAR');
+    expect(classification.reason).toBe('DATE_DIVERGENCE');
+    expect(classification.matchedTransactions).toHaveLength(1);
+    expect(classification.matchedTransactions[0]?.matchSource).toBe('PROJECTED_FIXED');
   });
 
   it('parses the Bradesco CSV layout with multiple cards and installment markers', () => {

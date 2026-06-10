@@ -12,6 +12,10 @@ import {
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import CategorySelect, { type CategoryOption } from '@/components/financial/CategorySelect';
 import { PageGuard } from '@/components/ui/AccessGuard';
+import {
+  AutocompleteInput,
+  type AutocompleteSuggestion
+} from '@/components/ui/AutoCompleteInput';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -733,6 +737,43 @@ function CreditCardReconciliationPageInner() {
     }));
   }
 
+  async function fetchDescriptionSuggestions(query: string): Promise<AutocompleteSuggestion[]> {
+    if (query.trim().length < 3) {
+      return [];
+    }
+
+    try {
+      const response = await api.get('/financial/transactions/autocomplete', {
+        params: {
+          q: query,
+          type: 'EXPENSE'
+        }
+      });
+
+      return response.data.suggestions || [];
+    } catch (error) {
+      console.error('Error fetching reconciliation description suggestions:', error);
+      return [];
+    }
+  }
+
+  function handleDraftSuggestionSelect(itemId: string, suggestion: AutocompleteSuggestion) {
+    const nextCategoryId = suggestion.categoryId ? String(suggestion.categoryId) : '';
+    const hasKnownCategory = nextCategoryId
+      ? categories.some((category) => String(category.id) === nextCategoryId)
+      : false;
+
+    setItemDrafts((current) => ({
+      ...current,
+      [itemId]: {
+        description: suggestion.description,
+        categoryId: hasKnownCategory
+          ? nextCategoryId
+          : current[itemId]?.categoryId || ''
+      }
+    }));
+  }
+
   function buildCommitPayload(itemIds: string[]) {
     if (!preview) {
       return [];
@@ -1313,18 +1354,18 @@ function CreditCardReconciliationPageInner() {
                               <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
                                 Descricao a lancar
                               </div>
-                              <input
-                                type="text"
+                              <AutocompleteInput
                                 value={draft.description}
-                                onChange={(event) =>
-                                  handleDraftDescriptionChange(item.id, event.target.value)
+                                onChange={(value) => handleDraftDescriptionChange(item.id, value)}
+                                onSuggestionSelect={(suggestion) =>
+                                  handleDraftSuggestionSelect(item.id, suggestion)
                                 }
+                                fetchSuggestions={fetchDescriptionSuggestions}
+                                placeholder="Digite para buscar descricoes anteriores"
+                                minLength={3}
+                                maxSuggestions={10}
                                 disabled={commitLoading || itemCommitLoading}
-                                className={`mt-2 w-full rounded border bg-background px-3 py-2 text-sm text-white focus:outline-none focus:ring ${
-                                  missingDescription
-                                    ? 'border-amber-500 focus:border-amber-400'
-                                    : 'border-gray-700 focus:border-accent'
-                                }`}
+                                className="mt-2"
                               />
                               {missingDescription && (
                                 <div className="mt-2 text-sm text-amber-300">

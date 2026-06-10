@@ -1235,7 +1235,7 @@ function CreditCardReconciliationPageInner() {
                   const missingCategory = selectable && !draft.categoryId;
 
                   return (
-                    <Card key={item.id} className="p-0">
+                    <Card key={item.id} className="overflow-visible p-0">
                       <div className="border-b border-gray-700 px-5 py-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="flex items-start gap-3">

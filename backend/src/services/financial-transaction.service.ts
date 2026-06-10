@@ -5,7 +5,8 @@ import {
   CreditCardInvoiceStatus,
   CreditCardInvoiceSettlementType,
   FinancialAccountPurpose,
-  FinancialTransactionEntryKind
+  FinancialTransactionEntryKind,
+  FinancialTransactionImportSourceType
 } from '@prisma/client';
 import { parseDecimal } from '../utils/money';
 import cacheService from './cache.service';
@@ -191,6 +192,8 @@ export default class FinancialTransactionService {
     type: TransactionType;
     status?: TransactionStatus;
     notes?: string;
+    importSourceType?: FinancialTransactionImportSourceType | null;
+    importSourceDescription?: string | null;
     fromAccountId?: number | null;
     toAccountId?: number | null;
     categoryId?: number | null;
@@ -322,6 +325,8 @@ export default class FinancialTransactionService {
       type: TransactionType;
       status?: TransactionStatus;
       notes?: string;
+      importSourceType?: FinancialTransactionImportSourceType | null;
+      importSourceDescription?: string | null;
       fromAccountId?: number | null;
       toAccountId?: number | null;
       categoryId?: number | null;
@@ -393,6 +398,8 @@ export default class FinancialTransactionService {
     type: TransactionType;
     status?: TransactionStatus;
     notes?: string;
+    importSourceType?: FinancialTransactionImportSourceType | null;
+    importSourceDescription?: string | null;
     fromAccountId?: number | null;
     toAccountId?: number | null;
     categoryId?: number | null;
@@ -570,6 +577,8 @@ export default class FinancialTransactionService {
           entryKind: data.entryKind ?? FinancialTransactionEntryKind.NORMAL,
           status: data.status || 'PENDING',
           notes: data.notes,
+          importSourceType: data.importSourceType ?? null,
+          importSourceDescription: data.importSourceDescription ?? null,
           installmentNumber: data.installmentNumber ?? null,
           totalInstallments: data.totalInstallments ?? null,
           purchaseGroupId: data.purchaseGroupId ?? null,

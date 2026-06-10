@@ -36,6 +36,7 @@ type HistoryTransactionRecord = {
   id: number;
   description: string;
   notes: string | null;
+  importSourceDescription: string | null;
   date: Date;
   category: ExpenseCategoryRecord;
 };
@@ -485,7 +486,11 @@ function extractStatementDescriptionFromNotes(notes: string | null) {
 }
 
 function buildHistorySearchText(transaction: HistoryTransactionRecord) {
-  return extractStatementDescriptionFromNotes(transaction.notes) || transaction.description;
+  return (
+    transaction.importSourceDescription ||
+    extractStatementDescriptionFromNotes(transaction.notes) ||
+    transaction.description
+  );
 }
 
 function suggestByHistory(
@@ -755,6 +760,7 @@ async function loadHistoryTransactions(params: {
       id: true,
       description: true,
       notes: true,
+      importSourceDescription: true,
       date: true,
       category: {
         select: {

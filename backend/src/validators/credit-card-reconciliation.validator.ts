@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const sourceTypeSchema = z.enum(['CAIXA_PDF'], {
+const sourceTypeSchema = z.enum(['CAIXA_PDF', 'BRADESCO_CSV', 'NUBANK_CSV'], {
   errorMap: () => ({ message: 'Fonte de conciliacao invalida' })
 });
 

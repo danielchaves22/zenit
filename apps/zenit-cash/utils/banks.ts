@@ -18,6 +18,11 @@ export interface FinancialBankReference {
   iconPath?: string | null;
 }
 
+export type CreditCardReconciliationSourceType =
+  | 'CAIXA_PDF'
+  | 'BRADESCO_CSV'
+  | 'NUBANK_CSV';
+
 export function normalizeBankText(value: string) {
   return value
     .normalize('NFD')
@@ -121,4 +126,52 @@ export function isCaixaBankReference(
     normalizedCode === normalizeBankText('CAIXA_ECONOMICA_FEDERAL') ||
     normalizedName === normalizeBankText('Caixa Economica Federal')
   );
+}
+
+export function isBradescoBankReference(
+  bank?: FinancialBankReference | null,
+  fallbackCode?: string | null,
+  fallbackName?: string | null
+) {
+  const normalizedCode = normalizeBankText(bank?.code || fallbackCode || '');
+  const normalizedName = normalizeBankText(bank?.name || fallbackName || '');
+
+  return (
+    normalizedCode === normalizeBankText('BRADESCO') ||
+    normalizedName === normalizeBankText('Bradesco')
+  );
+}
+
+export function isNubankBankReference(
+  bank?: FinancialBankReference | null,
+  fallbackCode?: string | null,
+  fallbackName?: string | null
+) {
+  const normalizedCode = normalizeBankText(bank?.code || fallbackCode || '');
+  const normalizedName = normalizeBankText(bank?.name || fallbackName || '');
+
+  return (
+    normalizedCode === normalizeBankText('NUBANK') ||
+    normalizedName === normalizeBankText('Nubank')
+  );
+}
+
+export function getCreditCardReconciliationSourceType(
+  bank?: FinancialBankReference | null,
+  fallbackCode?: string | null,
+  fallbackName?: string | null
+): CreditCardReconciliationSourceType | null {
+  if (isCaixaBankReference(bank, fallbackCode, fallbackName)) {
+    return 'CAIXA_PDF';
+  }
+
+  if (isBradescoBankReference(bank, fallbackCode, fallbackName)) {
+    return 'BRADESCO_CSV';
+  }
+
+  if (isNubankBankReference(bank, fallbackCode, fallbackName)) {
+    return 'NUBANK_CSV';
+  }
+
+  return null;
 }

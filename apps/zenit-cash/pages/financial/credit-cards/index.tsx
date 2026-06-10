@@ -19,7 +19,10 @@ import { PageGuard } from '@/components/ui/AccessGuard';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
-import { FinancialBank, isCaixaBankReference } from '@/utils/banks';
+import {
+  FinancialBank,
+  getCreditCardReconciliationSourceType
+} from '@/utils/banks';
 import { getCreditCardTheme } from '@/utils/creditCardAppearance';
 import {
   getAvailableCreditLimit,
@@ -186,7 +189,11 @@ function CreditCardsPageInner() {
               ? getInvoiceDisplayStatus(card.nextInvoice.status, card.nextInvoice.dueDate)
               : 'OPEN';
             const cardTheme = getCreditCardTheme(card.cardColor);
-            const isCaixaCard = isCaixaBankReference(card.bank, card.bankCode, card.bankName);
+            const reconciliationSourceType = getCreditCardReconciliationSourceType(
+              card.bank,
+              card.bankCode,
+              card.bankName
+            );
 
             return (
               <Card
@@ -255,7 +262,7 @@ function CreditCardsPageInner() {
                           Faturas
                         </Button>
                       </Link>
-                      {isCaixaCard && (
+                      {reconciliationSourceType && (
                         <Link href={`/financial/credit-cards/${card.id}/reconciliation`}>
                           <Button
                             variant="outline"

@@ -44,6 +44,12 @@ enum FinancialTransactionEntryKind {
   BALANCE_ADJUSTMENT
 }
 
+enum FinancialTransactionImportSourceType {
+  CAIXA_PDF
+  BRADESCO_CSV
+  NUBANK_CSV
+}
+
 enum TransactionStatus {
   PENDING
   COMPLETED
@@ -458,6 +464,8 @@ model FinancialTransaction {
   entryKind       FinancialTransactionEntryKind @default(NORMAL)
   status          TransactionStatus    @default(COMPLETED) // ✅ MUDANÇA: padrão COMPLETED
   notes           String?
+  importSourceType FinancialTransactionImportSourceType?
+  importSourceDescription String?
   fromAccountId   Int?
   fromAccount     FinancialAccount?    @relation("FromAccount", fields: [fromAccountId], references: [id])
   toAccountId     Int?

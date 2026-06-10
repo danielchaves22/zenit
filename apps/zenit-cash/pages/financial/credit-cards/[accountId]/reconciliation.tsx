@@ -18,8 +18,9 @@ import { Card } from '@/components/ui/Card';
 import { useToast } from '@/components/ui/ToastContext';
 import api from '@/lib/api';
 import {
+  type CreditCardReconciliationSourceType,
   FinancialBank,
-  isCaixaBankReference
+  getCreditCardReconciliationSourceType
 } from '@/utils/banks';
 import { formatCalendarDate } from '@/utils/financialStatus';
 
@@ -86,7 +87,7 @@ interface ReconciliationPreviewItem {
 
 interface ReconciliationPreview {
   statement: {
-    sourceType: 'CAIXA_PDF';
+    sourceType: CreditCardReconciliationSourceType;
     fileName: string | null;
     dueDate: string;
     totalAmount: string;
@@ -130,6 +131,70 @@ interface ReconciliationItemDraft {
   description: string;
   categoryId: string;
 }
+
+const RECONCILIATION_SOURCE_CONFIG: Record<
+  CreditCardReconciliationSourceType,
+  {
+    fileLabel: string;
+    sourceLabel: string;
+    selectLabel: string;
+    helperText: string;
+    accept: string;
+    invalidFileMessage: string;
+    analyzeFileMessage: string;
+    unsupportedTitle: string;
+    unsupportedDescription: string;
+    statementDateLabel: string;
+    totalAmountLabel: string;
+    parsedAmountLabel: string;
+  }
+> = {
+  CAIXA_PDF: {
+    fileLabel: 'PDF da Caixa',
+    sourceLabel: 'PDF Caixa',
+    selectLabel: 'Selecionar PDF da Caixa',
+    helperText: 'Somente o layout atual da fatura Caixa e suportado neste momento.',
+    accept: 'application/pdf,.pdf',
+    invalidFileMessage: 'Selecione um arquivo PDF da fatura da Caixa',
+    analyzeFileMessage: 'Selecione o PDF da fatura da Caixa antes de analisar',
+    unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
+    unsupportedDescription:
+      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.',
+    statementDateLabel: 'Vencimento',
+    totalAmountLabel: 'Total da fatura',
+    parsedAmountLabel: 'Lido do PDF'
+  },
+  BRADESCO_CSV: {
+    fileLabel: 'CSV do Bradesco',
+    sourceLabel: 'CSV Bradesco',
+    selectLabel: 'Selecionar CSV do Bradesco',
+    helperText: 'Somente o layout atual de exportacao CSV do Bradesco e suportado neste momento.',
+    accept: '.csv,text/csv',
+    invalidFileMessage: 'Selecione um arquivo CSV da fatura do Bradesco',
+    analyzeFileMessage: 'Selecione o CSV da fatura do Bradesco antes de analisar',
+    unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
+    unsupportedDescription:
+      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.',
+    statementDateLabel: 'Data da fatura',
+    totalAmountLabel: 'Total da fatura',
+    parsedAmountLabel: 'Lido do arquivo'
+  },
+  NUBANK_CSV: {
+    fileLabel: 'CSV do Nubank',
+    sourceLabel: 'CSV Nubank',
+    selectLabel: 'Selecionar CSV do Nubank',
+    helperText: 'Somente o layout atual de exportacao CSV do Nubank e suportado neste momento.',
+    accept: '.csv,text/csv',
+    invalidFileMessage: 'Selecione um arquivo CSV da fatura do Nubank',
+    analyzeFileMessage: 'Selecione o CSV do Nubank antes de analisar',
+    unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
+    unsupportedDescription:
+      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.',
+    statementDateLabel: 'Data do arquivo',
+    totalAmountLabel: 'Total do arquivo',
+    parsedAmountLabel: 'Calculado do CSV'
+  }
+};
 
 function formatCurrency(value: string | number) {
   return new Intl.NumberFormat('pt-BR', {
@@ -268,10 +333,13 @@ function CreditCardReconciliationPageInner() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
 
-  const isCaixaCard = useMemo(
-    () => isCaixaBankReference(card?.bank, card?.bankCode, card?.bankName),
+  const reconciliationSourceType = useMemo(
+    () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
     [card]
   );
+  const sourceConfig = reconciliationSourceType
+    ? RECONCILIATION_SOURCE_CONFIG[reconciliationSourceType]
+    : null;
 
   const filteredItems = useMemo(() => {
     if (!preview) {
@@ -388,7 +456,12 @@ function CreditCardReconciliationPageInner() {
 
   async function runPreview() {
     if (!fileBase64 || !fileName) {
-      addToast('Selecione o PDF da fatura da Caixa antes de analisar', 'error');
+      addToast(sourceConfig?.analyzeFileMessage || 'Selecione a fatura antes de analisar', 'error');
+      return;
+    }
+
+    if (!reconciliationSourceType) {
+      addToast('Cartao sem fonte de conciliacao suportada', 'error');
       return;
     }
 
@@ -398,7 +471,7 @@ function CreditCardReconciliationPageInner() {
       const response = await api.post(
         `/financial/credit-cards/${accountId}/reconciliation/preview`,
         {
-          sourceType: 'CAIXA_PDF',
+          sourceType: reconciliationSourceType,
           fileBase64,
           fileName
         }
@@ -416,14 +489,14 @@ function CreditCardReconciliationPageInner() {
   }
 
   async function refreshPreviewSilently() {
-    if (!fileBase64 || !fileName) {
+    if (!fileBase64 || !fileName || !reconciliationSourceType) {
       return;
     }
 
     const response = await api.post(
       `/financial/credit-cards/${accountId}/reconciliation/preview`,
       {
-        sourceType: 'CAIXA_PDF',
+        sourceType: reconciliationSourceType,
         fileBase64,
         fileName
       }
@@ -440,10 +513,12 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
-    const isPdf =
-      nextFile.type === 'application/pdf' || nextFile.name.toLowerCase().endsWith('.pdf');
-    if (!isPdf) {
-      addToast('Selecione um arquivo PDF da fatura da Caixa', 'error');
+    const fileNameLower = nextFile.name.toLowerCase();
+    const isValidFile = reconciliationSourceType === 'CAIXA_PDF'
+      ? nextFile.type === 'application/pdf' || fileNameLower.endsWith('.pdf')
+      : nextFile.type === 'text/csv' || fileNameLower.endsWith('.csv');
+    if (!isValidFile) {
+      addToast(sourceConfig?.invalidFileMessage || 'Selecione um arquivo suportado', 'error');
       event.target.value = '';
       return;
     }
@@ -553,7 +628,7 @@ function CreditCardReconciliationPageInner() {
   }
 
   async function commitItems(itemIds: string[]) {
-    if (!preview || !fileBase64 || !fileName) {
+    if (!preview || !fileBase64 || !fileName || !reconciliationSourceType) {
       addToast('Analise a fatura antes de importar os lancamentos', 'error');
       return;
     }
@@ -577,7 +652,7 @@ function CreditCardReconciliationPageInner() {
       const response = await api.post(
         `/financial/credit-cards/${accountId}/reconciliation/commit`,
         {
-          sourceType: 'CAIXA_PDF',
+          sourceType: reconciliationSourceType,
           fileBase64,
           fileName,
           selectedItems
@@ -649,16 +724,16 @@ function CreditCardReconciliationPageInner() {
             Nao foi possivel localizar o cartao selecionado.
           </div>
         </Card>
-      ) : !isCaixaCard ? (
+      ) : !reconciliationSourceType || !sourceConfig ? (
         <Card>
           <div className="flex flex-col items-center gap-3 py-10 text-center">
             <AlertTriangle className="text-amber-300" size={40} />
             <div className="text-lg font-semibold text-white">
-              Conciliacao disponivel apenas para cartoes Caixa
+              {sourceConfig?.unsupportedTitle || 'Conciliacao indisponivel para este cartao'}
             </div>
             <p className="max-w-2xl text-sm text-gray-400">
-              Esta primeira versao aceita somente o PDF de fatura no formato da Caixa
-              Economica Federal.
+              {sourceConfig?.unsupportedDescription ||
+                'No momento a conciliacao aceita apenas formatos homologados por banco.'}
             </p>
           </div>
         </Card>
@@ -673,16 +748,16 @@ function CreditCardReconciliationPageInner() {
                     <Upload className="text-accent" size={18} />
                     <div>
                       <div className="text-sm font-medium text-white">
-                        Selecionar PDF da Caixa
+                        {sourceConfig.selectLabel}
                       </div>
                       <div className="text-xs text-gray-400">
-                        Somente o layout atual da fatura Caixa e suportado neste momento.
+                        {sourceConfig.helperText}
                       </div>
                     </div>
                   </div>
                   <input
                     type="file"
-                    accept="application/pdf"
+                    accept={sourceConfig.accept}
                     onChange={handleFileChange}
                     className="text-sm text-gray-300 file:mr-4 file:rounded file:border-0 file:bg-accent file:px-3 file:py-2 file:font-semibold file:text-white"
                   />
@@ -695,11 +770,11 @@ function CreditCardReconciliationPageInner() {
                 </div>
                 <div className="mt-2 text-lg font-semibold text-white">{card.name}</div>
                 <div className="mt-1 text-sm text-gray-400">
-                  {card.bank?.name || card.bankName || 'Caixa Economica Federal'}
+                  {card.bank?.name || card.bankName || 'Banco nao informado'}
                 </div>
                 <div className="mt-4 space-y-2 text-sm text-gray-300">
-                  <div>Fonte: PDF Caixa</div>
-                  <div>Arquivo: {fileName || 'Nenhum PDF selecionado'}</div>
+                  <div>Fonte: {sourceConfig.sourceLabel}</div>
+                  <div>Arquivo: {fileName || `Nenhum ${sourceConfig.fileLabel} selecionado`}</div>
                 </div>
                 <div className="mt-5">
                   <Button
@@ -739,18 +814,18 @@ function CreditCardReconciliationPageInner() {
                     )}
                   </div>
                   <div className="mt-2 text-sm text-gray-400">
-                    Vencimento {formatCalendarDate(preview.statement.dueDate)}
+                    {sourceConfig.statementDateLabel} {formatCalendarDate(preview.statement.dueDate)}
                   </div>
                 </Card>
                 <Card>
                   <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                    Total da fatura
+                    {sourceConfig.totalAmountLabel}
                   </div>
                   <div className="mt-2 text-xl font-semibold text-white">
                     {formatCurrency(preview.statement.totalAmount)}
                   </div>
                   <div className="mt-2 text-sm text-gray-400">
-                    Lido do PDF: {formatCurrency(preview.statement.parsedNetAmount)}
+                    {sourceConfig.parsedAmountLabel}: {formatCurrency(preview.statement.parsedNetAmount)}
                   </div>
                 </Card>
                 <Card>
@@ -989,13 +1064,6 @@ function CreditCardReconciliationPageInner() {
                           <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
                             <div>
                               <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                                Descricao na fatura
-                              </div>
-                              <div className="mt-2 rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2 text-sm text-gray-300">
-                                {item.sourceDescription}
-                              </div>
-
-                              <div className="mt-4 text-xs uppercase tracking-[0.18em] text-gray-500">
                                 Descricao a lancar
                               </div>
                               <input

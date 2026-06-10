@@ -15,8 +15,10 @@ import { parseDecimal } from '../utils/money';
 const prisma = new PrismaClient();
 const pdfParse: (dataBuffer: Buffer) => Promise<{ text: string }> = require('pdf-parse');
 const CAIXA_BANK_CODE = 'CAIXA_ECONOMICA_FEDERAL';
+const BRADESCO_BANK_CODE = 'BRADESCO';
+const NUBANK_BANK_CODE = 'NUBANK';
 
-export type CreditCardReconciliationSourceType = 'CAIXA_PDF';
+export type CreditCardReconciliationSourceType = 'CAIXA_PDF' | 'BRADESCO_CSV' | 'NUBANK_CSV';
 export type CreditCardReconciliationItemStatus =
   | 'OK'
   | 'SIMILAR'
@@ -78,6 +80,8 @@ type ExistingTransactionCandidate = {
   totalInstallments: number | null;
   status: TransactionStatus;
   purchaseGroupId: string | null;
+  importSourceType?: CreditCardReconciliationSourceType | null;
+  importSourceDescription?: string | null;
   creditCardInvoice: {
     id: number;
     referenceYear: number;
@@ -220,6 +224,25 @@ function normalizeInstallmentSignature(installmentNumber: number | null, totalIn
   };
 }
 
+function filterCandidatesBySourceDescription(
+  candidates: ExistingTransactionCandidate[],
+  sourceDescription: string
+) {
+  const normalizedSourceDescription = normalizeComparableText(sourceDescription);
+  if (!normalizedSourceDescription) {
+    return [];
+  }
+
+  return candidates.filter((candidate) => {
+    const normalizedCandidateDescription = normalizeComparableText(
+      candidate.importSourceDescription
+    );
+
+    return Boolean(normalizedCandidateDescription) &&
+      normalizedCandidateDescription === normalizedSourceDescription;
+  });
+}
+
 function buildImportNote(sourceType: CreditCardReconciliationSourceType, item: ParsedStatementItem) {
   const parts = [
     `Importado por conciliacao de cartao (${sourceType})`,
@@ -246,6 +269,64 @@ function parseDdMmYyyy(value: string) {
   const year = Number(match[3]);
 
   return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+function parseYyyyMmDd(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    throw new Error('Data do CSV invalida');
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+function parseStatementDateFromFileName(fileName: string | null) {
+  if (!fileName) {
+    return null;
+  }
+
+  const match = fileName.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) {
+    return null;
+  }
+
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+}
+
+function splitCsvLine(line: string) {
+  const fields: string[] = [];
+  let current = '';
+  let insideQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+
+    if (character === '"') {
+      if (insideQuotes && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+        continue;
+      }
+
+      insideQuotes = !insideQuotes;
+      continue;
+    }
+
+    if (character === ',' && !insideQuotes) {
+      fields.push(current);
+      current = '';
+      continue;
+    }
+
+    current += character;
+  }
+
+  fields.push(current);
+  return fields.map((field) => field.trim());
 }
 
 function inferPurchaseDate(dayMonth: string, statementDueDate: Date) {
@@ -332,12 +413,17 @@ function isNormalizedSectionTotalLine(value: string) {
 function classifyItemKind(
   section: string,
   description: string,
-  direction: StatementDirection
+  direction: StatementDirection,
+  hasInstallmentSignature = false
 ): CreditCardReconciliationItemKind {
-  const normalizedDescription = description.toUpperCase();
+  const normalizedDescription = normalizeComparableText(description);
 
   if (direction === 'CREDIT') {
-    if (normalizedDescription.includes('PAGAMENTO')) {
+    if (
+      normalizedDescription.includes('PAGAMENTO') ||
+      normalizedDescription.includes('PAGTO') ||
+      normalizedDescription.includes('DEB EM C/C')
+    ) {
       return 'PAYMENT';
     }
 
@@ -348,19 +434,14 @@ function classifyItemKind(
     return 'CREDIT';
   }
 
-  if (normalizedDescription.startsWith('TOTAL DA FATURA ANTERIOR')) {
+  if (
+    normalizedDescription.startsWith('TOTAL DA FATURA ANTERIOR') ||
+    normalizedDescription.startsWith('SALDO ANTERIOR')
+  ) {
     return 'BALANCE';
   }
 
-  if (section === 'PURCHASES') {
-    return 'PURCHASE';
-  }
-
-  if (section === 'INSTALLMENTS') {
-    return 'INSTALLMENT';
-  }
-
-  if (section === 'ANNUITY') {
+  if (section === 'ANNUITY' || normalizedDescription.includes('ANUIDADE')) {
     return 'ANNUITY';
   }
 
@@ -368,7 +449,10 @@ function classifyItemKind(
     return 'TAX';
   }
 
-  if (normalizedDescription.includes('JUROS')) {
+  if (
+    normalizedDescription.includes('JUROS') ||
+    normalizedDescription.includes('ENCARGO')
+  ) {
     return 'INTEREST';
   }
 
@@ -376,7 +460,15 @@ function classifyItemKind(
     return 'FEE';
   }
 
-  if (section === 'OTHER' || section === 'STATEMENT') {
+  if (section === 'INSTALLMENTS' || hasInstallmentSignature) {
+    return 'INSTALLMENT';
+  }
+
+  if (section === 'PURCHASES' || section === 'STATEMENT') {
+    return 'PURCHASE';
+  }
+
+  if (section === 'OTHER') {
     return 'OTHER';
   }
 
@@ -461,7 +553,12 @@ function parseCaixaStatementLine(params: {
       : payload;
     const installmentNumber = installmentMatch ? Number(installmentMatch[2]) : null;
     const totalInstallments = installmentMatch ? Number(installmentMatch[3]) : null;
-    const kind = classifyItemKind(section, sourceDescription, direction);
+    const kind = classifyItemKind(
+      section,
+      sourceDescription,
+      direction,
+      Boolean(installmentMatch)
+    );
     const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
       kind,
       direction,
@@ -503,7 +600,12 @@ function parseCaixaStatementLine(params: {
       const amount = parseDecimal(annuityInstallmentMatch[4]).toString();
       const direction: StatementDirection =
         annuityInstallmentMatch[5] === 'C' ? 'CREDIT' : 'DEBIT';
-      const kind = classifyItemKind(section, sourceDescription, direction);
+      const kind = classifyItemKind(
+        section,
+        sourceDescription,
+        direction,
+        true
+      );
       const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
         kind,
         direction,
@@ -554,7 +656,12 @@ function parseCaixaStatementLine(params: {
     const installmentNumber = parcelMatch ? Number(parcelMatch[2]) : null;
     const totalInstallments = parcelMatch ? Number(parcelMatch[3]) : null;
     const amount = parseDecimal(annuityMatch[2]).toString();
-    const kind = classifyItemKind(section, sourceDescription, direction);
+    const kind = classifyItemKind(
+      section,
+      sourceDescription,
+      direction,
+      Boolean(parcelMatch)
+    );
     const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
       kind,
       direction,
@@ -610,7 +717,7 @@ function parseCaixaStatementText(text: string, fileName: string | null): ParsedS
   const referenceYear = dueDate.getFullYear();
   const referenceMonth = dueDate.getMonth() + 1;
   const lines = normalizedText
-    .split(/\r?\n/)
+    .split(/\r\n|\n|\r/)
     .map((line) => line.trim())
     .filter(Boolean);
   const firstDemonstrativoIndex = lines.findIndex(
@@ -758,6 +865,318 @@ function parseCaixaStatementText(text: string, fileName: string | null): ParsedS
   };
 }
 
+function isBradescoHeaderLine(value: string) {
+  const normalized = value
+    .toLowerCase()
+    .replace(/\s+/g, '');
+
+  return (
+    normalized.startsWith('data;hist') &&
+    normalized.includes('valor(us$);valor(r$)')
+  );
+}
+
+function getStatementSourceSection(kind: CreditCardReconciliationItemKind) {
+  if (kind === 'PURCHASE') {
+    return 'PURCHASES';
+  }
+
+  if (kind === 'INSTALLMENT') {
+    return 'INSTALLMENTS';
+  }
+
+  if (kind === 'ANNUITY') {
+    return 'ANNUITY';
+  }
+
+  return 'OTHER';
+}
+
+function parseBradescoStatementLine(params: {
+  line: string;
+  sequence: number;
+  statementDate: Date;
+  cardSuffix: string | null;
+}): ParsedStatementItem | null {
+  const fields = params.line.split(';').map((field) => field.trim());
+  if (fields.length < 4) {
+    return null;
+  }
+
+  const dateValue = fields[0];
+  const rawDescription = normalizeInlineWhitespace(fields[1]);
+  const amountField = normalizeInlineWhitespace(fields[3]);
+
+  if (!dateValue || !rawDescription || !amountField) {
+    return null;
+  }
+
+  const dateMatch = dateValue.match(/^(\d{2})\/(\d{2})$/);
+  if (!dateMatch) {
+    return null;
+  }
+
+  const purchaseDate = inferPurchaseDate(dateValue, params.statementDate);
+  const signedAmountDecimal = parseDecimal(amountField);
+  const direction: StatementDirection = signedAmountDecimal.lt(0) ? 'CREDIT' : 'DEBIT';
+  const amount = parseDecimal(amountField.replace('-', '')).toString();
+  const installmentMatch = rawDescription.match(/^(.*\S)\s+(\d{1,3})\/(\d{1,3})$/);
+  const sourceDescription = installmentMatch
+    ? normalizeInlineWhitespace(installmentMatch[1])
+    : rawDescription;
+  const installmentNumber = installmentMatch ? Number(installmentMatch[2]) : null;
+  const totalInstallments = installmentMatch ? Number(installmentMatch[3]) : null;
+  const kind = classifyItemKind(
+    'STATEMENT',
+    sourceDescription,
+    direction,
+    Boolean(installmentMatch)
+  );
+  const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+    kind,
+    direction,
+    amount
+  );
+  const signedAmount = direction === 'CREDIT' ? `-${amount}` : amount;
+
+  return {
+    id: `item-${String(params.sequence).padStart(4, '0')}`,
+    sequence: params.sequence,
+    kind,
+    direction,
+    amount,
+    signedAmount,
+    purchaseDate,
+    createDate: purchaseDate || params.statementDate,
+    datePrecision: 'PURCHASE_DATE',
+    installmentNumber,
+    totalInstallments,
+    sourceDescription,
+    sourceSection: getStatementSourceSection(kind),
+    cardSuffix: params.cardSuffix,
+    canImport,
+    nonImportableReason,
+    rawLine: params.line
+  };
+}
+
+function parseBradescoStatementText(text: string, fileName: string | null): ParsedStatement {
+  const normalizedText = text.replace(/\uFEFF/g, '');
+  const statementDateMatch = normalizedText.match(/Data:\s*(\d{2}\/\d{2}\/\d{4})/i);
+  const totalAmountMatch = normalizedText.match(/Total da fatura em Real:\s*;;;?\s*([-\d.,]+)/i);
+
+  if (!statementDateMatch || !totalAmountMatch) {
+    throw new Error('Nao foi possivel identificar data e total da fatura do Bradesco');
+  }
+
+  const statementDate = parseDdMmYyyy(statementDateMatch[1]);
+  const totalAmount = parseDecimal(totalAmountMatch[1]).toString();
+  const referenceYear = statementDate.getFullYear();
+  const referenceMonth = statementDate.getMonth() + 1;
+  const lines = normalizedText
+    .split(/\r\n|\n|\r/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const items: ParsedStatementItem[] = [];
+  let currentCardSuffix: string | null = null;
+  let sequence = 0;
+  let insideTransactions = false;
+
+  for (const line of lines) {
+    if (/^Data:\s*\d{2}\/\d{2}\/\d{4}/i.test(line)) {
+      continue;
+    }
+
+    if (/^Situa[cç][aã]o da Fatura:/i.test(line)) {
+      continue;
+    }
+
+    if (
+      /^Total da fatura em Real:/i.test(line) ||
+      /^Resumo das Despesas/i.test(line) ||
+      /^Taxas;/i.test(line) ||
+      /^Taxas$/i.test(line)
+    ) {
+      break;
+    }
+
+    const cardMatch = line.match(/^.+?;;;\s*(\d{4})$/);
+    if (cardMatch) {
+      currentCardSuffix = cardMatch[1];
+      insideTransactions = false;
+      continue;
+    }
+
+    if (isBradescoHeaderLine(line)) {
+      insideTransactions = true;
+      continue;
+    }
+
+    if (!currentCardSuffix || !insideTransactions) {
+      continue;
+    }
+
+    sequence += 1;
+    const parsedLine = parseBradescoStatementLine({
+      line,
+      sequence,
+      statementDate,
+      cardSuffix: currentCardSuffix
+    });
+
+    if (!parsedLine) {
+      sequence -= 1;
+      continue;
+    }
+
+    items.push(parsedLine);
+  }
+
+  const parsedNetAmount = items.reduce(
+    (sum, item) => sum.plus(parseDecimal(item.signedAmount)),
+    new Prisma.Decimal(0)
+  );
+
+  return {
+    sourceType: 'BRADESCO_CSV',
+    fileName,
+    dueDate: statementDate,
+    totalAmount,
+    parsedNetAmount: parsedNetAmount.toString(),
+    referenceYear,
+    referenceMonth,
+    items
+  };
+}
+
+function parseNubankStatementLine(params: {
+  line: string;
+  sequence: number;
+}): ParsedStatementItem | null {
+  const fields = splitCsvLine(params.line);
+  if (fields.length < 3) {
+    return null;
+  }
+
+  const purchaseDateValue = fields[0];
+  const rawDescription = normalizeInlineWhitespace(fields[1]);
+  const amountField = normalizeInlineWhitespace(fields[2]);
+
+  if (!purchaseDateValue || !rawDescription || !amountField) {
+    return null;
+  }
+
+  const purchaseDate = parseYyyyMmDd(purchaseDateValue);
+  const signedAmountDecimal = parseDecimal(amountField);
+  const direction: StatementDirection = signedAmountDecimal.lt(0) ? 'CREDIT' : 'DEBIT';
+  const amount = parseDecimal(amountField.replace('-', '')).toString();
+  const installmentMatch = rawDescription.match(
+    /^(.*?)(?:\s*-\s*)?parcela\s+(\d{1,3})\/(\d{1,3})$/i
+  );
+  const sourceDescription = installmentMatch
+    ? normalizeInlineWhitespace(installmentMatch[1])
+    : rawDescription;
+  const installmentNumber = installmentMatch ? Number(installmentMatch[2]) : null;
+  const totalInstallments = installmentMatch ? Number(installmentMatch[3]) : null;
+  const kind = classifyItemKind(
+    'STATEMENT',
+    sourceDescription,
+    direction,
+    Boolean(installmentMatch)
+  );
+  const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+    kind,
+    direction,
+    amount
+  );
+  const signedAmount = direction === 'CREDIT' ? `-${amount}` : amount;
+
+  return {
+    id: `item-${String(params.sequence).padStart(4, '0')}`,
+    sequence: params.sequence,
+    kind,
+    direction,
+    amount,
+    signedAmount,
+    purchaseDate,
+    createDate: purchaseDate,
+    datePrecision: 'PURCHASE_DATE',
+    installmentNumber,
+    totalInstallments,
+    sourceDescription,
+    sourceSection: getStatementSourceSection(kind),
+    cardSuffix: null,
+    canImport,
+    nonImportableReason,
+    rawLine: params.line
+  };
+}
+
+function parseNubankStatementText(text: string, fileName: string | null): ParsedStatement {
+  const normalizedText = text.replace(/\uFEFF/g, '');
+  const lines = normalizedText
+    .split(/\r\n|\n|\r/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 2) {
+    throw new Error('CSV do Nubank vazio ou incompleto');
+  }
+
+  const header = splitCsvLine(lines[0]).map((field) => normalizeComparableText(field));
+  if (header[0] !== 'DATE' || header[1] !== 'TITLE' || header[2] !== 'AMOUNT') {
+    throw new Error('Cabecalho do CSV do Nubank nao reconhecido');
+  }
+
+  const items: ParsedStatementItem[] = [];
+  let sequence = 0;
+
+  for (const line of lines.slice(1)) {
+    sequence += 1;
+    const parsedLine = parseNubankStatementLine({
+      line,
+      sequence
+    });
+
+    if (!parsedLine) {
+      sequence -= 1;
+      continue;
+    }
+
+    items.push(parsedLine);
+  }
+
+  if (items.length === 0) {
+    throw new Error('Nenhum lancamento valido foi encontrado no CSV do Nubank');
+  }
+
+  const parsedNetAmount = items.reduce(
+    (sum, item) => sum.plus(parseDecimal(item.signedAmount)),
+    new Prisma.Decimal(0)
+  );
+  const statementDate =
+    parseStatementDateFromFileName(fileName) ||
+    items.reduce(
+      (latest, item) =>
+        item.purchaseDate && item.purchaseDate.getTime() > latest.getTime()
+          ? item.purchaseDate
+          : latest,
+      items[0].purchaseDate || items[0].createDate
+    );
+
+  return {
+    sourceType: 'NUBANK_CSV',
+    fileName,
+    dueDate: statementDate,
+    totalAmount: parsedNetAmount.toString(),
+    parsedNetAmount: parsedNetAmount.toString(),
+    referenceYear: statementDate.getFullYear(),
+    referenceMonth: statementDate.getMonth() + 1,
+    items
+  };
+}
+
 function toPreviewMatchTransaction(candidate: ExistingTransactionCandidate) {
   return {
     id: candidate.id,
@@ -825,11 +1244,32 @@ function classifyMatches(
     );
   });
 
+  const exactMatchesWithSourceDescription = filterCandidatesBySourceDescription(
+    exactMatches,
+    item.sourceDescription
+  );
+
+  if (exactMatchesWithSourceDescription.length === 1) {
+    return {
+      status: 'OK',
+      reason: 'EXACT',
+      matchedTransactions: exactMatchesWithSourceDescription
+    };
+  }
+
   if (exactMatches.length === 1) {
     return {
       status: 'OK',
       reason: 'EXACT',
       matchedTransactions: exactMatches
+    };
+  }
+
+  if (exactMatchesWithSourceDescription.length > 1) {
+    return {
+      status: 'SIMILAR',
+      reason: 'AMBIGUOUS_EXACT',
+      matchedTransactions: exactMatchesWithSourceDescription
     };
   }
 
@@ -938,6 +1378,8 @@ async function loadCandidateTransactions(params: {
       totalInstallments: true,
       status: true,
       purchaseGroupId: true,
+      importSourceType: true,
+      importSourceDescription: true,
       creditCardInvoice: {
         select: {
           id: true,
@@ -984,15 +1426,35 @@ async function ensureCreditCardAccount(accountId: number, companyId: number) {
   const normalizedBankName = normalizeComparableText(account.bank?.name || account.bankName);
 
   if (
-    normalizedBankCode !== CAIXA_BANK_CODE &&
-    !normalizedBankName.includes('CAIXA ECONOMICA FEDERAL')
+    (
+      normalizedBankCode !== CAIXA_BANK_CODE &&
+      !normalizedBankName.includes('CAIXA ECONOMICA FEDERAL')
+    ) &&
+    (
+      normalizedBankCode !== BRADESCO_BANK_CODE &&
+      !normalizedBankName.includes('BRADESCO')
+    ) &&
+    (
+      normalizedBankCode !== NUBANK_BANK_CODE &&
+      !normalizedBankName.includes('NUBANK')
+    )
   ) {
     throw new Error(
-      'Conciliacao de fatura disponivel apenas para cartoes Caixa neste momento'
+      'Conciliacao de fatura disponivel apenas para cartoes Caixa, Bradesco e Nubank neste momento'
     );
   }
 
-  return account;
+  return {
+    ...account,
+    reconciliationSourceType:
+      normalizedBankCode === BRADESCO_BANK_CODE || normalizedBankName.includes('BRADESCO')
+        ? 'BRADESCO_CSV'
+        : normalizedBankCode === NUBANK_BANK_CODE || normalizedBankName.includes('NUBANK')
+          ? 'NUBANK_CSV'
+          : 'CAIXA_PDF'
+  } as typeof account & {
+    reconciliationSourceType: CreditCardReconciliationSourceType;
+  };
 }
 
 function buildPreviewItems(
@@ -1069,13 +1531,23 @@ async function parseStatementFromSource(params: {
   fileBase64: string;
   fileName?: string | null;
 }) {
-  if (params.sourceType !== 'CAIXA_PDF') {
-    throw new Error('Fonte de conciliacao nao suportada');
+  if (params.sourceType === 'CAIXA_PDF') {
+    const buffer = decodeBase64File(params.fileBase64);
+    const pdfResult = await pdfParse(buffer);
+    return parseCaixaStatementText(pdfResult.text, params.fileName ?? null);
   }
 
-  const buffer = decodeBase64File(params.fileBase64);
-  const pdfResult = await pdfParse(buffer);
-  return parseCaixaStatementText(pdfResult.text, params.fileName ?? null);
+  if (params.sourceType === 'BRADESCO_CSV') {
+    const buffer = decodeBase64File(params.fileBase64);
+    return parseBradescoStatementText(buffer.toString('latin1'), params.fileName ?? null);
+  }
+
+  if (params.sourceType === 'NUBANK_CSV') {
+    const buffer = decodeBase64File(params.fileBase64);
+    return parseNubankStatementText(buffer.toString('utf8'), params.fileName ?? null);
+  }
+
+  throw new Error('Fonte de conciliacao nao suportada');
 }
 
 function normalizeCreatedTransactions(
@@ -1092,7 +1564,11 @@ export default class CreditCardStatementReconciliationService {
     fileBase64: string;
     fileName?: string | null;
   }): Promise<ReconciliationPreviewResult> {
-    await ensureCreditCardAccount(params.accountId, params.companyId);
+    const account = await ensureCreditCardAccount(params.accountId, params.companyId);
+
+    if (params.sourceType !== account.reconciliationSourceType) {
+      throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
+    }
 
     const statement = await parseStatementFromSource({
       sourceType: params.sourceType,
@@ -1150,7 +1626,11 @@ export default class CreditCardStatementReconciliationService {
       categoryId: number;
     }>;
   }): Promise<ReconciliationCommitResult> {
-    await ensureCreditCardAccount(params.accountId, params.companyId);
+    const account = await ensureCreditCardAccount(params.accountId, params.companyId);
+
+    if (params.sourceType !== account.reconciliationSourceType) {
+      throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
+    }
 
     const statement = await parseStatementFromSource({
       sourceType: params.sourceType,
@@ -1231,6 +1711,8 @@ export default class CreditCardStatementReconciliationService {
           type: TransactionType.EXPENSE,
           status: TransactionStatus.COMPLETED,
           notes: buildImportNote(params.sourceType, item),
+          importSourceType: params.sourceType,
+          importSourceDescription: item.sourceDescription,
           fromAccountId: params.accountId,
           categoryId: selectedInput.categoryId,
           companyId: params.companyId,
@@ -1250,6 +1732,8 @@ export default class CreditCardStatementReconciliationService {
               totalInstallments: transaction.totalInstallments,
               status: transaction.status,
               purchaseGroupId: transaction.purchaseGroupId,
+              importSourceType: params.sourceType,
+              importSourceDescription: item.sourceDescription,
               creditCardInvoice: null
             },
             ...candidates
@@ -1296,5 +1780,7 @@ export default class CreditCardStatementReconciliationService {
 
 export const __private__ = {
   parseCaixaStatementText,
+  parseBradescoStatementText,
+  parseNubankStatementText,
   classifyMatches
 };

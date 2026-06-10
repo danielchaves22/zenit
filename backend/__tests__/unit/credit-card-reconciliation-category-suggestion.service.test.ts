@@ -60,13 +60,15 @@ describe('Credit card reconciliation category suggestion service', () => {
     expect(taxSuggestion?.source).toBe('RULE');
   });
 
-  it('extracts source description from notes and uses it in history suggestions', () => {
+  it('extracts source description from legacy notes', () => {
     const extractedDescription = __private__.extractStatementDescriptionFromNotes(
       'Importado por conciliacao de cartao (CAIXA_PDF) - item caixa-1 - descricao original: PANVEL FARMACIAS FL 56'
     );
 
     expect(extractedDescription).toBe('PANVEL FARMACIAS FL 56');
+  });
 
+  it('uses persisted import source description in history suggestions', () => {
     const suggestion = __private__.suggestByHistory(
       {
         id: 'item-3',
@@ -82,8 +84,37 @@ describe('Credit card reconciliation category suggestion service', () => {
         {
           id: 99,
           description: 'Remedios e perfumaria',
+          notes: null,
+          importSourceDescription: 'PANVEL FARMACIAS FL 56',
+          date: new Date('2026-05-07T12:00:00.000Z'),
+          category: categories[1]
+        }
+      ]
+    );
+
+    expect(suggestion?.categoryId).toBe(2);
+    expect(suggestion?.source).toBe('HISTORY');
+  });
+
+  it('falls back to legacy notes when the persisted import source description is absent', () => {
+    const suggestion = __private__.suggestByHistory(
+      {
+        id: 'item-4',
+        kind: 'PURCHASE',
+        amount: '35.48',
+        installmentNumber: null,
+        totalInstallments: null,
+        sourceDescription: 'PANVEL FARMACIAS FL 56',
+        sourceSection: 'PURCHASES',
+        canImport: true
+      },
+      [
+        {
+          id: 100,
+          description: 'Remedios e perfumaria',
           notes:
             'Importado por conciliacao de cartao (CAIXA_PDF) - item caixa-1 - descricao original: PANVEL FARMACIAS FL 56',
+          importSourceDescription: null,
           date: new Date('2026-05-07T12:00:00.000Z'),
           category: categories[1]
         }

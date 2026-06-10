@@ -11,7 +11,10 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/ToastContext';
 import api from '@/lib/api';
-import { FinancialBank, isCaixaBankReference } from '@/utils/banks';
+import {
+  FinancialBank,
+  getCreditCardReconciliationSourceType
+} from '@/utils/banks';
 import { formatAccountDisplayName } from '@/utils/accounts';
 import {
   getAvailableCreditLimit,
@@ -204,8 +207,8 @@ function InvoicesPageInner() {
     !invoiceDetail.paymentTransaction &&
     invoiceDetail.status !== 'PAID'
   );
-  const isCaixaCard = useMemo(
-    () => isCaixaBankReference(card?.bank, card?.bankCode, card?.bankName),
+  const reconciliationSourceType = useMemo(
+    () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
     [card]
   );
   const sortedInvoices = useMemo(() => [...invoices].sort(compareInvoicesAscending), [invoices]);
@@ -476,7 +479,7 @@ function InvoicesPageInner() {
                 Nova Compra
               </Button>
             </Link>
-            {isCaixaCard && (
+            {reconciliationSourceType && (
               <Link href={`/financial/credit-cards/${accountId}/reconciliation`}>
                 <Button variant="outline" className="flex items-center gap-2">
                   <Scale size={16} />

@@ -85,10 +85,10 @@ const quickNavigationItems: NavigationItem[] = [
     category: 'financeiro'
   },
   {
-    label: 'Compras no Cartão',
+    label: 'Compras Parceladas no Cartão',
     href: '/financial/credit-cards/purchases',
     icon: <Receipt size={20} />,
-    description: 'Ver compras agrupadas por cartão com valor total',
+    description: 'Ver apenas compras parceladas agrupadas por cartão',
     category: 'financeiro'
   }
 ];
@@ -178,10 +178,10 @@ const navigationItems: NavigationItem[] = [
     category: 'financeiro'
   },
   {
-    label: 'Compras no Cartão',
+    label: 'Compras Parceladas no Cartão',
     href: '/financial/credit-cards/purchases',
     icon: <Receipt size={20} />,
-    description: 'Ver compras agrupadas por cartão com valor total',
+    description: 'Ver apenas compras parceladas agrupadas por cartão',
     category: 'financeiro'
   },
   {

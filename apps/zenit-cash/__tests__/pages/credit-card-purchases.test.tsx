@@ -211,6 +211,49 @@ describe('CreditCardPurchasesPage', () => {
     expect(screen.queryByRole('button', { name: 'Excluir compra' })).not.toBeInTheDocument()
   })
 
+  it('shows only installment purchases when the API returns mixed card purchases', async () => {
+    purchasesResponse = [
+      buildPurchase({
+        groupKey: 'purchase-cash',
+        purchaseGroupId: null,
+        representativeTransactionId: 7,
+        description: 'Compra a Vista',
+        installmentAmount: '120.00',
+        totalAmount: '120.00',
+        installmentCount: 1,
+        installments: [
+          {
+            id: 301,
+            installmentNumber: 1,
+            totalInstallments: 1,
+            amount: '120.00',
+            dueDate: '2026-06-17T12:00:00.000Z',
+            scheduledDate: '2026-06-01T12:00:00.000Z',
+            status: 'COMPLETED',
+            creditCardInvoice: {
+              id: 401,
+              referenceYear: 2026,
+              referenceMonth: 6,
+              dueDate: '2026-06-17T12:00:00.000Z',
+              status: 'OPEN'
+            }
+          }
+        ]
+      }),
+      buildPurchase({
+        groupKey: 'purchase-installment',
+        representativeTransactionId: 42,
+        description: 'Notebook Parcelado'
+      })
+    ]
+
+    render(<CreditCardPurchasesPage />)
+
+    expect(await screen.findByRole('heading', { name: 'Compras Parceladas no Cartao' })).toBeInTheDocument()
+    expect(await screen.findByText('Notebook Parcelado')).toBeInTheDocument()
+    expect(screen.queryByText('Compra a Vista')).not.toBeInTheDocument()
+  })
+
   it('deletes grouped purchases with purchase scope from the list action', async () => {
     isCompanyOwner = true
     confirmMock.mockImplementation(

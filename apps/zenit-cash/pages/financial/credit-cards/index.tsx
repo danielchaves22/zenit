@@ -147,7 +147,7 @@ function CreditCardsPageInner() {
           <Link href="/financial/credit-cards/purchases">
             <Button variant="outline" className="flex items-center gap-2">
               <CreditCard size={16} />
-              Compras no Cartao
+              Compras Parceladas
             </Button>
           </Link>
           <Link href="/financial/credit-cards/new">
@@ -278,7 +278,7 @@ function CreditCardsPageInner() {
                           variant="outline"
                           className={`px-2.5 py-1 text-[13px] ${cardTheme.actionClassName}`}
                         >
-                          Compras
+                          Parceladas
                         </Button>
                       </Link>
                       <button

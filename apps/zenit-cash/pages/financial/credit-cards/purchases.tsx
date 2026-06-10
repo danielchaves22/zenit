@@ -98,6 +98,8 @@ interface CardPurchaseGroup {
 }
 
 const PAGE_SIZE = 20;
+const FETCH_PAGE_SIZE = 100;
+const MIN_INSTALLMENT_COUNT = 2;
 
 function formatCurrency(value: string | number) {
   return new Intl.NumberFormat('pt-BR', {
@@ -127,6 +129,10 @@ function getInstallmentStatus(installment: PurchaseInstallment) {
   };
 }
 
+function isInstallmentPurchase(purchase: CreditCardPurchaseListItem) {
+  return purchase.installmentCount >= MIN_INSTALLMENT_COUNT;
+}
+
 function CreditCardPurchasesPageInner() {
   const router = useRouter();
   const confirmation = useConfirmation();
@@ -145,7 +151,6 @@ function CreditCardPurchasesPageInner() {
   const [filtersInitialized, setFiltersInitialized] = useState(false);
   const [cardGroupsInitialized, setCardGroupsInitialized] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [deletingPurchaseKey, setDeletingPurchaseKey] = useState<string | null>(null);
 
   const requestedCardId =
@@ -181,10 +186,18 @@ function CreditCardPurchasesPageInner() {
     hasCategoryOptions &&
     selectedCategoryIds.length > 0 &&
     selectedCategoryIds.length < categoryOptions.length;
+  const paginatedPurchases = useMemo(
+    () => purchases.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [currentPage, purchases]
+  );
+  const totalPages = useMemo(
+    () => Math.max(Math.ceil(purchases.length / PAGE_SIZE), 1),
+    [purchases.length]
+  );
   const purchaseGroupsByCard = useMemo<CardPurchaseGroup[]>(() => {
     const groups = new Map<string, CardPurchaseGroup>();
 
-    for (const purchase of purchases) {
+    for (const purchase of paginatedPurchases) {
       const cardId = purchase.card.id.toString();
       const existing = groups.get(cardId);
 
@@ -203,7 +216,7 @@ function CreditCardPurchasesPageInner() {
     }
 
     return Array.from(groups.values());
-  }, [cardsById, purchases]);
+  }, [cardsById, paginatedPurchases]);
 
   useEffect(() => {
     void Promise.all([fetchCards(), fetchCategories()]);
@@ -263,13 +276,11 @@ function CreditCardPurchasesPageInner() {
       setExpandedCardIds([]);
       setCardGroupsInitialized(false);
       setLoading(false);
-      setTotalPages(1);
       return;
     }
 
     void fetchPurchases();
   }, [
-    currentPage,
     filtersInitialized,
     selectedCardIds,
     selectedCategoryIds,
@@ -278,13 +289,19 @@ function CreditCardPurchasesPageInner() {
   ]);
 
   useEffect(() => {
-    const availableKeys = new Set(purchases.map((purchase) => purchase.groupKey));
+    const availableKeys = new Set(paginatedPurchases.map((purchase) => purchase.groupKey));
 
     setExpandedPurchaseKeys((previous) => {
       const nextValues = previous.filter((key) => availableKeys.has(key));
       return areStringArraysEqual(previous, nextValues) ? previous : nextValues;
     });
-  }, [purchases]);
+  }, [paginatedPurchases]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   useEffect(() => {
     const visibleCardIds = purchaseGroupsByCard.map((group) => group.cardId);
@@ -347,27 +364,43 @@ function CreditCardPurchasesPageInner() {
     setLoading(true);
 
     try {
-      const params = new URLSearchParams({
-        page: currentPage.toString(),
-        pageSize: PAGE_SIZE.toString()
-      });
+      const buildParams = (page: number) => {
+        const params = new URLSearchParams({
+          page: page.toString(),
+          pageSize: FETCH_PAGE_SIZE.toString()
+        });
 
-      selectedCardIds.forEach((cardId) => params.append('accountIds', cardId));
+        selectedCardIds.forEach((cardId) => params.append('accountIds', cardId));
 
-      if (shouldApplyCategoryFilter) {
-        selectedCategoryIds.forEach((categoryId) => params.append('categoryIds', categoryId));
+        if (shouldApplyCategoryFilter) {
+          selectedCategoryIds.forEach((categoryId) => params.append('categoryIds', categoryId));
+        }
+
+        return params.toString();
+      };
+
+      const fetchPurchasePage = async (page: number) => {
+        const response = await api.get(`/financial/credit-card-purchases?${buildParams(page)}`);
+        return response.data;
+      };
+
+      const firstPage = await fetchPurchasePage(1);
+      const serverPageCount = Math.max(Number(firstPage.pages || 1), 1);
+      const aggregatedPurchases: CreditCardPurchaseListItem[] = [...(firstPage.data || [])];
+
+      if (serverPageCount > 1) {
+        const remainingPages = await Promise.all(
+          Array.from({ length: serverPageCount - 1 }, (_, index) =>
+            fetchPurchasePage(index + 2)
+          )
+        );
+
+        for (const pageData of remainingPages) {
+          aggregatedPurchases.push(...(pageData.data || []));
+        }
       }
 
-      const response = await api.get(`/financial/credit-card-purchases?${params.toString()}`);
-      const nextPages = Number(response.data.pages || 1);
-
-      if (currentPage > nextPages) {
-        setCurrentPage(nextPages);
-        return;
-      }
-
-      setPurchases(response.data.data || []);
-      setTotalPages(nextPages);
+      setPurchases(aggregatedPurchases.filter(isInstallmentPurchase));
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao carregar compras no cartao', 'error');
     } finally {
@@ -449,21 +482,21 @@ function CreditCardPurchasesPageInner() {
         } selecionada${selectedCategoryIds.length === 1 ? '' : 's'}`;
 
   return (
-    <DashboardLayout title="Compras no Cartao">
+    <DashboardLayout title="Compras Parceladas no Cartao">
       <Breadcrumb
         items={[
           { label: 'Dashboard', href: '/' },
           { label: 'Financeiro' },
           { label: 'Cartoes e Faturas', href: '/financial/credit-cards' },
-          { label: 'Compras no Cartao' }
+          { label: 'Compras Parceladas no Cartao' }
         ]}
       />
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Compras no Cartao</h1>
+          <h1 className="text-2xl font-semibold text-white">Compras Parceladas no Cartao</h1>
           <p className="mt-1 text-sm text-gray-400">
-            Visualize compras agrupadas por cartao com valor total e detalhe das parcelas.
+            Visualize apenas compras parceladas, com detalhe das parcelas e vencimentos por cartao.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -531,21 +564,25 @@ function CreditCardPurchasesPageInner() {
         <Card>
           <div className="py-12 text-center">
             <CreditCard size={48} className="mx-auto mb-4 text-gray-500" />
-            <p className="text-gray-300">Selecione ao menos um cartao para ver as compras.</p>
+            <p className="text-gray-300">
+              Selecione ao menos um cartao para ver as compras parceladas.
+            </p>
           </div>
         </Card>
       ) : hasCategoryOptions && selectedCategoryIds.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
             <Receipt size={48} className="mx-auto mb-4 text-gray-500" />
-            <p className="text-gray-300">Selecione ao menos uma categoria para ver as compras.</p>
+            <p className="text-gray-300">
+              Selecione ao menos uma categoria para ver as compras parceladas.
+            </p>
           </div>
         </Card>
       ) : loading ? (
         <Card>
           <div className="flex items-center justify-center gap-3 py-12 text-gray-300">
             <Loader2 size={18} className="animate-spin" />
-            Carregando compras...
+            Carregando compras parceladas...
           </div>
         </Card>
       ) : purchaseGroupsByCard.length === 0 ? (
@@ -553,7 +590,7 @@ function CreditCardPurchasesPageInner() {
           <div className="py-12 text-center">
             <Receipt size={48} className="mx-auto mb-4 text-gray-500" />
             <p className="text-gray-300">
-              Nenhuma compra encontrada para os filtros selecionados.
+              Nenhuma compra parcelada encontrada para os filtros selecionados.
             </p>
           </div>
         </Card>
@@ -584,8 +621,8 @@ function CreditCardPurchasesPageInner() {
                             {card?.name || group.purchases[0].card.name}
                           </div>
                           <div className="mt-1 text-sm text-gray-400">
-                            {group.purchases.length} compra{group.purchases.length === 1 ? '' : 's'} nesta pagina
-                            {' '}• Total listado: {formatCurrency(group.listedTotalAmount)}
+                            {group.purchases.length} compra{group.purchases.length === 1 ? '' : 's'} parcelada{group.purchases.length === 1 ? '' : 's'} nesta pagina
+                            {' '}- Total listado: {formatCurrency(group.listedTotalAmount)}
                           </div>
                         </div>
                       </div>
@@ -655,9 +692,7 @@ function CreditCardPurchasesPageInner() {
                                   <td className="px-4 py-4">
                                     <div className="font-medium text-white">{purchase.description}</div>
                                     <div className="mt-1 text-xs text-gray-400">
-                                      {purchase.purchaseGroupId
-                                        ? `${purchase.installmentCount} parcela${purchase.installmentCount === 1 ? '' : 's'}`
-                                        : 'Compra legada'}
+                                      {purchase.installmentCount} parcela{purchase.installmentCount === 1 ? '' : 's'}
                                     </div>
                                     {purchase.notes && (
                                       <div className="mt-2 text-xs text-gray-400">{purchase.notes}</div>
@@ -667,7 +702,7 @@ function CreditCardPurchasesPageInner() {
                                     {formatCalendarDate(purchase.purchaseDate)}
                                   </td>
                                   <td className="px-4 py-4 text-gray-300">
-                                    {purchase.installmentCount === 1 ? 'A vista' : `${purchase.installmentCount}x`}
+                                    {purchase.installmentCount}x
                                   </td>
                                   <td className="px-4 py-4 text-right font-medium text-gray-100">
                                     {formatCurrency(purchase.installmentAmount)}

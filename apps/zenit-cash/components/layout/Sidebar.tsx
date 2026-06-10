@@ -208,7 +208,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       label: 'Cartões',
       subItems: [
         { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
-        { label: 'Compras no Cartão', href: '/financial/credit-cards/purchases' },
+        { label: 'Compras Parceladas no Cartão', href: '/financial/credit-cards/purchases' },
         { label: 'Novo Cartão', href: '/financial/credit-cards/new' },
       ],
       requiredPermission: 'FINANCIAL_ACCOUNTS'

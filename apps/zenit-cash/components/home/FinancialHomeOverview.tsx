@@ -587,7 +587,7 @@ export default function FinancialHomeOverview({
                         </Link>
                         <Link href={`/financial/credit-cards/purchases?cardId=${card.id}`}>
                           <Button variant="outline" className="inline-flex items-center gap-2">
-                            Compras
+                            Parceladas
                             <ArrowRight size={14} />
                           </Button>
                         </Link>

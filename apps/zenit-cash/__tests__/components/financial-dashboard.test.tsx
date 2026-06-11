@@ -185,8 +185,8 @@ describe('FinancialDashboard', () => {
 
     apiGetMock.mockResolvedValue({
       data: [
-        { id: 10, name: 'Combustivel', color: '#f97316', type: 'EXPENSE' },
-        { id: 20, name: 'Salario', color: '#22c55e', type: 'INCOME' }
+        { id: 10, name: 'Combustível', color: '#f97316', type: 'EXPENSE' },
+        { id: 20, name: 'Salário', color: '#22c55e', type: 'INCOME' }
       ]
     });
     getPreferenceMock.mockResolvedValue({
@@ -242,7 +242,7 @@ describe('FinancialDashboard', () => {
         categories: [
           {
             categoryId: 10,
-            categoryName: 'Combustivel',
+            categoryName: 'Combustível',
             color: '#f97316',
             month: currentMonth,
             historicalAverage: '120.00',
@@ -255,14 +255,14 @@ describe('FinancialDashboard', () => {
       categoryTotals: [
         {
           categoryId: 10,
-          name: 'Combustivel',
+          name: 'Combustível',
           color: '#f97316',
           type: 'EXPENSE',
           amount: '120.00'
         },
         {
           categoryId: 20,
-          name: 'Salario',
+          name: 'Salário',
           color: '#22c55e',
           type: 'INCOME',
           amount: '500.00'
@@ -300,8 +300,8 @@ describe('FinancialDashboard', () => {
       .parentElement;
 
     expect(projectedBalanceCard).toHaveTextContent('1.380,00');
-    expect(screen.getAllByText(/Combustivel/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Media 6 meses/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Combustível/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Média 6 meses/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Anterior/i })).toBeDisabled();
 
     expect(getMonthlyMock).toHaveBeenCalledWith(currentMonth);
@@ -313,7 +313,7 @@ describe('FinancialDashboard', () => {
     render(<FinancialDashboard />);
 
     const viewSelect = await screen.findByRole('combobox', {
-      name: /Selecione a visao do dashboard/i
+      name: /Selecione a visão do dashboard/i
     });
     await user.selectOptions(viewSelect, 'history');
 
@@ -325,7 +325,7 @@ describe('FinancialDashboard', () => {
     });
 
     expect(
-      await screen.findByText(/Nenhuma categoria selecionada para o grafico historico/i)
+      await screen.findByText(/Nenhuma categoria selecionada para o gráfico histórico/i)
     ).toBeInTheDocument();
   });
 

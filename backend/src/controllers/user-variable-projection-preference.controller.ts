@@ -6,7 +6,7 @@ function getUserPreferenceContext(req: Request): { userId: number; companyId: nu
   const { userId, companyId } = req.user;
 
   if (!userId || !companyId) {
-    throw new Error('Contexto do usuario ou empresa nao encontrado');
+    throw new Error('Contexto do usuário ou empresa não encontrado');
   }
 
   return { userId, companyId };
@@ -19,7 +19,7 @@ export async function getVariableProjectionPreference(req: Request, res: Respons
     return res.status(200).json(preference);
   } catch (error: any) {
     return res.status(400).json({
-      error: error.message || 'Erro ao carregar preferencias de projecao variavel'
+      error: error.message || 'Erro ao carregar preferências de projeção variável'
     });
   }
 }
@@ -36,7 +36,7 @@ export async function updateVariableProjectionPreference(req: Request, res: Resp
     return res.status(200).json(preference);
   } catch (error: any) {
     return res.status(400).json({
-      error: error.message || 'Erro ao salvar preferencias de projecao variavel'
+      error: error.message || 'Erro ao salvar preferências de projeção variável'
     });
   }
 }

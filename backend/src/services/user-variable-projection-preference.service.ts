@@ -42,7 +42,7 @@ export default class UserVariableProjectionPreferenceService {
     );
 
     if (trackedExpenseCategoryIds.length > MAX_TRACKED_EXPENSE_CATEGORIES) {
-      throw new Error(`Selecione no maximo ${MAX_TRACKED_EXPENSE_CATEGORIES} categorias`);
+      throw new Error(`Selecione no máximo ${MAX_TRACKED_EXPENSE_CATEGORIES} categorias`);
     }
 
     const validCategories =
@@ -58,7 +58,7 @@ export default class UserVariableProjectionPreferenceService {
           });
 
     if (validCategories.length !== trackedExpenseCategoryIds.length) {
-      throw new Error('Uma ou mais categorias informadas nao sao despesas validas desta empresa');
+      throw new Error('Uma ou mais categorias informadas não são despesas válidas desta empresa');
     }
 
     const preference = await prisma.userVariableProjectionPreference.upsert({

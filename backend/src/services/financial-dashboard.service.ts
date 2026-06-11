@@ -53,7 +53,7 @@ type MonthlyComputation = {
 
 function parseMonthKey(month: string): Date {
   if (!/^\d{4}-\d{2}$/.test(month)) {
-    throw new Error('Mes invalido. Use o formato YYYY-MM');
+    throw new Error('Mês inválido. Use o formato YYYY-MM');
   }
 
   const [year, monthValue] = month.split('-').map(Number);
@@ -693,7 +693,7 @@ export default class FinancialDashboardService {
     const requestedMonthStart = startOfMonth(parseMonthKey(params.month));
 
     if (requestedMonthStart < currentMonthStart) {
-      throw new Error('Nao e permitido consultar meses anteriores ao atual');
+      throw new Error('Não é permitido consultar meses anteriores ao atual');
     }
 
     const trackedCategories = await this.getTrackedExpenseCategories({
@@ -750,7 +750,7 @@ export default class FinancialDashboardService {
     }
 
     if (!targetComputation) {
-      throw new Error('Nao foi possivel calcular o dashboard mensal');
+      throw new Error('Não foi possível calcular o dashboard mensal');
     }
 
     const categoryTotalsMap = new Map<

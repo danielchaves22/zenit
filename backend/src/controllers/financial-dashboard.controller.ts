@@ -15,7 +15,7 @@ function getDashboardUserContext(req: Request): {
   const { companyId, userId, role } = req.user;
 
   if (!companyId || !userId || !role) {
-    throw new Error('Contexto do usuario nao encontrado');
+    throw new Error('Contexto do usuário não encontrado');
   }
 
   return { companyId, userId, role };
@@ -84,7 +84,7 @@ export async function getFinancialDashboardHistory(req: Request, res: Response) 
     return res.status(200).json(dashboard);
   } catch (error: any) {
     return res.status(400).json({
-      error: error.message || 'Erro ao carregar historico financeiro'
+      error: error.message || 'Erro ao carregar histórico financeiro'
     });
   }
 }

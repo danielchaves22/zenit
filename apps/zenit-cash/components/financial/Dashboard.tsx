@@ -51,8 +51,8 @@ interface Category {
 }
 
 const VIEW_OPTIONS: Array<{ value: FinancialDashboardView; label: string }> = [
-  { value: 'monthly', label: 'Situacao financeira mensal' },
-  { value: 'history', label: 'Historico financeiro' }
+  { value: 'monthly', label: 'Situação financeira mensal' },
+  { value: 'history', label: 'Histórico financeiro' }
 ];
 
 function getCurrentMonthKey(): string {
@@ -252,7 +252,7 @@ export default function FinancialDashboard() {
       } catch (bootstrapError: any) {
         if (!cancelled) {
           setError(
-            bootstrapError.response?.data?.error || 'Erro ao carregar configuracoes do dashboard'
+            bootstrapError.response?.data?.error || 'Erro ao carregar configurações do dashboard'
           );
         }
       } finally {
@@ -286,7 +286,7 @@ export default function FinancialDashboard() {
         }
       } catch (monthlyError: any) {
         if (!cancelled) {
-          setError(monthlyError.response?.data?.error || 'Erro ao carregar visao mensal');
+          setError(monthlyError.response?.data?.error || 'Erro ao carregar visão mensal');
           setMonthlyData(null);
         }
       } finally {
@@ -327,7 +327,7 @@ export default function FinancialDashboard() {
         }
       } catch (historyError: any) {
         if (!cancelled) {
-          setError(historyError.response?.data?.error || 'Erro ao carregar historico financeiro');
+          setError(historyError.response?.data?.error || 'Erro ao carregar histórico financeiro');
           setHistoryData(null);
         }
       } finally {
@@ -400,7 +400,7 @@ export default function FinancialDashboard() {
         Variavel: 0
       },
       {
-        name: 'Saidas',
+        name: 'Saídas',
         Realizado: monthlyData.isCurrentMonth ? expenseRealized : 0,
         Restante: expenseRemainingCommitted,
         Comprometido: expenseRemainingCommitted,
@@ -479,7 +479,7 @@ export default function FinancialDashboard() {
     const nextIds = Array.from(new Set(trackedExpenseCategoryDraft.map(Number))).filter(Boolean);
 
     if (nextIds.length > 10) {
-      addToast('Selecione no maximo 10 categorias', 'error');
+      addToast('Selecione no máximo 10 categorias', 'error');
       return;
     }
 
@@ -505,7 +505,7 @@ export default function FinancialDashboard() {
 
   function handleTrackedCategoryDraftChange(values: string[]) {
     if (values.length > 10) {
-      addToast('Selecione no maximo 10 categorias', 'error');
+      addToast('Selecione no máximo 10 categorias', 'error');
       return;
     }
 
@@ -523,13 +523,13 @@ export default function FinancialDashboard() {
             Dashboard financeiro
           </div>
           <h1 className="mt-1 text-2xl font-heading font-bold text-white">
-            Visao analitica do caixa e das tendencias do mes.
+            Visão analítica do caixa e das tendências do mês.
           </h1>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Select
-            aria-label="Selecione a visao do dashboard"
+            aria-label="Selecione a visão do dashboard"
             options={VIEW_OPTIONS}
             value={view}
             onChange={(event) => handleViewChange(event.target.value)}
@@ -538,7 +538,7 @@ export default function FinancialDashboard() {
           <div className="flex items-center gap-2 rounded-xl border border-gray-700 bg-[#11161d] px-3 py-2">
             <CalendarRange size={16} className="text-accent" />
             <span className="text-sm text-gray-300">
-              {view === 'monthly' ? formatMonthLabel(month) : 'Ultimos 12 meses'}
+              {view === 'monthly' ? formatMonthLabel(month) : 'Últimos 12 meses'}
             </span>
           </div>
         </div>
@@ -553,10 +553,11 @@ export default function FinancialDashboard() {
               <div>
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
                   <PieChartIcon size={16} className="text-accent" />
-                  Situacao financeira mensal
+                  Situação financeira mensal
                 </div>
                 <p className="mt-1 text-sm text-gray-400">
-                  O mes atual parte do saldo real de hoje. Meses futuros carregam o saldo final projetado do mes anterior.
+                  O mês atual parte do saldo real de hoje. Meses futuros carregam o saldo final
+                  projetado do mês anterior.
                 </p>
               </div>
 
@@ -575,7 +576,7 @@ export default function FinancialDashboard() {
                   onClick={() => handleMonthChange(1)}
                   className="inline-flex items-center gap-1"
                 >
-                  Proximo
+                  Próximo
                   <ChevronRight size={15} />
                 </Button>
               </div>
@@ -598,11 +599,11 @@ export default function FinancialDashboard() {
                   subtitle={
                     monthlyData.carryOver.source === 'CURRENT_BALANCE'
                       ? 'Saldo real disponivel agora'
-                      : 'Saldo final projetado do mes anterior'
+                      : 'Saldo final projetado do mês anterior'
                   }
                 />
                 <SummaryCard
-                  title="Receitas do mes"
+                  title="Receitas do mês"
                   value={monthlyData.monthlyTotals.incomeTotal}
                   tone="income"
                   subtitle={
@@ -614,7 +615,7 @@ export default function FinancialDashboard() {
                   }
                 />
                 <SummaryCard
-                  title="Saidas comprometidas"
+                  title="Saídas comprometidas"
                   value={monthlyData.monthlyTotals.committedExpenseTotal}
                   tone="expense"
                   subtitle={
@@ -626,7 +627,7 @@ export default function FinancialDashboard() {
                   }
                 />
                 <SummaryCard
-                  title="Variaveis estimadas"
+                  title="Variáveis estimadas"
                   value={monthlyData.monthlyTotals.variableProjectedExpenseTotal}
                   tone="expense"
                   subtitle={
@@ -642,14 +643,14 @@ export default function FinancialDashboard() {
                   subtitle={
                     monthlyData.isCurrentMonth
                       ? 'Saldo atual + movimentos restantes'
-                      : 'Carry-over projetado + movimentos do mes'
+                      : 'Carry-over projetado + movimentos do mês'
                   }
                 />
               </div>
 
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.95fr)]">
                 <Card className="p-5">
-                  <h3 className="text-lg font-medium text-white">Composicao do mes</h3>
+                  <h3 className="text-lg font-medium text-white">Composição do mês</h3>
                   <p className="mt-1 text-sm text-gray-400">
                     Receitas conhecidas, saídas comprometidas e estimativa restante das categorias observadas.
                   </p>
@@ -675,9 +676,9 @@ export default function FinancialDashboard() {
                 <Card className="p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-medium text-white">Categorias do mes</h3>
+                      <h3 className="text-lg font-medium text-white">Categorias do mês</h3>
                       <p className="mt-1 text-sm text-gray-400">
-                        Distribuicao final do mes no cenario projetado.
+                        Distribuição final do mês no cenário projetado.
                       </p>
                     </div>
                     <div className="flex rounded-lg border border-gray-700 bg-[#11161d] p-1">
@@ -708,7 +709,7 @@ export default function FinancialDashboard() {
 
                   {pieCategoryTotals.length === 0 ? (
                     <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
-                      Nenhuma categoria encontrada para esta leitura do mes.
+                      Nenhuma categoria encontrada para esta leitura do mês.
                     </div>
                   ) : (
                     <div className="mt-4 flex flex-col gap-4">
@@ -761,18 +762,19 @@ export default function FinancialDashboard() {
                         Categorias observadas
                       </div>
                       <p className="mt-1 text-sm text-gray-400">
-                        Esta configuracao e central do dominio financeiro e sera reutilizavel em outras superficies.
+                        Esta configuração é central do domínio financeiro e será reutilizável em
+                        outras superfícies.
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-5">
                     <MultiSelect
-                      label="Despesas variaveis observadas"
+                      label="Despesas variáveis observadas"
                       options={expenseCategoryOptions}
                       values={trackedExpenseCategoryDraft}
                       onChange={handleTrackedCategoryDraftChange}
-                      placeholder="Selecione ate 10 categorias"
+                      placeholder="Selecione até 10 categorias"
                       triggerClassName="h-10"
                     />
                     <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-500">
@@ -791,16 +793,17 @@ export default function FinancialDashboard() {
                 </Card>
 
                 <Card className="p-5">
-                  <h3 className="text-lg font-medium text-white">Variaveis estimadas por categoria</h3>
+                  <h3 className="text-lg font-medium text-white">Variáveis estimadas por categoria</h3>
                   <p className="mt-1 text-sm text-gray-400">
-                    A media usa os 6 meses fechados anteriores. O restante some quando a categoria ja consumiu toda a media no mes.
+                    A média usa os 6 meses fechados anteriores. O restante some quando a categoria
+                    já consumiu toda a média no mês.
                   </p>
 
                   {monthlyData.variableProjection.categories.length === 0 ? (
                     <div className="mt-5 rounded-xl border border-dashed border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
                       {trackedExpenseCategoryIds.length === 0
-                        ? 'Selecione categorias observadas para gerar a estimativa variavel.'
-                        : 'Nenhuma categoria observada possui projeção restante neste mes.'}
+                        ? 'Selecione categorias observadas para gerar a estimativa variável.'
+                        : 'Nenhuma categoria observada possui projeção restante neste mês.'}
                     </div>
                   ) : (
                     <div className="mt-4 overflow-x-auto">
@@ -808,8 +811,8 @@ export default function FinancialDashboard() {
                         <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                           <tr>
                             <th className="px-3 py-3 text-left">Categoria</th>
-                            <th className="px-3 py-3 text-right">Media 6 meses</th>
-                            <th className="px-3 py-3 text-right">Ja comprometido</th>
+                            <th className="px-3 py-3 text-right">Média 6 meses</th>
+                            <th className="px-3 py-3 text-right">Já comprometido</th>
                             <th className="px-3 py-3 text-right">Restante projetado</th>
                           </tr>
                         </thead>
@@ -850,16 +853,16 @@ export default function FinancialDashboard() {
               <div>
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
                   <LineChartIcon size={16} className="text-accent" />
-                  Historico financeiro
+                  Histórico financeiro
                 </div>
                 <p className="mt-1 text-sm text-gray-400">
-                  Evolucao mensal das receitas, despesas e das categorias escolhidas para analise.
+                  Evolução mensal das receitas, despesas e das categorias escolhidas para análise.
                 </p>
               </div>
 
               <div className="min-w-[280px]">
                 <MultiSelect
-                  label="Categorias no grafico"
+                  label="Categorias no gráfico"
                   options={historyCategoryOptions}
                   values={historyCategoryIds}
                   onChange={setHistoryCategoryIds}
@@ -880,7 +883,9 @@ export default function FinancialDashboard() {
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <Card className="p-5">
                 <h3 className="text-lg font-medium text-white">Receitas x despesas</h3>
-                <p className="mt-1 text-sm text-gray-400">Ultimos 12 meses, com o mes atual marcado como parcial.</p>
+                <p className="mt-1 text-sm text-gray-400">
+                  Últimos 12 meses, com o mês atual marcado como parcial.
+                </p>
                 <div className="mt-5 h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={historyTotalsData} margin={{ top: 12, right: 18, left: 6, bottom: 4 }}>
@@ -903,12 +908,12 @@ export default function FinancialDashboard() {
               <Card className="p-5">
                 <h3 className="text-lg font-medium text-white">Categorias selecionadas</h3>
                 <p className="mt-1 text-sm text-gray-400">
-                  Comeca vazio por padrao. Adicione as categorias que deseja acompanhar.
+                  Começa vazio por padrão. Adicione as categorias que deseja acompanhar.
                 </p>
 
                 {historyData.categorySeries.length === 0 ? (
                   <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-10 text-center text-sm text-gray-400">
-                    Nenhuma categoria selecionada para o grafico historico.
+                    Nenhuma categoria selecionada para o gráfico histórico.
                   </div>
                 ) : (
                   <div className="mt-5 h-80">

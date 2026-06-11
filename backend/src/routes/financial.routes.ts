@@ -47,6 +47,11 @@ import {
   updateFixedTransactionSchema
 } from '../validators/fixed-transaction.validator';
 import {
+  getFinancialDashboardHistorySchema,
+  getFinancialDashboardMonthlySchema
+} from '../validators/financial-dashboard.validator';
+import { updateVariableProjectionPreferenceSchema } from '../validators/variable-projection-preference.validator';
+import {
   createAccount,
   getAccounts,
   getAccountById,
@@ -104,6 +109,14 @@ import {
   payCreditCardInvoice
 } from '../controllers/credit-card-invoice.controller';
 import {
+  getFinancialDashboardHistory,
+  getFinancialDashboardMonthly
+} from '../controllers/financial-dashboard.controller';
+import {
+  getVariableProjectionPreference,
+  updateVariableProjectionPreference
+} from '../controllers/user-variable-projection-preference.controller';
+import {
   commitCreditCardReconciliation,
   previewCreditCardReconciliation
 } from '../controllers/credit-card-reconciliation.controller';
@@ -145,6 +158,24 @@ router.delete('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'
 
 router.post('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), setDefaultCategory);
 router.delete('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), unsetDefaultCategory);
+
+router.get('/preferences/variable-projection', getVariableProjectionPreference);
+router.put(
+  '/preferences/variable-projection',
+  validate(updateVariableProjectionPreferenceSchema),
+  updateVariableProjectionPreference
+);
+
+router.get(
+  '/dashboard/monthly',
+  validate(getFinancialDashboardMonthlySchema, { source: 'query' }),
+  getFinancialDashboardMonthly
+);
+router.get(
+  '/dashboard/history',
+  validate(getFinancialDashboardHistorySchema, { source: 'query' }),
+  getFinancialDashboardHistory
+);
 
 router.get('/transactions/autocomplete', validate(autocompleteQuerySchema), getTransactionAutocomplete);
 router.post('/transactions', validate(createTransactionSchema), requireTransactionAccountAccess(), createTransaction);

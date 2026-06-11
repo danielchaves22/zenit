@@ -1,415 +1,948 @@
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { Card } from '../ui/Card';
-import { Button } from '../ui/Button';
-import { Skeleton } from '../ui/Skeleton';
-import api from '../../lib/api';
-import { useAuth } from '../../contexts/AuthContext';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import {
-  BarChart,
   Bar,
-  XAxis,
-  YAxis,
+  BarChart,
   CartesianGrid,
-  Tooltip,
+  Cell,
   Legend,
-  ResponsiveContainer,
-  PieChart,
+  Line,
+  LineChart,
   Pie,
-  Cell
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
 } from 'recharts';
 import {
-  Budget,
-  fetchBudgets,
-  formatBusinessDate,
-  formatCurrencyFromCents,
-  getPrimaryBudget
-} from '@/utils/budgets';
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  LineChart as LineChartIcon,
+  Loader2,
+  PieChart as PieChartIcon,
+  Save,
+  Settings2
+} from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/Skeleton';
+import { Select } from '@/components/ui/Select';
+import { MultiSelect } from '@/components/ui/MultiSelect';
+import { useToast } from '@/components/ui/ToastContext';
+import api from '@/lib/api';
+import {
+  type FinancialDashboardHistoryResponse,
+  type FinancialDashboardMonthlyResponse,
+  type FinancialDashboardView,
+  getFinancialDashboardHistory,
+  getFinancialDashboardMonthly,
+  getVariableProjectionPreference,
+  updateVariableProjectionPreference
+} from '@/lib/financial-dashboard';
 
-interface FinancialSummary {
-  income: number;
-  expense: number;
-  balance: number;
-  accounts: {
-    id: number;
-    name: string;
-    balance: string;
-    type: string;
-  }[];
-  topCategories: {
-    id: number;
-    name: string;
-    amount: number;
-    color: string;
-  }[];
-  period: {
-    startDate: string;
-    endDate: string;
+interface Category {
+  id: number;
+  name: string;
+  color: string;
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  parentId?: number | null;
+}
+
+const VIEW_OPTIONS: Array<{ value: FinancialDashboardView; label: string }> = [
+  { value: 'monthly', label: 'Situacao financeira mensal' },
+  { value: 'history', label: 'Historico financeiro' }
+];
+
+function getCurrentMonthKey(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function parseMonthKey(monthKey: string): Date {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(year, month - 1, 1, 12, 0, 0, 0);
+}
+
+function formatMonthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function addMonths(monthKey: string, offset: number): string {
+  const date = parseMonthKey(monthKey);
+  return formatMonthKey(new Date(date.getFullYear(), date.getMonth() + offset, 1, 12, 0, 0, 0));
+}
+
+function normalizeMonthKey(value: string | string[] | undefined, fallback: string): string {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate || !/^\d{4}-\d{2}$/.test(candidate)) {
+    return fallback;
+  }
+
+  return candidate < fallback ? fallback : candidate;
+}
+
+function normalizeView(value: string | string[] | undefined): FinancialDashboardView {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return candidate === 'history' ? 'history' : 'monthly';
+}
+
+function formatCurrency(value: string | number): string {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(typeof value === 'number' ? value : Number(value || 0));
+}
+
+function formatMonthLabel(monthKey: string): string {
+  return parseMonthKey(monthKey).toLocaleDateString('pt-BR', {
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+function formatShortMonthLabel(monthKey: string): string {
+  return parseMonthKey(monthKey).toLocaleDateString('pt-BR', {
+    month: 'short',
+    year: '2-digit'
+  });
+}
+
+function buildTooltipStyle() {
+  return {
+    backgroundColor: 'var(--color-bg)',
+    borderColor: '#374151',
+    color: '#fff'
   };
 }
 
-export default function FinancialDashboard() {
-  const { token } = useAuth();
-  const [summary, setSummary] = useState<FinancialSummary | null>(null);
-  const [primaryBudget, setPrimaryBudget] = useState<Budget | null>(null);
-  const [budgetTimeZone, setBudgetTimeZone] = useState('UTC');
-  const [budgetBusinessDate, setBudgetBusinessDate] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<'month' | 'quarter' | 'year'>('month');
+function parseAmount(value: string): number {
+  return Number(value || 0);
+}
 
-  useEffect(() => {
-    if (!token) return;
-    void fetchSummary();
-  }, [token, period]);
+function formatTooltipLabel(
+  _: unknown,
+  payload?: Array<{ payload?: { fullLabel?: string } }>
+): string {
+  return String(payload?.[0]?.payload?.fullLabel || '');
+}
 
-  async function fetchSummary() {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const now = new Date();
-      let startDate = new Date();
-      let endDate = new Date();
-
-      if (period === 'month') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      } else if (period === 'quarter') {
-        const quarter = Math.floor(now.getMonth() / 3);
-        startDate = new Date(now.getFullYear(), quarter * 3, 1);
-        endDate = new Date(now.getFullYear(), quarter * 3 + 3, 0);
-      } else if (period === 'year') {
-        startDate = new Date(now.getFullYear(), 0, 1);
-        endDate = new Date(now.getFullYear(), 11, 31);
-      }
-
-      const response = await api.get('/financial/summary', {
-        params: {
-          startDate: startDate.toISOString(),
-          endDate: endDate.toISOString()
+function SummaryCard({
+  title,
+  value,
+  tone,
+  subtitle
+}: {
+  title: string;
+  value: string;
+  tone: 'default' | 'income' | 'expense' | 'balance';
+  subtitle?: React.ReactNode;
+}) {
+  const styles =
+    tone === 'income'
+      ? {
+          card: 'border-emerald-900/60 bg-emerald-950/25',
+          title: 'text-emerald-200/80',
+          value: 'text-emerald-300'
         }
-      });
-
-      setSummary(response.data);
-
-      try {
-        const budgetPayload = await fetchBudgets();
-        setPrimaryBudget(getPrimaryBudget(budgetPayload.budgets));
-        setBudgetTimeZone(budgetPayload.timeZone);
-        setBudgetBusinessDate(budgetPayload.businessDate);
-      } catch (_budgetError) {
-        setPrimaryBudget(null);
-        setBudgetBusinessDate(null);
-      }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Erro ao carregar resumo financeiro');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function formatCurrency(value: number): string {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL'
-    }).format(value);
-  }
-
-  function getChartData() {
-    if (!summary) return [];
-
-    return [
-      {
-        name: 'Resumo',
-        Receitas: summary.income,
-        Despesas: summary.expense,
-        Saldo: summary.balance
-      }
-    ];
-  }
+      : tone === 'expense'
+        ? {
+            card: 'border-red-900/60 bg-red-950/25',
+            title: 'text-red-200/80',
+            value: 'text-red-300'
+          }
+        : tone === 'balance'
+          ? parseAmount(value) >= 0
+            ? {
+                card: 'border-sky-900/60 bg-sky-950/25',
+                title: 'text-sky-200/80',
+                value: 'text-sky-300'
+              }
+            : {
+                card: 'border-red-900/60 bg-red-950/25',
+                title: 'text-red-200/80',
+                value: 'text-red-300'
+              }
+          : {
+              card: 'border-gray-700 bg-slate-900/40',
+              title: 'text-slate-300/80',
+              value: 'text-slate-100'
+            };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-heading font-bold">Dashboard Financeiro</h1>
-
-        <div className="flex space-x-2">
-          <button
-            onClick={() => setPeriod('month')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-              period === 'month'
-                ? 'bg-accent text-white shadow-lg'
-                : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
-            }`}
-          >
-            Mês Atual
-          </button>
-          <button
-            onClick={() => setPeriod('quarter')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-              period === 'quarter'
-                ? 'bg-accent text-white shadow-lg'
-                : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
-            }`}
-          >
-            Trimestre
-          </button>
-          <button
-            onClick={() => setPeriod('year')}
-            className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-              period === 'year'
-                ? 'bg-accent text-white shadow-lg'
-                : 'bg-background text-gray-300 hover:bg-elevated hover:text-accent border border-gray-700'
-            }`}
-          >
-            Ano
-          </button>
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => (
-            <Skeleton key={i} className="h-36 rounded-xl" />
-          ))}
-        </div>
-      ) : error ? (
-        <Card className="p-6 text-center text-danger">{error}</Card>
-      ) : summary && (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card className="p-6 relative overflow-hidden">
-              <h3 className="text-lg font-medium text-gray-600">Receitas</h3>
-              <p className="text-2xl font-bold text-success mt-2">
-                {formatCurrency(summary.income)}
-              </p>
-              <div
-                className="absolute bottom-0 left-0 h-1 bg-success"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    (summary.income / (summary.income + summary.expense || 1)) * 100
-                  )}%`
-                }}
-              />
-            </Card>
-
-            <Card className="p-6 relative overflow-hidden">
-              <h3 className="text-lg font-medium text-gray-600">Despesas</h3>
-              <p className="text-2xl font-bold text-danger mt-2">
-                {formatCurrency(summary.expense)}
-              </p>
-              <div
-                className="absolute bottom-0 left-0 h-1 bg-danger"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    (summary.expense / (summary.income + summary.expense || 1)) * 100
-                  )}%`
-                }}
-              />
-            </Card>
-
-            <Card className="p-6 relative overflow-hidden">
-              <h3 className="text-lg font-medium text-gray-600">Saldo</h3>
-              <p
-                className={`text-2xl font-bold mt-2 ${
-                  summary.balance >= 0 ? 'text-success' : 'text-danger'
-                }`}
-              >
-                {formatCurrency(summary.balance)}
-              </p>
-              <div
-                className={`absolute bottom-0 left-0 h-1 ${
-                  summary.balance >= 0 ? 'bg-success' : 'bg-danger'
-                }`}
-                style={{ width: '100%' }}
-              />
-            </Card>
-          </div>
-
-          <Card className="p-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-gray-300">Orçamento do dia</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Visão separada do domínio de orçamentos, sem misturar no saldo financeiro geral.
-                </p>
-              </div>
-
-              <Link href="/financial/budgets">
-                <Button variant="outline">Ver orçamentos</Button>
-              </Link>
-            </div>
-
-            <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-4">
-              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
-                <div className="text-sm text-gray-400">Orçamento principal</div>
-                <div className="mt-2 text-lg font-semibold text-white">
-                  {primaryBudget?.code || 'Nenhum sincronizado'}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
-                <div className="text-sm text-gray-400">Pode usar hoje</div>
-                <div className="mt-2 text-lg font-semibold text-white">
-                  {primaryBudget
-                    ? formatCurrencyFromCents(primaryBudget.dailyBudgetCurrentCents)
-                    : '--'}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
-                <div className="text-sm text-gray-400">Saldo extra</div>
-                <div className="mt-2 text-lg font-semibold text-white">
-                  {primaryBudget
-                    ? formatCurrencyFromCents(primaryBudget.dayExtraBalanceCents)
-                    : '--'}
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-gray-700 bg-[#151b23] p-4">
-                <div className="text-sm text-gray-400">Data de negócio</div>
-                <div className="mt-2 text-lg font-semibold text-white">
-                  {budgetBusinessDate
-                    ? formatBusinessDate(budgetBusinessDate, budgetTimeZone)
-                    : '--'}
-                </div>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <h3 className="text-lg font-medium text-gray-600 mb-4">Receitas x Despesas</h3>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={getChartData()} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value) => formatCurrency(Number(value))}
-                    contentStyle={{
-                      backgroundColor: 'var(--color-bg)',
-                      borderColor: '#374151',
-                      color: '#fff'
-                    }}
-                    cursor={{ fill: 'var(--color-bg-tertiary)' }}
-                  />
-                  <Legend />
-                  <Bar dataKey="Receitas" fill="#16A34A" />
-                  <Bar dataKey="Despesas" fill="#DC2626" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <h3 className="text-lg font-medium text-gray-600 mb-1">Caixa e Disponibilidade</h3>
-            <p className="mb-4 text-sm text-gray-400">
-              Cartões de crédito ficam fora deste saldo consolidado.
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="text-gray-400 bg-elevated uppercase text-xs">
-                  <tr>
-                    <th className="text-left p-2">Conta</th>
-                    <th className="text-left p-2">Tipo</th>
-                    <th className="text-right p-2">Saldo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.accounts.map((account) => (
-                    <tr key={account.id} className="border-t">
-                      <td className="p-2">{account.name}</td>
-                      <td className="p-2">{mapAccountType(account.type)}</td>
-                      <td
-                        className={`p-2 text-right ${
-                          Number(account.balance) >= 0 ? 'text-success' : 'text-danger'
-                        }`}
-                      >
-                        {formatCurrency(Number(account.balance))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="font-bold">
-                  <tr className="border-t">
-                    <td className="p-2" colSpan={2}>
-                      Total
-                    </td>
-                    <td
-                      className={`p-2 text-right ${
-                        summary.accounts.reduce((sum, account) => sum + Number(account.balance), 0) >= 0
-                          ? 'text-success'
-                          : 'text-danger'
-                      }`}
-                    >
-                      {formatCurrency(
-                        summary.accounts.reduce((sum, account) => sum + Number(account.balance), 0)
-                      )}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </Card>
-
-          {summary.topCategories && summary.topCategories.length > 0 && (
-            <Card className="p-6">
-              <h3 className="text-lg font-medium text-gray-600 mb-4">Despesas por Categoria</h3>
-              <div className="flex flex-col md:flex-row md:items-start md:space-x-6">
-                <div className="md:w-1/2 h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={summary.topCategories} dataKey="amount" nameKey="name" outerRadius={80}>
-                        {summary.topCategories.map((category) => (
-                          <Cell key={category.id} fill={category.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(value) => formatCurrency(Number(value))}
-                        contentStyle={{
-                          backgroundColor: 'var(--color-bg)',
-                          borderColor: '#374151',
-                          color: '#fff'
-                        }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="md:w-1/2 space-y-3 mt-4 md:mt-0">
-                  {summary.topCategories.map((category) => (
-                    <div key={category.id} className="flex items-center">
-                      <div
-                        className="w-4 h-4 rounded-full mr-2"
-                        style={{ backgroundColor: category.color }}
-                      />
-                      <span className="flex-1">{category.name}</span>
-                      <span className="font-medium text-danger">
-                        {formatCurrency(category.amount)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </Card>
-          )}
-        </>
-      )}
+    <div className={`rounded-xl border px-4 py-3 ${styles.card}`}>
+      <div className={`text-[11px] font-medium uppercase tracking-wide ${styles.title}`}>{title}</div>
+      <div className={`mt-1 text-xl font-semibold ${styles.value}`}>{formatCurrency(value)}</div>
+      {subtitle ? <div className="mt-2 text-xs text-gray-400">{subtitle}</div> : null}
     </div>
   );
 }
 
-function mapAccountType(type: string): string {
-  const types: Record<string, string> = {
-    CHECKING: 'Conta Corrente',
-    SAVINGS: 'Poupança',
-    CREDIT_CARD: 'Cartão de Crédito',
-    INVESTMENT: 'Investimento',
-    CASH: 'Dinheiro'
-  };
+export default function FinancialDashboard() {
+  const router = useRouter();
+  const { addToast } = useToast();
+  const currentMonth = getCurrentMonthKey();
 
-  return types[type] || type;
+  const [view, setView] = useState<FinancialDashboardView>('monthly');
+  const [month, setMonth] = useState(currentMonth);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [trackedExpenseCategoryIds, setTrackedExpenseCategoryIds] = useState<number[]>([]);
+  const [trackedExpenseCategoryDraft, setTrackedExpenseCategoryDraft] = useState<string[]>([]);
+  const [historyCategoryIds, setHistoryCategoryIds] = useState<string[]>([]);
+  const [monthlyData, setMonthlyData] = useState<FinancialDashboardMonthlyResponse | null>(null);
+  const [historyData, setHistoryData] = useState<FinancialDashboardHistoryResponse | null>(null);
+  const [loadingBootstrap, setLoadingBootstrap] = useState(true);
+  const [loadingMonthly, setLoadingMonthly] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [savingPreference, setSavingPreference] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [categoryPieMode, setCategoryPieMode] = useState<'EXPENSE' | 'INCOME'>('EXPENSE');
+
+  useEffect(() => {
+    if (!router.isReady) {
+      return;
+    }
+
+    const nextView = normalizeView(router.query.view);
+    const nextMonth = normalizeMonthKey(router.query.month, currentMonth);
+
+    setView(nextView);
+    setMonth(nextMonth);
+
+    const shouldReplace = nextView !== router.query.view || nextMonth !== router.query.month;
+
+    if (shouldReplace) {
+      void router.replace(
+        {
+          pathname: router.pathname,
+          query: {
+            ...router.query,
+            view: nextView,
+            month: nextMonth
+          }
+        },
+        undefined,
+        { shallow: true }
+      );
+    }
+  }, [currentMonth, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      setLoadingBootstrap(true);
+      try {
+        const [categoryResponse, preference] = await Promise.all([
+          api.get('/financial/categories'),
+          getVariableProjectionPreference()
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextCategories = (categoryResponse.data || []) as Category[];
+        const nextTrackedIds = preference.trackedExpenseCategoryIds || [];
+
+        setCategories(nextCategories);
+        setTrackedExpenseCategoryIds(nextTrackedIds);
+        setTrackedExpenseCategoryDraft(nextTrackedIds.map(String));
+      } catch (bootstrapError: any) {
+        if (!cancelled) {
+          setError(
+            bootstrapError.response?.data?.error || 'Erro ao carregar configuracoes do dashboard'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingBootstrap(false);
+        }
+      }
+    }
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loadingBootstrap) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadMonthly() {
+      setLoadingMonthly(true);
+      setError(null);
+      try {
+        const response = await getFinancialDashboardMonthly(month);
+        if (!cancelled) {
+          setMonthlyData(response);
+        }
+      } catch (monthlyError: any) {
+        if (!cancelled) {
+          setError(monthlyError.response?.data?.error || 'Erro ao carregar visao mensal');
+          setMonthlyData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingMonthly(false);
+        }
+      }
+    }
+
+    if (view === 'monthly') {
+      void loadMonthly();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadingBootstrap, month, view]);
+
+  useEffect(() => {
+    if (loadingBootstrap || view !== 'history') {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadHistory() {
+      setLoadingHistory(true);
+      setError(null);
+
+      try {
+        const response = await getFinancialDashboardHistory({
+          months: 12,
+          categoryIds: historyCategoryIds.map(Number)
+        });
+
+        if (!cancelled) {
+          setHistoryData(response);
+        }
+      } catch (historyError: any) {
+        if (!cancelled) {
+          setError(historyError.response?.data?.error || 'Erro ao carregar historico financeiro');
+          setHistoryData(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingHistory(false);
+        }
+      }
+    }
+
+    void loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [historyCategoryIds, loadingBootstrap, view]);
+
+  const expenseCategoryOptions = useMemo(
+    () =>
+      categories
+        .filter((category) => category.type === 'EXPENSE')
+        .map((category) => ({
+          value: String(category.id),
+          label: category.name
+        })),
+    [categories]
+  );
+
+  const historyCategoryOptions = useMemo(
+    () =>
+      categories
+        .filter((category) => category.type === 'EXPENSE' || category.type === 'INCOME')
+        .map((category) => ({
+          value: String(category.id),
+          label: `${category.name} (${category.type === 'EXPENSE' ? 'Despesa' : 'Receita'})`
+        })),
+    [categories]
+  );
+
+  const pieCategoryTotals = useMemo(() => {
+    if (!monthlyData) {
+      return [];
+    }
+
+    return monthlyData.categoryTotals.filter((category) => category.type === categoryPieMode);
+  }, [categoryPieMode, monthlyData]);
+
+  const monthlyBarData = useMemo(() => {
+    if (!monthlyData) {
+      return [];
+    }
+
+    const incomeRealized = parseAmount(monthlyData.currentMonthBreakdown.income.realized);
+    const incomeRemaining = parseAmount(monthlyData.currentMonthBreakdown.income.remaining);
+    const expenseRealized = parseAmount(monthlyData.currentMonthBreakdown.expense.realizedCommitted);
+    const expenseRemainingCommitted = parseAmount(
+      monthlyData.currentMonthBreakdown.expense.remainingCommitted
+    );
+    const expenseRemainingVariable = parseAmount(
+      monthlyData.currentMonthBreakdown.expense.remainingVariableProjected
+    );
+
+    return [
+      {
+        name: 'Receitas',
+        Realizado: monthlyData.isCurrentMonth ? incomeRealized : 0,
+        Restante: monthlyData.isCurrentMonth
+          ? incomeRemaining
+          : parseAmount(monthlyData.monthlyTotals.incomeTotal),
+        Comprometido: 0,
+        Variavel: 0
+      },
+      {
+        name: 'Saidas',
+        Realizado: monthlyData.isCurrentMonth ? expenseRealized : 0,
+        Restante: expenseRemainingCommitted,
+        Comprometido: expenseRemainingCommitted,
+        Variavel: expenseRemainingVariable
+      }
+    ];
+  }, [monthlyData]);
+
+  const historyTotalsData = useMemo(() => {
+    if (!historyData) {
+      return [];
+    }
+
+    return historyData.monthlyTotals.map((monthPoint) => ({
+      label: formatShortMonthLabel(monthPoint.month),
+      fullLabel: formatMonthLabel(monthPoint.month),
+      Receitas: parseAmount(monthPoint.incomeTotal),
+      Despesas: parseAmount(monthPoint.expenseTotal),
+      parcial: monthPoint.isPartialCurrentMonth
+    }));
+  }, [historyData]);
+
+  const historyCategoryChartData = useMemo(() => {
+    if (!historyData || historyData.categorySeries.length === 0) {
+      return [];
+    }
+
+    const months = historyData.monthlyTotals.map((item) => item.month);
+    return months.map((monthKey) => {
+      const base: Record<string, string | number> = {
+        label: formatShortMonthLabel(monthKey),
+        fullLabel: formatMonthLabel(monthKey)
+      };
+
+      historyData.categorySeries.forEach((series) => {
+        const point = series.points.find((item) => item.month === monthKey);
+        base[`category-${series.categoryId}`] = parseAmount(point?.amount || '0');
+      });
+
+      return base;
+    });
+  }, [historyData]);
+
+  function syncRouterQuery(nextView: FinancialDashboardView, nextMonth: string) {
+    void router.replace(
+      {
+        pathname: router.pathname,
+        query: {
+          ...router.query,
+          view: nextView,
+          month: nextMonth
+        }
+      },
+      undefined,
+      { shallow: true }
+    );
+  }
+
+  function handleViewChange(nextView: string) {
+    const normalizedView = nextView === 'history' ? 'history' : 'monthly';
+    setView(normalizedView);
+    syncRouterQuery(normalizedView, month);
+  }
+
+  function handleMonthChange(offset: -1 | 1) {
+    const nextMonth = addMonths(month, offset);
+    if (nextMonth < currentMonth) {
+      return;
+    }
+
+    setMonth(nextMonth);
+    syncRouterQuery(view, nextMonth);
+  }
+
+  async function handleSaveTrackedCategories() {
+    const nextIds = Array.from(new Set(trackedExpenseCategoryDraft.map(Number))).filter(Boolean);
+
+    if (nextIds.length > 10) {
+      addToast('Selecione no maximo 10 categorias', 'error');
+      return;
+    }
+
+    setSavingPreference(true);
+    try {
+      const response = await updateVariableProjectionPreference(nextIds);
+      setTrackedExpenseCategoryIds(response.trackedExpenseCategoryIds);
+      setTrackedExpenseCategoryDraft(response.trackedExpenseCategoryIds.map(String));
+      addToast('Categorias observadas atualizadas', 'success');
+
+      if (view === 'monthly') {
+        setLoadingMonthly(true);
+        const refreshed = await getFinancialDashboardMonthly(month);
+        setMonthlyData(refreshed);
+      }
+    } catch (saveError: any) {
+      addToast(saveError.response?.data?.error || 'Erro ao salvar categorias observadas', 'error');
+    } finally {
+      setSavingPreference(false);
+      setLoadingMonthly(false);
+    }
+  }
+
+  function handleTrackedCategoryDraftChange(values: string[]) {
+    if (values.length > 10) {
+      addToast('Selecione no maximo 10 categorias', 'error');
+      return;
+    }
+
+    setTrackedExpenseCategoryDraft(values);
+  }
+
+  const monthlyLoadingState = loadingBootstrap || loadingMonthly;
+  const canGoBackMonth = month > currentMonth;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            Dashboard financeiro
+          </div>
+          <h1 className="mt-1 text-2xl font-heading font-bold text-white">
+            Visao analitica do caixa e das tendencias do mes.
+          </h1>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Select
+            aria-label="Selecione a visao do dashboard"
+            options={VIEW_OPTIONS}
+            value={view}
+            onChange={(event) => handleViewChange(event.target.value)}
+          />
+
+          <div className="flex items-center gap-2 rounded-xl border border-gray-700 bg-[#11161d] px-3 py-2">
+            <CalendarRange size={16} className="text-accent" />
+            <span className="text-sm text-gray-300">
+              {view === 'monthly' ? formatMonthLabel(month) : 'Ultimos 12 meses'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {error ? <Card className="p-4 text-danger">{error}</Card> : null}
+
+      {view === 'monthly' ? (
+        <>
+          <Card className="p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
+                  <PieChartIcon size={16} className="text-accent" />
+                  Situacao financeira mensal
+                </div>
+                <p className="mt-1 text-sm text-gray-400">
+                  O mes atual parte do saldo real de hoje. Meses futuros carregam o saldo final projetado do mes anterior.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 self-start lg:self-auto">
+                <Button
+                  variant="outline"
+                  onClick={() => handleMonthChange(-1)}
+                  disabled={!canGoBackMonth}
+                  className="inline-flex items-center gap-1"
+                >
+                  <ChevronLeft size={15} />
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleMonthChange(1)}
+                  className="inline-flex items-center gap-1"
+                >
+                  Proximo
+                  <ChevronRight size={15} />
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          {monthlyLoadingState ? (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <Skeleton key={index} className="h-28 rounded-xl" />
+              ))}
+            </div>
+          ) : monthlyData ? (
+            <>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                <SummaryCard
+                  title="Saldo base"
+                  value={monthlyData.carryOver.amount}
+                  tone="default"
+                  subtitle={
+                    monthlyData.carryOver.source === 'CURRENT_BALANCE'
+                      ? 'Saldo real disponivel agora'
+                      : 'Saldo final projetado do mes anterior'
+                  }
+                />
+                <SummaryCard
+                  title="Receitas do mes"
+                  value={monthlyData.monthlyTotals.incomeTotal}
+                  tone="income"
+                  subtitle={
+                    <>
+                      Realizado: {formatCurrency(monthlyData.currentMonthBreakdown.income.realized)}
+                      <br />
+                      Restante: {formatCurrency(monthlyData.currentMonthBreakdown.income.remaining)}
+                    </>
+                  }
+                />
+                <SummaryCard
+                  title="Saidas comprometidas"
+                  value={monthlyData.monthlyTotals.committedExpenseTotal}
+                  tone="expense"
+                  subtitle={
+                    <>
+                      Realizado: {formatCurrency(monthlyData.currentMonthBreakdown.expense.realizedCommitted)}
+                      <br />
+                      Restante: {formatCurrency(monthlyData.currentMonthBreakdown.expense.remainingCommitted)}
+                    </>
+                  }
+                />
+                <SummaryCard
+                  title="Variaveis estimadas"
+                  value={monthlyData.monthlyTotals.variableProjectedExpenseTotal}
+                  tone="expense"
+                  subtitle={
+                    trackedExpenseCategoryIds.length > 0
+                      ? `${monthlyData.variableProjection.categories.length} categoria(s) com projeção restante`
+                      : 'Configure categorias observadas'
+                  }
+                />
+                <SummaryCard
+                  title="Saldo final projetado"
+                  value={monthlyData.projectedEndingBalance}
+                  tone="balance"
+                  subtitle={
+                    monthlyData.isCurrentMonth
+                      ? 'Saldo atual + movimentos restantes'
+                      : 'Carry-over projetado + movimentos do mes'
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.95fr)]">
+                <Card className="p-5">
+                  <h3 className="text-lg font-medium text-white">Composicao do mes</h3>
+                  <p className="mt-1 text-sm text-gray-400">
+                    Receitas conhecidas, saídas comprometidas e estimativa restante das categorias observadas.
+                  </p>
+                  <div className="mt-5 h-72">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={monthlyBarData} margin={{ top: 12, right: 18, left: 6, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
+                        <XAxis dataKey="name" stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
+                        <Tooltip
+                          contentStyle={buildTooltipStyle()}
+                          formatter={(value) => formatCurrency(Number(value))}
+                        />
+                        <Legend />
+                        <Bar dataKey="Realizado" stackId="stack" fill="#38bdf8" />
+                        <Bar dataKey="Restante" stackId="stack" fill="#22c55e" />
+                        <Bar dataKey="Variavel" stackId="stack" fill="#f59e0b" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+
+                <Card className="p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-lg font-medium text-white">Categorias do mes</h3>
+                      <p className="mt-1 text-sm text-gray-400">
+                        Distribuicao final do mes no cenario projetado.
+                      </p>
+                    </div>
+                    <div className="flex rounded-lg border border-gray-700 bg-[#11161d] p-1">
+                      <button
+                        type="button"
+                        onClick={() => setCategoryPieMode('EXPENSE')}
+                        className={`rounded-md px-3 py-1.5 text-sm ${
+                          categoryPieMode === 'EXPENSE'
+                            ? 'bg-red-600 text-white'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Despesas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCategoryPieMode('INCOME')}
+                        className={`rounded-md px-3 py-1.5 text-sm ${
+                          categoryPieMode === 'INCOME'
+                            ? 'bg-green-600 text-white'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Receitas
+                      </button>
+                    </div>
+                  </div>
+
+                  {pieCategoryTotals.length === 0 ? (
+                    <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
+                      Nenhuma categoria encontrada para esta leitura do mes.
+                    </div>
+                  ) : (
+                    <div className="mt-4 flex flex-col gap-4">
+                      <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={pieCategoryTotals} dataKey="amount" nameKey="name" outerRadius={82}>
+                              {pieCategoryTotals.map((category) => (
+                                <Cell
+                                  key={`${categoryPieMode}-${category.categoryId ?? category.name}`}
+                                  fill={category.color}
+                                />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(value) => formatCurrency(Number(value))}
+                              contentStyle={buildTooltipStyle()}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="space-y-2">
+                        {pieCategoryTotals.map((category) => (
+                          <div
+                            key={`${categoryPieMode}-${category.categoryId ?? category.name}-legend`}
+                            className="flex items-center gap-3 text-sm"
+                          >
+                            <span
+                              className="inline-block h-3 w-3 rounded-full"
+                              style={{ backgroundColor: category.color }}
+                            />
+                            <span className="flex-1 text-gray-300">{category.name}</span>
+                            <span className="font-medium text-white">
+                              {formatCurrency(category.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(340px,0.92fr)_minmax(0,1.08fr)]">
+                <Card className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 text-lg font-medium text-white">
+                        <Settings2 size={16} className="text-accent" />
+                        Categorias observadas
+                      </div>
+                      <p className="mt-1 text-sm text-gray-400">
+                        Esta configuracao e central do dominio financeiro e sera reutilizavel em outras superficies.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5">
+                    <MultiSelect
+                      label="Despesas variaveis observadas"
+                      options={expenseCategoryOptions}
+                      values={trackedExpenseCategoryDraft}
+                      onChange={handleTrackedCategoryDraftChange}
+                      placeholder="Selecione ate 10 categorias"
+                      triggerClassName="h-10"
+                    />
+                    <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-500">
+                      <span>{trackedExpenseCategoryDraft.length}/10 selecionadas</span>
+                      <Button
+                        variant="accent"
+                        onClick={() => void handleSaveTrackedCategories()}
+                        disabled={savingPreference}
+                        className="inline-flex items-center gap-2"
+                      >
+                        {savingPreference ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        Salvar categorias
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card className="p-5">
+                  <h3 className="text-lg font-medium text-white">Variaveis estimadas por categoria</h3>
+                  <p className="mt-1 text-sm text-gray-400">
+                    A media usa os 6 meses fechados anteriores. O restante some quando a categoria ja consumiu toda a media no mes.
+                  </p>
+
+                  {monthlyData.variableProjection.categories.length === 0 ? (
+                    <div className="mt-5 rounded-xl border border-dashed border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
+                      {trackedExpenseCategoryIds.length === 0
+                        ? 'Selecione categorias observadas para gerar a estimativa variavel.'
+                        : 'Nenhuma categoria observada possui projeção restante neste mes.'}
+                    </div>
+                  ) : (
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="w-full min-w-[640px]">
+                        <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+                          <tr>
+                            <th className="px-3 py-3 text-left">Categoria</th>
+                            <th className="px-3 py-3 text-right">Media 6 meses</th>
+                            <th className="px-3 py-3 text-right">Ja comprometido</th>
+                            <th className="px-3 py-3 text-right">Restante projetado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {monthlyData.variableProjection.categories.map((item) => (
+                            <tr key={item.categoryId} className="border-t border-gray-800">
+                              <td className="px-3 py-3 text-sm text-gray-200">
+                                <span
+                                  className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
+                                  style={{ backgroundColor: item.color }}
+                                />
+                                {item.categoryName}
+                              </td>
+                              <td className="px-3 py-3 text-right text-sm text-gray-300">
+                                {formatCurrency(item.historicalAverage)}
+                              </td>
+                              <td className="px-3 py-3 text-right text-sm text-gray-300">
+                                {formatCurrency(item.committedInMonth)}
+                              </td>
+                              <td className="px-3 py-3 text-right text-sm font-medium text-amber-300">
+                                {formatCurrency(item.remainingProjected)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </Card>
+              </div>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <Card className="p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
+                  <LineChartIcon size={16} className="text-accent" />
+                  Historico financeiro
+                </div>
+                <p className="mt-1 text-sm text-gray-400">
+                  Evolucao mensal das receitas, despesas e das categorias escolhidas para analise.
+                </p>
+              </div>
+
+              <div className="min-w-[280px]">
+                <MultiSelect
+                  label="Categorias no grafico"
+                  options={historyCategoryOptions}
+                  values={historyCategoryIds}
+                  onChange={setHistoryCategoryIds}
+                  placeholder="Selecione categorias para comparar"
+                  triggerClassName="h-10"
+                  className="mb-0"
+                />
+              </div>
+            </div>
+          </Card>
+
+          {loadingBootstrap || loadingHistory ? (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <Skeleton className="h-[360px] rounded-xl" />
+              <Skeleton className="h-[360px] rounded-xl" />
+            </div>
+          ) : historyData ? (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <Card className="p-5">
+                <h3 className="text-lg font-medium text-white">Receitas x despesas</h3>
+                <p className="mt-1 text-sm text-gray-400">Ultimos 12 meses, com o mes atual marcado como parcial.</p>
+                <div className="mt-5 h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={historyTotalsData} margin={{ top: 12, right: 18, left: 6, bottom: 4 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
+                      <XAxis dataKey="label" stroke="#94a3b8" />
+                      <YAxis stroke="#94a3b8" />
+                      <Tooltip
+                        contentStyle={buildTooltipStyle()}
+                        formatter={(value) => formatCurrency(Number(value))}
+                        labelFormatter={formatTooltipLabel}
+                      />
+                      <Legend />
+                      <Line type="monotone" dataKey="Receitas" stroke="#22c55e" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="Despesas" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </Card>
+
+              <Card className="p-5">
+                <h3 className="text-lg font-medium text-white">Categorias selecionadas</h3>
+                <p className="mt-1 text-sm text-gray-400">
+                  Comeca vazio por padrao. Adicione as categorias que deseja acompanhar.
+                </p>
+
+                {historyData.categorySeries.length === 0 ? (
+                  <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-10 text-center text-sm text-gray-400">
+                    Nenhuma categoria selecionada para o grafico historico.
+                  </div>
+                ) : (
+                  <div className="mt-5 h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={historyCategoryChartData} margin={{ top: 12, right: 18, left: 6, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
+                        <XAxis dataKey="label" stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
+                        <Tooltip
+                          contentStyle={buildTooltipStyle()}
+                          formatter={(value) => formatCurrency(Number(value))}
+                          labelFormatter={formatTooltipLabel}
+                        />
+                        <Legend />
+                        {historyData.categorySeries.map((series) => (
+                          <Line
+                            key={series.categoryId}
+                            type="monotone"
+                            dataKey={`category-${series.categoryId}`}
+                            stroke={series.color}
+                            strokeWidth={2.25}
+                            dot={false}
+                            name={series.name}
+                          />
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </Card>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
 }

@@ -243,6 +243,7 @@ model User {
   budgets                Budget[]
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
+  variableProjectionPreferences UserVariableProjectionPreference[]
   assistantSessions      AssistantSession[]
   assistantTurns         AssistantTurn[]
   assistantMessages      AssistantMessage[]
@@ -283,6 +284,7 @@ model Company {
   budgets             Budget[]
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
+  variableProjectionPreferences UserVariableProjectionPreference[]
   assistantSessions   AssistantSession[]
   assistantTurns      AssistantTurn[]
   assistantMessages   AssistantMessage[]
@@ -1124,6 +1126,21 @@ model SavedFilterPreset {
   lastUsedSelections LastUsedFilterPreset[] @relation("LastUsedPresetSelection")
 
   @@index([userId, companyId, featureKey, updatedAt])
+  @@index([companyId])
+}
+
+model UserVariableProjectionPreference {
+  id                       Int      @id @default(autoincrement())
+  userId                   Int
+  companyId                Int
+  trackedExpenseCategoryIds Int[]    @default([])
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company                  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, companyId], name: "unique_user_variable_projection_preference")
   @@index([companyId])
 }
 

@@ -1,5 +1,6 @@
 import Link from 'next/link';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/router';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -12,6 +13,7 @@ import { useConfirmation } from '@/hooks/useConfirmation';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import {
   AlertTriangle,
+  ChevronDown,
   CreditCard,
   Edit2,
   MinusCircle,
@@ -82,6 +84,7 @@ function getAccountTypeLabel(type: string): string {
 }
 
 function AccountsPageInner() {
+  const router = useRouter();
   const confirmation = useConfirmation();
   const { addToast } = useToast();
 
@@ -93,14 +96,35 @@ function AccountsPageInner() {
   const [formLoading, setFormLoading] = useState(false);
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [adjustingAccount, setAdjustingAccount] = useState<Account | null>(null);
+  const [openTransactionMenuAccountId, setOpenTransactionMenuAccountId] = useState<number | null>(null);
   const [balanceData, setBalanceData] = useState({
     newBalance: '0.00',
     reason: ''
   });
+  const transactionMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void fetchAccounts();
   }, [filterStatus, filterType]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        transactionMenuRef.current &&
+        !transactionMenuRef.current.contains(event.target as Node)
+      ) {
+        setOpenTransactionMenuAccountId(null);
+      }
+    };
+
+    if (openTransactionMenuAccountId !== null) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openTransactionMenuAccountId]);
 
   async function fetchAccounts() {
     setLoading(true);
@@ -141,6 +165,18 @@ function AccountsPageInner() {
       newBalance: '0.00',
       reason: ''
     });
+  }
+
+  function buildTransactionCreateHref(accountId: number, type: 'EXPENSE' | 'INCOME') {
+    return {
+      pathname: '/financial/transactions/new',
+      query: {
+        type,
+        locked: 'true',
+        accountId: String(accountId),
+        returnTo: router.asPath
+      }
+    };
   }
 
   async function handleSetDefault(account: Account) {
@@ -391,7 +427,7 @@ function AccountsPageInner() {
             <table className="w-full">
               <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                 <tr>
-                  <th className="w-32 px-4 py-3 text-center">Acoes</th>
+                  <th className="w-40 px-4 py-3 text-center">Acoes</th>
                   <th className="px-4 py-3 text-left">Conta</th>
                   <th className="px-4 py-3 text-left">Tipo</th>
                   <th className="px-4 py-3 text-left">Banco / Numero</th>
@@ -410,6 +446,45 @@ function AccountsPageInner() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
+                        <div
+                          className="relative"
+                          ref={openTransactionMenuAccountId === account.id ? transactionMenuRef : null}
+                        >
+                          <button
+                            onClick={() =>
+                              setOpenTransactionMenuAccountId((currentId) =>
+                                currentId === account.id ? null : account.id
+                              )
+                            }
+                            className="flex items-center gap-1 rounded border border-gray-700 px-2 py-1 text-xs text-gray-200 transition-colors hover:border-emerald-500 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Nova transacao nesta conta"
+                            aria-haspopup="menu"
+                            aria-expanded={openTransactionMenuAccountId === account.id}
+                            disabled={formLoading || !account.isActive}
+                          >
+                            <Plus size={14} />
+                            <ChevronDown size={12} />
+                          </button>
+
+                          {openTransactionMenuAccountId === account.id && (
+                            <div className="absolute left-0 top-full z-20 mt-2 min-w-[160px] rounded-lg border border-gray-700 bg-[#151921] p-1 shadow-2xl">
+                              <Link
+                                href={buildTransactionCreateHref(account.id, 'EXPENSE')}
+                                className="block rounded px-3 py-2 text-sm text-gray-200 transition-colors hover:bg-[#1f2937] hover:text-red-300"
+                                onClick={() => setOpenTransactionMenuAccountId(null)}
+                              >
+                                Nova Despesa
+                              </Link>
+                              <Link
+                                href={buildTransactionCreateHref(account.id, 'INCOME')}
+                                className="block rounded px-3 py-2 text-sm text-gray-200 transition-colors hover:bg-[#1f2937] hover:text-green-300"
+                                onClick={() => setOpenTransactionMenuAccountId(null)}
+                              >
+                                Nova Receita
+                              </Link>
+                            </div>
+                          )}
+                        </div>
                         <button
                           onClick={() => void handleSetDefault(account)}
                           className={`p-1 transition-colors ${

@@ -142,6 +142,8 @@ interface TransactionFormProps {
   isTypeLocked?: boolean;
   createFlow?: CreateFlow;
   defaultCreditCardId?: string | null;
+  defaultFinancialAccountId?: string | null;
+  returnTo?: string | null;
   onSuccess?: () => void;
   onCancel?: () => void;
   onTransactionLoaded?: (transaction: Transaction) => void;
@@ -263,6 +265,8 @@ export default function TransactionForm({
   isTypeLocked = false,
   createFlow = 'standard',
   defaultCreditCardId = null,
+  defaultFinancialAccountId = null,
+  returnTo = null,
   onSuccess,
   onCancel,
   onTransactionLoaded
@@ -461,6 +465,7 @@ export default function TransactionForm({
   const listReturnPath = useMemo(
     () =>
       resolveTransactionListPath({
+        explicitReturnTo: returnTo,
         createFlow,
         defaultCreditCardId,
         fromAccountId: formData.fromAccountId,
@@ -469,6 +474,7 @@ export default function TransactionForm({
         transactionFromAccountType: transaction?.fromAccount?.type ?? null
       }),
     [
+      returnTo,
       createFlow,
       defaultCreditCardId,
       formData.fromAccountId,
@@ -533,7 +539,7 @@ export default function TransactionForm({
       autoSelectDefaults();
       setDefaultsLoaded(true);
     }
-  }, [accounts, categories, defaultsLoaded, mode, formData.type]);
+  }, [accounts, categories, defaultCreditCardId, defaultFinancialAccountId, defaultsLoaded, mode, formData.type]);
 
   useEffect(() => {
     if (!isGroupedCreditCardPurchase) {
@@ -844,13 +850,21 @@ export default function TransactionForm({
           updates.fromAccountId = nextCard.id.toString();
         }
       } else {
+        const requestedFinancialAccount = defaultFinancialAccountId
+          ? accounts.find(
+              (account) =>
+                account.id.toString() === defaultFinancialAccountId &&
+                account.isActive &&
+                account.type !== 'CREDIT_CARD'
+            )
+          : null;
         const defaultAccount = accounts.find(
           (account) => account.isDefault && account.isActive && account.type !== 'CREDIT_CARD'
         );
         const fallbackAccount = accounts.find(
           (account) => account.isActive && account.type !== 'CREDIT_CARD'
         );
-        const nextAccount = defaultAccount || fallbackAccount;
+        const nextAccount = requestedFinancialAccount || defaultAccount || fallbackAccount;
 
         if (nextAccount) {
           if (formData.type === 'EXPENSE') {

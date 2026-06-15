@@ -933,4 +933,39 @@ export default class CreditCardInvoiceService {
 
     return this.getInvoiceById(invoice.id, params.companyId);
   }
+
+  static async reopenInvoice(params: {
+    invoiceId: number;
+    companyId: number;
+  }) {
+    const invoice = await this.getInvoiceById(params.invoiceId, params.companyId, false);
+
+    if (!invoice) {
+      throw new Error('Fatura nao encontrada');
+    }
+
+    if (invoice.status !== CreditCardInvoiceStatus.PAID) {
+      throw new Error('Apenas faturas pagas podem ser reabertas');
+    }
+
+    if (invoice.settlementType !== CreditCardInvoiceSettlementType.TRANSFER) {
+      throw new Error('Apenas faturas pagas por transferencia podem ser reabertas');
+    }
+
+    if (!invoice.paymentTransaction?.id) {
+      throw new Error('Pagamento vinculado nao encontrado');
+    }
+
+    await FinancialTransactionService.deleteTransaction(invoice.paymentTransaction.id, {
+      companyId: params.companyId
+    });
+
+    const reopenedInvoice = await this.getInvoiceById(invoice.id, params.companyId);
+
+    if (!reopenedInvoice) {
+      throw new Error('Fatura nao encontrada apos a reabertura');
+    }
+
+    return reopenedInvoice;
+  }
 }

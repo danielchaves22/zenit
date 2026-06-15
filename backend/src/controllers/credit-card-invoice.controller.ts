@@ -159,3 +159,53 @@ export async function payCreditCardInvoice(req: Request, res: Response) {
     });
   }
 }
+
+export async function reopenCreditCardInvoice(req: Request, res: Response) {
+  try {
+    const { companyId, userId, role } = getUserContext(req);
+    const invoiceId = Number(req.params.id);
+
+    const preview = await CreditCardInvoiceService.getInvoiceById(invoiceId, companyId);
+    if (!preview) {
+      return res.status(404).json({ error: 'Fatura nÃ£o encontrada' });
+    }
+
+    const paymentSourceAccountId = preview.paymentTransaction?.fromAccount?.id;
+    const accessChecks = [
+      UserFinancialAccountAccessService.checkUserAccountAccess(
+        userId,
+        preview.accountId,
+        role,
+        companyId
+      )
+    ];
+
+    if (paymentSourceAccountId) {
+      accessChecks.push(
+        UserFinancialAccountAccessService.checkUserAccountAccess(
+          userId,
+          paymentSourceAccountId,
+          role,
+          companyId
+        )
+      );
+    }
+
+    const accessResults = await Promise.all(accessChecks);
+    if (accessResults.some((hasAccess) => !hasAccess)) {
+      return res.status(403).json({ error: 'Acesso negado para reabrir esta fatura' });
+    }
+
+    const reopenedInvoice = await CreditCardInvoiceService.reopenInvoice({
+      invoiceId,
+      companyId
+    });
+
+    return res.status(200).json(reopenedInvoice);
+  } catch (error: any) {
+    logger.error('Erro ao reabrir fatura do cartÃ£o:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao reabrir fatura do cartÃ£o'
+    });
+  }
+}

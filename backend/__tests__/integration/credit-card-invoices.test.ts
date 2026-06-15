@@ -509,6 +509,67 @@ describe('Credit card invoices', () => {
     expect(Number(cardAccountAfterDelete?.balance)).toBe(-350);
   });
 
+  it('reopens a paid invoice through the explicit endpoint', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
+
+    const purchaseResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra para reabrir fatura',
+        amount: 120,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(purchaseResponse.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    expect(invoicesResponse.status).toBe(200);
+
+    const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
+    expect(mayInvoice).toBeTruthy();
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        paymentDate: '2099-05-14T12:00:00.000Z'
+      });
+
+    expect(paymentResponse.status).toBe(200);
+    expect(paymentResponse.body.status).toBe('PAID');
+    expect(paymentResponse.body.paymentTransaction).toBeTruthy();
+
+    const reopenResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/reopen`)
+      .set(authHeaders());
+
+    expect(reopenResponse.status).toBe(200);
+    expect(reopenResponse.body.status).toBe('OPEN');
+    expect(reopenResponse.body.paymentTransaction).toBeNull();
+    expect(reopenResponse.body.settlementType).toBeNull();
+    expect(reopenResponse.body.settledAt).toBeNull();
+
+    const payerAccountAfterReopen = await prisma.financialAccount.findUnique({
+      where: { id: payerAccountId }
+    });
+    const cardAccountAfterReopen = await prisma.financialAccount.findUnique({
+      where: { id: card.id }
+    });
+
+    expect(Number(payerAccountAfterReopen?.balance)).toBe(5000);
+    expect(Number(cardAccountAfterReopen?.balance)).toBe(-120);
+  });
+
   it('creates retroactive card purchases with historical installments settled externally', async () => {
     const card = await createCreditCardAccount();
     const purchaseDate = buildMonthDate(-1, 5);

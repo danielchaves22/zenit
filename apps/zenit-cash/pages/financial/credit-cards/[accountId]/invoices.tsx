@@ -7,9 +7,11 @@ import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/ToastContext';
+import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
 import {
   FinancialBank,
@@ -162,6 +164,7 @@ function buildVisibleInvoices(sortedInvoices: CreditCardInvoiceListItem[], showP
 function InvoicesPageInner() {
   const router = useRouter();
   const { addToast } = useToast();
+  const confirmation = useConfirmation();
   const accountId = Number(router.query.accountId);
   const selectedInvoiceFromQuery =
     typeof router.query.invoiceKey === 'string'
@@ -206,6 +209,13 @@ function InvoicesPageInner() {
     !invoiceDetail.hasProjectedTransactions &&
     !invoiceDetail.paymentTransaction &&
     invoiceDetail.status !== 'PAID'
+  );
+  const canReopenSelectedInvoice = Boolean(
+    invoiceDetail &&
+    !invoiceDetail.isProjected &&
+    invoiceDetail.status === 'PAID' &&
+    invoiceDetail.settlementType === 'TRANSFER' &&
+    invoiceDetail.paymentTransaction?.id
   );
   const reconciliationSourceType = useMemo(
     () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
@@ -410,6 +420,40 @@ function InvoicesPageInner() {
     } finally {
       setPaying(false);
     }
+  }
+
+  function handleReopenInvoice() {
+    if (!invoiceDetail?.id || !invoiceDetail.paymentTransaction?.id) {
+      addToast('Nao foi possivel localizar o pagamento desta fatura', 'error');
+      return;
+    }
+
+    const payerAccountName = invoiceDetail.paymentTransaction.fromAccount?.name || 'a conta informada';
+    const settledAtLabel = invoiceDetail.paymentTransaction.effectiveDate
+      ? formatCalendarDate(invoiceDetail.paymentTransaction.effectiveDate)
+      : invoiceDetail.settledAt
+        ? formatCalendarDate(invoiceDetail.settledAt)
+        : null;
+    const paymentDetails = settledAtLabel
+      ? ` O pagamento em ${payerAccountName} de ${formatCurrency(invoiceDetail.paymentTransaction.amount)} realizado em ${settledAtLabel} sera removido.`
+      : ` O pagamento em ${payerAccountName} de ${formatCurrency(invoiceDetail.paymentTransaction.amount)} sera removido.`;
+
+    confirmation.confirm(
+      {
+        title: 'Reabrir fatura paga',
+        message:
+          `A fatura ${getInvoiceReferenceLabel(invoiceDetail.referenceYear, invoiceDetail.referenceMonth)} voltara a ficar em aberto para um novo pagamento.` +
+          paymentDetails,
+        confirmText: 'Reabrir fatura',
+        cancelText: 'Cancelar',
+        type: 'warning'
+      },
+      async () => {
+        await api.post(`/financial/credit-card-invoices/${invoiceDetail.id}/reopen`);
+        addToast('Fatura reaberta com sucesso', 'success');
+        await fetchPageData();
+      }
+    );
   }
 
   function handleSelectInvoice(invoice: CreditCardInvoiceListItem) {
@@ -865,17 +909,30 @@ function InvoicesPageInner() {
                               </div>
                             </div>
                             </div>
-                            {canPaySelectedInvoice && (
-                              <Button
-                                type="button"
-                                variant="accent"
-                                onClick={() => setIsPaymentModalOpen(true)}
-                                disabled={paying}
-                                className="disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {paying ? 'Pagando...' : 'Pagar fatura'}
-                              </Button>
-                            )}
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              {canReopenSelectedInvoice && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={handleReopenInvoice}
+                                  disabled={confirmation.loading}
+                                  className="disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  Reabrir fatura
+                                </Button>
+                              )}
+                              {canPaySelectedInvoice && (
+                                <Button
+                                  type="button"
+                                  variant="accent"
+                                  onClick={() => setIsPaymentModalOpen(true)}
+                                  disabled={paying}
+                                  className="disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {paying ? 'Pagando...' : 'Pagar fatura'}
+                                </Button>
+                              )}
+                            </div>
                             <div className="hidden">
                               <Button
                                 type="button"
@@ -1249,6 +1306,18 @@ function InvoicesPageInner() {
                 </div>
               </div>
             </Modal>
+
+            <ConfirmationModal
+              isOpen={confirmation.isOpen}
+              onClose={confirmation.handleClose}
+              onConfirm={confirmation.handleConfirm}
+              title={confirmation.options.title}
+              message={confirmation.options.message}
+              confirmText={confirmation.options.confirmText}
+              cancelText={confirmation.options.cancelText}
+              type={confirmation.options.type}
+              loading={confirmation.loading}
+            />
           </>
         )}
       </div>

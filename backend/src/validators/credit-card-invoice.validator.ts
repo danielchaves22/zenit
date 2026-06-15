@@ -34,3 +34,9 @@ export const payCreditCardInvoiceSchema = z.object({
     .max(1000, 'Observacoes devem ter no maximo 1000 caracteres')
     .optional()
 });
+
+export const reopenCreditCardInvoiceSchema = z.object({
+  id: z.coerce.number()
+    .int('ID da fatura deve ser um numero inteiro')
+    .positive('ID da fatura deve ser positivo')
+});

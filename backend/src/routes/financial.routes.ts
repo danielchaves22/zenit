@@ -34,7 +34,8 @@ import {
   getCreditCardInvoiceSchema,
   getProjectedCreditCardInvoiceSchema,
   listCreditCardInvoicesSchema,
-  payCreditCardInvoiceSchema
+  payCreditCardInvoiceSchema,
+  reopenCreditCardInvoiceSchema
 } from '../validators/credit-card-invoice.validator';
 import {
   commitCreditCardReconciliationSchema,
@@ -106,7 +107,8 @@ import {
   getProjectedCreditCardInvoice,
   listCreditCardInvoices,
   listCreditCards,
-  payCreditCardInvoice
+  payCreditCardInvoice,
+  reopenCreditCardInvoice
 } from '../controllers/credit-card-invoice.controller';
 import {
   getFinancialDashboardHistory,
@@ -149,6 +151,7 @@ router.post('/credit-cards/:accountId/reconciliation/preview', requireFeaturePer
 router.post('/credit-cards/:accountId/reconciliation/commit', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(commitCreditCardReconciliationSchema), commitCreditCardReconciliation);
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
 router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
+router.post('/credit-card-invoices/:id/reopen', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(reopenCreditCardInvoiceSchema), reopenCreditCardInvoice);
 
 router.post('/categories', requireFeaturePermission('FINANCIAL_CATEGORIES'), validate(createCategorySchema), createCategory);
 router.get('/categories', validate(listCategoriesSchema), getCategories);

@@ -274,6 +274,138 @@ describe('Credit card statement reconciliation service', () => {
     expect(classification.matchedTransactions[0]?.matchSource).toBe('PROJECTED_FIXED');
   });
 
+  it('accepts small amount differences for projected fixed matches in the same statement month', () => {
+    const parsed = __private__.parseNubankStatementText(
+      sampleNubankStatementText,
+      'Nubank_2026-06-17.csv'
+    );
+    const purchaseItem = parsed.items.find((item) => item.kind === 'PURCHASE');
+
+    expect(purchaseItem).toBeTruthy();
+
+    const classification = __private__.classifyMatches(
+      purchaseItem!,
+      [
+        {
+          matchKey: 'projected-fixed:18:18:2026-06',
+          matchSource: 'PROJECTED_FIXED',
+          id: null,
+          fixedTemplateId: 18,
+          occurrenceKey: '18:2026-06',
+          description: 'Assinatura recorrente',
+          amount: new Prisma.Decimal('59.99'),
+          date: new Date('2026-06-10T12:00:00.000Z'),
+          installmentNumber: null,
+          totalInstallments: null,
+          status: TransactionStatus.PENDING,
+          purchaseGroupId: null,
+          creditCardInvoice: {
+            id: 0,
+            referenceYear: 2026,
+            referenceMonth: 6,
+            status: CreditCardInvoiceStatus.OPEN
+          }
+        }
+      ],
+      2026,
+      6
+    );
+
+    expect(classification.status).toBe('SIMILAR');
+    expect(classification.reason).toBe('DATE_DIVERGENCE');
+    expect(classification.matchedTransactions).toHaveLength(1);
+  });
+
+  it('marks mapped recurring fixed descriptions as ok when a projected fixed exists in the same invoice', () => {
+    const parsed = __private__.parseNubankStatementText(
+      sampleNubankStatementText,
+      'Nubank_2026-06-17.csv'
+    );
+    const purchaseItem = parsed.items.find(
+      (item) => item.sourceDescription === 'Netflix Entretenimento'
+    );
+
+    expect(purchaseItem).toBeTruthy();
+
+    const classification = __private__.classifyMatches(
+      purchaseItem!,
+      [
+        {
+          matchKey: 'projected-fixed:18:18:2026-06',
+          matchSource: 'PROJECTED_FIXED',
+          id: null,
+          fixedTemplateId: 18,
+          occurrenceKey: '18:2026-06',
+          description: 'Netflix',
+          amount: new Prisma.Decimal('59.90'),
+          date: new Date('2026-06-10T12:00:00.000Z'),
+          installmentNumber: null,
+          totalInstallments: null,
+          status: TransactionStatus.PENDING,
+          purchaseGroupId: null,
+          creditCardInvoice: {
+            id: 0,
+            referenceYear: 2026,
+            referenceMonth: 6,
+            status: CreditCardInvoiceStatus.OPEN
+          }
+        }
+      ],
+      2026,
+      6,
+      new Map([['NETFLIX ENTRETENIMENTO', 18]])
+    );
+
+    expect(classification.status).toBe('OK');
+    expect(classification.reason).toBe('MAPPED_FIXED');
+    expect(classification.matchedTransactions).toHaveLength(1);
+    expect(classification.matchedTransactions[0]?.matchSource).toBe('PROJECTED_FIXED');
+  });
+
+  it('matches older installments in the same invoice reference as similar', () => {
+    const parsed = __private__.parseNubankStatementText(
+      sampleNubankStatementText,
+      'Nubank_2026-06-17.csv'
+    );
+    const installmentItem = parsed.items.find(
+      (item) => item.sourceDescription === 'Deivid Pinturas'
+    );
+
+    expect(installmentItem).toBeTruthy();
+
+    const classification = __private__.classifyMatches(
+      installmentItem!,
+      [
+        {
+          matchKey: 'transaction:411',
+          matchSource: 'TRANSACTION',
+          id: 411,
+          fixedTemplateId: null,
+          occurrenceKey: null,
+          description: 'Pintura casa aluguel',
+          amount: new Prisma.Decimal('471.00'),
+          date: new Date('2026-02-13T12:00:00.000Z'),
+          installmentNumber: 4,
+          totalInstallments: 10,
+          status: TransactionStatus.COMPLETED,
+          purchaseGroupId: 'purchase-group-411',
+          creditCardInvoice: {
+            id: 81,
+            referenceYear: 2026,
+            referenceMonth: 6,
+            status: CreditCardInvoiceStatus.OPEN
+          }
+        }
+      ],
+      2026,
+      6
+    );
+
+    expect(classification.status).toBe('SIMILAR');
+    expect(classification.reason).toBe('DATE_DIVERGENCE');
+    expect(classification.matchedTransactions).toHaveLength(1);
+  });
+
   it('shifts statement-reference items when the target invoice reference is changed', () => {
     const parsed = __private__.parseCaixaStatementText(
       sampleCaixaStatementText,
@@ -401,5 +533,21 @@ describe('Credit card statement reconciliation service', () => {
       sourceDescription: 'Deivid Pinturas',
       sourceSection: 'INSTALLMENTS'
     });
+  });
+
+  it('expands the candidate search window backwards for installment lines', () => {
+    const parsed = __private__.parseNubankStatementText(
+      sampleNubankStatementText,
+      'Nubank_2026-06-17.csv'
+    );
+
+    const { minDate, maxDate } = __private__.buildDateWindow(parsed.items);
+
+    expect(minDate.getFullYear()).toBe(2026);
+    expect(minDate.getMonth()).toBe(0);
+    expect(minDate.getDate()).toBe(10);
+    expect(maxDate.getFullYear()).toBe(2026);
+    expect(maxDate.getMonth()).toBe(6);
+    expect(maxDate.getDate()).toBe(10);
   });
 });

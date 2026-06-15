@@ -66,6 +66,7 @@ export interface CreditCardInvoiceCsvInput {
 type ReconciliationItemStatus = 'OK' | 'SIMILAR' | 'PENDING' | 'NOT_IMPORTABLE';
 type ReconciliationReason =
   | 'EXACT'
+  | 'MAPPED_FIXED'
   | 'AMBIGUOUS_EXACT'
   | 'INVOICE_DIVERGENCE'
   | 'DATE_DIVERGENCE'
@@ -249,18 +250,20 @@ function getReconciliationReasonLabel(item: CreditCardReconciliationCsvItem) {
       return hasProjectedFixedMatch
         ? 'Fixa projetada equivalente ja encontrada para esta fatura.'
         : 'Lancamento ja encontrado.';
+    case 'MAPPED_FIXED':
+      return 'Descricao vinculada automaticamente a fixa recorrente desta fatura.';
     case 'AMBIGUOUS_EXACT':
       return hasProjectedFixedMatch
         ? 'Ha mais de uma correspondencia equivalente, incluindo fixas projetadas.'
         : 'Mais de um lancamento ja bate exatamente.';
     case 'INVOICE_DIVERGENCE':
-      return 'Mesmo valor, data e parcela, mas vinculado a outra fatura.';
+      return 'Mesmo valor ou valor muito proximo, com mesma data/parcela, mas vinculado a outra fatura.';
     case 'DATE_DIVERGENCE':
       return hasProjectedFixedMatch
-        ? 'Existe fixa projetada com mesmo valor nesta fatura; revise a data.'
-        : 'Mesmo valor e parcela, com divergencia de data.';
+        ? 'Existe fixa projetada com valor igual ou muito proximo nesta fatura; revise a data.'
+        : 'Mesmo valor ou valor muito proximo, com divergencia de data.';
     case 'INSTALLMENT_DIVERGENCE':
-      return 'Mesmo valor, com divergencia de parcelamento.';
+      return 'Mesmo valor ou valor muito proximo, com divergencia de parcelamento.';
     case 'NON_IMPORTABLE':
       return 'Linha apenas informativa para esta rotina.';
     default:

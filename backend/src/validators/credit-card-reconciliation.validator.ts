@@ -48,13 +48,35 @@ export const commitCreditCardReconciliationSchema = z.object({
   selectedItems: z.array(
     z.object({
       itemId: z.string().min(1, 'ID do item selecionado e obrigatorio'),
+      action: z.enum(['IMPORT', 'LINK_FIXED']).optional().default('IMPORT'),
       description: z.string()
         .trim()
-        .min(1, 'Descricao do lancamento e obrigatoria')
-        .max(255, 'Descricao do lancamento deve ter no maximo 255 caracteres'),
+        .max(255, 'Descricao do lancamento deve ter no maximo 255 caracteres')
+        .optional(),
       categoryId: z.coerce.number()
         .int('Categoria do lancamento deve ser um numero inteiro')
         .positive('Categoria do lancamento deve ser positiva')
+        .optional()
+    }).superRefine((item, ctx) => {
+      if ((item.action || 'IMPORT') !== 'IMPORT') {
+        return;
+      }
+
+      if (!item.description?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['description'],
+          message: 'Descricao do lancamento e obrigatoria'
+        });
+      }
+
+      if (!item.categoryId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['categoryId'],
+          message: 'Categoria do lancamento deve ser informada'
+        });
+      }
     })
   )
     .min(1, 'Selecione ao menos um item para importar')

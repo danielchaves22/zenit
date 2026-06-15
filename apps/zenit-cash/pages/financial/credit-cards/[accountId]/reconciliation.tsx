@@ -35,6 +35,7 @@ import { formatCalendarDate } from '@/utils/financialStatus';
 type ReconciliationItemStatus = 'OK' | 'SIMILAR' | 'PENDING' | 'NOT_IMPORTABLE';
 type ReconciliationReason =
   | 'EXACT'
+  | 'MAPPED_FIXED'
   | 'AMBIGUOUS_EXACT'
   | 'INVOICE_DIVERGENCE'
   | 'DATE_DIVERGENCE'
@@ -151,21 +152,36 @@ interface ReconciliationCommitResult {
   summary: {
     selectedCount: number;
     createdCount: number;
+    linkedFixedCount: number;
     skippedDuplicateCount: number;
     skippedNotImportableCount: number;
     failedCount: number;
   };
   results: Array<{
     itemId: string;
-    status: 'CREATED' | 'SKIPPED_DUPLICATE' | 'SKIPPED_NOT_IMPORTABLE' | 'FAILED';
+    status:
+      | 'CREATED'
+      | 'LINKED_FIXED'
+      | 'SKIPPED_DUPLICATE'
+      | 'SKIPPED_NOT_IMPORTABLE'
+      | 'FAILED';
     message: string;
     createdTransactionIds: number[];
   }>;
 }
 
+type ReconciliationCommitAction = 'IMPORT' | 'LINK_FIXED';
+
 interface ReconciliationItemDraft {
   description: string;
   categoryId: string;
+}
+
+interface ReconciliationCommitSelection {
+  itemId: string;
+  action: ReconciliationCommitAction;
+  description?: string;
+  categoryId?: number;
 }
 
 const RECONCILIATION_SOURCE_CONFIG: Record<
@@ -272,18 +288,20 @@ function getReasonLabel(item: ReconciliationPreviewItem) {
       return hasProjectedFixedMatch
         ? 'Fixa projetada equivalente ja encontrada para esta fatura.'
         : 'Lancamento ja encontrado.';
+    case 'MAPPED_FIXED':
+      return 'Descricao vinculada automaticamente a fixa recorrente desta fatura.';
     case 'AMBIGUOUS_EXACT':
       return hasProjectedFixedMatch
         ? 'Ha mais de uma correspondencia equivalente, incluindo fixas projetadas.'
         : 'Mais de um lancamento ja bate exatamente.';
     case 'INVOICE_DIVERGENCE':
-      return 'Mesmo valor, data e parcela, mas vinculado a outra fatura.';
+      return 'Mesmo valor ou valor muito proximo, com mesma data/parcela, mas vinculado a outra fatura.';
     case 'DATE_DIVERGENCE':
       return hasProjectedFixedMatch
-        ? 'Existe fixa projetada com mesmo valor nesta fatura; revise a data.'
-        : 'Mesmo valor e parcela, com divergencia de data.';
+        ? 'Existe fixa projetada com valor igual ou muito proximo nesta fatura; revise a data.'
+        : 'Mesmo valor ou valor muito proximo, com divergencia de data.';
     case 'INSTALLMENT_DIVERGENCE':
-      return 'Mesmo valor, com divergencia de parcelamento.';
+      return 'Mesmo valor ou valor muito proximo, com divergencia de parcelamento.';
     case 'NON_IMPORTABLE':
       return 'Linha apenas informativa para esta rotina.';
     default:
@@ -515,6 +533,37 @@ function getTargetInvoiceOptionLabel(option: TargetInvoiceOption) {
 
 function isManuallyImportable(item: ReconciliationPreviewItem) {
   return item.canImport && item.status !== 'OK';
+}
+
+function getProjectedFixedMatches(item: ReconciliationPreviewItem) {
+  return item.matchedTransactions.filter(
+    (transaction) => transaction.matchSource === 'PROJECTED_FIXED'
+  );
+}
+
+function getUniqueProjectedFixedTemplateId(item: ReconciliationPreviewItem) {
+  const fixedTemplateIds = Array.from(
+    new Set(
+      getProjectedFixedMatches(item)
+        .map((transaction) => transaction.fixedTemplateId)
+        .filter((fixedTemplateId): fixedTemplateId is number => Boolean(fixedTemplateId))
+    )
+  );
+
+  return fixedTemplateIds.length === 1 ? fixedTemplateIds[0]! : null;
+}
+
+function canLinkToFixed(item: ReconciliationPreviewItem) {
+  return (
+    item.canImport &&
+    item.status === 'SIMILAR' &&
+    item.kind === 'PURCHASE' &&
+    !item.installmentNumber &&
+    !item.totalInstallments &&
+    item.matchedTransactions.length > 0 &&
+    getProjectedFixedMatches(item).length === item.matchedTransactions.length &&
+    Boolean(getUniqueProjectedFixedTemplateId(item))
+  );
 }
 
 function buildItemDrafts(items: ReconciliationPreviewItem[]) {
@@ -1081,7 +1130,10 @@ function CreditCardReconciliationPageInner() {
     }));
   }
 
-  function buildCommitPayload(itemIds: string[]) {
+  function buildCommitPayload(
+    itemIds: string[],
+    action: ReconciliationCommitAction = 'IMPORT'
+  ): ReconciliationCommitSelection[] {
     if (!preview) {
       return [];
     }
@@ -1091,6 +1143,13 @@ function CreditCardReconciliationPageInner() {
 
       if (!item) {
         throw new Error('Item selecionado nao foi localizado na previa');
+      }
+
+      if (action === 'LINK_FIXED') {
+        return {
+          itemId,
+          action: 'LINK_FIXED'
+        };
       }
 
       const draft = getItemDraft(item);
@@ -1105,6 +1164,7 @@ function CreditCardReconciliationPageInner() {
 
       return {
         itemId,
+        action: 'IMPORT',
         description,
         categoryId: Number(draft.categoryId)
       };
@@ -1112,7 +1172,7 @@ function CreditCardReconciliationPageInner() {
   }
 
   function applySingleItemCommitLocally(
-    selectedItem: { itemId: string; description: string; categoryId: number },
+    selectedItem: ReconciliationCommitSelection,
     result: ReconciliationCommitResult['results'][number]
   ) {
     if (result.status === 'FAILED') {
@@ -1139,28 +1199,31 @@ function CreditCardReconciliationPageInner() {
           };
         }
 
-        const projectedFixedMatches = item.matchedTransactions.filter(
-          (transaction) => transaction.matchSource === 'PROJECTED_FIXED'
-        );
+        const projectedFixedMatches = getProjectedFixedMatches(item);
+        const isFixedLinkAction = selectedItem.action === 'LINK_FIXED';
         const matchedTransactions = result.status === 'CREATED'
           ? buildCreatedMatchTransaction({
               preview: currentPreview,
               item,
-              description: selectedItem.description,
+              description: selectedItem.description || item.sourceDescription,
               createdTransactionIds: result.createdTransactionIds
             })
           : projectedFixedMatches.length > 0
             ? projectedFixedMatches
-            : buildFallbackMatchTransaction({
+            : isFixedLinkAction
+              ? item.matchedTransactions
+              : buildFallbackMatchTransaction({
                 preview: currentPreview,
                 item,
-                description: selectedItem.description
+                description: selectedItem.description || item.sourceDescription
               });
 
         return {
           ...item,
           status: 'OK' as const,
-          reason: 'EXACT' as const,
+          reason: (
+            result.status === 'LINKED_FIXED' || isFixedLinkAction ? 'MAPPED_FIXED' : 'EXACT'
+          ) as ReconciliationReason,
           canImport: false,
           nonImportableReason: null,
           matchedTransactions
@@ -1177,22 +1240,25 @@ function CreditCardReconciliationPageInner() {
     setSelectedItemIds((current) => current.filter((itemId) => itemId !== selectedItem.itemId));
   }
 
-  async function commitItems(itemIds: string[]) {
+  async function commitItems(
+    itemIds: string[],
+    action: ReconciliationCommitAction = 'IMPORT'
+  ) {
     if (!preview || !fileBase64 || !fileName || !reconciliationSourceType || !selectedTargetInvoice) {
-      addToast('Analise a fatura antes de importar os lancamentos', 'error');
+      addToast('Analise a fatura antes de processar os itens', 'error');
       return;
     }
 
     if (itemIds.length === 0) {
-      addToast('Selecione ao menos um item para importar', 'error');
+      addToast('Selecione ao menos um item para processar', 'error');
       return;
     }
 
-    let selectedItems: Array<{ itemId: string; description: string; categoryId: number }> = [];
+    let selectedItems: ReconciliationCommitSelection[] = [];
     try {
-      selectedItems = buildCommitPayload(itemIds);
+      selectedItems = buildCommitPayload(itemIds, action);
     } catch (error: any) {
-      addToast(error.message || 'Revise os dados selecionados antes de importar', 'error');
+      addToast(error.message || 'Revise os dados selecionados antes de continuar', 'error');
       return;
     }
 
@@ -1234,21 +1300,41 @@ function CreditCardReconciliationPageInner() {
 
         if (result) {
           if (result.status === 'FAILED') {
-            addToast(result.message || 'Erro ao importar lancamento', 'error');
+            addToast(
+              result.message ||
+                (action === 'LINK_FIXED'
+                  ? 'Erro ao vincular item a fixa recorrente'
+                  : 'Erro ao importar lancamento'),
+              'error'
+            );
           } else {
-            addToast(result.message || 'Lancamento processado na conciliacao', 'success');
+            addToast(
+              result.message ||
+                (action === 'LINK_FIXED'
+                  ? 'Descricao vinculada a fixa recorrente'
+                  : 'Lancamento processado na conciliacao'),
+              'success'
+            );
             applySingleItemCommitLocally(selectedItems[0]!, result);
           }
         }
       } else {
         addToast(
-          `${response.data.summary.createdCount} lancamento(s) criado(s) na conciliacao`,
+          action === 'LINK_FIXED'
+            ? `${response.data.summary.linkedFixedCount} vinculo(s) com fixa recorrente salvo(s)`
+            : `${response.data.summary.createdCount} lancamento(s) criado(s) na conciliacao`,
           'success'
         );
         await refreshPreviewSilently();
       }
     } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao importar lancamentos', 'error');
+      addToast(
+        error.response?.data?.error ||
+          (action === 'LINK_FIXED'
+            ? 'Erro ao vincular item a fixa recorrente'
+            : 'Erro ao importar lancamentos'),
+        'error'
+      );
     } finally {
       if (isSingleItemCommit) {
         itemIds.forEach((itemId) => commitInFlightItemIdsRef.current.delete(itemId));
@@ -1570,7 +1656,8 @@ function CreditCardReconciliationPageInner() {
                 <div className="mt-4 rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3 text-sm text-gray-300">
                   Selecao atual: <span className="font-semibold text-white">{selectedItems.length}</span>{' '}
                   item(ns) somando <span className="font-semibold text-white">{formatCurrency(selectedAmount)}</span>.
-                  A selecao inicial marca apenas os pendentes; itens similares podem ser marcados manualmente.
+                  A selecao inicial marca apenas os pendentes; itens similares podem ser marcados
+                  manualmente ou vinculados a uma fixa recorrente.
                   {selectedDraftIssues.missingDescriptionCount > 0 && (
                     <span className="block pt-2 text-amber-300">
                       Revise {selectedDraftIssues.missingDescriptionCount} descricao(oes) antes de importar.
@@ -1590,6 +1677,7 @@ function CreditCardReconciliationPageInner() {
               <div className="space-y-4">
                 {filteredItems.map((item) => {
                   const selectable = isManuallyImportable(item);
+                  const linkableToFixed = canLinkToFixed(item);
                   const draft = getItemDraft(item);
                   const suggestionSourceLabel = getSuggestionSourceLabel(
                     item.categorySuggestion.source
@@ -1644,26 +1732,45 @@ function CreditCardReconciliationPageInner() {
                             <div className="text-2xl font-semibold text-white">
                               {formatCurrency(item.amount)}
                             </div>
-                            {selectable && (
-                              <Button
-                                variant="outline"
-                                onClick={() => void commitItems([item.id])}
-                                disabled={
-                                  commitLoading ||
-                                  hasPendingSingleCommit ||
-                                  categoriesLoading ||
-                                  itemCommitLoading ||
-                                  missingDescription ||
-                                  missingCategory
-                                }
-                                className="flex items-center gap-2 text-sm"
-                              >
-                                {itemCommitLoading && (
-                                  <RefreshCw size={14} className="animate-spin" />
-                                )}
-                                {itemCommitLoading ? 'Importando...' : 'Importar este item'}
-                              </Button>
-                            )}
+                            <div className="flex flex-wrap gap-2 lg:justify-end">
+                              {linkableToFixed && (
+                                <Button
+                                  variant="outline"
+                                  onClick={() => void commitItems([item.id], 'LINK_FIXED')}
+                                  disabled={
+                                    commitLoading ||
+                                    hasPendingSingleCommit ||
+                                    itemCommitLoading
+                                  }
+                                  className="flex items-center gap-2 text-sm"
+                                >
+                                  {itemCommitLoading && (
+                                    <RefreshCw size={14} className="animate-spin" />
+                                  )}
+                                  {itemCommitLoading ? 'Salvando vinculo...' : 'Vincular a fixa'}
+                                </Button>
+                              )}
+                              {selectable && (
+                                <Button
+                                  variant="outline"
+                                  onClick={() => void commitItems([item.id])}
+                                  disabled={
+                                    commitLoading ||
+                                    hasPendingSingleCommit ||
+                                    categoriesLoading ||
+                                    itemCommitLoading ||
+                                    missingDescription ||
+                                    missingCategory
+                                  }
+                                  className="flex items-center gap-2 text-sm"
+                                >
+                                  {itemCommitLoading && (
+                                    <RefreshCw size={14} className="animate-spin" />
+                                  )}
+                                  {itemCommitLoading ? 'Importando...' : 'Importar este item'}
+                                </Button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1858,9 +1965,9 @@ function CreditCardReconciliationPageInner() {
                 <Card>
                   <div className="flex items-center gap-2 text-lg font-semibold text-white">
                     <CheckCircle2 size={18} className="text-green-300" />
-                    Resultado da importacao
+                    Resultado do processamento
                   </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <div className="mt-4 grid gap-3 md:grid-cols-5">
                     <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
                       <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
                         Selecionados
@@ -1875,6 +1982,14 @@ function CreditCardReconciliationPageInner() {
                       </div>
                       <div className="mt-1 text-lg font-semibold text-green-200">
                         {commitResult.summary.createdCount}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
+                      <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                        Vinculados a fixas
+                      </div>
+                      <div className="mt-1 text-lg font-semibold text-sky-200">
+                        {commitResult.summary.linkedFixedCount}
                       </div>
                     </div>
                     <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">

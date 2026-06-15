@@ -244,6 +244,7 @@ model User {
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
+  creditCardRecurringAliasesCreated CreditCardRecurringDescriptionAlias[]
   assistantSessions      AssistantSession[]
   assistantTurns         AssistantTurn[]
   assistantMessages      AssistantMessage[]
@@ -268,6 +269,7 @@ model Company {
   financialTransactions FinancialTransaction[]
   financialTags       FinancialTag[]
   recurringTransactions RecurringTransaction[]
+  creditCardRecurringDescriptionAliases CreditCardRecurringDescriptionAlias[]
   userFinancialAccountAccess UserFinancialAccountAccess[]
   processes           Process[]
   processTags         ProcessTag[]
@@ -408,6 +410,7 @@ model FinancialAccount {
   outgoingTransactions FinancialTransaction[] @relation("FromAccount")
   incomingTransactions FinancialTransaction[] @relation("ToAccount")
   creditCardInvoices   CreditCardInvoice[]
+  creditCardRecurringDescriptionAliases CreditCardRecurringDescriptionAlias[]
   userAccess            UserFinancialAccountAccess[]
   budget                Budget?
 
@@ -555,6 +558,7 @@ model RecurringTransaction {
   createdBy       Int
   createdByUser   User                 @relation(fields: [createdBy], references: [id]) // ✅ CORRIGIDO
   transactions    FinancialTransaction[] // Transações geradas
+  creditCardRecurringDescriptionAliases CreditCardRecurringDescriptionAlias[]
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
@@ -562,6 +566,29 @@ model RecurringTransaction {
   @@index([type])
   @@index([nextDueDate])
   @@index([isActive])
+}
+
+model CreditCardRecurringDescriptionAlias {
+  id                          Int                                @id @default(autoincrement())
+  companyId                   Int
+  accountId                   Int
+  fixedTemplateId             Int
+  sourceType                  FinancialTransactionImportSourceType
+  sourceDescription           String
+  normalizedSourceDescription String
+  createdBy                   Int
+  createdAt                   DateTime                           @default(now())
+  updatedAt                   DateTime                           @updatedAt
+
+  company                     Company                            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  account                     FinancialAccount                   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fixedTemplate               RecurringTransaction               @relation(fields: [fixedTemplateId], references: [id], onDelete: Cascade)
+  createdByUser               User                               @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@unique([accountId, sourceType, normalizedSourceDescription], name: "unique_credit_card_recurring_description_alias")
+  @@index([companyId])
+  @@index([fixedTemplateId])
+  @@index([accountId, sourceType])
 }
 
 model FinancialTag {

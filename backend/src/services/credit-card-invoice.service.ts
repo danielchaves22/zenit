@@ -952,6 +952,10 @@ export default class CreditCardInvoiceService {
       throw new Error('Apenas faturas pagas por transferencia podem ser reabertas');
     }
 
+    if (invoice.hasExternalSettlements) {
+      throw new Error('Faturas com liquidacoes fora do sistema nao podem ser reabertas');
+    }
+
     if (!invoice.paymentTransaction?.id) {
       throw new Error('Pagamento vinculado nao encontrado');
     }

@@ -703,6 +703,68 @@ describe('Credit card invoices', () => {
     expect(cardsAfterRetroactivePurchase.body[0].availableLimit).toBe(1000);
   });
 
+  it('does not reopen a paid invoice when it contains external historical settlements', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
+
+    const firstPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Base Fatura Mista',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(firstPurchase.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
+    expect(mayInvoice).toBeTruthy();
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        paymentDate: '2099-05-14T12:00:00.000Z'
+      });
+
+    expect(paymentResponse.status).toBe(200);
+
+    const retroactivePurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Historica Externa',
+        amount: 40,
+        date: '2099-05-06T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(retroactivePurchase.status).toBe(201);
+    expect(retroactivePurchase.body.isExternalCreditCardSettlement).toBe(true);
+
+    const reopenResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/reopen`)
+      .set(authHeaders());
+
+    expect(reopenResponse.status).toBe(400);
+    expect(reopenResponse.body.error).toBe(
+      'Faturas com liquidacoes fora do sistema nao podem ser reabertas'
+    );
+  });
+
   it('anchors imported installments to the invoice reference selected during reconciliation', async () => {
     const card = await createCreditCardAccount();
     const purchaseDate = new Date('2099-06-10T12:00:00.000Z');

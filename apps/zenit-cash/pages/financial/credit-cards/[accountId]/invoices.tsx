@@ -215,6 +215,7 @@ function InvoicesPageInner() {
     !invoiceDetail.isProjected &&
     invoiceDetail.status === 'PAID' &&
     invoiceDetail.settlementType === 'TRANSFER' &&
+    !invoiceHasExternalSettlements &&
     invoiceDetail.paymentTransaction?.id
   );
   const reconciliationSourceType = useMemo(

@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { ChevronLeft, ChevronRight, CreditCard, Edit2, Receipt, Scale } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  Download,
+  Edit2,
+  Receipt,
+  Scale
+} from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
@@ -13,10 +21,12 @@ import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
+import { buildCreditCardInvoiceCsv } from '@/utils/creditCardCsv';
 import {
   FinancialBank,
   getCreditCardReconciliationSourceType
 } from '@/utils/banks';
+import { downloadCsvFile } from '@/utils/csv';
 import { formatAccountDisplayName } from '@/utils/accounts';
 import {
   getAvailableCreditLimit,
@@ -473,6 +483,29 @@ function InvoicesPageInner() {
     );
   }
 
+  function handleExportInvoiceCsv() {
+    if (!invoiceDetail) {
+      addToast('Selecione uma fatura para exportar', 'error');
+      return;
+    }
+
+    try {
+      const csv = buildCreditCardInvoiceCsv({
+        cardName: card?.name || invoiceDetail.account.name,
+        invoice: invoiceDetail
+      });
+      const referenceMonth = String(invoiceDetail.referenceMonth).padStart(2, '0');
+
+      downloadCsvFile(
+        `fatura-cartao-${accountId}-${invoiceDetail.referenceYear}-${referenceMonth}.csv`,
+        csv
+      );
+      addToast('CSV da fatura exportado com sucesso', 'success');
+    } catch (error) {
+      addToast('Erro ao exportar CSV da fatura', 'error');
+    }
+  }
+
   return (
     <DashboardLayout title={card ? `Faturas de ${card.name}` : 'Faturas do Cartão'}>
       <div className="flex flex-col gap-6 lg:h-full lg:min-h-0">
@@ -911,6 +944,15 @@ function InvoicesPageInner() {
                             </div>
                             </div>
                             <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={handleExportInvoiceCsv}
+                                className="flex items-center gap-2"
+                              >
+                                <Download size={16} />
+                                Exportar CSV
+                              </Button>
                               {canReopenSelectedInvoice && (
                                 <Button
                                   type="button"

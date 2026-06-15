@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Download,
   FileSearch,
   RefreshCw,
   Upload
@@ -21,11 +22,13 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useToast } from '@/components/ui/ToastContext';
 import api from '@/lib/api';
+import { buildCreditCardReconciliationCsv } from '@/utils/creditCardCsv';
 import {
   type CreditCardReconciliationSourceType,
   FinancialBank,
   getCreditCardReconciliationSourceType
 } from '@/utils/banks';
+import { downloadCsvFile } from '@/utils/csv';
 import { getInvoiceDisplayStatusLabel } from '@/utils/creditCards';
 import { formatCalendarDate } from '@/utils/financialStatus';
 
@@ -978,6 +981,38 @@ function CreditCardReconciliationPageInner() {
     );
   }
 
+  function handleExportPreviewCsv() {
+    if (!preview) {
+      addToast('Analise a fatura antes de exportar a previa', 'error');
+      return;
+    }
+
+    try {
+      const csv = buildCreditCardReconciliationCsv({
+        cardName: card?.name || 'Cartao',
+        sourceLabel: sourceConfig?.sourceLabel || preview.statement.sourceType,
+        statusFilterLabel: statusFilter === 'ALL' ? 'Todos' : getStatusLabel(statusFilter),
+        fileName,
+        preview,
+        items: filteredItems,
+        itemDrafts,
+        selectedItemIds,
+        categories,
+        targetInvoice: selectedTargetInvoice
+      });
+      const referenceMonth = String(preview.statement.referenceMonth).padStart(2, '0');
+      const filterSuffix = statusFilter === 'ALL' ? 'todos' : statusFilter.toLowerCase();
+
+      downloadCsvFile(
+        `previa-conciliacao-${accountId}-${preview.statement.referenceYear}-${referenceMonth}-${filterSuffix}.csv`,
+        csv
+      );
+      addToast('CSV da previa exportado com sucesso', 'success');
+    } catch (error) {
+      addToast('Erro ao exportar CSV da previa', 'error');
+    }
+  }
+
   function getItemDraft(item: ReconciliationPreviewItem): ReconciliationItemDraft {
     return (
       itemDrafts[item.id] || {
@@ -1466,6 +1501,15 @@ function CreditCardReconciliationPageInner() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleExportPreviewCsv}
+                      disabled={commitLoading}
+                      className="flex items-center gap-2"
+                    >
+                      <Download size={16} />
+                      Exportar CSV
+                    </Button>
                     <Button
                       variant="outline"
                       onClick={handleSelectPending}

@@ -97,6 +97,7 @@ export async function getTransactions(req: Request, res: Response) {
       status,
       accountId,
       categoryId,
+      categoryIds,
       search,
       page,
       pageSize
@@ -131,6 +132,7 @@ export async function getTransactions(req: Request, res: Response) {
       status,
       accountId,
       categoryId,
+      categoryIds,
       search,
       page,
       pageSize,

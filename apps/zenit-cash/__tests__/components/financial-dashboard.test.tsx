@@ -10,15 +10,18 @@ const {
   getHistoryMock,
   getMonthlyMock,
   getPreferenceMock,
+  pushMock,
   replaceMock,
   routerState,
   updatePreferenceMock
 } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
   replaceMock: vi.fn(),
   routerState: {
     isReady: true,
     pathname: '/financial/dashboard',
     query: {} as Record<string, string>,
+    push: vi.fn(),
     replace: vi.fn()
   },
   addToastMock: vi.fn(),
@@ -30,6 +33,7 @@ const {
 }));
 
 routerState.replace = replaceMock;
+routerState.push = pushMock;
 
 vi.mock('next/router', () => ({
   useRouter: () => routerState
@@ -168,13 +172,17 @@ function getPreviousMonthKey(monthKey: string): string {
 }
 
 function buildMonthlyResponse(month: string) {
+  const [year, monthValue] = month.split('-').map(Number);
+  const startDate = new Date(Date.UTC(year, monthValue - 1, 1, 0, 0, 0, 0));
+  const endDate = new Date(Date.UTC(year, monthValue, 0, 23, 59, 59, 999));
+
   return {
     month,
     isCurrentMonth: true,
     period: {
       month,
-      startDate: '2026-06-01T00:00:00.000Z',
-      endDate: '2026-06-30T23:59:59.999Z'
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString()
     },
     carryOver: {
       amount: '950.00',
@@ -257,6 +265,7 @@ describe('FinancialDashboard', () => {
     currentMonth = getCurrentMonthKey();
 
     replaceMock.mockReset();
+    pushMock.mockReset();
     addToastMock.mockReset();
     getPreferenceMock.mockReset();
     updatePreferenceMock.mockReset();
@@ -268,7 +277,7 @@ describe('FinancialDashboard', () => {
 
     apiGetMock.mockResolvedValue({
       data: [
-        { id: 10, name: 'Combustivel', color: '#f97316', type: 'EXPENSE' },
+        { id: 10, name: 'Combustivel', color: '#f97316', type: 'EXPENSE', parentId: null },
         { id: 20, name: 'Salario', color: '#22c55e', type: 'INCOME' }
       ]
     });
@@ -387,6 +396,76 @@ describe('FinancialDashboard', () => {
         smallSliceThresholdPercent: 5
       });
     });
+  });
+
+  it('groups subcategories under the parent, allows expansion, and navigates to transactions', async () => {
+    const user = userEvent.setup();
+
+    apiGetMock.mockResolvedValue({
+      data: [
+        { id: 10, name: 'Moradia', color: '#ef4444', type: 'EXPENSE', parentId: null },
+        { id: 11, name: 'Aluguel', color: '#fb7185', type: 'EXPENSE', parentId: 10 },
+        { id: 12, name: 'Condominio', color: '#f97316', type: 'EXPENSE', parentId: 10 }
+      ]
+    });
+    getMonthlyMock.mockResolvedValue({
+      ...buildMonthlyResponse(currentMonth),
+      categoryTotals: [
+        {
+          categoryId: 11,
+          name: 'Aluguel',
+          color: '#fb7185',
+          type: 'EXPENSE' as const,
+          amount: '80.00',
+          realizedAmount: '80.00',
+          pendingAmount: '0.00',
+          projectedAmount: '0.00'
+        },
+        {
+          categoryId: 12,
+          name: 'Condominio',
+          color: '#f97316',
+          type: 'EXPENSE' as const,
+          amount: '20.00',
+          realizedAmount: '20.00',
+          pendingAmount: '0.00',
+          projectedAmount: '0.00'
+        }
+      ]
+    });
+
+    render(<FinancialDashboard />);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('skeleton')).not.toBeInTheDocument();
+    });
+
+    const legend = screen.getByTestId('category-pie-legend');
+    expect(within(legend).getByText('Moradia')).toBeInTheDocument();
+    expect(within(legend).queryByText('Aluguel')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Expandir Moradia/i }));
+    expect(within(legend).getByText('Aluguel')).toBeInTheDocument();
+    expect(within(legend).getByText('Condominio')).toBeInTheDocument();
+
+    await user.click(within(legend).getByRole('button', { name: /Aluguel/i }));
+
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: '/financial/transactions',
+      query: {
+        categoryId: '11',
+        dateField: 'dueDate',
+        endDate: buildMonthlyResponse(currentMonth).period.endDate.slice(0, 10),
+        showOnlyMaterialized: 'true',
+        startDate: buildMonthlyResponse(currentMonth).period.startDate.slice(0, 10),
+        status: 'COMPLETED'
+      }
+    });
+
+    await user.click(screen.getByRole('button', { name: /Quebrar em subcategorias/i }));
+
+    expect(within(legend).getByText('Moradia / Aluguel')).toBeInTheDocument();
+    expect(within(legend).getByText('Moradia / Condominio')).toBeInTheDocument();
   });
 
   it('switches to the history view and shows the empty category state until categories are selected', async () => {

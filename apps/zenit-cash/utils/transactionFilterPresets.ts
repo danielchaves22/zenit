@@ -11,7 +11,7 @@ export interface TransactionFilters {
   types: TransactionTypeFilter[];
   status: string;
   accountId: string;
-  categoryId: string;
+  categoryIds: string[];
   search: string;
 }
 
@@ -34,6 +34,7 @@ export interface TransactionsPresetPayload {
   status: string;
   accountId: string;
   categoryId: string;
+  categoryIds?: string[];
   search: string;
   showOnlyMaterialized: boolean;
 }
@@ -126,7 +127,7 @@ export function getDefaultTransactionsFilterState(): TransactionsFilterState {
       types: [...ALL_TRANSACTION_TYPES],
       status: '',
       accountId: '',
-      categoryId: '',
+      categoryIds: [],
       search: ''
     },
     showOnlyMaterialized: false
@@ -181,9 +182,40 @@ function normalizeLookupValue(value: unknown, validIds?: Set<string> | null): st
   return validIds.has(value) ? value : '';
 }
 
+function normalizeLookupValues(value: unknown, validIds?: Set<string> | null): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalizedValues = value
+    .filter((item): item is string => typeof item === 'string' && item.length > 0)
+    .map((item) => normalizeLookupValue(item, validIds))
+    .filter(Boolean);
+
+  return Array.from(new Set(normalizedValues));
+}
+
+function isInputDateValue(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+function parseBooleanQueryValue(value: string): boolean | undefined {
+  if (value === 'true') {
+    return true;
+  }
+
+  if (value === 'false') {
+    return false;
+  }
+
+  return undefined;
+}
+
 export function buildTransactionsPresetPayload(
   state: TransactionsFilterState
 ): TransactionsPresetPayload {
+  const singleCategoryId =
+    state.filters.categoryIds.length === 1 ? state.filters.categoryIds[0] : '';
   const payload: TransactionsPresetPayload = {
     version: 1,
     dateField: state.dateField,
@@ -191,7 +223,8 @@ export function buildTransactionsPresetPayload(
     types: [...state.filters.types],
     status: state.filters.status,
     accountId: state.filters.accountId,
-    categoryId: state.filters.categoryId,
+    categoryId: singleCategoryId,
+    categoryIds: [...state.filters.categoryIds],
     search: state.filters.search,
     showOnlyMaterialized: state.showOnlyMaterialized
   };
@@ -226,6 +259,8 @@ export function applyTransactionsPresetPayload(
       : typeof data.periodOffset === 'number' && Number.isInteger(data.periodOffset)
         ? data.periodOffset
         : 0;
+  const normalizedCategoryIds = normalizeLookupValues(data.categoryIds, options.validCategoryIds);
+  const legacyCategoryId = normalizeLookupValue(data.categoryId, options.validCategoryIds);
 
   return {
     dateField: isTransactionDateFieldFilter(data.dateField)
@@ -246,7 +281,12 @@ export function applyTransactionsPresetPayload(
         : [...ALL_TRANSACTION_TYPES],
       status: typeof data.status === 'string' ? data.status : '',
       accountId: normalizeLookupValue(data.accountId, options.validAccountIds),
-      categoryId: normalizeLookupValue(data.categoryId, options.validCategoryIds),
+      categoryIds:
+        normalizedCategoryIds.length > 0
+          ? normalizedCategoryIds
+          : legacyCategoryId
+            ? [legacyCategoryId]
+            : [],
       search: typeof data.search === 'string' ? data.search : ''
     },
     showOnlyMaterialized:
@@ -256,13 +296,15 @@ export function applyTransactionsPresetPayload(
   };
 }
 
-export function countAdvancedTransactionFilters(filters: Pick<TransactionFilters, 'search' | 'status' | 'accountId' | 'categoryId'>): number {
+export function countAdvancedTransactionFilters(
+  filters: Pick<TransactionFilters, 'search' | 'status' | 'accountId' | 'categoryIds'>
+): number {
   let count = 0;
 
   if (filters.search.trim()) count += 1;
   if (filters.status) count += 1;
   if (filters.accountId) count += 1;
-  if (filters.categoryId) count += 1;
+  if (filters.categoryIds.length > 0) count += 1;
 
   return count;
 }
@@ -275,14 +317,28 @@ export function getSingleQueryValue(value: string | string[] | undefined): strin
   return value || '';
 }
 
+export function getMultiQueryValues(value: string | string[] | undefined): string[] {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+
+  return values
+    .flatMap((item) => item.split(','))
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function hasExplicitTransactionFilterQuery(
   query: Record<string, string | string[] | undefined>
 ): boolean {
   return Boolean(
     getSingleQueryValue(query.accountId) ||
+      getMultiQueryValues(query.categoryIds).length > 0 ||
       getSingleQueryValue(query.categoryId) ||
       getSingleQueryValue(query.status) ||
-      getSingleQueryValue(query.search).trim()
+      getSingleQueryValue(query.search).trim() ||
+      getSingleQueryValue(query.startDate) ||
+      getSingleQueryValue(query.endDate) ||
+      getSingleQueryValue(query.dateField) ||
+      getSingleQueryValue(query.showOnlyMaterialized)
   );
 }
 
@@ -292,16 +348,52 @@ export function resolveInitialTransactionsFilterState(
   const defaults = getDefaultTransactionsFilterState();
 
   if (hasExplicitTransactionFilterQuery(options.query)) {
+    const explicitCategoryIds = normalizeLookupValues(
+      getMultiQueryValues(options.query.categoryIds),
+      options.validCategoryIds
+    );
+    const legacyCategoryId = normalizeLookupValue(
+      getSingleQueryValue(options.query.categoryId),
+      options.validCategoryIds
+    );
+    const startDate = getSingleQueryValue(options.query.startDate);
+    const endDate = getSingleQueryValue(options.query.endDate);
+    const hasExplicitCustomPeriod = isInputDateValue(startDate) && isInputDateValue(endDate);
+    const explicitShowOnlyMaterialized = parseBooleanQueryValue(
+      getSingleQueryValue(options.query.showOnlyMaterialized)
+    );
+    const explicitDateFieldCandidate = getSingleQueryValue(options.query.dateField);
+
     return {
       state: {
         ...defaults,
+        dateField: isTransactionDateFieldFilter(explicitDateFieldCandidate)
+          ? explicitDateFieldCandidate
+          : defaults.dateField,
+        periodPreset: hasExplicitCustomPeriod ? 'CUSTOM' : defaults.periodPreset,
+        periodOffset: hasExplicitCustomPeriod ? 0 : defaults.periodOffset,
+        customPeriod: hasExplicitCustomPeriod
+          ? {
+              startDate,
+              endDate
+            }
+          : defaults.customPeriod,
         filters: {
           ...defaults.filters,
-          accountId: getSingleQueryValue(options.query.accountId),
-          categoryId: getSingleQueryValue(options.query.categoryId),
+          accountId: normalizeLookupValue(
+            getSingleQueryValue(options.query.accountId),
+            options.validAccountIds
+          ),
+          categoryIds:
+            explicitCategoryIds.length > 0
+              ? explicitCategoryIds
+              : legacyCategoryId
+                ? [legacyCategoryId]
+                : [],
           search: getSingleQueryValue(options.query.search),
           status: getSingleQueryValue(options.query.status)
-        }
+        },
+        showOnlyMaterialized: explicitShowOnlyMaterialized ?? defaults.showOnlyMaterialized
       },
       selectedPresetId: ''
     };

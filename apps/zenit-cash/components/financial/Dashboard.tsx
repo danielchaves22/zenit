@@ -17,6 +17,7 @@ import {
 } from 'recharts';
 import {
   CalendarRange,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   LineChart as LineChartIcon,
@@ -52,11 +53,24 @@ interface Category {
 }
 
 type CategoryPieMode = 'EXPENSE' | 'INCOME';
+type CategoryPieBreakdownMode = 'CATEGORY' | 'SUBCATEGORY';
+
+type PieLegendChildDatum = {
+  id: string;
+  label: string;
+  fullLabel: string;
+  color: string;
+  value: number;
+  share: number;
+  categoryIds: number[];
+  isDirectCategory: boolean;
+};
 
 type PieCategoryDatum = {
   id: string;
   categoryId: number | null;
   name: string;
+  fullLabel: string;
   color: string;
   type: CategoryPieMode;
   value: number;
@@ -64,6 +78,11 @@ type PieCategoryDatum = {
   realizedAmount: number;
   pendingAmount: number;
   projectedAmount: number;
+  categoryIds: number[];
+  isOther: boolean;
+  isUncategorized: boolean;
+  children: PieLegendChildDatum[];
+  hasChildBreakdown: boolean;
 };
 
 const VIEW_OPTIONS: Array<{ value: FinancialDashboardView; label: string }> = [
@@ -127,9 +146,11 @@ function formatShortMonthLabel(monthKey: string): string {
 
 function buildTooltipStyle() {
   return {
-    backgroundColor: 'var(--color-bg)',
-    borderColor: '#374151',
-    color: '#fff'
+    backgroundColor: '#0f172a',
+    border: '1px solid #334155',
+    borderRadius: '12px',
+    color: '#f8fafc',
+    boxShadow: '0 18px 40px rgba(2, 6, 23, 0.45)'
   };
 }
 
@@ -146,6 +167,24 @@ function formatTooltipLabel(
 
 function formatPercent(value: number): string {
   return `${value.toFixed(1).replace('.', ',')}%`;
+}
+
+function getVisibleCategoryAmount(params: {
+  realizedAmount: number;
+  pendingAmount: number;
+  projectedAmount: number;
+  includePending: boolean;
+  includeProjected: boolean;
+}): number {
+  return (
+    params.realizedAmount +
+    (params.includePending ? params.pendingAmount : 0) +
+    (params.includeProjected ? params.projectedAmount : 0)
+  );
+}
+
+function dedupeNumberIds(values: number[]): number[] {
+  return Array.from(new Set(values.filter((value) => Number.isFinite(value) && value > 0)));
 }
 
 function buildCategoryPieSummary(params: {
@@ -218,21 +257,47 @@ function SummaryCard({
 
 function buildCategoryPieData(params: {
   categoryTotals: FinancialDashboardMonthlyResponse['categoryTotals'];
+  categories: Category[];
   categoryPieMode: CategoryPieMode;
   includePending: boolean;
   includeProjected: boolean;
   smallSliceThresholdPercent: number;
+  categoryPieBreakdownMode: CategoryPieBreakdownMode;
 }): PieCategoryDatum[] {
+  const categoriesById = new Map(params.categories.map((category) => [category.id, category]));
+  const childrenByParentId = new Map<number, Category[]>();
+
+  params.categories.forEach((category) => {
+    const parentId = category.parentId ?? null;
+
+    if (parentId === null) {
+      return;
+    }
+
+    const siblings = childrenByParentId.get(parentId) || [];
+    siblings.push(category);
+    childrenByParentId.set(parentId, siblings);
+  });
+
   const visibleCategories = params.categoryTotals
     .filter((category) => category.type === params.categoryPieMode)
     .map((category) => {
       const realizedAmount = parseAmount(category.realizedAmount);
       const pendingAmount = parseAmount(category.pendingAmount);
       const projectedAmount = parseAmount(category.projectedAmount);
-      const value =
-        realizedAmount +
-        (params.includePending ? pendingAmount : 0) +
-        (params.includeProjected ? projectedAmount : 0);
+      const categoryMeta =
+        category.categoryId !== null ? categoriesById.get(category.categoryId) ?? null : null;
+      const parentCategory =
+        categoryMeta?.parentId != null ? categoriesById.get(categoryMeta.parentId) ?? null : null;
+      const hasChildren =
+        categoryMeta?.id != null ? (childrenByParentId.get(categoryMeta.id)?.length ?? 0) > 0 : false;
+      const value = getVisibleCategoryAmount({
+        realizedAmount,
+        pendingAmount,
+        projectedAmount,
+        includePending: params.includePending,
+        includeProjected: params.includeProjected
+      });
 
       return {
         id: `${params.categoryPieMode}-${category.categoryId ?? 'uncategorized'}`,
@@ -241,16 +306,210 @@ function buildCategoryPieData(params: {
         color: category.color,
         type: params.categoryPieMode,
         value,
-        share: 0,
         realizedAmount,
         pendingAmount,
-        projectedAmount
+        projectedAmount,
+        categoryMeta,
+        parentCategory,
+        hasChildren
       };
     })
     .filter((category) => category.value > 0)
     .sort((left, right) => right.value - left.value);
 
-  const total = visibleCategories.reduce((sum, category) => sum + category.value, 0);
+  type PieCategoryAccumulator = {
+    id: string;
+    categoryId: number | null;
+    name: string;
+    fullLabel: string;
+    color: string;
+    type: CategoryPieMode;
+    value: number;
+    realizedAmount: number;
+    pendingAmount: number;
+    projectedAmount: number;
+    categoryIds: number[];
+    isUncategorized: boolean;
+    childrenById: Map<string, PieLegendChildDatum>;
+  };
+
+  const pieAccumulators = new Map<string, PieCategoryAccumulator>();
+
+  const upsertAccumulator = (paramsForAccumulator: {
+    id: string;
+    categoryId: number | null;
+    name: string;
+    fullLabel: string;
+    color: string;
+    type: CategoryPieMode;
+    sourceCategoryId: number | null;
+    value: number;
+    realizedAmount: number;
+    pendingAmount: number;
+    projectedAmount: number;
+    child?: Omit<PieLegendChildDatum, 'share'>;
+  }) => {
+    const existing =
+      pieAccumulators.get(paramsForAccumulator.id) ??
+      {
+        id: paramsForAccumulator.id,
+        categoryId: paramsForAccumulator.categoryId,
+        name: paramsForAccumulator.name,
+        fullLabel: paramsForAccumulator.fullLabel,
+        color: paramsForAccumulator.color,
+        type: paramsForAccumulator.type,
+        value: 0,
+        realizedAmount: 0,
+        pendingAmount: 0,
+        projectedAmount: 0,
+        categoryIds: [],
+        isUncategorized: paramsForAccumulator.categoryId === null,
+        childrenById: new Map<string, PieLegendChildDatum>()
+      };
+
+    existing.value += paramsForAccumulator.value;
+    existing.realizedAmount += paramsForAccumulator.realizedAmount;
+    existing.pendingAmount += paramsForAccumulator.pendingAmount;
+    existing.projectedAmount += paramsForAccumulator.projectedAmount;
+
+    if (typeof paramsForAccumulator.sourceCategoryId === 'number') {
+      existing.categoryIds.push(paramsForAccumulator.sourceCategoryId);
+    }
+
+    if (paramsForAccumulator.child) {
+      const currentChild = existing.childrenById.get(paramsForAccumulator.child.id);
+
+      if (currentChild) {
+        currentChild.value += paramsForAccumulator.child.value;
+        currentChild.categoryIds = dedupeNumberIds([
+          ...currentChild.categoryIds,
+          ...paramsForAccumulator.child.categoryIds
+        ]);
+      } else {
+        existing.childrenById.set(paramsForAccumulator.child.id, {
+          ...paramsForAccumulator.child,
+          categoryIds: dedupeNumberIds(paramsForAccumulator.child.categoryIds),
+          share: 0
+        });
+      }
+    }
+
+    pieAccumulators.set(paramsForAccumulator.id, existing);
+  };
+
+  visibleCategories.forEach((category) => {
+    if (category.categoryId === null) {
+      upsertAccumulator({
+        id: `${params.categoryPieMode}-uncategorized`,
+        categoryId: null,
+        name: category.name,
+        fullLabel: category.name,
+        color: category.color,
+        type: params.categoryPieMode,
+        sourceCategoryId: null,
+        value: category.value,
+        realizedAmount: category.realizedAmount,
+        pendingAmount: category.pendingAmount,
+        projectedAmount: category.projectedAmount
+      });
+      return;
+    }
+
+    const parentCategory = category.parentCategory;
+
+    if (
+      params.categoryPieBreakdownMode === 'CATEGORY' &&
+      parentCategory &&
+      parentCategory.type === category.type
+    ) {
+      upsertAccumulator({
+        id: `${params.categoryPieMode}-${parentCategory.id}`,
+        categoryId: parentCategory.id,
+        name: parentCategory.name,
+        fullLabel: parentCategory.name,
+        color: parentCategory.color || category.color,
+        type: params.categoryPieMode,
+        sourceCategoryId: category.categoryId,
+        value: category.value,
+        realizedAmount: category.realizedAmount,
+        pendingAmount: category.pendingAmount,
+        projectedAmount: category.projectedAmount,
+        child: {
+          id: `${params.categoryPieMode}-${parentCategory.id}-child-${category.categoryId}`,
+          label: category.name,
+          fullLabel: `${parentCategory.name} / ${category.name}`,
+          color: category.color,
+          value: category.value,
+          categoryIds: [category.categoryId],
+          isDirectCategory: false
+        }
+      });
+      return;
+    }
+
+    const fullLabel =
+      params.categoryPieBreakdownMode === 'SUBCATEGORY' &&
+      parentCategory &&
+      parentCategory.type === category.type
+        ? `${parentCategory.name} / ${category.name}`
+        : category.name;
+
+    upsertAccumulator({
+      id: category.id,
+      categoryId: category.categoryId,
+      name: fullLabel,
+      fullLabel,
+      color: category.color,
+      type: params.categoryPieMode,
+      sourceCategoryId: category.categoryId,
+      value: category.value,
+      realizedAmount: category.realizedAmount,
+      pendingAmount: category.pendingAmount,
+      projectedAmount: category.projectedAmount,
+      child:
+        params.categoryPieBreakdownMode === 'CATEGORY' && category.hasChildren
+          ? {
+              id: `${category.id}-direct`,
+              label: 'Sem subcategoria',
+              fullLabel: `${category.name} / Sem subcategoria`,
+              color: category.color,
+              value: category.value,
+              categoryIds: [category.categoryId],
+              isDirectCategory: true
+            }
+          : undefined
+    });
+  });
+
+  const aggregatedCategories = Array.from(pieAccumulators.values())
+    .map<PieCategoryDatum>((item) => ({
+      id: item.id,
+      categoryId: item.categoryId,
+      name: item.name,
+      fullLabel: item.fullLabel,
+      color: item.color,
+      type: item.type,
+      value: item.value,
+      share: 0,
+      realizedAmount: item.realizedAmount,
+      pendingAmount: item.pendingAmount,
+      projectedAmount: item.projectedAmount,
+      categoryIds: dedupeNumberIds(item.categoryIds),
+      isOther: false,
+      isUncategorized: item.isUncategorized,
+      children: Array.from(item.childrenById.values())
+        .sort((left, right) => right.value - left.value)
+        .map((child) => ({
+          ...child,
+          share: 0
+        })),
+      hasChildBreakdown: Array.from(item.childrenById.values()).some(
+        (child) => !child.isDirectCategory
+      )
+    }))
+    .sort((left, right) => right.value - left.value);
+
+  const total = aggregatedCategories.reduce((sum, category) => sum + category.value, 0);
   if (total <= 0) {
     return [];
   }
@@ -259,15 +518,22 @@ function buildCategoryPieData(params: {
   const groupedCategories: PieCategoryDatum[] = [];
   let otherCategory: PieCategoryDatum | null = null;
 
-  for (const category of visibleCategories) {
+  for (const category of aggregatedCategories) {
     const share = category.value / total;
     const shouldGroup =
-      thresholdRatio > 0 && category.categoryId !== null && share < thresholdRatio;
+      thresholdRatio > 0 &&
+      !category.isUncategorized &&
+      category.categoryIds.length > 0 &&
+      share < thresholdRatio;
 
     if (!shouldGroup) {
       groupedCategories.push({
         ...category,
-        share
+        share,
+        children: category.children.map((child) => ({
+          ...child,
+          share: child.value / total
+        }))
       });
       continue;
     }
@@ -277,13 +543,19 @@ function buildCategoryPieData(params: {
         id: `${params.categoryPieMode}-other`,
         categoryId: null,
         name: params.categoryPieMode === 'EXPENSE' ? 'Outras despesas' : 'Outras receitas',
+        fullLabel: params.categoryPieMode === 'EXPENSE' ? 'Outras despesas' : 'Outras receitas',
         color: '#475569',
         type: params.categoryPieMode,
         value: 0,
         share: 0,
         realizedAmount: 0,
         pendingAmount: 0,
-        projectedAmount: 0
+        projectedAmount: 0,
+        categoryIds: [],
+        isOther: true,
+        isUncategorized: false,
+        children: [],
+        hasChildBreakdown: false
       };
     }
 
@@ -291,6 +563,10 @@ function buildCategoryPieData(params: {
     otherCategory.realizedAmount += category.realizedAmount;
     otherCategory.pendingAmount += category.pendingAmount;
     otherCategory.projectedAmount += category.projectedAmount;
+    otherCategory.categoryIds = dedupeNumberIds([
+      ...otherCategory.categoryIds,
+      ...category.categoryIds
+    ]);
   }
 
   if (otherCategory && otherCategory.value > 0) {
@@ -320,10 +596,13 @@ export default function FinancialDashboard() {
   const [savingPreference, setSavingPreference] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categoryPieMode, setCategoryPieMode] = useState<CategoryPieMode>('EXPENSE');
+  const [categoryPieBreakdownMode, setCategoryPieBreakdownMode] =
+    useState<CategoryPieBreakdownMode>('CATEGORY');
   const [includePendingInCategoryPie, setIncludePendingInCategoryPie] = useState(false);
   const [includeProjectedInCategoryPie, setIncludeProjectedInCategoryPie] = useState(false);
   const [smallSliceThresholdPercent, setSmallSliceThresholdPercent] = useState(3);
   const [smallSliceThresholdPercentDraft, setSmallSliceThresholdPercentDraft] = useState(3);
+  const [expandedPieLegendIds, setExpandedPieLegendIds] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!router.isReady) {
@@ -499,13 +778,17 @@ export default function FinancialDashboard() {
 
     return buildCategoryPieData({
       categoryTotals: monthlyData.categoryTotals,
+      categories,
       categoryPieMode,
       includePending: includePendingInCategoryPie,
       includeProjected: includeProjectedInCategoryPie,
-      smallSliceThresholdPercent: smallSliceThresholdPercentDraft
+      smallSliceThresholdPercent: smallSliceThresholdPercentDraft,
+      categoryPieBreakdownMode
     });
   }, [
+    categories,
     categoryPieMode,
+    categoryPieBreakdownMode,
     includePendingInCategoryPie,
     includeProjectedInCategoryPie,
     monthlyData,
@@ -708,8 +991,58 @@ export default function FinancialDashboard() {
     setSmallSliceThresholdPercentDraft(Math.max(0, Math.min(25, parsedValue)));
   }
 
+  function togglePieLegendExpansion(categoryId: string) {
+    setExpandedPieLegendIds((current) => ({
+      ...current,
+      [categoryId]: !current[categoryId]
+    }));
+  }
+
+  function openTransactionsForCategory(categoryIds: number[]) {
+    if (!monthlyData) {
+      return;
+    }
+
+    const normalizedCategoryIds = dedupeNumberIds(categoryIds);
+    if (normalizedCategoryIds.length === 0) {
+      return;
+    }
+
+    const query: Record<string, string | string[]> = {
+      startDate: monthlyData.period.startDate.slice(0, 10),
+      endDate: monthlyData.period.endDate.slice(0, 10),
+      dateField: 'dueDate',
+      showOnlyMaterialized: includeProjectedInCategoryPie ? 'false' : 'true'
+    };
+
+    if (!includePendingInCategoryPie && !includeProjectedInCategoryPie) {
+      query.status = 'COMPLETED';
+    }
+
+    if (normalizedCategoryIds.length === 1) {
+      query.categoryId = String(normalizedCategoryIds[0]);
+    } else {
+      query.categoryIds = normalizedCategoryIds.map(String);
+    }
+
+    void router.push({
+      pathname: '/financial/transactions',
+      query
+    });
+  }
+
   const monthlyLoadingState = loadingBootstrap || loadingMonthly;
   const canGoBackMonth = month > currentMonth;
+
+  useEffect(() => {
+    setExpandedPieLegendIds((current) =>
+      Object.fromEntries(
+        Object.entries(current).filter(([categoryId]) =>
+          pieCategoryTotals.some((category) => category.id === categoryId)
+        )
+      )
+    );
+  }, [pieCategoryTotals]);
 
   return (
     <div className="space-y-6">
@@ -877,7 +1210,8 @@ export default function FinancialDashboard() {
                           {categoryPieMode === 'EXPENSE' ? 'Gastos por categoria' : 'Receitas por categoria'}
                         </h3>
                         <p className="mt-1 text-sm text-gray-400">
-                          Distribuicao por categoria considerando {pieCategorySummary}.
+                          Distribuicao por categoria considerando {pieCategorySummary}. Compras no
+                          cartao seguem a competencia da fatura.
                         </p>
                       </div>
 
@@ -930,6 +1264,30 @@ export default function FinancialDashboard() {
                       >
                         Incluir projetadas
                       </button>
+                      <div className="flex rounded-full border border-gray-700 bg-[#11161d] p-1">
+                        <button
+                          type="button"
+                          onClick={() => setCategoryPieBreakdownMode('CATEGORY')}
+                          className={`rounded-full px-3 py-1.5 text-sm transition ${
+                            categoryPieBreakdownMode === 'CATEGORY'
+                              ? 'bg-slate-200 text-slate-950'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          Agrupar subcategorias
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryPieBreakdownMode('SUBCATEGORY')}
+                          className={`rounded-full px-3 py-1.5 text-sm transition ${
+                            categoryPieBreakdownMode === 'SUBCATEGORY'
+                              ? 'bg-slate-200 text-slate-950'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          Quebrar em subcategorias
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -938,30 +1296,35 @@ export default function FinancialDashboard() {
                       Nenhuma categoria encontrada para esta leitura do mes.
                     </div>
                   ) : (
-                    <div className="mt-4 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(320px,0.95fr)_minmax(260px,0.75fr)] xl:items-center">
+                    <div className="mt-4 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(340px,1.05fr)_minmax(300px,0.95fr)] xl:items-center">
                       <div className="relative h-[360px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={pieCategoryTotals}
-                              dataKey="value"
-                              nameKey="name"
-                              innerRadius={82}
-                              outerRadius={132}
-                              paddingAngle={pieCategoryTotals.length > 1 ? 2 : 0}
-                            >
-                              {pieCategoryTotals.map((category) => (
-                                <Cell key={category.id} fill={category.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip
-                              formatter={(value) => formatCurrency(Number(value))}
-                              contentStyle={buildTooltipStyle()}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
+                        <div className="relative z-20 h-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={pieCategoryTotals}
+                                dataKey="value"
+                                nameKey="name"
+                                innerRadius={82}
+                                outerRadius={132}
+                                paddingAngle={pieCategoryTotals.length > 1 ? 2 : 0}
+                              >
+                                {pieCategoryTotals.map((category) => (
+                                  <Cell key={category.id} fill={category.color} />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                formatter={(value) => formatCurrency(Number(value))}
+                                contentStyle={buildTooltipStyle()}
+                                wrapperStyle={{ zIndex: 40 }}
+                                labelStyle={{ color: '#f8fafc', fontWeight: 600 }}
+                                itemStyle={{ color: '#f8fafc' }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
 
-                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
                           <div className="text-center">
                             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">
                               Total exibido
@@ -977,30 +1340,134 @@ export default function FinancialDashboard() {
                         </div>
                       </div>
 
-                      <div className="space-y-3" data-testid="category-pie-legend">
-                        {pieCategoryTotals.map((category) => (
-                          <div
-                            key={`${category.id}-legend`}
-                            className="rounded-xl border border-gray-800 bg-[#0f1419] px-4 py-3"
-                          >
-                            <div className="flex items-center gap-3 text-sm">
-                              <span
-                                className="inline-block h-3 w-3 rounded-full"
-                                style={{ backgroundColor: category.color }}
-                              />
-                              <span className="flex-1 text-gray-200">{category.name}</span>
-                              <span className="text-xs text-gray-500">
-                                {formatPercent(category.share * 100)}
-                              </span>
+                      <div className="space-y-2.5" data-testid="category-pie-legend">
+                        {pieCategoryTotals.map((category) => {
+                          const isExpanded = Boolean(expandedPieLegendIds[category.id]);
+                          const canNavigate = category.categoryIds.length > 0;
+
+                          return (
+                            <div
+                              key={`${category.id}-legend`}
+                              className="rounded-xl border border-gray-800 bg-[#0f1419] px-3 py-2.5"
+                            >
+                              <div className="flex items-center gap-2">
+                                {canNavigate ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openTransactionsForCategory(category.categoryIds)}
+                                    className="group flex min-w-0 flex-1 items-center gap-2 text-left"
+                                  >
+                                    <span
+                                      className="inline-block h-3 w-3 rounded-full"
+                                      style={{ backgroundColor: category.color }}
+                                    />
+                                    <span
+                                      className="min-w-0 flex-1 truncate text-sm text-gray-200 transition group-hover:text-white"
+                                      title={category.fullLabel}
+                                    >
+                                      {category.name}
+                                    </span>
+                                    <span className="text-[11px] tabular-nums text-gray-500">
+                                      {formatPercent(category.share * 100)}
+                                    </span>
+                                    <span className="text-sm font-semibold tabular-nums text-white">
+                                      {formatCurrency(category.value)}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <span
+                                      className="inline-block h-3 w-3 rounded-full"
+                                      style={{ backgroundColor: category.color }}
+                                    />
+                                    <span
+                                      className="min-w-0 flex-1 truncate text-sm text-gray-200"
+                                      title={category.fullLabel}
+                                    >
+                                      {category.name}
+                                    </span>
+                                    <span className="text-[11px] tabular-nums text-gray-500">
+                                      {formatPercent(category.share * 100)}
+                                    </span>
+                                    <span className="text-sm font-semibold tabular-nums text-white">
+                                      {formatCurrency(category.value)}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {category.hasChildBreakdown ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePieLegendExpansion(category.id)}
+                                    className="rounded-md p-1 text-gray-500 transition hover:bg-slate-800 hover:text-white"
+                                    aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${category.name}`}
+                                  >
+                                    <ChevronDown
+                                      size={16}
+                                      className={`transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                                    />
+                                  </button>
+                                ) : null}
+                              </div>
+
+                              {isExpanded ? (
+                                <div className="mt-2 space-y-1 border-t border-gray-800 pt-2">
+                                  {category.children.map((child) => {
+                                    const canNavigateChild = child.categoryIds.length > 0;
+
+                                    return canNavigateChild ? (
+                                      <button
+                                        key={child.id}
+                                        type="button"
+                                        onClick={() => openTransactionsForCategory(child.categoryIds)}
+                                        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-slate-900/80"
+                                      >
+                                        <span
+                                          className="ml-4 inline-block h-2.5 w-2.5 rounded-full"
+                                          style={{ backgroundColor: child.color }}
+                                        />
+                                        <span
+                                          className="min-w-0 flex-1 truncate text-sm text-gray-400 transition group-hover:text-gray-200"
+                                          title={child.fullLabel}
+                                        >
+                                          {child.label}
+                                        </span>
+                                        <span className="text-[11px] tabular-nums text-gray-500">
+                                          {formatPercent(child.share * 100)}
+                                        </span>
+                                        <span className="text-sm font-medium tabular-nums text-gray-200">
+                                          {formatCurrency(child.value)}
+                                        </span>
+                                      </button>
+                                    ) : (
+                                      <div
+                                        key={child.id}
+                                        className="flex items-center gap-2 rounded-lg px-2 py-1"
+                                      >
+                                        <span
+                                          className="ml-4 inline-block h-2.5 w-2.5 rounded-full"
+                                          style={{ backgroundColor: child.color }}
+                                        />
+                                        <span
+                                          className="min-w-0 flex-1 truncate text-sm text-gray-400"
+                                          title={child.fullLabel}
+                                        >
+                                          {child.label}
+                                        </span>
+                                        <span className="text-[11px] tabular-nums text-gray-500">
+                                          {formatPercent(child.share * 100)}
+                                        </span>
+                                        <span className="text-sm font-medium tabular-nums text-gray-200">
+                                          {formatCurrency(child.value)}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
                             </div>
-                            <div className="mt-2 flex items-end justify-between gap-3">
-                              <span className="text-xs text-gray-500">Valor exibido</span>
-                              <span className="text-base font-semibold text-white">
-                                {formatCurrency(category.value)}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}

@@ -290,6 +290,8 @@ export const listTransactionsSchema = z.object({
     .positive('ID da categoria deve ser positivo')
     .optional(),
 
+  categoryIds: categoryIdsFilterSchema.optional(),
+
   search: z.string()
     .max(100, 'Termo de busca deve ter no maximo 100 caracteres')
     .optional(),

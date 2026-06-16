@@ -303,6 +303,82 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(Number(invoiceSummary.amount)).toBeCloseTo(235.21, 5);
   });
 
+  it('filters summarized credit card invoices by category ids using only the matching subtotal', async () => {
+    const travelCategory = await prisma.financialCategory.create({
+      data: {
+        name: 'Fixed Test Travel Category',
+        type: 'EXPENSE',
+        color: '#22c55e',
+        companyId
+      }
+    });
+
+    const purchaseDate = buildOccurrenceDate(2, 5);
+    const dueDate = buildOccurrenceDate(2, 15);
+
+    const invoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: creditCardAccountId,
+        referenceYear: dueDate.getFullYear(),
+        referenceMonth: dueDate.getMonth() + 1,
+        closingDate: buildOccurrenceDate(2, 10),
+        dueDate,
+        status: 'OPEN',
+        totalAmount: 120
+      }
+    });
+
+    await prisma.financialTransaction.createMany({
+      data: [
+        {
+          description: 'Credit Card Expense Fuel',
+          amount: 80,
+          date: purchaseDate,
+          dueDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: creditCardAccountId,
+          categoryId: expenseCategoryId,
+          creditCardInvoiceId: invoice.id,
+          companyId,
+          createdBy: userId,
+          effectiveDate: purchaseDate
+        },
+        {
+          description: 'Credit Card Expense Travel',
+          amount: 40,
+          date: purchaseDate,
+          dueDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: creditCardAccountId,
+          categoryId: travelCategory.id,
+          creditCardInvoiceId: invoice.id,
+          companyId,
+          createdBy: userId,
+          effectiveDate: purchaseDate
+        }
+      ]
+    });
+
+    const { start, end } = monthBounds(2);
+    const listResponse = await listTransactions(start, end, {
+      dateField: 'dueDate',
+      categoryIds: [travelCategory.id]
+    });
+
+    expect(listResponse.status).toBe(200);
+    expect(Number(listResponse.body.summary.expenseTotal)).toBeCloseTo(40, 5);
+
+    const invoiceSummary = listResponse.body.data.find(
+      (item: any) => item.isCreditCardInvoiceSummary === true && item.creditCardInvoice?.id === invoice.id
+    );
+    expect(invoiceSummary).toBeDefined();
+    expect(Number(invoiceSummary.amount)).toBeCloseTo(40, 5);
+    expect(Number(invoiceSummary.itemsSubtotal)).toBeCloseTo(40, 5);
+    expect(Number(invoiceSummary.fixedSubtotal)).toBeCloseTo(0, 5);
+  });
+
   it('can hide credit card materialized transactions from the list', async () => {
     const purchaseDate = buildOccurrenceDate(1, 5);
 

@@ -34,7 +34,7 @@ import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useConfirmation } from '@/hooks/useConfirmation';
-import CategorySelect from '@/components/financial/CategorySelect';
+import { orderCategoriesForSelect } from '@/components/financial/CategorySelect';
 import TransactionSettlementModal from '@/components/financial/TransactionSettlementModal';
 import api from '@/lib/api';
 import {
@@ -145,6 +145,7 @@ interface Category {
   type: string;
   icon?: string;
   isDefault?: boolean;
+  parentId?: number | null;
 }
 
 interface ActiveFilterBadge {
@@ -376,6 +377,26 @@ export default function TransactionsListPage() {
     () => filterPresets.find((preset) => preset.id.toString() === selectedPresetId) || null,
     [filterPresets, selectedPresetId]
   );
+  const categoryFilterOptions = useMemo(
+    () =>
+      orderCategoriesForSelect(
+        categories.map((category) => ({
+          id: category.id,
+          name: category.name,
+          color: category.color,
+          icon: category.icon,
+          isDefault: category.isDefault,
+          parentId: category.parentId ?? null
+        }))
+      ).map((item) => ({
+        value: item.category.id.toString(),
+        label:
+          item.lineage.length > 0
+            ? `${item.lineage.join(' / ')} / ${item.category.name}`
+            : item.category.name
+      })),
+    [categories]
+  );
   const activeMoreFilterBadges = useMemo<ActiveFilterBadge[]>(() => {
     const badges: ActiveFilterBadge[] = [];
 
@@ -388,12 +409,24 @@ export default function TransactionsListPage() {
       });
     }
 
-    if (filters.categoryId) {
-      const category = categories.find((item) => item.id.toString() === filters.categoryId);
+    if (filters.categoryIds.length > 0) {
+      const selectedCategoryLabels = categoryFilterOptions
+        .filter((option) => filters.categoryIds.includes(option.value))
+        .map((option) => option.label);
+
       badges.push({
         key: 'category',
-        label: 'Categoria',
-        value: category?.name || `Categoria #${filters.categoryId}`
+        label: filters.categoryIds.length === 1 ? 'Categoria' : 'Categorias',
+        value:
+          selectedCategoryLabels.length === 0
+            ? filters.categoryIds
+                .map((categoryId) => `Categoria #${categoryId}`)
+                .join(', ')
+            : selectedCategoryLabels.length <= 2
+              ? selectedCategoryLabels.join(', ')
+              : `${selectedCategoryLabels.slice(0, 2).join(', ')} +${
+                  selectedCategoryLabels.length - 2
+                }`
       });
     }
 
@@ -420,7 +453,14 @@ export default function TransactionsListPage() {
     }
 
     return badges;
-  }, [accounts, categories, filters.accountId, filters.categoryId, filters.search, filters.status]);
+  }, [
+    accounts,
+    categoryFilterOptions,
+    filters.accountId,
+    filters.categoryIds,
+    filters.search,
+    filters.status
+  ]);
   const projectedSavings = useMemo(
     () => Number(summary.incomeTotal || 0) - Number(summary.expenseTotal || 0),
     [summary]
@@ -485,7 +525,12 @@ export default function TransactionsListPage() {
     presetsResolved,
     router.query.accountId,
     router.query.categoryId,
+    router.query.categoryIds,
+    router.query.dateField,
+    router.query.endDate,
     router.query.search,
+    router.query.showOnlyMaterialized,
+    router.query.startDate,
     router.query.status,
     router.isReady,
     validAccountIds,
@@ -577,8 +622,10 @@ export default function TransactionsListPage() {
         params.set('accountId', filters.accountId);
       }
 
-      if (filters.categoryId) {
-        params.set('categoryId', filters.categoryId);
+      if (filters.categoryIds.length > 0) {
+        filters.categoryIds.forEach((categoryId) => {
+          params.append('categoryIds', categoryId);
+        });
       }
 
       if (filters.search.trim()) {
@@ -1441,13 +1488,14 @@ export default function TransactionsListPage() {
               </div>
 
               <div>
-                <CategorySelect
-                  label="Categoria"
-                  categories={categories}
-                  value={filters.categoryId}
-                  onChange={(categoryId) => updateFilters({ categoryId })}
+                <MultiSelect
+                  label="Categorias"
+                  options={categoryFilterOptions}
+                  values={filters.categoryIds}
+                  onChange={(categoryIds) => updateFilters({ categoryIds })}
                   placeholder="Todas"
-                  emptyLabel="Todas"
+                  className="mb-0"
+                  triggerClassName="h-10"
                 />
               </div>
             </div>

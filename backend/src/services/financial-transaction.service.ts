@@ -1647,6 +1647,7 @@ export default class FinancialTransactionService {
     status?: TransactionStatus;
     accountId?: number;
     categoryId?: number;
+    categoryIds?: number[];
     search?: string;
     page?: number;
     pageSize?: number;
@@ -1664,6 +1665,7 @@ export default class FinancialTransactionService {
       status,
       accountId,
       categoryId,
+      categoryIds,
       search,
       page = 1,
       pageSize = 20,
@@ -1676,6 +1678,25 @@ export default class FinancialTransactionService {
     }
 
     if (types && types.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        pages: 1,
+        summary: {
+          incomeTotal: '0',
+          expenseTotal: '0'
+        }
+      };
+    }
+
+    const hasExplicitCategoryIds = Array.isArray(categoryIds);
+    const effectiveCategoryIds = hasExplicitCategoryIds
+      ? Array.from(new Set(categoryIds || []))
+      : categoryId
+        ? [categoryId]
+        : undefined;
+
+    if (hasExplicitCategoryIds && (effectiveCategoryIds?.length ?? 0) === 0) {
       return {
         data: [],
         total: 0,
@@ -1713,8 +1734,12 @@ export default class FinancialTransactionService {
       whereFilters.push({ status });
     }
 
-    if (categoryId) {
-      whereFilters.push({ categoryId });
+    if (effectiveCategoryIds && effectiveCategoryIds.length > 0) {
+      whereFilters.push({
+        categoryId: {
+          in: effectiveCategoryIds
+        }
+      });
     }
 
     if (accountId) {
@@ -1812,7 +1837,7 @@ export default class FinancialTransactionService {
             includeProjected: paramsForResult?.includeProjected ?? false,
             status,
             accountId,
-            categoryId,
+            categoryIds: effectiveCategoryIds,
             search: normalizedSearch,
             accessibleAccountIds,
             projectedTransactions: paramsForResult?.allProjectedCreditCardVirtuals ?? [],
@@ -1912,7 +1937,10 @@ export default class FinancialTransactionService {
           continue;
         }
 
-        if (categoryId && template.categoryId !== categoryId) {
+        if (
+          effectiveCategoryIds &&
+          (!template.categoryId || !effectiveCategoryIds.includes(template.categoryId))
+        ) {
           continue;
         }
 
@@ -1953,7 +1981,7 @@ export default class FinancialTransactionService {
                   types,
                   status,
                   accountId,
-                  categoryId,
+                  categoryIds: effectiveCategoryIds,
                   search: normalizedSearch
                 });
 
@@ -1995,7 +2023,7 @@ export default class FinancialTransactionService {
     includeProjected: boolean;
     status?: TransactionStatus;
     accountId?: number;
-    categoryId?: number;
+    categoryIds?: number[];
     search?: string;
     accessibleAccountIds?: number[];
     projectedTransactions: any[];
@@ -2009,7 +2037,7 @@ export default class FinancialTransactionService {
       includeProjected,
       status,
       accountId,
-      categoryId,
+      categoryIds,
       search,
       accessibleAccountIds,
       projectedTransactions,
@@ -2036,7 +2064,8 @@ export default class FinancialTransactionService {
         : { closingDate: { gte: startDate, lte: endDate } };
 
     const normalizedSearch = search?.toLowerCase() ?? '';
-    const hasItemLevelFilters = Boolean(categoryId || normalizedSearch);
+    const hasCategoryIdsFilter = Boolean(categoryIds && categoryIds.length > 0);
+    const hasItemLevelFilters = hasCategoryIdsFilter || Boolean(normalizedSearch);
 
     const [realInvoices, matchingRealTransactions] = await Promise.all([
       prisma.creditCardInvoice.findMany({
@@ -2068,7 +2097,13 @@ export default class FinancialTransactionService {
               companyId,
               type: TransactionType.EXPENSE,
               creditCardInvoiceId: { not: null },
-              ...(categoryId ? { categoryId } : {}),
+              ...(hasCategoryIdsFilter
+                ? {
+                    categoryId: {
+                      in: categoryIds
+                    }
+                  }
+                : {}),
               ...(normalizedSearch
                 ? {
                     OR: [
@@ -2086,11 +2121,26 @@ export default class FinancialTransactionService {
               }
             },
             select: {
-              creditCardInvoiceId: true
+              creditCardInvoiceId: true,
+              amount: true
             }
           })
         : Promise.resolve([])
     ]);
+
+    const matchingRealInvoiceAmounts = new Map<number, Prisma.Decimal>();
+    for (const transaction of matchingRealTransactions) {
+      if (typeof transaction.creditCardInvoiceId !== 'number') {
+        continue;
+      }
+
+      matchingRealInvoiceAmounts.set(
+        transaction.creditCardInvoiceId,
+        (matchingRealInvoiceAmounts.get(transaction.creditCardInvoiceId) ?? new Prisma.Decimal(0)).plus(
+          parseDecimal(transaction.amount)
+        )
+      );
+    }
 
     const matchingRealInvoiceIds = new Set(
       matchingRealTransactions
@@ -2100,9 +2150,10 @@ export default class FinancialTransactionService {
     const projectedGroups: Map<string, CreditCardProjectedInvoiceSummaryGroup> = includeProjected
       ? this.groupProjectedCreditCardInvoiceSummaries(projectedTransactions)
       : new Map<string, CreditCardProjectedInvoiceSummaryGroup>();
-    const matchingProjectedKeys = includeProjected
-      ? new Set(this.groupProjectedCreditCardInvoiceSummaries(matchingProjectedTransactions).keys())
-      : new Set<string>();
+    const matchingProjectedGroups: Map<string, CreditCardProjectedInvoiceSummaryGroup> = includeProjected
+      ? this.groupProjectedCreditCardInvoiceSummaries(matchingProjectedTransactions)
+      : new Map<string, CreditCardProjectedInvoiceSummaryGroup>();
+    const matchingProjectedKeys = new Set(matchingProjectedGroups.keys());
     const rows: CreditCardInvoiceSummaryRow[] = [];
     const emittedKeys = new Set<string>();
 
@@ -2125,7 +2176,9 @@ export default class FinancialTransactionService {
         invoice.referenceMonth
       );
       const matchesSummarySearch =
-        !!normalizedSearch && summaryDescription.toLowerCase().includes(normalizedSearch);
+        !hasCategoryIdsFilter &&
+        !!normalizedSearch &&
+        summaryDescription.toLowerCase().includes(normalizedSearch);
 
       if (
         hasItemLevelFilters &&
@@ -2140,6 +2193,15 @@ export default class FinancialTransactionService {
         continue;
       }
 
+      const filteredProjectedGroup = matchingProjectedGroups.get(summaryKey);
+      const effectiveProjectedGroup = hasItemLevelFilters
+        ? filteredProjectedGroup ?? (matchesSummarySearch ? projectedGroup : undefined)
+        : projectedGroup;
+      const realItemsSubtotal = hasItemLevelFilters
+        ? matchingRealInvoiceAmounts.get(invoice.id) ??
+          (matchesSummarySearch ? invoice.totalAmount : new Prisma.Decimal(0))
+        : invoice.totalAmount;
+
       rows.push(
         this.buildCreditCardInvoiceSummaryRow({
           summaryKey,
@@ -2151,8 +2213,8 @@ export default class FinancialTransactionService {
           invoiceStatus: invoice.status,
           settledAt: this.resolveCreditCardInvoiceSummaryEffectiveDate(invoice),
           realInvoiceId: invoice.id,
-          realItemsSubtotal: invoice.totalAmount,
-          projectedGroup,
+          realItemsSubtotal,
+          projectedGroup: effectiveProjectedGroup,
           isProjected: false
         })
       );
@@ -2174,7 +2236,9 @@ export default class FinancialTransactionService {
         projectedGroup.referenceMonth
       );
       const matchesSummarySearch =
-        !!normalizedSearch && summaryDescription.toLowerCase().includes(normalizedSearch);
+        !hasCategoryIdsFilter &&
+        !!normalizedSearch &&
+        summaryDescription.toLowerCase().includes(normalizedSearch);
 
       if (hasItemLevelFilters && !matchingProjectedKeys.has(summaryKey) && !matchesSummarySearch) {
         continue;
@@ -2183,6 +2247,10 @@ export default class FinancialTransactionService {
       if (!this.matchesCreditCardInvoiceSummaryStatus(status, projectedGroup.invoiceStatus)) {
         continue;
       }
+
+      const effectiveProjectedGroup = hasItemLevelFilters
+        ? matchingProjectedGroups.get(summaryKey) ?? (matchesSummarySearch ? projectedGroup : undefined)
+        : projectedGroup;
 
       rows.push(
         this.buildCreditCardInvoiceSummaryRow({
@@ -2196,7 +2264,7 @@ export default class FinancialTransactionService {
           settledAt: null,
           realInvoiceId: null,
           realItemsSubtotal: new Prisma.Decimal(0),
-          projectedGroup,
+          projectedGroup: effectiveProjectedGroup,
           isProjected: true
         })
       );
@@ -2624,7 +2692,7 @@ export default class FinancialTransactionService {
       types?: TransactionType[];
       status?: TransactionStatus;
       accountId?: number;
-      categoryId?: number;
+      categoryIds?: number[];
       search?: string;
     }
   ): boolean {
@@ -2636,7 +2704,11 @@ export default class FinancialTransactionService {
       return false;
     }
 
-    if (filters.categoryId && transaction.categoryId !== filters.categoryId) {
+    if (
+      filters.categoryIds &&
+      filters.categoryIds.length > 0 &&
+      !filters.categoryIds.includes(transaction.categoryId ?? -1)
+    ) {
       return false;
     }
 

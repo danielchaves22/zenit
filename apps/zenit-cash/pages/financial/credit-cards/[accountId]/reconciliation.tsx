@@ -1416,139 +1416,117 @@ function CreditCardReconciliationPageInner() {
       ) : (
         <div className="space-y-6">
           <Card>
-            <div className="grid items-stretch gap-5 xl:grid-cols-2">
-              <div className="flex h-full flex-col rounded-xl border border-gray-700 bg-[#11161d] p-5">
+            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div className="rounded-xl border border-gray-700 bg-[#11161d] p-4">
                 <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
                   Arquivo da fatura
                 </div>
-                <label className="mt-4 flex flex-1 cursor-pointer flex-col justify-between gap-5 rounded-xl border border-dashed border-gray-600 bg-[#0f141b] p-5 transition-colors hover:border-accent">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-lg border border-accent/30 bg-accent/10 p-2 text-accent">
-                      <Upload size={18} />
+                <div className="mt-3 rounded-xl border border-dashed border-gray-600 bg-[#0f141b] px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg border border-accent/30 bg-accent/10 p-2 text-accent">
+                      <Upload size={16} />
                     </div>
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-white">
                         {sourceConfig.selectLabel}
                       </div>
-                      <div className="mt-1 text-xs leading-5 text-gray-400">
-                        {sourceConfig.helperText}
-                      </div>
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2.5 text-sm text-gray-300">
-                      {fileName || `Nenhum ${sourceConfig.fileLabel} selecionado`}
-                    </div>
-                    <input
-                      type="file"
-                      accept={sourceConfig.accept}
-                      onChange={handleFileChange}
-                      className="w-full text-sm text-gray-300 file:mr-4 file:rounded file:border-0 file:bg-accent file:px-3 file:py-2 file:font-semibold file:text-white"
-                    />
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover">
+                      <Upload size={14} />
+                      Escolher arquivo
+                      <input
+                        type="file"
+                        accept={sourceConfig.accept}
+                        onChange={handleFileChange}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="min-w-0 flex-1 truncate text-sm text-gray-300">
+                      {fileName || 'Nenhum arquivo escolhido'}
+                    </span>
                   </div>
-                </label>
+                </div>
               </div>
 
-              <div className="flex h-full flex-col rounded-xl border border-gray-700 bg-[#11161d] p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                      Cartao selecionado
-                    </div>
-                    <div className="mt-2 text-lg font-semibold text-white">{card.name}</div>
-                    <div className="mt-1 text-sm text-gray-400">
-                      {card.bank?.name || card.bankName || 'Banco nao informado'}
-                    </div>
-                  </div>
-                  <div className="rounded-full border border-gray-700 bg-[#0f141b] px-3 py-1 text-xs font-medium text-gray-300">
-                    {sourceConfig.sourceLabel}
-                  </div>
+              <div className="rounded-xl border border-gray-700 bg-[#11161d] p-4">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="text-xs uppercase tracking-[0.18em] text-gray-400">
+                    Cartao selecionado
+                  </span>
+                  <span className="text-lg font-semibold text-white">{card.name}</span>
+                  <span className="text-sm text-gray-400">
+                    {card.bank?.name || card.bankName || 'Banco nao informado'}
+                  </span>
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border border-gray-700 bg-[#0f141b] px-3 py-3">
-                    <div className="text-xs uppercase tracking-[0.14em] text-gray-500">
-                      Fonte
+                <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 text-xs uppercase tracking-[0.18em] text-gray-400">
+                      Fatura-alvo da conciliacao
                     </div>
-                    <div className="mt-1 text-sm font-medium text-white">
-                      {sourceConfig.sourceLabel}
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-gray-700 bg-[#0f141b] px-3 py-3">
-                    <div className="text-xs uppercase tracking-[0.14em] text-gray-500">
-                      Arquivo
-                    </div>
-                    <div className="mt-1 truncate text-sm font-medium text-white">
-                      {fileName || 'Nenhum arquivo selecionado'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex-1 rounded-xl border border-gray-700 bg-[#0f141b] p-4">
-                  <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                    Fatura-alvo da conciliacao
-                  </div>
-                  <select
-                    value={selectedTargetInvoiceKey}
-                    onChange={(event) => handleTargetInvoiceChange(event.target.value)}
-                    disabled={invoicesLoading || targetInvoiceOptions.length === 0}
-                    className="mt-2 w-full rounded border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {targetInvoiceOptions.length === 0 ? (
-                      <option value="">
-                        {invoicesLoading
-                          ? 'Carregando referencias de fatura...'
-                          : 'Nenhuma referencia disponivel'}
-                      </option>
-                    ) : (
-                      targetInvoiceOptions.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {getTargetInvoiceOptionLabel(option)}
+                    <select
+                      value={selectedTargetInvoiceKey}
+                      onChange={(event) => handleTargetInvoiceChange(event.target.value)}
+                      disabled={invoicesLoading || targetInvoiceOptions.length === 0}
+                      className="w-full rounded border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {targetInvoiceOptions.length === 0 ? (
+                        <option value="">
+                          {invoicesLoading
+                            ? 'Carregando referencias de fatura...'
+                            : 'Nenhuma referencia disponivel'}
                         </option>
-                      ))
-                    )}
-                  </select>
-                  <div className="mt-3 text-xs leading-5 text-gray-400">
-                    {reconciliationSourceType === 'BRADESCO_CSV'
-                      ? 'O CSV do Bradesco nao define a competencia com confianca. Esta selecao determina o OK, os similares e a fatura de destino.'
-                      : 'A selecao determina contra qual fatura os itens serao comparados e em qual fatura novos lancamentos serao incluidos.'}
+                      ) : (
+                        targetInvoiceOptions.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {getTargetInvoiceOptionLabel(option)}
+                          </option>
+                        ))
+                      )}
+                    </select>
                   </div>
-                  {selectedTargetInvoice && (
-                    <div className="mt-3 rounded-lg border border-gray-700/80 bg-[#11161d] px-3 py-2 text-xs leading-5 text-gray-300">
-                      Referencia escolhida: {formatReference(
+
+                  <Button
+                    variant="accent"
+                    onClick={() => void runPreview()}
+                    disabled={
+                      !fileBase64 ||
+                      previewLoading ||
+                      invoicesLoading ||
+                      !selectedTargetInvoice
+                    }
+                    className="flex shrink-0 items-center justify-center gap-2 xl:mt-5"
+                  >
+                    {previewLoading ? (
+                      <>
+                        <RefreshCw size={16} className="animate-spin" />
+                        Analisando
+                      </>
+                    ) : (
+                      <>
+                        <FileSearch size={16} />
+                        Analisar fatura
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {selectedTargetInvoice && (
+                  <div className="mt-3 text-xs text-gray-400">
+                    Referencia escolhida:{' '}
+                    <span className="text-gray-200">
+                      {formatReference(
                         selectedTargetInvoice.referenceMonth,
                         selectedTargetInvoice.referenceYear
                       )}{' '}
                       • {getInvoiceDisplayStatusLabel(selectedTargetInvoice.status)} • vence{' '}
                       {formatCalendarDate(selectedTargetInvoice.dueDate)}
                       {selectedTargetInvoice.isProjected ? ' • projetada' : ''}
-                    </div>
-                  )}
-                </div>
-
-                <Button
-                  variant="accent"
-                  onClick={() => void runPreview()}
-                  disabled={
-                    !fileBase64 ||
-                    previewLoading ||
-                    invoicesLoading ||
-                    !selectedTargetInvoice
-                  }
-                  className="mt-4 flex w-full items-center justify-center gap-2"
-                >
-                  {previewLoading ? (
-                    <>
-                      <RefreshCw size={16} className="animate-spin" />
-                      Analisando
-                    </>
-                  ) : (
-                    <>
-                      <FileSearch size={16} />
-                      Analisar fatura
-                    </>
-                  )}
-                </Button>
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </Card>

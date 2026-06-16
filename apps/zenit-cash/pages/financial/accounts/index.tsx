@@ -397,7 +397,7 @@ function AccountsPageInner() {
         </div>
       </Card>
 
-      <Card>
+      <Card className="overflow-visible">
         {loading ? (
           <div className="space-y-3">
             {[...Array(5)].map((_, index) => (
@@ -423,7 +423,7 @@ function AccountsPageInner() {
             </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto md:overflow-visible">
             <table className="w-full">
               <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                 <tr>
@@ -444,7 +444,11 @@ function AccountsPageInner() {
                       !account.isActive ? 'opacity-60' : ''
                     }`}
                   >
-                    <td className="px-4 py-3">
+                    <td
+                      className={`px-4 py-3 ${
+                        openTransactionMenuAccountId === account.id ? 'relative z-30' : ''
+                      }`}
+                    >
                       <div className="flex items-center justify-center gap-1">
                         <div
                           className="relative"
@@ -467,7 +471,7 @@ function AccountsPageInner() {
                           </button>
 
                           {openTransactionMenuAccountId === account.id && (
-                            <div className="absolute left-0 top-full z-20 mt-2 min-w-[160px] rounded-lg border border-gray-700 bg-[#151921] p-1 shadow-2xl">
+                            <div className="absolute left-0 top-full z-50 mt-2 min-w-[160px] rounded-lg border border-gray-700 bg-[#151921] p-1 shadow-2xl">
                               <Link
                                 href={buildTransactionCreateHref(account.id, 'EXPENSE')}
                                 className="block rounded px-3 py-2 text-sm text-gray-200 transition-colors hover:bg-[#1f2937] hover:text-red-300"

@@ -1416,43 +1416,75 @@ function CreditCardReconciliationPageInner() {
       ) : (
         <div className="space-y-6">
           <Card>
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <div>
-                <div className="mb-3 text-sm font-medium text-white">Arquivo da fatura</div>
-                <label className="flex cursor-pointer flex-col gap-3 rounded-xl border border-dashed border-gray-600 bg-[#11161d] p-5 transition-colors hover:border-accent">
-                  <div className="flex items-center gap-3">
-                    <Upload className="text-accent" size={18} />
-                    <div>
+            <div className="grid items-stretch gap-5 xl:grid-cols-2">
+              <div className="flex h-full flex-col rounded-xl border border-gray-700 bg-[#11161d] p-5">
+                <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
+                  Arquivo da fatura
+                </div>
+                <label className="mt-4 flex flex-1 cursor-pointer flex-col justify-between gap-5 rounded-xl border border-dashed border-gray-600 bg-[#0f141b] p-5 transition-colors hover:border-accent">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 rounded-lg border border-accent/30 bg-accent/10 p-2 text-accent">
+                      <Upload size={18} />
+                    </div>
+                    <div className="min-w-0">
                       <div className="text-sm font-medium text-white">
                         {sourceConfig.selectLabel}
                       </div>
-                      <div className="text-xs text-gray-400">
+                      <div className="mt-1 text-xs leading-5 text-gray-400">
                         {sourceConfig.helperText}
                       </div>
                     </div>
                   </div>
-                  <input
-                    type="file"
-                    accept={sourceConfig.accept}
-                    onChange={handleFileChange}
-                    className="text-sm text-gray-300 file:mr-4 file:rounded file:border-0 file:bg-accent file:px-3 file:py-2 file:font-semibold file:text-white"
-                  />
+                  <div className="space-y-3">
+                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2.5 text-sm text-gray-300">
+                      {fileName || `Nenhum ${sourceConfig.fileLabel} selecionado`}
+                    </div>
+                    <input
+                      type="file"
+                      accept={sourceConfig.accept}
+                      onChange={handleFileChange}
+                      className="w-full text-sm text-gray-300 file:mr-4 file:rounded file:border-0 file:bg-accent file:px-3 file:py-2 file:font-semibold file:text-white"
+                    />
+                  </div>
                 </label>
               </div>
 
-              <div className="rounded-xl border border-gray-700 bg-[#11161d] p-5">
-                <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                  Cartao selecionado
+              <div className="flex h-full flex-col rounded-xl border border-gray-700 bg-[#11161d] p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
+                      Cartao selecionado
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">{card.name}</div>
+                    <div className="mt-1 text-sm text-gray-400">
+                      {card.bank?.name || card.bankName || 'Banco nao informado'}
+                    </div>
+                  </div>
+                  <div className="rounded-full border border-gray-700 bg-[#0f141b] px-3 py-1 text-xs font-medium text-gray-300">
+                    {sourceConfig.sourceLabel}
+                  </div>
                 </div>
-                <div className="mt-2 text-lg font-semibold text-white">{card.name}</div>
-                <div className="mt-1 text-sm text-gray-400">
-                  {card.bank?.name || card.bankName || 'Banco nao informado'}
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-gray-700 bg-[#0f141b] px-3 py-3">
+                    <div className="text-xs uppercase tracking-[0.14em] text-gray-500">
+                      Fonte
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-white">
+                      {sourceConfig.sourceLabel}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-700 bg-[#0f141b] px-3 py-3">
+                    <div className="text-xs uppercase tracking-[0.14em] text-gray-500">
+                      Arquivo
+                    </div>
+                    <div className="mt-1 truncate text-sm font-medium text-white">
+                      {fileName || 'Nenhum arquivo selecionado'}
+                    </div>
+                  </div>
                 </div>
-                <div className="mt-4 space-y-2 text-sm text-gray-300">
-                  <div>Fonte: {sourceConfig.sourceLabel}</div>
-                  <div>Arquivo: {fileName || `Nenhum ${sourceConfig.fileLabel} selecionado`}</div>
-                </div>
-                <div className="mt-5">
+
+                <div className="mt-4 flex-1 rounded-xl border border-gray-700 bg-[#0f141b] p-4">
                   <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
                     Fatura-alvo da conciliacao
                   </div>
@@ -1476,13 +1508,13 @@ function CreditCardReconciliationPageInner() {
                       ))
                     )}
                   </select>
-                  <div className="mt-2 text-xs text-gray-400">
+                  <div className="mt-3 text-xs leading-5 text-gray-400">
                     {reconciliationSourceType === 'BRADESCO_CSV'
                       ? 'O CSV do Bradesco nao define a competencia com confianca. Esta selecao determina o OK, os similares e a fatura de destino.'
                       : 'A selecao determina contra qual fatura os itens serao comparados e em qual fatura novos lancamentos serao incluidos.'}
                   </div>
                   {selectedTargetInvoice && (
-                    <div className="mt-2 text-xs text-gray-500">
+                    <div className="mt-3 rounded-lg border border-gray-700/80 bg-[#11161d] px-3 py-2 text-xs leading-5 text-gray-300">
                       Referencia escolhida: {formatReference(
                         selectedTargetInvoice.referenceMonth,
                         selectedTargetInvoice.referenceYear
@@ -1493,31 +1525,30 @@ function CreditCardReconciliationPageInner() {
                     </div>
                   )}
                 </div>
-                <div className="mt-5">
-                  <Button
-                    variant="accent"
-                    onClick={() => void runPreview()}
-                    disabled={
-                      !fileBase64 ||
-                      previewLoading ||
-                      invoicesLoading ||
-                      !selectedTargetInvoice
-                    }
-                    className="flex w-full items-center justify-center gap-2"
-                  >
-                    {previewLoading ? (
-                      <>
-                        <RefreshCw size={16} className="animate-spin" />
-                        Analisando
-                      </>
-                    ) : (
-                      <>
-                        <FileSearch size={16} />
-                        Analisar fatura
-                      </>
-                    )}
-                  </Button>
-                </div>
+
+                <Button
+                  variant="accent"
+                  onClick={() => void runPreview()}
+                  disabled={
+                    !fileBase64 ||
+                    previewLoading ||
+                    invoicesLoading ||
+                    !selectedTargetInvoice
+                  }
+                  className="mt-4 flex w-full items-center justify-center gap-2"
+                >
+                  {previewLoading ? (
+                    <>
+                      <RefreshCw size={16} className="animate-spin" />
+                      Analisando
+                    </>
+                  ) : (
+                    <>
+                      <FileSearch size={16} />
+                      Analisar fatura
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           </Card>

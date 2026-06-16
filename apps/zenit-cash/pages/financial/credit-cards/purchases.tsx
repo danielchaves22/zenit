@@ -827,14 +827,14 @@ function CreditCardPurchasesPageInner() {
                             <tr>
                               <th className="w-14 px-4 py-3">Detalhe</th>
                               <th className="px-4 py-3">Descricao</th>
+                              <th className="px-4 py-3 text-right">Valor Total</th>
                               <th className="px-4 py-3">Compra</th>
                               <th className="px-4 py-3">Parcelas</th>
-                              <th className="px-4 py-3">Faltam</th>
-                              <th className="px-4 py-3">Ultima Fatura</th>
                               <th className="px-4 py-3 text-right">Valor da Parcela</th>
-                              <th className="px-4 py-3 text-right">Valor Total</th>
+                              <th className="px-4 py-3">Ultima Fatura</th>
+                              <th className="px-4 py-3">Faltam</th>
                               <th className="px-4 py-3">Categoria</th>
-                              <th className="px-4 py-3 text-right">Acao</th>
+                              <th className="px-4 py-3 text-right">Acoes</th>
                             </tr>
                           </thead>
                         <tbody>
@@ -883,17 +883,17 @@ function CreditCardPurchasesPageInner() {
                                       {purchase.installmentCount} parcela{purchase.installmentCount === 1 ? '' : 's'}
                                     </div>
                                   </td>
+                                  <td
+                                    className="px-4 py-4 text-right font-semibold"
+                                    style={{ color: cardTheme.primaryTextColor }}
+                                  >
+                                    {formatCurrency(purchase.totalAmount)}
+                                  </td>
                                   <td className="px-4 py-4">
                                     {formatCalendarDate(purchase.purchaseDate)}
                                   </td>
                                   <td className="px-4 py-4">
                                     {purchase.installmentCount}x
-                                  </td>
-                                  <td className="px-4 py-4">
-                                    {getRemainingInstallmentsLabel(purchase)}
-                                  </td>
-                                  <td className="px-4 py-4">
-                                    {getLastInvoiceReferenceLabel(purchase)}
                                   </td>
                                   <td
                                     className="px-4 py-4 text-right font-medium"
@@ -901,11 +901,11 @@ function CreditCardPurchasesPageInner() {
                                   >
                                     {formatCurrency(purchase.installmentAmount)}
                                   </td>
-                                  <td
-                                    className="px-4 py-4 text-right font-semibold"
-                                    style={{ color: cardTheme.primaryTextColor }}
-                                  >
-                                    {formatCurrency(purchase.totalAmount)}
+                                  <td className="px-4 py-4">
+                                    {getLastInvoiceReferenceLabel(purchase)}
+                                  </td>
+                                  <td className="px-4 py-4">
+                                    {getRemainingInstallmentsLabel(purchase)}
                                   </td>
                                   <td className="px-4 py-4">
                                     {purchase.category ? (

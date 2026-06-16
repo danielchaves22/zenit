@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { Select } from '@/components/ui/Select';
 import { MultiSelect } from '@/components/ui/MultiSelect';
@@ -50,9 +51,24 @@ interface Category {
   parentId?: number | null;
 }
 
+type CategoryPieMode = 'EXPENSE' | 'INCOME';
+
+type PieCategoryDatum = {
+  id: string;
+  categoryId: number | null;
+  name: string;
+  color: string;
+  type: CategoryPieMode;
+  value: number;
+  share: number;
+  realizedAmount: number;
+  pendingAmount: number;
+  projectedAmount: number;
+};
+
 const VIEW_OPTIONS: Array<{ value: FinancialDashboardView; label: string }> = [
-  { value: 'monthly', label: 'Situação financeira mensal' },
-  { value: 'history', label: 'Histórico financeiro' }
+  { value: 'monthly', label: 'Situacao financeira mensal' },
+  { value: 'history', label: 'Historico financeiro' }
 ];
 
 function getCurrentMonthKey(): string {
@@ -128,6 +144,27 @@ function formatTooltipLabel(
   return String(payload?.[0]?.payload?.fullLabel || '');
 }
 
+function formatPercent(value: number): string {
+  return `${value.toFixed(1).replace('.', ',')}%`;
+}
+
+function buildCategoryPieSummary(params: {
+  includePending: boolean;
+  includeProjected: boolean;
+}): string {
+  const visibleBuckets = ['liquidadas'];
+
+  if (params.includePending) {
+    visibleBuckets.push('pendentes');
+  }
+
+  if (params.includeProjected) {
+    visibleBuckets.push('projetadas');
+  }
+
+  return visibleBuckets.join(' + ');
+}
+
 function SummaryCard({
   title,
   value,
@@ -179,6 +216,91 @@ function SummaryCard({
   );
 }
 
+function buildCategoryPieData(params: {
+  categoryTotals: FinancialDashboardMonthlyResponse['categoryTotals'];
+  categoryPieMode: CategoryPieMode;
+  includePending: boolean;
+  includeProjected: boolean;
+  smallSliceThresholdPercent: number;
+}): PieCategoryDatum[] {
+  const visibleCategories = params.categoryTotals
+    .filter((category) => category.type === params.categoryPieMode)
+    .map((category) => {
+      const realizedAmount = parseAmount(category.realizedAmount);
+      const pendingAmount = parseAmount(category.pendingAmount);
+      const projectedAmount = parseAmount(category.projectedAmount);
+      const value =
+        realizedAmount +
+        (params.includePending ? pendingAmount : 0) +
+        (params.includeProjected ? projectedAmount : 0);
+
+      return {
+        id: `${params.categoryPieMode}-${category.categoryId ?? 'uncategorized'}`,
+        categoryId: category.categoryId,
+        name: category.name,
+        color: category.color,
+        type: params.categoryPieMode,
+        value,
+        share: 0,
+        realizedAmount,
+        pendingAmount,
+        projectedAmount
+      };
+    })
+    .filter((category) => category.value > 0)
+    .sort((left, right) => right.value - left.value);
+
+  const total = visibleCategories.reduce((sum, category) => sum + category.value, 0);
+  if (total <= 0) {
+    return [];
+  }
+
+  const thresholdRatio = Math.max(0, params.smallSliceThresholdPercent) / 100;
+  const groupedCategories: PieCategoryDatum[] = [];
+  let otherCategory: PieCategoryDatum | null = null;
+
+  for (const category of visibleCategories) {
+    const share = category.value / total;
+    const shouldGroup =
+      thresholdRatio > 0 && category.categoryId !== null && share < thresholdRatio;
+
+    if (!shouldGroup) {
+      groupedCategories.push({
+        ...category,
+        share
+      });
+      continue;
+    }
+
+    if (!otherCategory) {
+      otherCategory = {
+        id: `${params.categoryPieMode}-other`,
+        categoryId: null,
+        name: params.categoryPieMode === 'EXPENSE' ? 'Outras despesas' : 'Outras receitas',
+        color: '#475569',
+        type: params.categoryPieMode,
+        value: 0,
+        share: 0,
+        realizedAmount: 0,
+        pendingAmount: 0,
+        projectedAmount: 0
+      };
+    }
+
+    otherCategory.value += category.value;
+    otherCategory.realizedAmount += category.realizedAmount;
+    otherCategory.pendingAmount += category.pendingAmount;
+    otherCategory.projectedAmount += category.projectedAmount;
+  }
+
+  if (otherCategory && otherCategory.value > 0) {
+    otherCategory.share = otherCategory.value / total;
+    groupedCategories.push(otherCategory);
+  }
+
+  return groupedCategories.sort((left, right) => right.value - left.value);
+}
+
 export default function FinancialDashboard() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -197,7 +319,11 @@ export default function FinancialDashboard() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [savingPreference, setSavingPreference] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [categoryPieMode, setCategoryPieMode] = useState<'EXPENSE' | 'INCOME'>('EXPENSE');
+  const [categoryPieMode, setCategoryPieMode] = useState<CategoryPieMode>('EXPENSE');
+  const [includePendingInCategoryPie, setIncludePendingInCategoryPie] = useState(false);
+  const [includeProjectedInCategoryPie, setIncludeProjectedInCategoryPie] = useState(false);
+  const [smallSliceThresholdPercent, setSmallSliceThresholdPercent] = useState(3);
+  const [smallSliceThresholdPercentDraft, setSmallSliceThresholdPercentDraft] = useState(3);
 
   useEffect(() => {
     if (!router.isReady) {
@@ -211,7 +337,6 @@ export default function FinancialDashboard() {
     setMonth(nextMonth);
 
     const shouldReplace = nextView !== router.query.view || nextMonth !== router.query.month;
-
     if (shouldReplace) {
       void router.replace(
         {
@@ -245,14 +370,17 @@ export default function FinancialDashboard() {
 
         const nextCategories = (categoryResponse.data || []) as Category[];
         const nextTrackedIds = preference.trackedExpenseCategoryIds || [];
+        const nextSmallSliceThresholdPercent = preference.smallSliceThresholdPercent ?? 3;
 
         setCategories(nextCategories);
         setTrackedExpenseCategoryIds(nextTrackedIds);
         setTrackedExpenseCategoryDraft(nextTrackedIds.map(String));
+        setSmallSliceThresholdPercent(nextSmallSliceThresholdPercent);
+        setSmallSliceThresholdPercentDraft(nextSmallSliceThresholdPercent);
       } catch (bootstrapError: any) {
         if (!cancelled) {
           setError(
-            bootstrapError.response?.data?.error || 'Erro ao carregar configurações do dashboard'
+            bootstrapError.response?.data?.error || 'Erro ao carregar configuracoes do dashboard'
           );
         }
       } finally {
@@ -270,7 +398,7 @@ export default function FinancialDashboard() {
   }, []);
 
   useEffect(() => {
-    if (loadingBootstrap) {
+    if (loadingBootstrap || view !== 'monthly') {
       return;
     }
 
@@ -286,7 +414,7 @@ export default function FinancialDashboard() {
         }
       } catch (monthlyError: any) {
         if (!cancelled) {
-          setError(monthlyError.response?.data?.error || 'Erro ao carregar visão mensal');
+          setError(monthlyError.response?.data?.error || 'Erro ao carregar visao mensal');
           setMonthlyData(null);
         }
       } finally {
@@ -296,9 +424,7 @@ export default function FinancialDashboard() {
       }
     }
 
-    if (view === 'monthly') {
-      void loadMonthly();
-    }
+    void loadMonthly();
 
     return () => {
       cancelled = true;
@@ -327,7 +453,7 @@ export default function FinancialDashboard() {
         }
       } catch (historyError: any) {
         if (!cancelled) {
-          setError(historyError.response?.data?.error || 'Erro ao carregar histórico financeiro');
+          setError(historyError.response?.data?.error || 'Erro ao carregar historico financeiro');
           setHistoryData(null);
         }
       } finally {
@@ -371,8 +497,57 @@ export default function FinancialDashboard() {
       return [];
     }
 
-    return monthlyData.categoryTotals.filter((category) => category.type === categoryPieMode);
-  }, [categoryPieMode, monthlyData]);
+    return buildCategoryPieData({
+      categoryTotals: monthlyData.categoryTotals,
+      categoryPieMode,
+      includePending: includePendingInCategoryPie,
+      includeProjected: includeProjectedInCategoryPie,
+      smallSliceThresholdPercent: smallSliceThresholdPercentDraft
+    });
+  }, [
+    categoryPieMode,
+    includePendingInCategoryPie,
+    includeProjectedInCategoryPie,
+    monthlyData,
+    smallSliceThresholdPercentDraft
+  ]);
+
+  const pieCategoryTotalAmount = useMemo(
+    () => pieCategoryTotals.reduce((sum, category) => sum + category.value, 0),
+    [pieCategoryTotals]
+  );
+
+  const pieCategorySummary = useMemo(
+    () =>
+      buildCategoryPieSummary({
+        includePending: includePendingInCategoryPie,
+        includeProjected: includeProjectedInCategoryPie
+      }),
+    [includePendingInCategoryPie, includeProjectedInCategoryPie]
+  );
+
+  const hasPreferenceChanges = useMemo(() => {
+    const savedIds = [...trackedExpenseCategoryIds].sort((left, right) => left - right);
+    const draftIds = trackedExpenseCategoryDraft
+      .map(Number)
+      .filter(Boolean)
+      .sort((left, right) => left - right);
+
+    if (savedIds.length !== draftIds.length) {
+      return true;
+    }
+
+    if (savedIds.some((value, index) => value !== draftIds[index])) {
+      return true;
+    }
+
+    return smallSliceThresholdPercentDraft !== smallSliceThresholdPercent;
+  }, [
+    smallSliceThresholdPercent,
+    smallSliceThresholdPercentDraft,
+    trackedExpenseCategoryDraft,
+    trackedExpenseCategoryIds
+  ]);
 
   const monthlyBarData = useMemo(() => {
     if (!monthlyData) {
@@ -400,7 +575,7 @@ export default function FinancialDashboard() {
         Variavel: 0
       },
       {
-        name: 'Saídas',
+        name: 'Saidas',
         Realizado: monthlyData.isCurrentMonth ? expenseRealized : 0,
         Restante: expenseRemainingCommitted,
         Comprometido: expenseRemainingCommitted,
@@ -477,18 +652,25 @@ export default function FinancialDashboard() {
 
   async function handleSaveTrackedCategories() {
     const nextIds = Array.from(new Set(trackedExpenseCategoryDraft.map(Number))).filter(Boolean);
+    const nextSmallSliceThresholdPercent = Math.max(0, Math.min(25, smallSliceThresholdPercentDraft));
 
     if (nextIds.length > 10) {
-      addToast('Selecione no máximo 10 categorias', 'error');
+      addToast('Selecione no maximo 10 categorias', 'error');
       return;
     }
 
     setSavingPreference(true);
     try {
-      const response = await updateVariableProjectionPreference(nextIds);
+      const response = await updateVariableProjectionPreference({
+        trackedExpenseCategoryIds: nextIds,
+        smallSliceThresholdPercent: nextSmallSliceThresholdPercent
+      });
+
       setTrackedExpenseCategoryIds(response.trackedExpenseCategoryIds);
       setTrackedExpenseCategoryDraft(response.trackedExpenseCategoryIds.map(String));
-      addToast('Categorias observadas atualizadas', 'success');
+      setSmallSliceThresholdPercent(response.smallSliceThresholdPercent);
+      setSmallSliceThresholdPercentDraft(response.smallSliceThresholdPercent);
+      addToast('Preferencias do dashboard atualizadas', 'success');
 
       if (view === 'monthly') {
         setLoadingMonthly(true);
@@ -496,7 +678,7 @@ export default function FinancialDashboard() {
         setMonthlyData(refreshed);
       }
     } catch (saveError: any) {
-      addToast(saveError.response?.data?.error || 'Erro ao salvar categorias observadas', 'error');
+      addToast(saveError.response?.data?.error || 'Erro ao salvar preferencias do dashboard', 'error');
     } finally {
       setSavingPreference(false);
       setLoadingMonthly(false);
@@ -505,11 +687,25 @@ export default function FinancialDashboard() {
 
   function handleTrackedCategoryDraftChange(values: string[]) {
     if (values.length > 10) {
-      addToast('Selecione no máximo 10 categorias', 'error');
+      addToast('Selecione no maximo 10 categorias', 'error');
       return;
     }
 
     setTrackedExpenseCategoryDraft(values);
+  }
+
+  function handleSmallSliceThresholdChange(value: string) {
+    if (value === '') {
+      setSmallSliceThresholdPercentDraft(0);
+      return;
+    }
+
+    const parsedValue = Number(value);
+    if (Number.isNaN(parsedValue)) {
+      return;
+    }
+
+    setSmallSliceThresholdPercentDraft(Math.max(0, Math.min(25, parsedValue)));
   }
 
   const monthlyLoadingState = loadingBootstrap || loadingMonthly;
@@ -523,13 +719,13 @@ export default function FinancialDashboard() {
             Dashboard financeiro
           </div>
           <h1 className="mt-1 text-2xl font-heading font-bold text-white">
-            Visão analítica do caixa e das tendências do mês.
+            Visao analitica do caixa e das tendencias do mes.
           </h1>
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Select
-            aria-label="Selecione a visão do dashboard"
+            aria-label="Selecione a visao do dashboard"
             options={VIEW_OPTIONS}
             value={view}
             onChange={(event) => handleViewChange(event.target.value)}
@@ -538,7 +734,7 @@ export default function FinancialDashboard() {
           <div className="flex items-center gap-2 rounded-xl border border-gray-700 bg-[#11161d] px-3 py-2">
             <CalendarRange size={16} className="text-accent" />
             <span className="text-sm text-gray-300">
-              {view === 'monthly' ? formatMonthLabel(month) : 'Últimos 12 meses'}
+              {view === 'monthly' ? formatMonthLabel(month) : 'Ultimos 12 meses'}
             </span>
           </div>
         </div>
@@ -553,11 +749,11 @@ export default function FinancialDashboard() {
               <div>
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
                   <PieChartIcon size={16} className="text-accent" />
-                  Situação financeira mensal
+                  Situacao financeira mensal
                 </div>
                 <p className="mt-1 text-sm text-gray-400">
-                  O mês atual parte do saldo real de hoje. Meses futuros carregam o saldo final
-                  projetado do mês anterior.
+                  O mes atual parte do saldo real de hoje. Meses futuros carregam o saldo final
+                  projetado do mes anterior.
                 </p>
               </div>
 
@@ -576,7 +772,7 @@ export default function FinancialDashboard() {
                   onClick={() => handleMonthChange(1)}
                   className="inline-flex items-center gap-1"
                 >
-                  Próximo
+                  Proximo
                   <ChevronRight size={15} />
                 </Button>
               </div>
@@ -599,11 +795,11 @@ export default function FinancialDashboard() {
                   subtitle={
                     monthlyData.carryOver.source === 'CURRENT_BALANCE'
                       ? 'Saldo real disponivel agora'
-                      : 'Saldo final projetado do mês anterior'
+                      : 'Saldo final projetado do mes anterior'
                   }
                 />
                 <SummaryCard
-                  title="Receitas do mês"
+                  title="Receitas do mes"
                   value={monthlyData.monthlyTotals.incomeTotal}
                   tone="income"
                   subtitle={
@@ -615,7 +811,7 @@ export default function FinancialDashboard() {
                   }
                 />
                 <SummaryCard
-                  title="Saídas comprometidas"
+                  title="Saidas comprometidas"
                   value={monthlyData.monthlyTotals.committedExpenseTotal}
                   tone="expense"
                   subtitle={
@@ -627,12 +823,12 @@ export default function FinancialDashboard() {
                   }
                 />
                 <SummaryCard
-                  title="Variáveis estimadas"
+                  title="Variaveis estimadas"
                   value={monthlyData.monthlyTotals.variableProjectedExpenseTotal}
                   tone="expense"
                   subtitle={
                     trackedExpenseCategoryIds.length > 0
-                      ? `${monthlyData.variableProjection.categories.length} categoria(s) com projeção restante`
+                      ? `${monthlyData.variableProjection.categories.length} categoria(s) com projecao restante`
                       : 'Configure categorias observadas'
                   }
                 />
@@ -643,16 +839,16 @@ export default function FinancialDashboard() {
                   subtitle={
                     monthlyData.isCurrentMonth
                       ? 'Saldo atual + movimentos restantes'
-                      : 'Carry-over projetado + movimentos do mês'
+                      : 'Carry-over projetado + movimentos do mes'
                   }
                 />
               </div>
 
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,0.95fr)]">
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.35fr)]">
                 <Card className="p-5">
-                  <h3 className="text-lg font-medium text-white">Composição do mês</h3>
+                  <h3 className="text-lg font-medium text-white">Composicao do mes</h3>
                   <p className="mt-1 text-sm text-gray-400">
-                    Receitas conhecidas, saídas comprometidas e estimativa restante das categorias observadas.
+                    Receitas conhecidas, saidas comprometidas e estimativa restante das categorias observadas.
                   </p>
                   <div className="mt-5 h-72">
                     <ResponsiveContainer width="100%" height="100%">
@@ -674,54 +870,88 @@ export default function FinancialDashboard() {
                 </Card>
 
                 <Card className="p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-medium text-white">Categorias do mês</h3>
-                      <p className="mt-1 text-sm text-gray-400">
-                        Distribuição final do mês no cenário projetado.
-                      </p>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                      <div>
+                        <h3 className="text-lg font-medium text-white">
+                          {categoryPieMode === 'EXPENSE' ? 'Gastos por categoria' : 'Receitas por categoria'}
+                        </h3>
+                        <p className="mt-1 text-sm text-gray-400">
+                          Distribuicao por categoria considerando {pieCategorySummary}.
+                        </p>
+                      </div>
+
+                      <div className="flex rounded-lg border border-gray-700 bg-[#11161d] p-1">
+                        <button
+                          type="button"
+                          onClick={() => setCategoryPieMode('EXPENSE')}
+                          className={`rounded-md px-3 py-1.5 text-sm ${
+                            categoryPieMode === 'EXPENSE'
+                              ? 'bg-red-600 text-white'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          Despesas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryPieMode('INCOME')}
+                          className={`rounded-md px-3 py-1.5 text-sm ${
+                            categoryPieMode === 'INCOME'
+                              ? 'bg-green-600 text-white'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          Receitas
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex rounded-lg border border-gray-700 bg-[#11161d] p-1">
+
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => setCategoryPieMode('EXPENSE')}
-                        className={`rounded-md px-3 py-1.5 text-sm ${
-                          categoryPieMode === 'EXPENSE'
-                            ? 'bg-red-600 text-white'
-                            : 'text-gray-400 hover:text-white'
+                        onClick={() => setIncludePendingInCategoryPie((current) => !current)}
+                        className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                          includePendingInCategoryPie
+                            ? 'border-sky-500 bg-sky-500/15 text-sky-100'
+                            : 'border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white'
                         }`}
                       >
-                        Despesas
+                        Incluir pendentes
                       </button>
                       <button
                         type="button"
-                        onClick={() => setCategoryPieMode('INCOME')}
-                        className={`rounded-md px-3 py-1.5 text-sm ${
-                          categoryPieMode === 'INCOME'
-                            ? 'bg-green-600 text-white'
-                            : 'text-gray-400 hover:text-white'
+                        onClick={() => setIncludeProjectedInCategoryPie((current) => !current)}
+                        className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                          includeProjectedInCategoryPie
+                            ? 'border-amber-500 bg-amber-500/15 text-amber-100'
+                            : 'border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white'
                         }`}
                       >
-                        Receitas
+                        Incluir projetadas
                       </button>
                     </div>
                   </div>
 
                   {pieCategoryTotals.length === 0 ? (
-                    <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
-                      Nenhuma categoria encontrada para esta leitura do mês.
+                    <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-10 text-center text-sm text-gray-400">
+                      Nenhuma categoria encontrada para esta leitura do mes.
                     </div>
                   ) : (
-                    <div className="mt-4 flex flex-col gap-4">
-                      <div className="h-64">
+                    <div className="mt-4 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(320px,0.95fr)_minmax(260px,0.75fr)] xl:items-center">
+                      <div className="relative h-[360px]">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
-                            <Pie data={pieCategoryTotals} dataKey="amount" nameKey="name" outerRadius={82}>
+                            <Pie
+                              data={pieCategoryTotals}
+                              dataKey="value"
+                              nameKey="name"
+                              innerRadius={82}
+                              outerRadius={132}
+                              paddingAngle={pieCategoryTotals.length > 1 ? 2 : 0}
+                            >
                               {pieCategoryTotals.map((category) => (
-                                <Cell
-                                  key={`${categoryPieMode}-${category.categoryId ?? category.name}`}
-                                  fill={category.color}
-                                />
+                                <Cell key={category.id} fill={category.color} />
                               ))}
                             </Pie>
                             <Tooltip
@@ -730,21 +960,45 @@ export default function FinancialDashboard() {
                             />
                           </PieChart>
                         </ResponsiveContainer>
+
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                          <div className="text-center">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                              Total exibido
+                            </div>
+                            <div className="mt-2 text-2xl font-semibold text-white">
+                              {formatCurrency(pieCategoryTotalAmount)}
+                            </div>
+                            <div className="mt-2 text-xs text-gray-500">
+                              Fatias abaixo de {smallSliceThresholdPercentDraft}% entram em{' '}
+                              {categoryPieMode === 'EXPENSE' ? 'Outras despesas' : 'Outras receitas'}.
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-2">
+
+                      <div className="space-y-3" data-testid="category-pie-legend">
                         {pieCategoryTotals.map((category) => (
                           <div
-                            key={`${categoryPieMode}-${category.categoryId ?? category.name}-legend`}
-                            className="flex items-center gap-3 text-sm"
+                            key={`${category.id}-legend`}
+                            className="rounded-xl border border-gray-800 bg-[#0f1419] px-4 py-3"
                           >
-                            <span
-                              className="inline-block h-3 w-3 rounded-full"
-                              style={{ backgroundColor: category.color }}
-                            />
-                            <span className="flex-1 text-gray-300">{category.name}</span>
-                            <span className="font-medium text-white">
-                              {formatCurrency(category.amount)}
-                            </span>
+                            <div className="flex items-center gap-3 text-sm">
+                              <span
+                                className="inline-block h-3 w-3 rounded-full"
+                                style={{ backgroundColor: category.color }}
+                              />
+                              <span className="flex-1 text-gray-200">{category.name}</span>
+                              <span className="text-xs text-gray-500">
+                                {formatPercent(category.share * 100)}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex items-end justify-between gap-3">
+                              <span className="text-xs text-gray-500">Valor exibido</span>
+                              <span className="text-base font-semibold text-white">
+                                {formatCurrency(category.value)}
+                              </span>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -759,51 +1013,64 @@ export default function FinancialDashboard() {
                     <div>
                       <div className="flex items-center gap-2 text-lg font-medium text-white">
                         <Settings2 size={16} className="text-accent" />
-                        Categorias observadas
+                        Preferencias do dashboard
                       </div>
                       <p className="mt-1 text-sm text-gray-400">
-                        Esta configuração é central do domínio financeiro e será reutilizável em
-                        outras superfícies.
+                        Configure as categorias observadas e a regra de agrupamento das fatias menores.
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-5">
+                  <div className="mt-5 space-y-4">
                     <MultiSelect
-                      label="Despesas variáveis observadas"
+                      label="Despesas variaveis observadas"
                       options={expenseCategoryOptions}
                       values={trackedExpenseCategoryDraft}
                       onChange={handleTrackedCategoryDraftChange}
-                      placeholder="Selecione até 10 categorias"
+                      placeholder="Selecione ate 10 categorias"
                       triggerClassName="h-10"
                     />
-                    <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-500">
-                      <span>{trackedExpenseCategoryDraft.length}/10 selecionadas</span>
+                    <Input
+                      id="small-slice-threshold"
+                      label="Agrupar fatias menores que (%)"
+                      type="number"
+                      min={0}
+                      max={25}
+                      step={1}
+                      value={smallSliceThresholdPercentDraft}
+                      onChange={(event) => handleSmallSliceThresholdChange(event.target.value)}
+                      className="mb-0"
+                    />
+                    <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
+                      <span>
+                        {trackedExpenseCategoryDraft.length}/10 categorias observadas · agrupamento abaixo de{' '}
+                        {smallSliceThresholdPercentDraft}%
+                      </span>
                       <Button
                         variant="accent"
                         onClick={() => void handleSaveTrackedCategories()}
-                        disabled={savingPreference}
+                        disabled={savingPreference || !hasPreferenceChanges}
                         className="inline-flex items-center gap-2"
                       >
                         {savingPreference ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                        Salvar categorias
+                        Salvar preferencias
                       </Button>
                     </div>
                   </div>
                 </Card>
 
                 <Card className="p-5">
-                  <h3 className="text-lg font-medium text-white">Variáveis estimadas por categoria</h3>
+                  <h3 className="text-lg font-medium text-white">Variaveis estimadas por categoria</h3>
                   <p className="mt-1 text-sm text-gray-400">
-                    A média usa os 6 meses fechados anteriores. O restante some quando a categoria
-                    já consumiu toda a média no mês.
+                    A media usa os 6 meses fechados anteriores. O restante some quando a categoria ja
+                    consumiu toda a media no mes.
                   </p>
 
                   {monthlyData.variableProjection.categories.length === 0 ? (
                     <div className="mt-5 rounded-xl border border-dashed border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
                       {trackedExpenseCategoryIds.length === 0
-                        ? 'Selecione categorias observadas para gerar a estimativa variável.'
-                        : 'Nenhuma categoria observada possui projeção restante neste mês.'}
+                        ? 'Selecione categorias observadas para gerar a estimativa variavel.'
+                        : 'Nenhuma categoria observada possui projecao restante neste mes.'}
                     </div>
                   ) : (
                     <div className="mt-4 overflow-x-auto">
@@ -811,8 +1078,8 @@ export default function FinancialDashboard() {
                         <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
                           <tr>
                             <th className="px-3 py-3 text-left">Categoria</th>
-                            <th className="px-3 py-3 text-right">Média 6 meses</th>
-                            <th className="px-3 py-3 text-right">Já comprometido</th>
+                            <th className="px-3 py-3 text-right">Media 6 meses</th>
+                            <th className="px-3 py-3 text-right">Ja comprometido</th>
                             <th className="px-3 py-3 text-right">Restante projetado</th>
                           </tr>
                         </thead>
@@ -853,16 +1120,16 @@ export default function FinancialDashboard() {
               <div>
                 <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
                   <LineChartIcon size={16} className="text-accent" />
-                  Histórico financeiro
+                  Historico financeiro
                 </div>
                 <p className="mt-1 text-sm text-gray-400">
-                  Evolução mensal das receitas, despesas e das categorias escolhidas para análise.
+                  Evolucao mensal das receitas, despesas e das categorias escolhidas para analise.
                 </p>
               </div>
 
               <div className="min-w-[280px]">
                 <MultiSelect
-                  label="Categorias no gráfico"
+                  label="Categorias no grafico"
                   options={historyCategoryOptions}
                   values={historyCategoryIds}
                   onChange={setHistoryCategoryIds}
@@ -884,7 +1151,7 @@ export default function FinancialDashboard() {
               <Card className="p-5">
                 <h3 className="text-lg font-medium text-white">Receitas x despesas</h3>
                 <p className="mt-1 text-sm text-gray-400">
-                  Últimos 12 meses, com o mês atual marcado como parcial.
+                  Ultimos 12 meses, com o mes atual marcado como parcial.
                 </p>
                 <div className="mt-5 h-80">
                   <ResponsiveContainer width="100%" height="100%">
@@ -908,12 +1175,12 @@ export default function FinancialDashboard() {
               <Card className="p-5">
                 <h3 className="text-lg font-medium text-white">Categorias selecionadas</h3>
                 <p className="mt-1 text-sm text-gray-400">
-                  Começa vazio por padrão. Adicione as categorias que deseja acompanhar.
+                  Comeca vazio por padrao. Adicione as categorias que deseja acompanhar.
                 </p>
 
                 {historyData.categorySeries.length === 0 ? (
                   <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-10 text-center text-sm text-gray-400">
-                    Nenhuma categoria selecionada para o gráfico histórico.
+                    Nenhuma categoria selecionada para o grafico historico.
                   </div>
                 ) : (
                   <div className="mt-5 h-80">

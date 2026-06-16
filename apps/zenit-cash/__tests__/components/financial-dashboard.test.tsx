@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ButtonHTMLAttributes, ChangeEventHandler, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -167,6 +167,89 @@ function getPreviousMonthKey(monthKey: string): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function buildMonthlyResponse(month: string) {
+  return {
+    month,
+    isCurrentMonth: true,
+    period: {
+      month,
+      startDate: '2026-06-01T00:00:00.000Z',
+      endDate: '2026-06-30T23:59:59.999Z'
+    },
+    carryOver: {
+      amount: '950.00',
+      source: 'CURRENT_BALANCE' as const
+    },
+    monthlyTotals: {
+      incomeTotal: '500.00',
+      expenseTotal: '120.00',
+      committedExpenseTotal: '100.00',
+      variableProjectedExpenseTotal: '20.00'
+    },
+    currentMonthBreakdown: {
+      income: {
+        realized: '0.00',
+        remaining: '500.00'
+      },
+      expense: {
+        realizedCommitted: '50.00',
+        remainingCommitted: '50.00',
+        remainingVariableProjected: '20.00'
+      }
+    },
+    committedBreakdown: {
+      income: {
+        adHocMaterializedTotal: '0.00',
+        fixedMaterializedTotal: '0.00',
+        fixedProjectedTotal: '0.00'
+      },
+      expense: {
+        adHocMaterializedTotal: '50.00',
+        fixedMaterializedTotal: '0.00',
+        fixedProjectedTotal: '30.00',
+        creditCardTotal: '20.00'
+      }
+    },
+    variableProjection: {
+      total: '20.00',
+      categories: [
+        {
+          categoryId: 10,
+          categoryName: 'Combustivel',
+          color: '#f97316',
+          month,
+          historicalAverage: '120.00',
+          committedInMonth: '100.00',
+          remainingProjected: '20.00'
+        }
+      ]
+    },
+    projectedEndingBalance: '1380.00',
+    categoryTotals: [
+      {
+        categoryId: 10,
+        name: 'Combustivel',
+        color: '#f97316',
+        type: 'EXPENSE' as const,
+        amount: '120.00',
+        realizedAmount: '50.00',
+        pendingAmount: '50.00',
+        projectedAmount: '20.00'
+      },
+      {
+        categoryId: 20,
+        name: 'Salario',
+        color: '#22c55e',
+        type: 'INCOME' as const,
+        amount: '500.00',
+        realizedAmount: '0.00',
+        pendingAmount: '500.00',
+        projectedAmount: '0.00'
+      }
+    ]
+  };
+}
+
 describe('FinancialDashboard', () => {
   let currentMonth = '';
 
@@ -185,90 +268,19 @@ describe('FinancialDashboard', () => {
 
     apiGetMock.mockResolvedValue({
       data: [
-        { id: 10, name: 'Combustível', color: '#f97316', type: 'EXPENSE' },
-        { id: 20, name: 'Salário', color: '#22c55e', type: 'INCOME' }
+        { id: 10, name: 'Combustivel', color: '#f97316', type: 'EXPENSE' },
+        { id: 20, name: 'Salario', color: '#22c55e', type: 'INCOME' }
       ]
     });
     getPreferenceMock.mockResolvedValue({
-      trackedExpenseCategoryIds: [10]
+      trackedExpenseCategoryIds: [10],
+      smallSliceThresholdPercent: 3
     });
     updatePreferenceMock.mockResolvedValue({
-      trackedExpenseCategoryIds: [10]
+      trackedExpenseCategoryIds: [10],
+      smallSliceThresholdPercent: 3
     });
-    getMonthlyMock.mockResolvedValue({
-      month: currentMonth,
-      isCurrentMonth: true,
-      period: {
-        month: currentMonth,
-        startDate: '2026-06-01T00:00:00.000Z',
-        endDate: '2026-06-30T23:59:59.999Z'
-      },
-      carryOver: {
-        amount: '950.00',
-        source: 'CURRENT_BALANCE'
-      },
-      monthlyTotals: {
-        incomeTotal: '500.00',
-        expenseTotal: '120.00',
-        committedExpenseTotal: '100.00',
-        variableProjectedExpenseTotal: '20.00'
-      },
-      currentMonthBreakdown: {
-        income: {
-          realized: '0.00',
-          remaining: '500.00'
-        },
-        expense: {
-          realizedCommitted: '50.00',
-          remainingCommitted: '50.00',
-          remainingVariableProjected: '20.00'
-        }
-      },
-      committedBreakdown: {
-        income: {
-          adHocMaterializedTotal: '0.00',
-          fixedMaterializedTotal: '0.00',
-          fixedProjectedTotal: '0.00'
-        },
-        expense: {
-          adHocMaterializedTotal: '50.00',
-          fixedMaterializedTotal: '0.00',
-          fixedProjectedTotal: '30.00',
-          creditCardTotal: '20.00'
-        }
-      },
-      variableProjection: {
-        total: '20.00',
-        categories: [
-          {
-            categoryId: 10,
-            categoryName: 'Combustível',
-            color: '#f97316',
-            month: currentMonth,
-            historicalAverage: '120.00',
-            committedInMonth: '100.00',
-            remainingProjected: '20.00'
-          }
-        ]
-      },
-      projectedEndingBalance: '1380.00',
-      categoryTotals: [
-        {
-          categoryId: 10,
-          name: 'Combustível',
-          color: '#f97316',
-          type: 'EXPENSE',
-          amount: '120.00'
-        },
-        {
-          categoryId: 20,
-          name: 'Salário',
-          color: '#22c55e',
-          type: 'INCOME',
-          amount: '500.00'
-        }
-      ]
-    });
+    getMonthlyMock.mockResolvedValue(buildMonthlyResponse(currentMonth));
     getHistoryMock.mockResolvedValue({
       months: 12,
       monthlyTotals: [
@@ -300,11 +312,81 @@ describe('FinancialDashboard', () => {
       .parentElement;
 
     expect(projectedBalanceCard).toHaveTextContent('1.380,00');
-    expect(screen.getAllByText(/Combustível/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Média 6 meses/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Combustivel/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Media 6 meses/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Anterior/i })).toBeDisabled();
 
     expect(getMonthlyMock).toHaveBeenCalledWith(currentMonth);
+  });
+
+  it('groups small slices and saves the threshold preference', async () => {
+    const user = userEvent.setup();
+
+    apiGetMock.mockResolvedValue({
+      data: [
+        { id: 10, name: 'Combustivel', color: '#f97316', type: 'EXPENSE' },
+        { id: 11, name: 'Cafezinho', color: '#f59e0b', type: 'EXPENSE' },
+        { id: 20, name: 'Salario', color: '#22c55e', type: 'INCOME' }
+      ]
+    });
+    updatePreferenceMock.mockResolvedValue({
+      trackedExpenseCategoryIds: [10],
+      smallSliceThresholdPercent: 5
+    });
+    getMonthlyMock.mockResolvedValue({
+      ...buildMonthlyResponse(currentMonth),
+      categoryTotals: [
+        {
+          categoryId: 10,
+          name: 'Combustivel',
+          color: '#f97316',
+          type: 'EXPENSE' as const,
+          amount: '101.00',
+          realizedAmount: '50.00',
+          pendingAmount: '20.00',
+          projectedAmount: '30.00'
+        },
+        {
+          categoryId: 11,
+          name: 'Cafezinho',
+          color: '#f59e0b',
+          type: 'EXPENSE' as const,
+          amount: '1.00',
+          realizedAmount: '1.00',
+          pendingAmount: '0.00',
+          projectedAmount: '0.00'
+        }
+      ]
+    });
+
+    render(<FinancialDashboard />);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('skeleton')).not.toBeInTheDocument();
+    });
+
+    const legend = screen.getByTestId('category-pie-legend');
+    expect(within(legend).getByText(/Outras despesas/i)).toBeInTheDocument();
+    expect(within(legend).queryByText(/Cafezinho/i)).not.toBeInTheDocument();
+    expect(legend).toHaveTextContent('50,00');
+
+    await user.click(screen.getByRole('button', { name: /Incluir pendentes/i }));
+    expect(legend).toHaveTextContent('70,00');
+
+    await user.click(screen.getByRole('button', { name: /Incluir projetadas/i }));
+    expect(legend).toHaveTextContent('100,00');
+
+    const thresholdInput = screen.getByLabelText(/Agrupar fatias menores que/i);
+    await user.clear(thresholdInput);
+    await user.type(thresholdInput, '5');
+    await user.click(screen.getByRole('button', { name: /Salvar preferencias/i }));
+
+    await waitFor(() => {
+      expect(updatePreferenceMock).toHaveBeenCalledWith({
+        trackedExpenseCategoryIds: [10],
+        smallSliceThresholdPercent: 5
+      });
+    });
   });
 
   it('switches to the history view and shows the empty category state until categories are selected', async () => {
@@ -313,7 +395,7 @@ describe('FinancialDashboard', () => {
     render(<FinancialDashboard />);
 
     const viewSelect = await screen.findByRole('combobox', {
-      name: /Selecione a visão do dashboard/i
+      name: /Selecione a visao do dashboard/i
     });
     await user.selectOptions(viewSelect, 'history');
 
@@ -325,7 +407,7 @@ describe('FinancialDashboard', () => {
     });
 
     expect(
-      await screen.findByText(/Nenhuma categoria selecionada para o gráfico histórico/i)
+      await screen.findByText(/Nenhuma categoria selecionada para o grafico historico/i)
     ).toBeInTheDocument();
   });
 

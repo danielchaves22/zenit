@@ -30,7 +30,8 @@ export async function updateVariableProjectionPreference(req: Request, res: Resp
     const preference = await UserVariableProjectionPreferenceService.setPreference({
       userId,
       companyId,
-      trackedExpenseCategoryIds: req.body.trackedExpenseCategoryIds || []
+      trackedExpenseCategoryIds: req.body.trackedExpenseCategoryIds || [],
+      smallSliceThresholdPercent: req.body.smallSliceThresholdPercent ?? 3
     });
 
     return res.status(200).json(preference);

@@ -278,7 +278,8 @@ describe('Financial dashboard', () => {
       .put('/api/financial/preferences/variable-projection')
       .set(authHeaders(primaryToken, primaryCompanyId))
       .send({
-        trackedExpenseCategoryIds: [categories[0].id, categories[1].id]
+        trackedExpenseCategoryIds: [categories[0].id, categories[1].id],
+        smallSliceThresholdPercent: 5
       });
 
     expect(firstResponse.status).toBe(200);
@@ -286,6 +287,7 @@ describe('Financial dashboard', () => {
       categories[0].id,
       categories[1].id
     ]);
+    expect(firstResponse.body.smallSliceThresholdPercent).toBe(5);
 
     const sameUserOtherCompany = await request(app)
       .get('/api/financial/preferences/variable-projection')
@@ -293,6 +295,7 @@ describe('Financial dashboard', () => {
 
     expect(sameUserOtherCompany.status).toBe(200);
     expect(sameUserOtherCompany.body.trackedExpenseCategoryIds).toEqual([]);
+    expect(sameUserOtherCompany.body.smallSliceThresholdPercent).toBe(3);
 
     const otherUserSameCompany = await request(app)
       .get('/api/financial/preferences/variable-projection')
@@ -300,12 +303,14 @@ describe('Financial dashboard', () => {
 
     expect(otherUserSameCompany.status).toBe(200);
     expect(otherUserSameCompany.body.trackedExpenseCategoryIds).toEqual([]);
+    expect(otherUserSameCompany.body.smallSliceThresholdPercent).toBe(3);
 
     const tooManyResponse = await request(app)
       .put('/api/financial/preferences/variable-projection')
       .set(authHeaders(primaryToken, primaryCompanyId))
       .send({
-        trackedExpenseCategoryIds: categories.map((category) => category.id)
+        trackedExpenseCategoryIds: categories.map((category) => category.id),
+        smallSliceThresholdPercent: 3
       });
 
     expect(tooManyResponse.status).toBe(400);
@@ -455,6 +460,23 @@ describe('Financial dashboard', () => {
       }
     });
 
+    await prisma.recurringTransaction.create({
+      data: {
+        description: 'Receita projetada do mes',
+        amount: 80,
+        type: TransactionType.INCOME,
+        frequency: RecurringFrequency.MONTHLY,
+        dayOfMonth: 22,
+        startDate: buildDate(currentYear, currentMonthIndex - 2, 22),
+        nextDueDate: buildDate(currentYear, currentMonthIndex, 22),
+        isActive: true,
+        toAccountId: checkingAccount.id,
+        categoryId: incomeCategory.id,
+        companyId: primaryCompanyId,
+        createdBy: primaryUserId
+      }
+    });
+
     await prisma.userVariableProjectionPreference.create({
       data: {
         userId: primaryUserId,
@@ -472,12 +494,12 @@ describe('Financial dashboard', () => {
     expect(response.body.month).toBe(currentMonthKey);
     expect(response.body.carryOver.amount).toBe('950.00');
     expect(response.body.currentMonthBreakdown.income.realized).toBe('0.00');
-    expect(response.body.currentMonthBreakdown.income.remaining).toBe('500.00');
+    expect(response.body.currentMonthBreakdown.income.remaining).toBe('580.00');
     expect(response.body.currentMonthBreakdown.expense.realizedCommitted).toBe('50.00');
     expect(response.body.currentMonthBreakdown.expense.remainingCommitted).toBe('50.00');
     expect(response.body.currentMonthBreakdown.expense.remainingVariableProjected).toBe('20.00');
     expect(response.body.variableProjection.total).toBe('20.00');
-    expect(response.body.projectedEndingBalance).toBe('1380.00');
+    expect(response.body.projectedEndingBalance).toBe('1460.00');
     expect(response.body.variableProjection.categories).toEqual([
       {
         categoryId: trackedExpenseCategory.id,
@@ -489,6 +511,30 @@ describe('Financial dashboard', () => {
         remainingProjected: '20.00'
       }
     ]);
+    expect(response.body.categoryTotals).toEqual(
+      expect.arrayContaining([
+        {
+          categoryId: trackedExpenseCategory.id,
+          name: 'Combustivel',
+          color: '#f97316',
+          type: 'EXPENSE',
+          amount: '120.00',
+          realizedAmount: '50.00',
+          pendingAmount: '20.00',
+          projectedAmount: '50.00'
+        },
+        {
+          categoryId: incomeCategory.id,
+          name: 'Receita Variavel',
+          color: '#22c55e',
+          type: 'INCOME',
+          amount: '580.00',
+          realizedAmount: '0.00',
+          pendingAmount: '500.00',
+          projectedAmount: '80.00'
+        }
+      ])
+    );
   });
 
   it('returns the financial history with 12 months and the selected category series', async () => {

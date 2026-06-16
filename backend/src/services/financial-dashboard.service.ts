@@ -21,6 +21,7 @@ type DashboardSource =
   | 'CREDIT_CARD';
 
 type DashboardTransactionType = 'INCOME' | 'EXPENSE';
+type DashboardCategoryAggregationState = 'REALIZED' | 'PENDING' | 'PROJECTED';
 
 type DashboardKnownRow = {
   type: DashboardTransactionType;
@@ -30,6 +31,18 @@ type DashboardKnownRow = {
   categoryName: string;
   categoryColor: string;
   isRealized: boolean;
+  categoryAggregationState: DashboardCategoryAggregationState;
+};
+
+type CategoryTotalAccumulator = {
+  categoryId: number | null;
+  name: string;
+  color: string;
+  type: DashboardTransactionType;
+  amount: Prisma.Decimal;
+  realizedAmount: Prisma.Decimal;
+  pendingAmount: Prisma.Decimal;
+  projectedAmount: Prisma.Decimal;
 };
 
 type VariableProjectionItem = {
@@ -142,6 +155,44 @@ function buildCategoryLabel(category?: { name?: string | null } | null): string 
 
 function buildCategoryColor(category?: { color?: string | null } | null): string {
   return category?.color || '#6B7280';
+}
+
+function createCategoryTotalAccumulator(params: {
+  categoryId: number | null;
+  name: string;
+  color: string;
+  type: DashboardTransactionType;
+}): CategoryTotalAccumulator {
+  return {
+    categoryId: params.categoryId,
+    name: params.name,
+    color: params.color,
+    type: params.type,
+    amount: new Prisma.Decimal(0),
+    realizedAmount: new Prisma.Decimal(0),
+    pendingAmount: new Prisma.Decimal(0),
+    projectedAmount: new Prisma.Decimal(0)
+  };
+}
+
+function addAmountToCategoryAccumulator(
+  accumulator: CategoryTotalAccumulator,
+  amount: Prisma.Decimal,
+  aggregationState: DashboardCategoryAggregationState
+) {
+  accumulator.amount = accumulator.amount.plus(amount);
+
+  if (aggregationState === 'REALIZED') {
+    accumulator.realizedAmount = accumulator.realizedAmount.plus(amount);
+    return;
+  }
+
+  if (aggregationState === 'PENDING') {
+    accumulator.pendingAmount = accumulator.pendingAmount.plus(amount);
+    return;
+  }
+
+  accumulator.projectedAmount = accumulator.projectedAmount.plus(amount);
 }
 
 function isCompletedStatus(status?: TransactionStatus | null): boolean {
@@ -465,6 +516,10 @@ export default class FinancialDashboardService {
     const rows: DashboardKnownRow[] = [];
 
     for (const transaction of materializedNonCard) {
+      const categoryAggregationState = isCompletedStatus(transaction.status)
+        ? 'REALIZED'
+        : 'PENDING';
+
       rows.push({
         type: transaction.type as DashboardTransactionType,
         source: transaction.recurringTransactionId ? 'FIXED_MATERIALIZED' : 'AD_HOC_MATERIALIZED',
@@ -472,11 +527,16 @@ export default class FinancialDashboardService {
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
         categoryColor: buildCategoryColor(transaction.category),
-        isRealized: !isCurrentMonth || isCompletedStatus(transaction.status)
+        isRealized: !isCurrentMonth || isCompletedStatus(transaction.status),
+        categoryAggregationState
       });
     }
 
     for (const transaction of materializedCard) {
+      const categoryAggregationState = isPaidInvoiceStatus(transaction.creditCardInvoice?.status)
+        ? 'REALIZED'
+        : 'PENDING';
+
       rows.push({
         type: TransactionType.EXPENSE,
         source: 'CREDIT_CARD',
@@ -484,7 +544,8 @@ export default class FinancialDashboardService {
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
         categoryColor: buildCategoryColor(transaction.category),
-        isRealized: !isCurrentMonth || isPaidInvoiceStatus(transaction.creditCardInvoice?.status)
+        isRealized: !isCurrentMonth || isPaidInvoiceStatus(transaction.creditCardInvoice?.status),
+        categoryAggregationState
       });
     }
 
@@ -558,7 +619,8 @@ export default class FinancialDashboardService {
               categoryId: template.categoryId ?? null,
               categoryName: buildCategoryLabel(template.category),
               categoryColor: buildCategoryColor(template.category),
-              isRealized: false
+              isRealized: false,
+              categoryAggregationState: 'PROJECTED'
             });
           }
 
@@ -574,7 +636,8 @@ export default class FinancialDashboardService {
             categoryId: template.categoryId ?? null,
             categoryName: buildCategoryLabel(template.category),
             categoryColor: buildCategoryColor(template.category),
-            isRealized: false
+            isRealized: false,
+            categoryAggregationState: 'PROJECTED'
           });
         }
 
@@ -755,13 +818,7 @@ export default class FinancialDashboardService {
 
     const categoryTotalsMap = new Map<
       string,
-      {
-        categoryId: number | null;
-        name: string;
-        color: string;
-        type: DashboardTransactionType;
-        amount: Prisma.Decimal;
-      }
+      CategoryTotalAccumulator
     >();
 
     const committedBreakdown = {
@@ -788,14 +845,17 @@ export default class FinancialDashboardService {
       const categoryKey = `${row.type}:${row.categoryId ?? 'uncategorized'}`;
       const existingCategory =
         categoryTotalsMap.get(categoryKey) ??
-        {
+        createCategoryTotalAccumulator({
           categoryId: row.categoryId,
           name: row.categoryName,
           color: row.categoryColor,
-          type: row.type,
-          amount: new Prisma.Decimal(0)
-        };
-      existingCategory.amount = existingCategory.amount.plus(row.amount);
+          type: row.type
+        });
+      addAmountToCategoryAccumulator(
+        existingCategory,
+        row.amount,
+        row.categoryAggregationState
+      );
       categoryTotalsMap.set(categoryKey, existingCategory);
 
       if (row.type === TransactionType.INCOME) {
@@ -849,14 +909,13 @@ export default class FinancialDashboardService {
       const categoryKey = `${TransactionType.EXPENSE}:${item.categoryId}`;
       const existingCategory =
         categoryTotalsMap.get(categoryKey) ??
-        {
+        createCategoryTotalAccumulator({
           categoryId: item.categoryId,
           name: item.categoryName,
           color: item.color,
-          type: TransactionType.EXPENSE,
-          amount: new Prisma.Decimal(0)
-        };
-      existingCategory.amount = existingCategory.amount.plus(item.remainingProjected);
+          type: TransactionType.EXPENSE
+        });
+      addAmountToCategoryAccumulator(existingCategory, item.remainingProjected, 'PROJECTED');
       categoryTotalsMap.set(categoryKey, existingCategory);
     }
 
@@ -929,7 +988,10 @@ export default class FinancialDashboardService {
         name: item.name,
         color: item.color,
         type: item.type,
-        amount: toMoneyString(item.amount)
+        amount: toMoneyString(item.amount),
+        realizedAmount: toMoneyString(item.realizedAmount),
+        pendingAmount: toMoneyString(item.pendingAmount),
+        projectedAmount: toMoneyString(item.projectedAmount)
       }))
     };
   }

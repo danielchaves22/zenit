@@ -1161,6 +1161,7 @@ model UserVariableProjectionPreference {
   userId                   Int
   companyId                Int
   trackedExpenseCategoryIds Int[]    @default([])
+  smallSliceThresholdPercent Int     @default(3)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
 

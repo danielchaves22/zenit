@@ -4,6 +4,7 @@ export type FinancialDashboardView = 'monthly' | 'history';
 
 export interface VariableProjectionPreference {
   trackedExpenseCategoryIds: number[];
+  smallSliceThresholdPercent: number;
 }
 
 export interface FinancialDashboardMonthlyResponse {
@@ -67,6 +68,9 @@ export interface FinancialDashboardMonthlyResponse {
     color: string;
     type: 'INCOME' | 'EXPENSE';
     amount: string;
+    realizedAmount: string;
+    pendingAmount: string;
+    projectedAmount: string;
   }>;
 }
 
@@ -96,10 +100,14 @@ export async function getVariableProjectionPreference(): Promise<VariableProject
 }
 
 export async function updateVariableProjectionPreference(
-  trackedExpenseCategoryIds: number[]
+  params: {
+    trackedExpenseCategoryIds: number[];
+    smallSliceThresholdPercent: number;
+  }
 ): Promise<VariableProjectionPreference> {
   const response = await api.put('/financial/preferences/variable-projection', {
-    trackedExpenseCategoryIds
+    trackedExpenseCategoryIds: params.trackedExpenseCategoryIds,
+    smallSliceThresholdPercent: params.smallSliceThresholdPercent
   });
   return response.data as VariableProjectionPreference;
 }

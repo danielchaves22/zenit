@@ -171,15 +171,6 @@ function getRemainingInstallmentsLabel(purchase: CreditCardPurchaseListItem) {
 
 function getLastInvoiceReferenceLabel(purchase: CreditCardPurchaseListItem) {
   const lastInstallment = [...purchase.installments].sort((left, right) => {
-    if (left.creditCardInvoice && right.creditCardInvoice) {
-      const leftValue =
-        left.creditCardInvoice.referenceYear * 100 + left.creditCardInvoice.referenceMonth;
-      const rightValue =
-        right.creditCardInvoice.referenceYear * 100 + right.creditCardInvoice.referenceMonth;
-
-      return rightValue - leftValue;
-    }
-
     const leftDate =
       left.creditCardInvoice?.dueDate || left.dueDate || left.scheduledDate || '';
     const rightDate =
@@ -192,6 +183,18 @@ function getLastInvoiceReferenceLabel(purchase: CreditCardPurchaseListItem) {
     return '-';
   }
 
+  const lastDueDate =
+    lastInstallment.creditCardInvoice?.dueDate ||
+    lastInstallment.dueDate ||
+    lastInstallment.scheduledDate;
+
+  if (lastDueDate) {
+    return formatCalendarDate(lastDueDate, {
+      month: '2-digit',
+      year: 'numeric'
+    });
+  }
+
   if (lastInstallment.creditCardInvoice) {
     return getInvoiceReferenceLabel(
       lastInstallment.creditCardInvoice.referenceYear,
@@ -201,7 +204,10 @@ function getLastInvoiceReferenceLabel(purchase: CreditCardPurchaseListItem) {
 
   return formatCalendarDate(
     lastInstallment.dueDate || lastInstallment.scheduledDate,
-    { month: '2-digit', year: 'numeric' }
+    {
+      month: '2-digit',
+      year: 'numeric'
+    }
   );
 }
 

@@ -338,7 +338,6 @@ describe('FinancialDashboard', () => {
       .parentElement;
 
     expect(projectedBalanceCard).toHaveTextContent('1.380,00');
-    expect(screen.getByText(/^Visao estrutural$/i)).toBeInTheDocument();
     expect(screen.getByText(/Compromissos fixos ativos/i)).toBeInTheDocument();
     expect(screen.getByText(/Cartoes consolidados/i)).toBeInTheDocument();
     expect(screen.getByText(/5\.000,00/)).toBeInTheDocument();

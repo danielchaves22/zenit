@@ -1095,10 +1095,6 @@ export default function FinancialDashboard() {
           <h1 className="mt-1 text-2xl font-heading font-bold text-white">
             Visao analitica do caixa e das tendencias do mes.
           </h1>
-          <p className="mt-2 max-w-3xl text-sm text-gray-400">
-            A visao estrutural fica sempre fixa no topo. Abaixo, voce escolhe qual painel variavel
-            quer explorar.
-          </p>
         </div>
       </div>
 

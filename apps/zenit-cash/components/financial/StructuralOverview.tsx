@@ -1,5 +1,5 @@
-import React from 'react';
-import { Landmark, WalletCards } from 'lucide-react';
+import React, { useState } from 'react';
+import { CircleHelp, Landmark, WalletCards } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { type FinancialDashboardStructuralResponse } from '@/lib/financial-dashboard';
@@ -47,11 +47,11 @@ function CompactMetric({
             };
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-[#0b1117] px-3 py-2.5">
+    <div className="rounded-xl border border-gray-800 bg-[#0b1117] px-3 py-2">
       <div className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${styles.label}`}>
         {label}
       </div>
-      <div className={`mt-1 text-sm font-semibold tabular-nums ${styles.value}`}>
+      <div className={`mt-0.5 text-sm font-semibold tabular-nums ${styles.value}`}>
         {formatCurrency(value)}
       </div>
     </div>
@@ -61,7 +61,8 @@ function CompactMetric({
 function CompactSection({
   title,
   icon,
-  metrics
+  metrics,
+  helpText
 }: {
   title: string;
   icon: React.ReactNode;
@@ -70,12 +71,33 @@ function CompactSection({
     value: string;
     tone: 'default' | 'income' | 'expense' | 'balance';
   }>;
+  helpText?: string;
 }) {
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-white">
-        {icon}
-        {title}
+    <div className="space-y-2">
+      <div className="relative flex items-center gap-2 text-sm font-medium text-white">
+        <span className="text-accent">{icon}</span>
+        <span>{title}</span>
+        {helpText ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setIsHelpOpen((current) => !current)}
+              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-700 text-gray-400 transition hover:border-accent hover:text-accent"
+              aria-label={`Explicar ${title}`}
+              aria-expanded={isHelpOpen}
+            >
+              <CircleHelp size={12} />
+            </button>
+            {isHelpOpen ? (
+              <div className="absolute left-0 top-full z-20 mt-2 w-[300px] max-w-[calc(100vw-3rem)] rounded-lg border border-gray-700 bg-[#0f1419] px-3 py-2 text-xs font-normal leading-relaxed text-gray-300 shadow-[0_18px_40px_rgba(2,6,23,0.45)]">
+                {helpText}
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {metrics.map((metric) => (
@@ -101,34 +123,24 @@ export default function StructuralOverview({
   error: string | null;
 }) {
   return (
-    <Card className="p-4">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="max-w-2xl">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-            Visao estrutural
-          </div>
-          <p className="mt-1 text-sm text-gray-400">
-            Panorama fixo da operacao. Nao depende do painel nem do mes selecionado.
-          </p>
+    <Card className="px-4 py-3">
+      {error ? (
+        <div className="mb-3 rounded-lg border border-red-900/60 bg-red-950/20 px-3 py-2 text-sm text-red-200">
+          {error}
         </div>
-
-        {error ? (
-          <div className="rounded-lg border border-red-900/60 bg-red-950/20 px-3 py-2 text-sm text-red-200">
-            {error}
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       {loading ? (
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <Skeleton className="h-28 rounded-xl" />
-          <Skeleton className="h-28 rounded-xl" />
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <Skeleton className="h-20 rounded-xl" />
+          <Skeleton className="h-20 rounded-xl" />
         </div>
       ) : data ? (
-        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] xl:items-start">
           <CompactSection
             title="Compromissos fixos ativos"
-            icon={<Landmark size={16} className="text-accent" />}
+            icon={<Landmark size={16} />}
+            helpText="Panorama fixo da operacao. Nao depende do painel nem do mes selecionado. Considera receitas e despesas recorrentes ativas, incluindo despesas fixas no cartao."
             metrics={[
               {
                 label: 'Receitas fixas',
@@ -150,7 +162,7 @@ export default function StructuralOverview({
 
           <CompactSection
             title="Cartoes consolidados"
-            icon={<WalletCards size={16} className="text-accent" />}
+            icon={<WalletCards size={16} />}
             metrics={[
               {
                 label: 'Limite total',
@@ -171,7 +183,7 @@ export default function StructuralOverview({
           />
         </div>
       ) : (
-        <div className="mt-4 rounded-xl border border-dashed border-gray-700 px-4 py-5 text-sm text-gray-400">
+        <div className="rounded-xl border border-dashed border-gray-700 px-4 py-4 text-sm text-gray-400">
           Nenhuma informacao estrutural disponivel no momento.
         </div>
       )}

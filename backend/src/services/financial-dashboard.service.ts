@@ -867,6 +867,7 @@ export default class FinancialDashboardService {
     const currentDate = new Date();
     const currentMonthStart = startOfMonth(currentDate);
     const requestedMonthStart = startOfMonth(parseMonthKey(params.month));
+    const requestedMonthEnd = endOfMonth(requestedMonthStart);
 
     if (requestedMonthStart < currentMonthStart) {
       throw new Error('Não é permitido consultar meses anteriores ao atual');
@@ -892,7 +893,9 @@ export default class FinancialDashboardService {
     let monthCursor = new Date(currentMonthStart);
     let targetComputation: MonthlyComputation | null = null;
 
-    while (monthCursor <= requestedMonthStart) {
+    // `addMonths` keeps iteration on a stable first-of-month cursor at noon.
+    // Compare with the requested month end so the target future month is included.
+    while (monthCursor <= requestedMonthEnd) {
       const monthEnd = endOfMonth(monthCursor);
       const knownRows = await this.getKnownMonthlyRows({
         companyId: params.companyId,

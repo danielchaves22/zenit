@@ -18,6 +18,11 @@ function buildMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function addMonthKey(monthKey: string, offset: number) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return buildMonthKey(new Date(year, month - 1 + offset, 1, 12, 0, 0, 0));
+}
+
 function buildDate(year: number, monthIndex: number, day: number) {
   return new Date(year, monthIndex, day, 12, 0, 0, 0);
 }
@@ -535,6 +540,26 @@ describe('Financial dashboard', () => {
         }
       ])
     );
+
+    const nextMonthKey = addMonthKey(currentMonthKey, 1);
+    const nextMonthResponse = await request(app)
+      .get('/api/financial/dashboard/monthly')
+      .set(authHeaders(primaryToken, primaryCompanyId))
+      .query({ month: nextMonthKey });
+
+    expect(nextMonthResponse.status).toBe(200);
+    expect(nextMonthResponse.body.month).toBe(nextMonthKey);
+    expect(nextMonthResponse.body.carryOver).toEqual({
+      amount: '1460.00',
+      source: 'PREVIOUS_PROJECTED'
+    });
+    expect(nextMonthResponse.body.monthlyTotals).toEqual({
+      incomeTotal: '80.00',
+      expenseTotal: '120.00',
+      committedExpenseTotal: '30.00',
+      variableProjectedExpenseTotal: '90.00'
+    });
+    expect(nextMonthResponse.body.projectedEndingBalance).toBe('1420.00');
   });
 
   it('returns the structural summary with active fixed items only and consolidated credit card values', async () => {

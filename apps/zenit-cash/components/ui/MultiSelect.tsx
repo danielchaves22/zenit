@@ -8,6 +8,7 @@ export interface MultiSelectOption {
 }
 
 interface MultiSelectProps {
+  ariaLabel?: string;
   label?: string;
   options: MultiSelectOption[];
   values: string[];
@@ -21,6 +22,7 @@ interface MultiSelectProps {
 }
 
 export function MultiSelect({
+  ariaLabel,
   label,
   options,
   values,
@@ -145,6 +147,7 @@ export function MultiSelect({
         <button
           ref={triggerRef}
           type="button"
+          aria-label={ariaLabel || label || placeholder}
           disabled={disabled}
           onClick={() => !disabled && setIsOpen((prev) => !prev)}
           className={`flex w-full items-center justify-between gap-2 rounded border bg-background px-2 py-1.5 text-left text-sm text-white transition-colors focus:outline-none focus:ring focus:border-accent ${

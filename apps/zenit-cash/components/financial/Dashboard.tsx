@@ -20,9 +20,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  LineChart as LineChartIcon,
   Loader2,
-  PieChart as PieChartIcon,
   Save,
   Settings2
 } from 'lucide-react';
@@ -1087,15 +1085,15 @@ export default function FinancialDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+      <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:gap-4">
+        <div className="shrink-0">
+          <div className="text-2xl font-heading font-bold text-white">
             Dashboard financeiro
           </div>
-          <h1 className="mt-1 text-2xl font-heading font-bold text-white">
-            Visao analitica do caixa e das tendencias do mes.
-          </h1>
         </div>
+        <h1 className="text-sm text-gray-300 md:text-base">
+          Visao analitica do caixa e das tendencias do mes.
+        </h1>
       </div>
 
       <StructuralOverview
@@ -1104,76 +1102,81 @@ export default function FinancialDashboard() {
         error={structuralError}
       />
 
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-              Paineis variaveis
-            </div>
-            <div className="mt-1 text-sm text-gray-300">
-              {view === 'monthly'
-                ? 'Leitura detalhada do mes selecionado'
-                : 'Comparativo consolidado dos ultimos 12 meses'}
-            </div>
+      <div className="flex flex-col gap-3 rounded-xl border border-gray-800 bg-[#151a22] px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            Paineis variaveis
+          </div>
+          <div className="text-sm text-gray-300">
+            {view === 'monthly' ? 'Situacao financeira mensal' : 'Historico financeiro'}
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Select
-            aria-label="Selecione a visao do dashboard"
-            options={VIEW_OPTIONS}
-            value={view}
-            onChange={(event) => handleViewChange(event.target.value)}
-          />
+        {view === 'monthly' ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              aria-label="Selecione a visao do dashboard"
+              options={VIEW_OPTIONS}
+              value={view}
+              onChange={(event) => handleViewChange(event.target.value)}
+              className="min-w-[280px]"
+            />
 
-          <div className="flex items-center gap-2 rounded-xl border border-gray-700 bg-[#11161d] px-3 py-2">
-            <CalendarRange size={16} className="text-accent" />
-            <span className="text-sm text-gray-300">
-              {view === 'monthly' ? formatMonthLabel(month) : 'Ultimos 12 meses'}
-            </span>
+            <div className="flex items-center gap-2 rounded-xl border border-gray-700 bg-[#11161d] px-3 py-2">
+              <CalendarRange size={16} className="text-accent" />
+              <span className="text-sm text-gray-300">{formatMonthLabel(month)}</span>
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={() => handleMonthChange(-1)}
+              disabled={!canGoBackMonth}
+              className="inline-flex items-center gap-1"
+            >
+              <ChevronLeft size={15} />
+              Anterior
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => handleMonthChange(1)}
+              className="inline-flex items-center gap-1"
+            >
+              Proximo
+              <ChevronRight size={15} />
+            </Button>
           </div>
-        </div>
+        ) : (
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+            <Select
+              aria-label="Selecione a visao do dashboard"
+              options={VIEW_OPTIONS}
+              value={view}
+              onChange={(event) => handleViewChange(event.target.value)}
+              className="min-w-[280px]"
+            />
+
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                Categorias
+              </span>
+              <MultiSelect
+                ariaLabel="Categorias no grafico"
+                options={historyCategoryOptions}
+                values={historyCategoryIds}
+                onChange={setHistoryCategoryIds}
+                placeholder="Selecione categorias para comparar"
+                triggerClassName="h-10 min-w-[280px]"
+                className="mb-0 min-w-[280px]"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {error ? <Card className="p-4 text-danger">{error}</Card> : null}
 
       {view === 'monthly' ? (
         <>
-          <Card className="p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
-                  <PieChartIcon size={16} className="text-accent" />
-                  Situacao financeira mensal
-                </div>
-                <p className="mt-1 text-sm text-gray-400">
-                  O mes atual parte do saldo real de hoje. Meses futuros carregam o saldo final
-                  projetado do mes anterior.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 self-start lg:self-auto">
-                <Button
-                  variant="outline"
-                  onClick={() => handleMonthChange(-1)}
-                  disabled={!canGoBackMonth}
-                  className="inline-flex items-center gap-1"
-                >
-                  <ChevronLeft size={15} />
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleMonthChange(1)}
-                  className="inline-flex items-center gap-1"
-                >
-                  Proximo
-                  <ChevronRight size={15} />
-                </Button>
-              </div>
-            </div>
-          </Card>
-
           {monthlyLoadingState ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
               {Array.from({ length: 5 }).map((_, index) => (
@@ -1644,32 +1647,6 @@ export default function FinancialDashboard() {
         </>
       ) : (
         <>
-          <Card className="p-5">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-medium text-gray-200">
-                  <LineChartIcon size={16} className="text-accent" />
-                  Historico financeiro
-                </div>
-                <p className="mt-1 text-sm text-gray-400">
-                  Evolucao mensal das receitas, despesas e das categorias escolhidas para analise.
-                </p>
-              </div>
-
-              <div className="min-w-[280px]">
-                <MultiSelect
-                  label="Categorias no grafico"
-                  options={historyCategoryOptions}
-                  values={historyCategoryIds}
-                  onChange={setHistoryCategoryIds}
-                  placeholder="Selecione categorias para comparar"
-                  triggerClassName="h-10"
-                  className="mb-0"
-                />
-              </div>
-            </div>
-          </Card>
-
           {loadingBootstrap || loadingHistory ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <Skeleton className="h-[360px] rounded-xl" />

@@ -5,6 +5,7 @@ import {
   FinancialTransactionEntryKind,
   Prisma,
   PrismaClient,
+  RecurringFrequency,
   TransactionStatus,
   TransactionType
 } from '@prisma/client';
@@ -204,6 +205,28 @@ function isPaidInvoiceStatus(status?: CreditCardInvoiceStatus | null): boolean {
 }
 
 export default class FinancialDashboardService {
+  private static buildFixedTemplateAccessWhere(
+    accessibleAccountIds?: number[]
+  ): Prisma.RecurringTransactionWhereInput {
+    if (!accessibleAccountIds) {
+      return {};
+    }
+
+    if (accessibleAccountIds.length === 0) {
+      return {
+        OR: [{ fromAccountId: null, toAccountId: null }]
+      };
+    }
+
+    return {
+      OR: [
+        { fromAccountId: null, toAccountId: null },
+        { type: TransactionType.INCOME, toAccountId: { in: accessibleAccountIds } },
+        { type: TransactionType.EXPENSE, fromAccountId: { in: accessibleAccountIds } }
+      ]
+    };
+  }
+
   private static async getCurrentBalance(params: {
     companyId: number;
     accessibleAccountIds?: number[];
@@ -228,6 +251,89 @@ export default class FinancialDashboardService {
     });
 
     return toDecimal(aggregate._sum.balance);
+  }
+
+  private static async getStructuralSummary(params: {
+    companyId: number;
+    accessibleAccountIds?: number[];
+  }) {
+    const referenceDate = startOfDay(new Date());
+    const activeFixedTemplates = await prisma.recurringTransaction.groupBy({
+      by: ['type'],
+      where: {
+        companyId: params.companyId,
+        isActive: true,
+        frequency: RecurringFrequency.MONTHLY,
+        type: { in: [TransactionType.INCOME, TransactionType.EXPENSE] },
+        AND: [
+          { startDate: { lte: referenceDate } },
+          {
+            OR: [{ endDate: null }, { endDate: { gte: referenceDate } }]
+          },
+          this.buildFixedTemplateAccessWhere(params.accessibleAccountIds)
+        ]
+      },
+      _sum: {
+        amount: true
+      }
+    });
+
+    const activeCreditCards = await prisma.financialAccount.findMany({
+      where: {
+        companyId: params.companyId,
+        isActive: true,
+        type: AccountType.CREDIT_CARD,
+        ...(params.accessibleAccountIds ? { id: { in: params.accessibleAccountIds } } : {})
+      },
+      select: {
+        balance: true,
+        creditLimit: true
+      }
+    });
+
+    const fixedIncomeTotal =
+      activeFixedTemplates.find((item) => item.type === TransactionType.INCOME)?._sum.amount ??
+      new Prisma.Decimal(0);
+    const fixedExpenseTotal =
+      activeFixedTemplates.find((item) => item.type === TransactionType.EXPENSE)?._sum.amount ??
+      new Prisma.Decimal(0);
+
+    const creditCardsSummary = activeCreditCards.reduce(
+      (accumulator, card) => {
+        const balance = toDecimal(card.balance);
+        const usedLimit = balance.lt(0) ? balance.abs() : new Prisma.Decimal(0);
+
+        accumulator.totalLimit = accumulator.totalLimit.plus(toDecimal(card.creditLimit));
+        accumulator.usedLimit = accumulator.usedLimit.plus(usedLimit);
+
+        if (card.creditLimit !== null) {
+          accumulator.availableLimit = accumulator.availableLimit.plus(
+            toDecimal(card.creditLimit).minus(usedLimit)
+          );
+        }
+
+        return accumulator;
+      },
+      {
+        totalLimit: new Prisma.Decimal(0),
+        usedLimit: new Prisma.Decimal(0),
+        availableLimit: new Prisma.Decimal(0)
+      }
+    );
+
+    return {
+      referenceDate: referenceDate.toISOString(),
+      fixed: {
+        incomeTotal: toMoneyString(fixedIncomeTotal),
+        expenseTotal: toMoneyString(fixedExpenseTotal),
+        netTotal: toMoneyString(fixedIncomeTotal.minus(fixedExpenseTotal))
+      },
+      creditCards: {
+        totalLimit: toMoneyString(creditCardsSummary.totalLimit),
+        usedLimit: toMoneyString(creditCardsSummary.usedLimit),
+        availableLimit: toMoneyString(creditCardsSummary.availableLimit)
+      }
+    };
   }
 
   private static async getTrackedExpenseCategories(params: {
@@ -815,6 +921,10 @@ export default class FinancialDashboardService {
     if (!targetComputation) {
       throw new Error('Não foi possível calcular o dashboard mensal');
     }
+    const structuralSummary = await this.getStructuralSummary({
+      companyId: params.companyId,
+      accessibleAccountIds: params.accessibleAccountIds
+    });
 
     const categoryTotalsMap = new Map<
       string,
@@ -934,6 +1044,7 @@ export default class FinancialDashboardService {
         startDate: startOfMonth(parseMonthKey(targetComputation.month)).toISOString(),
         endDate: endOfMonth(parseMonthKey(targetComputation.month)).toISOString()
       },
+      structuralSummary,
       carryOver: {
         amount: toMoneyString(targetComputation.carryOverAmount),
         source: targetComputation.isCurrentMonth ? 'CURRENT_BALANCE' : 'PREVIOUS_PROJECTED'

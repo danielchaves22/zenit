@@ -184,6 +184,19 @@ function buildMonthlyResponse(month: string) {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString()
     },
+    structuralSummary: {
+      referenceDate: startDate.toISOString(),
+      fixed: {
+        incomeTotal: '1200.00',
+        expenseTotal: '650.00',
+        netTotal: '550.00'
+      },
+      creditCards: {
+        totalLimit: '5000.00',
+        usedLimit: '600.00',
+        availableLimit: '4400.00'
+      }
+    },
     carryOver: {
       amount: '950.00',
       source: 'CURRENT_BALANCE' as const
@@ -321,6 +334,11 @@ describe('FinancialDashboard', () => {
       .parentElement;
 
     expect(projectedBalanceCard).toHaveTextContent('1.380,00');
+    expect(screen.getByText(/Visao estrutural atual/i)).toBeInTheDocument();
+    expect(screen.getByText(/Compromissos fixos ativos/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cartoes de credito consolidados/i)).toBeInTheDocument();
+    expect(screen.getByText(/5\.000,00/)).toBeInTheDocument();
+    expect(screen.getByText(/4\.400,00/)).toBeInTheDocument();
     expect(screen.getAllByText(/Combustivel/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Media 6 meses/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Anterior/i })).toBeDisabled();

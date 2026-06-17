@@ -500,6 +500,18 @@ describe('Financial dashboard', () => {
     expect(response.body.currentMonthBreakdown.expense.remainingVariableProjected).toBe('20.00');
     expect(response.body.variableProjection.total).toBe('20.00');
     expect(response.body.projectedEndingBalance).toBe('1460.00');
+    expect(response.body.structuralSummary).toMatchObject({
+      fixed: {
+        incomeTotal: '80.00',
+        expenseTotal: '30.00',
+        netTotal: '50.00'
+      },
+      creditCards: {
+        totalLimit: '0.00',
+        usedLimit: '0.00',
+        availableLimit: '0.00'
+      }
+    });
     expect(response.body.variableProjection.categories).toEqual([
       {
         categoryId: trackedExpenseCategory.id,
@@ -535,6 +547,167 @@ describe('Financial dashboard', () => {
         }
       ])
     );
+  });
+
+  it('returns a structural summary with active fixed items only and consolidated credit card values', async () => {
+    const now = new Date();
+    const currentMonthKey = buildMonthKey(now);
+    const currentMonthIndex = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const checkingAccount = await prisma.financialAccount.create({
+      data: {
+        name: 'Conta Estrutural',
+        type: 'CHECKING',
+        balance: 3000,
+        companyId: primaryCompanyId
+      }
+    });
+
+    const creditCardAccount = await prisma.financialAccount.create({
+      data: {
+        name: 'Cartao Estrutural',
+        type: 'CREDIT_CARD',
+        balance: -600,
+        creditLimit: 5000,
+        companyId: primaryCompanyId,
+        statementClosingDay: 20,
+        statementDueDay: 28
+      }
+    });
+
+    const [incomeCategory, expenseCategory] = await Promise.all([
+      prisma.financialCategory.create({
+        data: {
+          name: 'Salario Fixo',
+          type: 'INCOME',
+          color: '#22c55e',
+          companyId: primaryCompanyId
+        }
+      }),
+      prisma.financialCategory.create({
+        data: {
+          name: 'Moradia',
+          type: 'EXPENSE',
+          color: '#ef4444',
+          companyId: primaryCompanyId
+        }
+      })
+    ]);
+
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    yesterday.setHours(12, 0, 0, 0);
+    const nextMonthStart = buildDate(currentYear, currentMonthIndex + 1, 5);
+
+    await prisma.recurringTransaction.createMany({
+      data: [
+        {
+          description: 'Receita fixa ativa',
+          amount: 1200,
+          type: TransactionType.INCOME,
+          frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: 5,
+          startDate: buildDate(currentYear, currentMonthIndex - 3, 5),
+          nextDueDate: buildDate(currentYear, currentMonthIndex, 5),
+          isActive: true,
+          toAccountId: checkingAccount.id,
+          categoryId: incomeCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Despesa fixa ativa',
+          amount: 400,
+          type: TransactionType.EXPENSE,
+          frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: 10,
+          startDate: buildDate(currentYear, currentMonthIndex - 4, 10),
+          nextDueDate: buildDate(currentYear, currentMonthIndex, 10),
+          isActive: true,
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Despesa fixa ativa no cartao',
+          amount: 250,
+          type: TransactionType.EXPENSE,
+          frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: null,
+          startDate: buildDate(currentYear, currentMonthIndex - 2, 1),
+          nextDueDate: buildDate(currentYear, currentMonthIndex, 20),
+          isActive: true,
+          fromAccountId: creditCardAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Receita futura nao iniciada',
+          amount: 999,
+          type: TransactionType.INCOME,
+          frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: 5,
+          startDate: nextMonthStart,
+          nextDueDate: nextMonthStart,
+          isActive: true,
+          toAccountId: checkingAccount.id,
+          categoryId: incomeCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Despesa encerrada',
+          amount: 777,
+          type: TransactionType.EXPENSE,
+          frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: 12,
+          startDate: buildDate(currentYear, currentMonthIndex - 6, 12),
+          endDate: yesterday,
+          nextDueDate: buildDate(currentYear, currentMonthIndex, 12),
+          isActive: true,
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Despesa inativa',
+          amount: 333,
+          type: TransactionType.EXPENSE,
+          frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: 18,
+          startDate: buildDate(currentYear, currentMonthIndex - 3, 18),
+          nextDueDate: buildDate(currentYear, currentMonthIndex, 18),
+          isActive: false,
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        }
+      ]
+    });
+
+    const response = await request(app)
+      .get('/api/financial/dashboard/monthly')
+      .set(authHeaders(primaryToken, primaryCompanyId))
+      .query({ month: currentMonthKey });
+
+    expect(response.status).toBe(200);
+    expect(response.body.structuralSummary).toMatchObject({
+      fixed: {
+        incomeTotal: '1200.00',
+        expenseTotal: '650.00',
+        netTotal: '550.00'
+      },
+      creditCards: {
+        totalLimit: '5000.00',
+        usedLimit: '600.00',
+        availableLimit: '4400.00'
+      }
+    });
   });
 
   it('returns the financial history with 12 months and the selected category series', async () => {

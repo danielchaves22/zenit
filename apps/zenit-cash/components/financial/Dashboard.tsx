@@ -255,6 +255,57 @@ function SummaryCard({
   );
 }
 
+function StructuralMetric({
+  title,
+  value,
+  tone,
+  caption
+}: {
+  title: string;
+  value: string;
+  tone: 'default' | 'income' | 'expense' | 'balance';
+  caption?: string;
+}) {
+  const styles =
+    tone === 'income'
+      ? {
+          card: 'border-emerald-900/50 bg-emerald-950/20',
+          title: 'text-emerald-200/75',
+          value: 'text-emerald-300'
+        }
+      : tone === 'expense'
+        ? {
+            card: 'border-red-900/50 bg-red-950/20',
+            title: 'text-red-200/75',
+            value: 'text-red-300'
+          }
+        : tone === 'balance'
+          ? parseAmount(value) >= 0
+            ? {
+                card: 'border-sky-900/50 bg-sky-950/20',
+                title: 'text-sky-200/75',
+                value: 'text-sky-300'
+              }
+            : {
+                card: 'border-red-900/50 bg-red-950/20',
+                title: 'text-red-200/75',
+                value: 'text-red-300'
+              }
+          : {
+              card: 'border-gray-800 bg-[#0b1117]',
+              title: 'text-slate-300/75',
+              value: 'text-slate-100'
+            };
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${styles.card}`}>
+      <div className={`text-[11px] font-medium uppercase tracking-wide ${styles.title}`}>{title}</div>
+      <div className={`mt-1 text-lg font-semibold ${styles.value}`}>{formatCurrency(value)}</div>
+      {caption ? <div className="mt-1.5 text-xs text-gray-500">{caption}</div> : null}
+    </div>
+  );
+}
+
 function buildCategoryPieData(params: {
   categoryTotals: FinancialDashboardMonthlyResponse['categoryTotals'];
   categories: Category[];
@@ -1113,13 +1164,88 @@ export default function FinancialDashboard() {
           </Card>
 
           {monthlyLoadingState ? (
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-5">
-              {Array.from({ length: 5 }).map((_, index) => (
-                <Skeleton key={index} className="h-28 rounded-xl" />
-              ))}
-            </div>
+            <>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {Array.from({ length: 2 }).map((_, index) => (
+                  <Skeleton key={`structural-${index}`} className="h-52 rounded-xl" />
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <Skeleton key={index} className="h-28 rounded-xl" />
+                ))}
+              </div>
+            </>
           ) : monthlyData ? (
             <>
+              <Card className="p-5">
+                <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+                      Leitura estrutural
+                    </div>
+                    <h3 className="mt-1 text-lg font-medium text-white">Visao estrutural atual</h3>
+                    <p className="mt-1 text-sm text-gray-400">
+                      Esta area nao muda com o mes selecionado. Considera apenas fixas ativas e os
+                      limites atuais dos cartoes.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+                  <div className="rounded-2xl border border-gray-800 bg-[#0f1419] p-4">
+                    <div className="text-sm font-medium text-white">Compromissos fixos ativos</div>
+                    <p className="mt-1 text-sm text-gray-400">
+                      Receitas e despesas mensais recorrentes. Despesas fixas no cartao entram aqui.
+                    </p>
+
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <StructuralMetric
+                        title="Receitas fixas"
+                        value={monthlyData.structuralSummary.fixed.incomeTotal}
+                        tone="income"
+                      />
+                      <StructuralMetric
+                        title="Despesas fixas"
+                        value={monthlyData.structuralSummary.fixed.expenseTotal}
+                        tone="expense"
+                      />
+                      <StructuralMetric
+                        title="Saldo fixo"
+                        value={monthlyData.structuralSummary.fixed.netTotal}
+                        tone="balance"
+                        caption="Receitas fixas menos despesas fixas"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-800 bg-[#0f1419] p-4">
+                    <div className="text-sm font-medium text-white">Cartoes de credito consolidados</div>
+                    <p className="mt-1 text-sm text-gray-400">
+                      Valores atuais de limite, uso e disponibilidade, sem depender do periodo.
+                    </p>
+
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <StructuralMetric
+                        title="Limite total"
+                        value={monthlyData.structuralSummary.creditCards.totalLimit}
+                        tone="default"
+                      />
+                      <StructuralMetric
+                        title="Utilizado"
+                        value={monthlyData.structuralSummary.creditCards.usedLimit}
+                        tone="expense"
+                      />
+                      <StructuralMetric
+                        title="Disponivel"
+                        value={monthlyData.structuralSummary.creditCards.availableLimit}
+                        tone="balance"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <SummaryCard
                   title="Saldo base"

@@ -15,6 +15,19 @@ export interface FinancialDashboardMonthlyResponse {
     startDate: string;
     endDate: string;
   };
+  structuralSummary: {
+    referenceDate: string;
+    fixed: {
+      incomeTotal: string;
+      expenseTotal: string;
+      netTotal: string;
+    };
+    creditCards: {
+      totalLimit: string;
+      usedLimit: string;
+      availableLimit: string;
+    };
+  };
   carryOver: {
     amount: string;
     source: 'CURRENT_BALANCE' | 'PREVIOUS_PROJECTED';

@@ -10,6 +10,7 @@ const {
   getHistoryMock,
   getMonthlyMock,
   getPreferenceMock,
+  getStructuralMock,
   pushMock,
   replaceMock,
   routerState,
@@ -28,6 +29,7 @@ const {
   getPreferenceMock: vi.fn(),
   updatePreferenceMock: vi.fn(),
   getMonthlyMock: vi.fn(),
+  getStructuralMock: vi.fn(),
   getHistoryMock: vi.fn(),
   apiGetMock: vi.fn()
 }));
@@ -55,6 +57,7 @@ vi.mock('@/lib/financial-dashboard', () => ({
   getVariableProjectionPreference: (...args: unknown[]) => getPreferenceMock(...args),
   updateVariableProjectionPreference: (...args: unknown[]) => updatePreferenceMock(...args),
   getFinancialDashboardMonthly: (...args: unknown[]) => getMonthlyMock(...args),
+  getFinancialDashboardStructural: (...args: unknown[]) => getStructuralMock(...args),
   getFinancialDashboardHistory: (...args: unknown[]) => getHistoryMock(...args)
 }));
 
@@ -184,19 +187,6 @@ function buildMonthlyResponse(month: string) {
       startDate: startDate.toISOString(),
       endDate: endDate.toISOString()
     },
-    structuralSummary: {
-      referenceDate: startDate.toISOString(),
-      fixed: {
-        incomeTotal: '1200.00',
-        expenseTotal: '650.00',
-        netTotal: '550.00'
-      },
-      creditCards: {
-        totalLimit: '5000.00',
-        usedLimit: '600.00',
-        availableLimit: '4400.00'
-      }
-    },
     carryOver: {
       amount: '950.00',
       source: 'CURRENT_BALANCE' as const
@@ -283,6 +273,7 @@ describe('FinancialDashboard', () => {
     getPreferenceMock.mockReset();
     updatePreferenceMock.mockReset();
     getMonthlyMock.mockReset();
+    getStructuralMock.mockReset();
     getHistoryMock.mockReset();
     apiGetMock.mockReset();
 
@@ -303,6 +294,19 @@ describe('FinancialDashboard', () => {
       smallSliceThresholdPercent: 3
     });
     getMonthlyMock.mockResolvedValue(buildMonthlyResponse(currentMonth));
+    getStructuralMock.mockResolvedValue({
+      referenceDate: new Date().toISOString(),
+      fixed: {
+        incomeTotal: '1200.00',
+        expenseTotal: '650.00',
+        netTotal: '550.00'
+      },
+      creditCards: {
+        totalLimit: '5000.00',
+        usedLimit: '600.00',
+        availableLimit: '4400.00'
+      }
+    });
     getHistoryMock.mockResolvedValue({
       months: 12,
       monthlyTotals: [
@@ -334,9 +338,9 @@ describe('FinancialDashboard', () => {
       .parentElement;
 
     expect(projectedBalanceCard).toHaveTextContent('1.380,00');
-    expect(screen.getByText(/Visao estrutural atual/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Visao estrutural$/i)).toBeInTheDocument();
     expect(screen.getByText(/Compromissos fixos ativos/i)).toBeInTheDocument();
-    expect(screen.getByText(/Cartoes de credito consolidados/i)).toBeInTheDocument();
+    expect(screen.getByText(/Cartoes consolidados/i)).toBeInTheDocument();
     expect(screen.getByText(/5\.000,00/)).toBeInTheDocument();
     expect(screen.getByText(/4\.400,00/)).toBeInTheDocument();
     expect(screen.getAllByText(/Combustivel/i).length).toBeGreaterThan(0);
@@ -344,6 +348,7 @@ describe('FinancialDashboard', () => {
     expect(screen.getByRole('button', { name: /Anterior/i })).toBeDisabled();
 
     expect(getMonthlyMock).toHaveBeenCalledWith(currentMonth);
+    expect(getStructuralMock).toHaveBeenCalledTimes(1);
   });
 
   it('groups small slices and saves the threshold preference', async () => {
@@ -506,6 +511,7 @@ describe('FinancialDashboard', () => {
     expect(
       await screen.findByText(/Nenhuma categoria selecionada para o grafico historico/i)
     ).toBeInTheDocument();
+    expect(screen.getByText(/Compromissos fixos ativos/i)).toBeInTheDocument();
   });
 
   it('normalizes a past month from the query string back to the current month', async () => {

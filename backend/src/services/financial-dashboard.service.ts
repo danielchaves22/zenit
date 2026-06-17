@@ -336,6 +336,13 @@ export default class FinancialDashboardService {
     };
   }
 
+  static async getStructuralDashboard(params: {
+    companyId: number;
+    accessibleAccountIds?: number[];
+  }) {
+    return this.getStructuralSummary(params);
+  }
+
   private static async getTrackedExpenseCategories(params: {
     userId: number;
     companyId: number;
@@ -921,11 +928,6 @@ export default class FinancialDashboardService {
     if (!targetComputation) {
       throw new Error('Não foi possível calcular o dashboard mensal');
     }
-    const structuralSummary = await this.getStructuralSummary({
-      companyId: params.companyId,
-      accessibleAccountIds: params.accessibleAccountIds
-    });
-
     const categoryTotalsMap = new Map<
       string,
       CategoryTotalAccumulator
@@ -1044,7 +1046,6 @@ export default class FinancialDashboardService {
         startDate: startOfMonth(parseMonthKey(targetComputation.month)).toISOString(),
         endDate: endOfMonth(parseMonthKey(targetComputation.month)).toISOString()
       },
-      structuralSummary,
       carryOver: {
         amount: toMoneyString(targetComputation.carryOverAmount),
         source: targetComputation.isCurrentMonth ? 'CURRENT_BALANCE' : 'PREVIOUS_PROJECTED'

@@ -111,6 +111,7 @@ import {
   reopenCreditCardInvoice
 } from '../controllers/credit-card-invoice.controller';
 import {
+  getFinancialDashboardStructural,
   getFinancialDashboardHistory,
   getFinancialDashboardMonthly
 } from '../controllers/financial-dashboard.controller';
@@ -174,6 +175,7 @@ router.get(
   validate(getFinancialDashboardMonthlySchema, { source: 'query' }),
   getFinancialDashboardMonthly
 );
+router.get('/dashboard/structural', getFinancialDashboardStructural);
 router.get(
   '/dashboard/history',
   validate(getFinancialDashboardHistorySchema, { source: 'query' }),

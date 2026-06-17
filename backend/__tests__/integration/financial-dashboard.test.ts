@@ -500,18 +500,6 @@ describe('Financial dashboard', () => {
     expect(response.body.currentMonthBreakdown.expense.remainingVariableProjected).toBe('20.00');
     expect(response.body.variableProjection.total).toBe('20.00');
     expect(response.body.projectedEndingBalance).toBe('1460.00');
-    expect(response.body.structuralSummary).toMatchObject({
-      fixed: {
-        incomeTotal: '80.00',
-        expenseTotal: '30.00',
-        netTotal: '50.00'
-      },
-      creditCards: {
-        totalLimit: '0.00',
-        usedLimit: '0.00',
-        availableLimit: '0.00'
-      }
-    });
     expect(response.body.variableProjection.categories).toEqual([
       {
         categoryId: trackedExpenseCategory.id,
@@ -549,9 +537,8 @@ describe('Financial dashboard', () => {
     );
   });
 
-  it('returns a structural summary with active fixed items only and consolidated credit card values', async () => {
+  it('returns the structural summary with active fixed items only and consolidated credit card values', async () => {
     const now = new Date();
-    const currentMonthKey = buildMonthKey(now);
     const currentMonthIndex = now.getMonth();
     const currentYear = now.getFullYear();
 
@@ -691,12 +678,11 @@ describe('Financial dashboard', () => {
     });
 
     const response = await request(app)
-      .get('/api/financial/dashboard/monthly')
-      .set(authHeaders(primaryToken, primaryCompanyId))
-      .query({ month: currentMonthKey });
+      .get('/api/financial/dashboard/structural')
+      .set(authHeaders(primaryToken, primaryCompanyId));
 
     expect(response.status).toBe(200);
-    expect(response.body.structuralSummary).toMatchObject({
+    expect(response.body).toMatchObject({
       fixed: {
         incomeTotal: '1200.00',
         expenseTotal: '650.00',

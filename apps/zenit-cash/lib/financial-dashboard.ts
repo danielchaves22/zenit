@@ -7,6 +7,20 @@ export interface VariableProjectionPreference {
   smallSliceThresholdPercent: number;
 }
 
+export interface FinancialDashboardStructuralResponse {
+  referenceDate: string;
+  fixed: {
+    incomeTotal: string;
+    expenseTotal: string;
+    netTotal: string;
+  };
+  creditCards: {
+    totalLimit: string;
+    usedLimit: string;
+    availableLimit: string;
+  };
+}
+
 export interface FinancialDashboardMonthlyResponse {
   month: string;
   isCurrentMonth: boolean;
@@ -14,19 +28,6 @@ export interface FinancialDashboardMonthlyResponse {
     month: string;
     startDate: string;
     endDate: string;
-  };
-  structuralSummary: {
-    referenceDate: string;
-    fixed: {
-      incomeTotal: string;
-      expenseTotal: string;
-      netTotal: string;
-    };
-    creditCards: {
-      totalLimit: string;
-      usedLimit: string;
-      availableLimit: string;
-    };
   };
   carryOver: {
     amount: string;
@@ -132,6 +133,11 @@ export async function getFinancialDashboardMonthly(
     params: { month }
   });
   return response.data as FinancialDashboardMonthlyResponse;
+}
+
+export async function getFinancialDashboardStructural(): Promise<FinancialDashboardStructuralResponse> {
+  const response = await api.get('/financial/dashboard/structural');
+  return response.data as FinancialDashboardStructuralResponse;
 }
 
 export async function getFinancialDashboardHistory(params?: {

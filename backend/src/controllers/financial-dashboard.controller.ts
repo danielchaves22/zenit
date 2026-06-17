@@ -69,6 +69,23 @@ export async function getFinancialDashboardMonthly(req: Request, res: Response) 
   }
 }
 
+export async function getFinancialDashboardStructural(req: Request, res: Response) {
+  try {
+    const { companyId, accessibleAccountIds } = await resolveDashboardAccess(req);
+
+    const dashboard = await FinancialDashboardService.getStructuralDashboard({
+      companyId,
+      accessibleAccountIds
+    });
+
+    return res.status(200).json(dashboard);
+  } catch (error: any) {
+    return res.status(400).json({
+      error: error.message || 'Erro ao carregar visao estrutural financeira'
+    });
+  }
+}
+
 export async function getFinancialDashboardHistory(req: Request, res: Response) {
   try {
     const { months, categoryIds } = req.query as unknown as GetFinancialDashboardHistoryQuery;

@@ -160,6 +160,10 @@ interface ActiveFilterBadge {
   value: string;
 }
 
+interface ApplyTransactionsFilterStateOptions {
+  selectedPresetId?: string;
+}
+
 const TRANSACTION_TYPE_OPTIONS = [
   { value: 'INCOME', label: 'Receita' },
   { value: 'EXPENSE', label: 'Despesa' },
@@ -502,7 +506,7 @@ export default function TransactionsListPage() {
 
       badges.push({
         key: 'ignoredState',
-        label: 'Exibicao',
+        label: 'Ignorados',
         value: ignoredStateLabels[filters.ignoredState]
       });
     }
@@ -576,7 +580,9 @@ export default function TransactionsListPage() {
       validCategoryIds
     });
 
-    applyTransactionsFilterState(resolvedInitialState.state);
+    applyTransactionsFilterState(resolvedInitialState.state, {
+      selectedPresetId: resolvedInitialState.selectedPresetId
+    });
     setSelectedPresetId(resolvedInitialState.selectedPresetId);
 
     setFiltersInitialized(true);
@@ -756,7 +762,10 @@ export default function TransactionsListPage() {
     }
   }
 
-  function applyTransactionsFilterState(state: ReturnType<typeof getDefaultTransactionsFilterState>) {
+  function applyTransactionsFilterState(
+    state: ReturnType<typeof getDefaultTransactionsFilterState>,
+    options: ApplyTransactionsFilterStateOptions = {}
+  ) {
     setCurrentPage(1);
     setDateField(state.dateField);
     setPeriodPreset(state.periodPreset);
@@ -764,7 +773,9 @@ export default function TransactionsListPage() {
     setCustomPeriod(state.customPeriod);
     setShowOnlyMaterialized(state.showOnlyMaterialized);
     setFilters(state.filters);
-    setShowMoreFilters(countAdvancedTransactionFilters(state.filters) > 0);
+    setShowMoreFilters(
+      countAdvancedTransactionFilters(state.filters) > 0 || Boolean(options.selectedPresetId)
+    );
   }
 
   function getCurrentTransactionsFilterState(): ReturnType<typeof getDefaultTransactionsFilterState> {
@@ -840,7 +851,8 @@ export default function TransactionsListPage() {
       applyTransactionsPresetPayload(selectedPreset.payload, {
         validAccountIds,
         validCategoryIds
-      })
+      }),
+      { selectedPresetId: selectedPreset.id.toString() }
     );
     setSelectedPresetId(selectedPreset.id.toString());
 
@@ -1493,57 +1505,6 @@ export default function TransactionsListPage() {
           </div>
 
           <div className="flex flex-col">
-            <label className={filterLabelClassName}>Presets</label>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
-              <select
-                value={selectedPresetId}
-                onChange={(event) => setSelectedPresetId(event.target.value)}
-                className={filterControlClassName}
-                aria-label="Preset de filtros"
-              >
-                <option value="">Selecione um preset</option>
-                {filterPresets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.name}
-                    {preset.id === lastUsedPresetId ? ' (ultimo usado)' : ''}
-                  </option>
-                ))}
-              </select>
-
-              <Button
-                variant="outline"
-                onClick={() => void handleApplySelectedPreset()}
-                disabled={!selectedPreset || presetActionLoading !== null}
-                className="flex h-10 items-center justify-center gap-1.5 px-3"
-                title="Aplicar preset selecionado"
-              >
-                <Check size={15} />
-                <span className="hidden sm:inline">Aplicar</span>
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => setIsSavePresetModalOpen(true)}
-                disabled={presetActionLoading !== null}
-                className="flex h-10 items-center justify-center px-3"
-                title="Salvar filtros atuais como preset"
-              >
-                <BookmarkPlus size={15} />
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => void handleDeleteSelectedPreset()}
-                disabled={!selectedPreset || presetActionLoading !== null}
-                className="flex h-10 items-center justify-center px-3 text-red-300 hover:border-red-500 hover:text-red-200"
-                title="Excluir preset selecionado"
-              >
-                <Trash2 size={15} />
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex flex-col">
             <label className={filterLabelClassName}>Exibicao</label>
             <Button
               variant={showOnlyMaterialized ? 'accent' : 'outline'}
@@ -1555,21 +1516,6 @@ export default function TransactionsListPage() {
             >
               {showOnlyMaterialized ? 'Somente materializadas' : 'Incluindo projetadas'}
             </Button>
-          </div>
-
-          <div className="flex flex-col">
-            <label className={filterLabelClassName}>Ignorados</label>
-            <select
-              value={filters.ignoredState}
-              onChange={(event) =>
-                updateFilters({ ignoredState: event.target.value as IgnoredTransactionState })
-              }
-              className={filterControlClassName}
-            >
-              <option value="ACTIVE">Apenas ativas</option>
-              <option value="IGNORED">Apenas ignoradas</option>
-              <option value="ALL">Todas</option>
-            </select>
           </div>
 
           <div className="flex flex-col">
@@ -1611,7 +1557,7 @@ export default function TransactionsListPage() {
 
         {showMoreFilters && (
           <div className="mt-4 border-t border-gray-700 pt-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
               <Input
                 label="Buscar"
                 value={filters.search}
@@ -1660,6 +1606,72 @@ export default function TransactionsListPage() {
                   className="mb-0"
                   triggerClassName="h-10"
                 />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">Ignorados</label>
+                <select
+                  value={filters.ignoredState}
+                  onChange={(event) =>
+                    updateFilters({ ignoredState: event.target.value as IgnoredTransactionState })
+                  }
+                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+                >
+                  <option value="ACTIVE">Apenas ativas</option>
+                  <option value="IGNORED">Apenas ignoradas</option>
+                  <option value="ALL">Todas</option>
+                </select>
+              </div>
+
+              <div className="xl:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-300">Presets</label>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
+                  <select
+                    value={selectedPresetId}
+                    onChange={(event) => setSelectedPresetId(event.target.value)}
+                    className={filterControlClassName}
+                    aria-label="Preset de filtros"
+                  >
+                    <option value="">Selecione um preset</option>
+                    {filterPresets.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.name}
+                        {preset.id === lastUsedPresetId ? ' (ultimo usado)' : ''}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => void handleApplySelectedPreset()}
+                    disabled={!selectedPreset || presetActionLoading !== null}
+                    className="flex h-10 items-center justify-center gap-1.5 px-3"
+                    title="Aplicar preset selecionado"
+                  >
+                    <Check size={15} />
+                    <span className="hidden sm:inline">Aplicar</span>
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsSavePresetModalOpen(true)}
+                    disabled={presetActionLoading !== null}
+                    className="flex h-10 items-center justify-center px-3"
+                    title="Salvar filtros atuais como preset"
+                  >
+                    <BookmarkPlus size={15} />
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={() => void handleDeleteSelectedPreset()}
+                    disabled={!selectedPreset || presetActionLoading !== null}
+                    className="flex h-10 items-center justify-center px-3 text-red-300 hover:border-red-500 hover:text-red-200"
+                    title="Excluir preset selecionado"
+                  >
+                    <Trash2 size={15} />
+                  </Button>
+                </div>
               </div>
             </div>
 

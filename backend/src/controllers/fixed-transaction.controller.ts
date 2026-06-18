@@ -221,7 +221,8 @@ export async function materializeFixedTransactionOccurrence(req: Request, res: R
       templateId: id,
       companyId,
       userId,
-      occurrenceDate
+      occurrenceDate,
+      enforceProjectionCutoff: true
     });
 
     return res.status(result.created ? 201 : 200).json(result);

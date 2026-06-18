@@ -1763,7 +1763,8 @@ export default class FinancialTransactionService {
       templateId: params.templateId,
       companyId: params.companyId,
       userId: params.userId,
-      occurrenceDate: params.occurrenceDate
+      occurrenceDate: params.occurrenceDate,
+      enforceProjectionCutoff: true
     });
 
     const transactionId = materialized.transaction?.id;

@@ -422,6 +422,20 @@ export default class FixedTransactionService {
     return cutoff;
   }
 
+  static ensureManualProjectionOccurrenceAllowed(
+    occurrenceDate: Date,
+    referenceDate: Date = new Date()
+  ): void {
+    const normalizedOccurrenceDate = startOfDay(occurrenceDate);
+    const cutoffDate = this.getProjectionCutoffDate(referenceDate);
+
+    if (normalizedOccurrenceDate < cutoffDate) {
+      throw new Error(
+        'Nao e possivel materializar ou ignorar manualmente ocorrencias projetadas no passado ou no dia atual'
+      );
+    }
+  }
+
   static async createFixedTransaction(data: {
     description: string;
     amount: number | string;
@@ -991,6 +1005,8 @@ export default class FixedTransactionService {
     occurrenceDate: Date;
     companyId: number;
     userId: number;
+    enforceProjectionCutoff?: boolean;
+    referenceDate?: Date;
   }): Promise<{ transaction: any; created: boolean }> {
     const { templateId, companyId, userId } = params;
     const requestedOccurrenceDate = startOfDay(params.occurrenceDate);
@@ -1030,6 +1046,13 @@ export default class FixedTransactionService {
     }
 
     const occurrenceDate = resolveOccurrenceDateForReference(template, requestedOccurrenceDate);
+
+    if (params.enforceProjectionCutoff) {
+      this.ensureManualProjectionOccurrenceAllowed(
+        occurrenceDate,
+        params.referenceDate
+      );
+    }
 
     if (!template.isActive) {
       throw new Error('Template de transacao fixa inativo');

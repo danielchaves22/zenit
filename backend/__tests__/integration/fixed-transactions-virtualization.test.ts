@@ -359,6 +359,59 @@ describe('Fixed transactions virtualization and materialization', () => {
     ).toBeDefined();
   });
 
+  it('does not materialize or archive projected occurrences that are before the projection cutoff', async () => {
+    const today = new Date().getDate();
+    const nonProjectableDay = today === 1 ? 1 : today - 1;
+
+    const fixedResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Past Manual Projection Block',
+        amount: 120,
+        type: 'EXPENSE',
+        dayOfMonth: nonProjectableDay,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId,
+        startDate: buildOccurrenceDate(-1, nonProjectableDay).toISOString()
+      });
+
+    expect(fixedResponse.status).toBe(201);
+
+    const fixedTemplateId = fixedResponse.body.id;
+    const occurrenceDate = buildOccurrenceDate(0, nonProjectableDay);
+    const occurrenceKey = buildOccurrenceKeyValue(fixedTemplateId, occurrenceDate);
+
+    const materializeResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${fixedTemplateId}/materialize`)
+      .set(authHeaders())
+      .send({ occurrenceDate: occurrenceDate.toISOString() });
+
+    expect(materializeResponse.status).toBe(400);
+    expect(materializeResponse.body.error).toContain(
+      'Nao e possivel materializar ou ignorar manualmente ocorrencias projetadas'
+    );
+
+    const archiveResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${fixedTemplateId}/archive`)
+      .set(authHeaders())
+      .send({ occurrenceDate: occurrenceDate.toISOString() });
+
+    expect(archiveResponse.status).toBe(400);
+    expect(archiveResponse.body.error).toContain(
+      'Nao e possivel materializar ou ignorar manualmente ocorrencias projetadas'
+    );
+
+    const materializedCount = await prisma.financialTransaction.count({
+      where: {
+        companyId,
+        occurrenceKey
+      }
+    });
+
+    expect(materializedCount).toBe(0);
+  });
+
   it('calculates period expense summary without inflating consolidated card invoice amounts', async () => {
     const purchaseDate = buildOccurrenceDate(8, 5);
     const dueDate = buildOccurrenceDate(8, 15);

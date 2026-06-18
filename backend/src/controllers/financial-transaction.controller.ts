@@ -92,6 +92,7 @@ export async function getTransactions(req: Request, res: Response) {
       dateField,
       includeCreditCardTransactions,
       includeVirtualFixed,
+      ignoredState,
       type,
       types,
       status,
@@ -128,6 +129,7 @@ export async function getTransactions(req: Request, res: Response) {
       dateField,
       includeCreditCardTransactions,
       includeVirtualFixed,
+      ignoredState,
       types: normalizedTypes,
       status,
       accountId,
@@ -330,6 +332,71 @@ export async function updateTransactionStatus(req: Request, res: Response) {
     logger.error(`Erro ao atualizar status da transaÃ§Ã£o:`, error);
     return res.status(400).json({
       error: error.message || 'Erro ao atualizar status da transaÃ§Ã£o'
+    });
+  }
+}
+
+export async function archiveTransaction(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const { companyId, userId } = getUserContext(req);
+
+    const existingTransaction = await FinancialTransactionService.getTransactionById(id);
+    if (!existingTransaction) {
+      return res.status(404).json({ error: 'Transação não encontrada' });
+    }
+
+    if (existingTransaction.companyId !== companyId) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const archivedTransaction = await FinancialTransactionService.archivePendingTransaction(
+      id,
+      companyId,
+      userId
+    );
+
+    return res.status(200).json(archivedTransaction);
+  } catch (error: any) {
+    logger.error('Erro ao arquivar transação financeira:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao arquivar transação financeira'
+    });
+  }
+}
+
+export async function unarchiveTransaction(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const { companyId } = getUserContext(req);
+
+    const existingTransaction = await FinancialTransactionService.getTransactionById(id);
+    if (!existingTransaction) {
+      return res.status(404).json({ error: 'Transação não encontrada' });
+    }
+
+    if (existingTransaction.companyId !== companyId) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const restoredTransaction = await FinancialTransactionService.unarchivePendingTransaction(
+      id,
+      companyId
+    );
+
+    return res.status(200).json(restoredTransaction);
+  } catch (error: any) {
+    logger.error('Erro ao desarquivar transação financeira:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao desarquivar transação financeira'
     });
   }
 }

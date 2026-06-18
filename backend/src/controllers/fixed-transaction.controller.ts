@@ -1,6 +1,7 @@
 ﻿import { Request, Response } from 'express';
 import { TransactionType } from '@prisma/client';
 import FixedTransactionService from '../services/fixed-transaction.service';
+import FinancialTransactionService from '../services/financial-transaction.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import { ListFixedTransactionsQuery } from '../validators/fixed-transaction.validator';
 import { logger } from '../utils/logger';
@@ -227,6 +228,42 @@ export async function materializeFixedTransactionOccurrence(req: Request, res: R
   } catch (error: any) {
     logger.error('Erro ao materializar ocorrencia de transacao fixa', { error: error.message, stack: error.stack });
     return res.status(400).json({ error: error.message || 'Erro ao materializar ocorrencia da transacao fixa' });
+  }
+}
+
+export async function archiveFixedTransactionOccurrence(req: Request, res: Response) {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: 'ID invalido' });
+    }
+
+    const { companyId, userId, role } = getUserContext(req);
+    const occurrenceDate = new Date(req.body.occurrenceDate);
+
+    const template = await FixedTransactionService.getFixedTransactionById(id, companyId);
+    if (!template) {
+      return res.status(404).json({ error: 'Transacao fixa nao encontrada' });
+    }
+
+    await ensureTemplateAccountAccess(userId, role, companyId, template);
+
+    const archivedTransaction = await FinancialTransactionService.archiveProjectedOccurrence({
+      templateId: id,
+      companyId,
+      userId,
+      occurrenceDate
+    });
+
+    return res.status(200).json(archivedTransaction);
+  } catch (error: any) {
+    logger.error('Erro ao arquivar ocorrencia projetada de transacao fixa', {
+      error: error.message,
+      stack: error.stack
+    });
+    return res.status(400).json({
+      error: error.message || 'Erro ao arquivar ocorrencia da transacao fixa'
+    });
   }
 }
 

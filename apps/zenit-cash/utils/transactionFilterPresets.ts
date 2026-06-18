@@ -1,6 +1,7 @@
 export type TransactionTypeFilter = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 export type TransactionDateFieldFilter = 'dueDate' | 'date' | 'effectiveDate' | 'createdAt';
 export type PeriodPreset = 'CURRENT_MONTH' | 'CURRENT_WEEK' | 'CUSTOM';
+export type IgnoredTransactionState = 'ACTIVE' | 'IGNORED' | 'ALL';
 
 export interface PeriodRange {
   startDate: string;
@@ -10,6 +11,7 @@ export interface PeriodRange {
 export interface TransactionFilters {
   types: TransactionTypeFilter[];
   status: string;
+  ignoredState: IgnoredTransactionState;
   accountId: string;
   categoryIds: string[];
   search: string;
@@ -32,6 +34,7 @@ export interface TransactionsPresetPayload {
   customPeriod?: PeriodRange;
   types: TransactionTypeFilter[];
   status: string;
+  ignoredState: IgnoredTransactionState;
   accountId: string;
   categoryId: string;
   categoryIds?: string[];
@@ -64,6 +67,7 @@ export interface ResolvedTransactionsInitialFilterState {
 
 export const ALL_TRANSACTION_TYPES: TransactionTypeFilter[] = ['INCOME', 'EXPENSE', 'TRANSFER'];
 export const DEFAULT_TRANSACTION_DATE_FIELD: TransactionDateFieldFilter = 'dueDate';
+export const DEFAULT_IGNORED_TRANSACTION_STATE: IgnoredTransactionState = 'ACTIVE';
 
 export function formatDateForInput(date: Date): string {
   const year = date.getFullYear();
@@ -126,6 +130,7 @@ export function getDefaultTransactionsFilterState(): TransactionsFilterState {
     filters: {
       types: [...ALL_TRANSACTION_TYPES],
       status: '',
+      ignoredState: DEFAULT_IGNORED_TRANSACTION_STATE,
       accountId: '',
       categoryIds: [],
       search: ''
@@ -158,6 +163,10 @@ function isPeriodRange(value: unknown): value is PeriodRange {
 
 function isTransactionTypeFilter(value: unknown): value is TransactionTypeFilter {
   return value === 'INCOME' || value === 'EXPENSE' || value === 'TRANSFER';
+}
+
+function isIgnoredTransactionState(value: unknown): value is IgnoredTransactionState {
+  return value === 'ACTIVE' || value === 'IGNORED' || value === 'ALL';
 }
 
 function normalizeTransactionTypes(value: unknown): TransactionTypeFilter[] {
@@ -222,6 +231,7 @@ export function buildTransactionsPresetPayload(
     periodPreset: state.periodPreset,
     types: [...state.filters.types],
     status: state.filters.status,
+    ignoredState: state.filters.ignoredState,
     accountId: state.filters.accountId,
     categoryId: singleCategoryId,
     categoryIds: [...state.filters.categoryIds],
@@ -280,6 +290,9 @@ export function applyTransactionsPresetPayload(
         ? normalizeTransactionTypes(data.types)
         : [...ALL_TRANSACTION_TYPES],
       status: typeof data.status === 'string' ? data.status : '',
+      ignoredState: isIgnoredTransactionState(data.ignoredState)
+        ? data.ignoredState
+        : defaults.filters.ignoredState,
       accountId: normalizeLookupValue(data.accountId, options.validAccountIds),
       categoryIds:
         normalizedCategoryIds.length > 0
@@ -297,12 +310,13 @@ export function applyTransactionsPresetPayload(
 }
 
 export function countAdvancedTransactionFilters(
-  filters: Pick<TransactionFilters, 'search' | 'status' | 'accountId' | 'categoryIds'>
+  filters: Pick<TransactionFilters, 'search' | 'status' | 'ignoredState' | 'accountId' | 'categoryIds'>
 ): number {
   let count = 0;
 
   if (filters.search.trim()) count += 1;
   if (filters.status) count += 1;
+  if (filters.ignoredState !== DEFAULT_IGNORED_TRANSACTION_STATE) count += 1;
   if (filters.accountId) count += 1;
   if (filters.categoryIds.length > 0) count += 1;
 
@@ -334,6 +348,7 @@ export function hasExplicitTransactionFilterQuery(
       getMultiQueryValues(query.categoryIds).length > 0 ||
       getSingleQueryValue(query.categoryId) ||
       getSingleQueryValue(query.status) ||
+      getSingleQueryValue(query.ignoredState) ||
       getSingleQueryValue(query.search).trim() ||
       getSingleQueryValue(query.startDate) ||
       getSingleQueryValue(query.endDate) ||
@@ -391,7 +406,10 @@ export function resolveInitialTransactionsFilterState(
                 ? [legacyCategoryId]
                 : [],
           search: getSingleQueryValue(options.query.search),
-          status: getSingleQueryValue(options.query.status)
+          status: getSingleQueryValue(options.query.status),
+          ignoredState: isIgnoredTransactionState(getSingleQueryValue(options.query.ignoredState))
+            ? (getSingleQueryValue(options.query.ignoredState) as IgnoredTransactionState)
+            : defaults.filters.ignoredState
         },
         showOnlyMaterialized: explicitShowOnlyMaterialized ?? defaults.showOnlyMaterialized
       },

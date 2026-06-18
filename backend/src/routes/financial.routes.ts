@@ -77,11 +77,13 @@ import {
 } from '../controllers/default.controller';
 import {
   createTransaction,
+  archiveTransaction,
   getCreditCardPurchases,
   getTransactions,
   getTransactionById,
   updateTransaction,
   updateTransactionStatus,
+  unarchiveTransaction,
   deleteTransaction,
   getFinancialSummary,
   getTransactionAutocomplete
@@ -95,6 +97,7 @@ import {
   previewFinancialReset
 } from '../controllers/financial-reset.controller';
 import {
+  archiveFixedTransactionOccurrence,
   cancelFixedTransaction,
   createFixedTransaction,
   deleteFixedTransaction,
@@ -188,6 +191,8 @@ router.get('/transactions', validate(listTransactionsSchema), getTransactions);
 router.get('/transactions/:id', requireExistingTransactionAccountAccess(), getTransactionById);
 router.put('/transactions/:id', requireExistingTransactionAccountAccess(), validate(updateTransactionSchema), requireTransactionAccountAccess(), updateTransaction);
 router.patch('/transactions/:id/status', requireExistingTransactionAccountAccess(), validate(updateTransactionStatusSchema), updateTransactionStatus);
+router.patch('/transactions/:id/archive', requireExistingTransactionAccountAccess(), archiveTransaction);
+router.patch('/transactions/:id/unarchive', requireExistingTransactionAccountAccess(), unarchiveTransaction);
 router.delete('/transactions/:id', requireExistingTransactionAccountAccess(), deleteTransaction);
 
 router.post('/fixed-transactions', requireTransactionAccountAccess(), validate(createFixedTransactionSchema), createFixedTransaction);
@@ -196,6 +201,7 @@ router.put('/fixed-transactions/:id', validate(updateFixedTransactionSchema), up
 router.delete('/fixed-transactions/:id', deleteFixedTransaction);
 router.patch('/fixed-transactions/:id/cancel', cancelFixedTransaction);
 router.post('/fixed-transactions/:id/materialize', validate(materializeFixedTransactionSchema), materializeFixedTransactionOccurrence);
+router.post('/fixed-transactions/:id/archive', validate(materializeFixedTransactionSchema), archiveFixedTransactionOccurrence);
 
 router.use('/reports/financial-account-movement', financialAccountMovementRoutes);
 router.get('/summary', getFinancialSummary);

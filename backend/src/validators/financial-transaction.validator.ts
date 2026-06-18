@@ -18,6 +18,12 @@ const transactionListDateFieldSchema = z.enum(['dueDate', 'date', 'effectiveDate
   })
 });
 
+const ignoredTransactionStateSchema = z.enum(['ACTIVE', 'IGNORED', 'ALL'], {
+  errorMap: () => ({
+    message: 'Filtro de ignorados deve ser: ACTIVE, IGNORED ou ALL'
+  })
+});
+
 const transactionTypesFilterSchema = z.preprocess((value) => {
   if (value === undefined) {
     return undefined;
@@ -274,6 +280,10 @@ export const listTransactionsSchema = z.object({
     .optional()
     .default(true),
 
+  ignoredState: ignoredTransactionStateSchema
+    .optional()
+    .default('ACTIVE'),
+
   type: transactionTypeSchema.optional(),
 
   types: transactionTypesFilterSchema.optional(),
@@ -331,9 +341,16 @@ export const updateTransactionStatusSchema = z.object({
   status: transactionStatusSchema
 });
 
+export const archiveProjectedTransactionSchema = z.object({
+  occurrenceDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data de ocorrencia deve ser valida' })
+  })
+});
+
 export type AutocompleteQuery = z.infer<typeof autocompleteQuerySchema>;
 export type CreateTransactionData = z.infer<typeof createTransactionSchema>;
 export type UpdateTransactionData = z.infer<typeof updateTransactionSchema>;
 export type ListTransactionsQuery = z.infer<typeof listTransactionsSchema>;
 export type ListCreditCardPurchasesQuery = z.infer<typeof listCreditCardPurchasesSchema>;
 export type UpdateTransactionStatus = z.infer<typeof updateTransactionStatusSchema>;
+export type ArchiveProjectedTransactionData = z.infer<typeof archiveProjectedTransactionSchema>;

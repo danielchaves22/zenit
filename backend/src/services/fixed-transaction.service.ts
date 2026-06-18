@@ -14,7 +14,7 @@ const prisma = new PrismaClient();
 
 const SUPPORTED_FIXED_TYPES: TransactionType[] = [TransactionType.INCOME, TransactionType.EXPENSE];
 
-type FixedTemplateWithRelations = RecurringTransaction & {
+export type FixedTemplateWithRelations = RecurringTransaction & {
   fromAccount: {
     id: number;
     name: string;
@@ -34,6 +34,12 @@ type FixedTemplateWithRelations = RecurringTransaction & {
     name: string;
     color: string;
   } | null;
+};
+
+export type FixedProjectedOccurrence = {
+  template: FixedTemplateWithRelations;
+  occurrenceDate: Date;
+  occurrenceKey: string;
 };
 
 type FixedAccountSelection = {
@@ -406,6 +412,16 @@ async function resolveMaterializationAccountIds(params: {
 }
 
 export default class FixedTransactionService {
+  static getProjectionCutoffDate(referenceDate: Date = new Date(), includeToday = false): Date {
+    const cutoff = startOfDay(referenceDate);
+
+    if (!includeToday) {
+      cutoff.setDate(cutoff.getDate() + 1);
+    }
+
+    return cutoff;
+  }
+
   static async createFixedTransaction(data: {
     description: string;
     amount: number | string;
@@ -875,6 +891,99 @@ export default class FixedTransactionService {
         category: { select: { id: true, name: true, color: true } }
       }
     });
+  }
+
+  static async listMissingProjectedOccurrences(params: {
+    companyId: number;
+    rangeStart: Date;
+    rangeEnd: Date;
+    accessibleAccountIds?: number[];
+    templateFilter?: (template: FixedTemplateWithRelations) => boolean;
+    occurrenceFilter?: (occurrence: FixedProjectedOccurrence) => boolean;
+  }): Promise<FixedProjectedOccurrence[]> {
+    const {
+      companyId,
+      rangeStart,
+      rangeEnd,
+      accessibleAccountIds,
+      templateFilter,
+      occurrenceFilter
+    } = params;
+
+    if (rangeEnd < rangeStart) {
+      return [];
+    }
+
+    const templates = await this.getTemplatesForProjection({
+      companyId,
+      rangeStart,
+      rangeEnd,
+      accessibleAccountIds
+    });
+
+    if (templates.length === 0) {
+      return [];
+    }
+
+    const startCursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1, 12, 0, 0, 0);
+    const endCursor = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1, 12, 0, 0, 0);
+    const projectedOccurrences: FixedProjectedOccurrence[] = [];
+
+    for (const template of templates) {
+      if (templateFilter && !templateFilter(template)) {
+        continue;
+      }
+
+      let cursor = new Date(startCursor);
+
+      while (cursor <= endCursor) {
+        const occurrenceDate = this.buildVirtualDateForMonth(
+          template,
+          cursor.getFullYear(),
+          cursor.getMonth()
+        );
+
+        if (template.startDate <= occurrenceDate && (!template.endDate || template.endDate >= occurrenceDate)) {
+          const occurrence = {
+            template,
+            occurrenceDate,
+            occurrenceKey: buildOccurrenceKeyValue(template.id, occurrenceDate)
+          };
+
+          if (!occurrenceFilter || occurrenceFilter(occurrence)) {
+            projectedOccurrences.push(occurrence);
+          }
+        }
+
+        cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1, 12, 0, 0, 0);
+      }
+    }
+
+    if (projectedOccurrences.length === 0) {
+      return [];
+    }
+
+    const existingOccurrences = await prisma.financialTransaction.findMany({
+      where: {
+        companyId,
+        occurrenceKey: {
+          in: Array.from(new Set(projectedOccurrences.map((occurrence) => occurrence.occurrenceKey)))
+        }
+      },
+      select: {
+        occurrenceKey: true
+      }
+    });
+
+    const existingOccurrenceKeys = new Set(
+      existingOccurrences
+        .map((transaction) => transaction.occurrenceKey)
+        .filter((occurrenceKey): occurrenceKey is string => Boolean(occurrenceKey))
+    );
+
+    return projectedOccurrences.filter(
+      (occurrence) => !existingOccurrenceKeys.has(occurrence.occurrenceKey)
+    );
   }
 
   static async materializeOccurrence(params: {

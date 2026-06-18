@@ -13,6 +13,7 @@ import CreditCardInvoiceService from './credit-card-invoice.service';
 import FinancialAccountService from './financial-account.service';
 import PendingActionService, { DraftTransactionPayload } from './pending-action.service';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
+import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
 const prisma = new PrismaClient();
 
@@ -1328,6 +1329,7 @@ export default class ToolExecutorService {
     const recentTransactions = await prisma.financialTransaction.findMany({
       where: {
         companyId: context.companyId,
+        ...buildOperationalTransactionWhere(),
         ...(args.type ? { type: args.type } : {}),
         ...(accountIds && accountIds.length > 0
           ? {

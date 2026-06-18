@@ -2,7 +2,6 @@ import {
   AccountType,
   CreditCardInvoiceStatus,
   FinancialAccountPurpose,
-  FinancialTransactionEntryKind,
   Prisma,
   PrismaClient,
   RecurringFrequency,
@@ -12,6 +11,7 @@ import {
 import FixedTransactionService from './fixed-transaction.service';
 import UserVariableProjectionPreferenceService from './user-variable-projection-preference.service';
 import { resolveCreditCardInvoiceReference } from '../utils/credit-card';
+import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
 const prisma = new PrismaClient();
 
@@ -116,16 +116,6 @@ function buildRelevantMonthWhere(startDate: Date, endDate: Date): Prisma.Financi
           lte: endDate
         }
       }
-    ]
-  };
-}
-
-function buildOperationalTransactionWhere(): Prisma.FinancialTransactionWhereInput {
-  return {
-    entryKind: FinancialTransactionEntryKind.NORMAL,
-    AND: [
-      { NOT: { fromAccount: { is: { purpose: FinancialAccountPurpose.BUDGET } } } },
-      { NOT: { toAccount: { is: { purpose: FinancialAccountPurpose.BUDGET } } } }
     ]
   };
 }
@@ -476,55 +466,6 @@ export default class FinancialDashboardService {
     return result;
   }
 
-  private static async getExistingOccurrenceKeys(params: {
-    companyId: number;
-    startDate: Date;
-    endDate: Date;
-    accessFilter?: Prisma.FinancialTransactionWhereInput;
-  }): Promise<Set<string>> {
-    const whereFilters: Prisma.FinancialTransactionWhereInput[] = [
-      {
-        companyId: params.companyId,
-        recurringTransactionId: { not: null }
-      },
-      {
-        OR: [
-          {
-            dueDate: {
-              gte: params.startDate,
-              lte: params.endDate
-            }
-          },
-          {
-            date: {
-              gte: params.startDate,
-              lte: params.endDate
-            }
-          }
-        ]
-      }
-    ];
-
-    if (params.accessFilter) {
-      whereFilters.push(params.accessFilter);
-    }
-
-    const occurrences = await prisma.financialTransaction.findMany({
-      where: {
-        AND: whereFilters
-      },
-      select: {
-        occurrenceKey: true
-      }
-    });
-
-    return new Set(
-      occurrences
-        .map((item) => item.occurrenceKey)
-        .filter((item): item is string => Boolean(item))
-    );
-  }
-
   private static async getKnownMonthlyRows(params: {
     companyId: number;
     monthStart: Date;
@@ -663,54 +604,20 @@ export default class FinancialDashboardService {
     }
 
     const previousMonthStart = startOfMonth(addMonths(monthStart, -1));
-    const templates = await FixedTransactionService.getTemplatesForProjection({
+    const projectionCutoff = isCurrentMonth
+      ? FixedTransactionService.getProjectionCutoffDate(currentDate)
+      : monthStart;
+    const projectedOccurrences = await FixedTransactionService.listMissingProjectedOccurrences({
       companyId,
       rangeStart: previousMonthStart,
       rangeEnd: monthEnd,
-      accessibleAccountIds
-    });
-
-    const existingOccurrenceKeys = await this.getExistingOccurrenceKeys({
-      companyId,
-      startDate: previousMonthStart,
-      endDate: monthEnd,
-      accessFilter
-    });
-
-    const startCursor = new Date(previousMonthStart.getFullYear(), previousMonthStart.getMonth(), 1, 12, 0, 0, 0);
-    const endCursor = new Date(monthStart.getFullYear(), monthStart.getMonth(), 1, 12, 0, 0, 0);
-
-    for (const template of templates as any[]) {
-      if (
-        template.type === TransactionType.INCOME &&
-        template.toAccount?.type === AccountType.CREDIT_CARD
-      ) {
-        continue;
-      }
-
-      let cursor = new Date(startCursor);
-
-      while (cursor <= endCursor) {
-        const occurrenceDate = FixedTransactionService.buildVirtualDateForMonth(
-          template,
-          cursor.getFullYear(),
-          cursor.getMonth()
-        );
-
-        if (template.startDate > occurrenceDate || (template.endDate && template.endDate < occurrenceDate)) {
-          cursor = addMonths(cursor, 1);
-          continue;
-        }
-
-        const occurrenceKey = FixedTransactionService.buildOccurrenceKey(
-          template.id,
-          occurrenceDate
-        );
-        if (existingOccurrenceKeys.has(occurrenceKey)) {
-          cursor = addMonths(cursor, 1);
-          continue;
-        }
-
+      accessibleAccountIds,
+      templateFilter: (template) =>
+        !(
+          template.type === TransactionType.INCOME &&
+          template.toAccount?.type === AccountType.CREDIT_CARD
+        ),
+      occurrenceFilter: ({ template, occurrenceDate }) => {
         const isCreditCardFixedExpense =
           template.type === TransactionType.EXPENSE &&
           template.fromAccount?.type === AccountType.CREDIT_CARD &&
@@ -718,44 +625,66 @@ export default class FinancialDashboardService {
           template.fromAccount?.statementDueDay;
 
         if (isCreditCardFixedExpense) {
-          const invoiceReference = resolveCreditCardInvoiceReference(
-            occurrenceDate,
-            template.fromAccount.statementClosingDay,
-            template.fromAccount.statementDueDay
-          );
+          const statementClosingDay = template.fromAccount?.statementClosingDay;
+          const statementDueDay = template.fromAccount?.statementDueDay;
 
-          if (invoiceReference.dueDate >= monthStart && invoiceReference.dueDate <= monthEnd) {
-            rows.push({
-              type: TransactionType.EXPENSE,
-              source: 'CREDIT_CARD',
-              amount: toDecimal(template.amount),
-              categoryId: template.categoryId ?? null,
-              categoryName: buildCategoryLabel(template.category),
-              categoryColor: buildCategoryColor(template.category),
-              isRealized: false,
-              categoryAggregationState: 'PROJECTED'
-            });
+          if (!statementClosingDay || !statementDueDay) {
+            return false;
           }
 
-          cursor = addMonths(cursor, 1);
-          continue;
+          const invoiceReference = resolveCreditCardInvoiceReference(
+            occurrenceDate,
+            statementClosingDay,
+            statementDueDay
+          );
+
+          if (invoiceReference.dueDate < monthStart || invoiceReference.dueDate > monthEnd) {
+            return false;
+          }
+
+          return invoiceReference.dueDate >= projectionCutoff;
         }
 
-        if (occurrenceDate >= monthStart && occurrenceDate <= monthEnd) {
-          rows.push({
-            type: template.type as DashboardTransactionType,
-            source: 'FIXED_PROJECTED',
-            amount: toDecimal(template.amount),
-            categoryId: template.categoryId ?? null,
-            categoryName: buildCategoryLabel(template.category),
-            categoryColor: buildCategoryColor(template.category),
-            isRealized: false,
-            categoryAggregationState: 'PROJECTED'
-          });
+        if (occurrenceDate < monthStart || occurrenceDate > monthEnd) {
+          return false;
         }
 
-        cursor = addMonths(cursor, 1);
+        return occurrenceDate >= projectionCutoff;
       }
+    });
+
+    for (const occurrence of projectedOccurrences) {
+      const template = occurrence.template;
+      const isCreditCardFixedExpense =
+        template.type === TransactionType.EXPENSE &&
+        template.fromAccount?.type === AccountType.CREDIT_CARD &&
+        template.fromAccount?.statementClosingDay &&
+        template.fromAccount?.statementDueDay;
+
+      if (isCreditCardFixedExpense) {
+        rows.push({
+          type: TransactionType.EXPENSE,
+          source: 'CREDIT_CARD',
+          amount: toDecimal(template.amount),
+          categoryId: template.categoryId ?? null,
+          categoryName: buildCategoryLabel(template.category),
+          categoryColor: buildCategoryColor(template.category),
+          isRealized: false,
+          categoryAggregationState: 'PROJECTED'
+        });
+        continue;
+      }
+
+      rows.push({
+        type: template.type as DashboardTransactionType,
+        source: 'FIXED_PROJECTED',
+        amount: toDecimal(template.amount),
+        categoryId: template.categoryId ?? null,
+        categoryName: buildCategoryLabel(template.category),
+        categoryColor: buildCategoryColor(template.category),
+        isRealized: false,
+        categoryAggregationState: 'PROJECTED'
+      });
     }
 
     return rows;

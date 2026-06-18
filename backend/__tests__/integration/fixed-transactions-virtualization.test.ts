@@ -239,6 +239,126 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(foundVirtual).toBeDefined();
   });
 
+  it('does not project fixed occurrences from the current month in the past and supports ignored transaction visibility', async () => {
+    const today = new Date().getDate();
+    const pastDay = Math.max(1, today - 1);
+    const nextMonthOccurrence = buildOccurrenceDate(1, 12);
+    const currentMonth = monthBounds(0);
+    const nextMonth = monthBounds(1);
+
+    const pastTemplateResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Past Month Projection',
+        amount: 90,
+        type: 'EXPENSE',
+        dayOfMonth: pastDay,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId,
+        startDate: buildOccurrenceDate(-1, pastDay).toISOString()
+      });
+
+    expect(pastTemplateResponse.status).toBe(201);
+
+    const nextMonthTemplateResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Ignored Future Projection',
+        amount: 145.5,
+        type: 'EXPENSE',
+        dayOfMonth: 12,
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId,
+        startDate: buildOccurrenceDate(0, 1).toISOString()
+      });
+
+    expect(nextMonthTemplateResponse.status).toBe(201);
+
+    const currentMonthResponse = await listTransactions(currentMonth.start, currentMonth.end);
+    expect(currentMonthResponse.status).toBe(200);
+    expect(
+      currentMonthResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === pastTemplateResponse.body.id && item.isVirtual === true
+      )
+    ).toBeUndefined();
+
+    const nextMonthResponse = await listTransactions(nextMonth.start, nextMonth.end);
+    expect(nextMonthResponse.status).toBe(200);
+
+    const projectedRow = nextMonthResponse.body.data.find(
+      (item: any) =>
+        item.fixedTemplateId === nextMonthTemplateResponse.body.id &&
+        item.isVirtual === true
+    );
+
+    expect(projectedRow).toBeDefined();
+
+    const archiveResponse = await request(app)
+      .post(`/api/financial/fixed-transactions/${nextMonthTemplateResponse.body.id}/archive`)
+      .set(authHeaders())
+      .send({
+        occurrenceDate: nextMonthOccurrence.toISOString()
+      });
+
+    expect(archiveResponse.status).toBe(200);
+    expect(archiveResponse.body.archivedAt).toBeTruthy();
+
+    const activeFutureResponse = await listTransactions(nextMonth.start, nextMonth.end);
+    expect(activeFutureResponse.status).toBe(200);
+    expect(
+      activeFutureResponse.body.data.find(
+        (item: any) => item.fixedTemplateId === nextMonthTemplateResponse.body.id
+      )
+    ).toBeUndefined();
+
+    const ignoredFutureResponse = await listTransactions(nextMonth.start, nextMonth.end, {
+      ignoredState: 'IGNORED'
+    });
+
+    expect(ignoredFutureResponse.status).toBe(200);
+    expect(
+      ignoredFutureResponse.body.data.find(
+        (item: any) =>
+          item.fixedTemplateId === nextMonthTemplateResponse.body.id &&
+          item.archivedAt
+      )
+    ).toBeDefined();
+
+    const manualPendingResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Manual Pending Ignore',
+        amount: 88.4,
+        date: nextMonthOccurrence.toISOString(),
+        dueDate: nextMonthOccurrence.toISOString(),
+        type: 'EXPENSE',
+        status: 'PENDING',
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(manualPendingResponse.status).toBe(201);
+
+    const archiveManualResponse = await request(app)
+      .patch(`/api/financial/transactions/${manualPendingResponse.body.id}/archive`)
+      .set(authHeaders());
+
+    expect(archiveManualResponse.status).toBe(200);
+    expect(archiveManualResponse.body.archivedAt).toBeTruthy();
+
+    const ignoredWithManualResponse = await listTransactions(nextMonth.start, nextMonth.end, {
+      ignoredState: 'IGNORED'
+    });
+
+    expect(ignoredWithManualResponse.status).toBe(200);
+    expect(
+      ignoredWithManualResponse.body.data.find((item: any) => item.id === manualPendingResponse.body.id)
+    ).toBeDefined();
+  });
+
   it('calculates period expense summary without inflating consolidated card invoice amounts', async () => {
     const purchaseDate = buildOccurrenceDate(8, 5);
     const dueDate = buildOccurrenceDate(8, 15);

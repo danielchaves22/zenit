@@ -4,6 +4,7 @@ export type TransactionDisplayStatus =
   | 'SETTLED'
   | 'PAID'
   | 'CANCELED'
+  | 'ARCHIVED'
   | 'PROJECTED';
 
 export type DisplayStatusSource = 'transaction' | 'invoice' | 'projection';
@@ -14,6 +15,7 @@ interface TransactionDisplayStatusInput {
   status?: string | null;
   dueDate?: string | null;
   effectiveDate?: string | null;
+  archivedAt?: string | Date | null;
   isProjected?: boolean;
   isVirtual?: boolean;
   creditCardInvoice?: {
@@ -150,6 +152,10 @@ export function getInvoiceDisplayStatus(
 export function getTransactionDisplayStatus(
   input: TransactionDisplayStatusInput
 ): { status: TransactionDisplayStatus; source: DisplayStatusSource } {
+  if (input.archivedAt) {
+    return { status: 'ARCHIVED', source: 'transaction' };
+  }
+
   if (input.isProjected || input.isVirtual) {
     return { status: 'PROJECTED', source: 'projection' };
   }
@@ -202,6 +208,8 @@ export function getTransactionDisplayStatusLabel(status: TransactionDisplayStatu
       return 'Paga';
     case 'CANCELED':
       return 'Cancelada';
+    case 'ARCHIVED':
+      return 'Ignorada';
     case 'PROJECTED':
       return 'Projetada';
     default:
@@ -221,6 +229,8 @@ export function getTransactionDisplayStatusClasses(status: TransactionDisplaySta
       return 'bg-emerald-900 text-emerald-300';
     case 'CANCELED':
       return 'bg-gray-700 text-gray-300';
+    case 'ARCHIVED':
+      return 'bg-amber-900 text-amber-200';
     case 'PROJECTED':
       return 'bg-sky-900 text-sky-200';
     default:

@@ -4,6 +4,7 @@ import {
   resolveOpenAiModel,
   shouldRetryWithLegacyOpenAiModel
 } from '../constants/openai';
+import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 import OpenAiIntegrationService from './openai-integration.service';
 
 const prisma = new PrismaClient();
@@ -752,6 +753,7 @@ async function loadHistoryTransactions(params: {
       status: {
         not: TransactionStatus.CANCELED
       },
+      ...buildOperationalTransactionWhere(),
       categoryId: {
         not: null
       }

@@ -562,6 +562,79 @@ describe('Financial dashboard', () => {
     expect(nextMonthResponse.body.projectedEndingBalance).toBe('1420.00');
   });
 
+  it('ignores archived transactions and does not retro-project fixed occurrences in the current month', async () => {
+    const now = new Date();
+    const currentMonthKey = buildMonthKey(now);
+    const currentMonthIndex = now.getMonth();
+    const currentYear = now.getFullYear();
+    const pastDay = Math.max(1, now.getDate() - 1);
+
+    const checkingAccount = await prisma.financialAccount.create({
+      data: {
+        name: 'Conta Corrente Arquivada',
+        type: 'CHECKING',
+        balance: 1000,
+        companyId: primaryCompanyId
+      }
+    });
+
+    const incomeCategory = await prisma.financialCategory.create({
+      data: {
+        name: 'Receita Ignorada',
+        type: 'INCOME',
+        color: '#22c55e',
+        companyId: primaryCompanyId
+      }
+    });
+
+    const archivedIncomeDate = buildDate(currentYear, currentMonthIndex, Math.min(pastDay + 1, 28));
+
+    await prisma.financialTransaction.create({
+      data: {
+        description: 'Receita materializada ignorada',
+        amount: 320,
+        date: archivedIncomeDate,
+        dueDate: archivedIncomeDate,
+        type: 'INCOME',
+        status: 'PENDING',
+        toAccountId: checkingAccount.id,
+        categoryId: incomeCategory.id,
+        companyId: primaryCompanyId,
+        createdBy: primaryUserId,
+        archivedAt: now,
+        archivedBy: primaryUserId
+      }
+    });
+
+    await prisma.recurringTransaction.create({
+      data: {
+        description: 'Receita fixa passada no mes',
+        amount: 480,
+        type: TransactionType.INCOME,
+        frequency: RecurringFrequency.MONTHLY,
+        dayOfMonth: pastDay,
+        startDate: buildDate(currentYear, currentMonthIndex - 1, Math.min(pastDay, 28)),
+        nextDueDate: buildDate(currentYear, currentMonthIndex, pastDay),
+        isActive: true,
+        toAccountId: checkingAccount.id,
+        categoryId: incomeCategory.id,
+        companyId: primaryCompanyId,
+        createdBy: primaryUserId
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/financial/dashboard/monthly')
+      .set(authHeaders(primaryToken, primaryCompanyId))
+      .query({ month: currentMonthKey });
+
+    expect(response.status).toBe(200);
+    expect(response.body.monthlyTotals.incomeTotal).toBe('0.00');
+    expect(response.body.currentMonthBreakdown.income.realized).toBe('0.00');
+    expect(response.body.currentMonthBreakdown.income.remaining).toBe('0.00');
+    expect(response.body.projectedEndingBalance).toBe('1000.00');
+  });
+
   it('returns the structural summary with active fixed items only and consolidated credit card values', async () => {
     const now = new Date();
     const currentMonthIndex = now.getMonth();

@@ -492,6 +492,8 @@ model FinancialTransaction {
   budgetEntry            BudgetEntry?
   confirmedByPendingAction AssistantPendingAction? @relation("ConfirmedPendingAction")
   occurrenceKey    String?              @unique
+  archivedAt       DateTime?
+  archivedBy       Int?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
@@ -504,6 +506,7 @@ model FinancialTransaction {
   @@index([purchaseGroupId])
   @@index([creditCardInvoiceId])
   @@index([companyId, entryKind])
+  @@index([companyId, archivedAt])
   
   // ✅ NOVOS ÍNDICES PARA PERFORMANCE
   @@index([dueDate, status])                              // Relatórios de inadimplência

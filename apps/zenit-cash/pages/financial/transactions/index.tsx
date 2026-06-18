@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   ArrowUpDown,
   BookmarkPlus,
   CheckCircle,
@@ -71,6 +73,7 @@ import {
   type PeriodRange,
   type TransactionDateFieldFilter,
   type TransactionFilters,
+  type IgnoredTransactionState,
   type TransactionTypeFilter,
   type TransactionsPresetPayload
 } from '@/utils/transactionFilterPresets';
@@ -115,6 +118,9 @@ interface Transaction {
   fixedTemplateId?: number | null;
   isFixed?: boolean;
   isProjected?: boolean;
+  archivedAt?: string | null;
+  archivedBy?: number | null;
+  isArchived?: boolean;
   hasProjectedTransactions?: boolean;
   isCreditCardInvoiceSummary?: boolean;
   isCreditCardInvoicePayment?: boolean;
@@ -247,6 +253,10 @@ function canSettleTransaction(transaction: Transaction) {
     return false;
   }
 
+  if (transaction.archivedAt) {
+    return false;
+  }
+
   if (transaction.type === 'TRANSFER') {
     return false;
   }
@@ -269,6 +279,45 @@ function canSettleTransaction(transaction: Transaction) {
   }
 
   return true;
+}
+
+function isCreditCardRelatedTransaction(transaction: Transaction) {
+  return Boolean(
+    transaction.purchaseGroupId ||
+    transaction.creditCardInvoice ||
+    transaction.isCreditCardInvoiceSummary ||
+    transaction.isCreditCardInvoicePayment
+  );
+}
+
+function canArchiveTransaction(transaction: Transaction) {
+  if (transaction.archivedAt) {
+    return false;
+  }
+
+  if (transaction.status !== 'PENDING' || transaction.type === 'TRANSFER') {
+    return false;
+  }
+
+  if (isCreditCardRelatedTransaction(transaction)) {
+    return false;
+  }
+
+  if (transaction.isVirtual || transaction.isProjected) {
+    return Boolean(transaction.fixedTemplateId);
+  }
+
+  return Boolean(transaction.id);
+}
+
+function canUnarchiveTransaction(transaction: Transaction) {
+  return (
+    Boolean(transaction.id) &&
+    Boolean(transaction.archivedAt) &&
+    transaction.status === 'PENDING' &&
+    transaction.type !== 'TRANSFER' &&
+    !isCreditCardRelatedTransaction(transaction)
+  );
 }
 
 function shouldAdjustExpenseSummaryWithTransferPayments(types: TransactionTypeFilter[]) {
@@ -444,6 +493,20 @@ export default function TransactionsListPage() {
       });
     }
 
+    if (filters.ignoredState !== 'ACTIVE') {
+      const ignoredStateLabels: Record<IgnoredTransactionState, string> = {
+        ACTIVE: 'Ativas',
+        IGNORED: 'Ignoradas',
+        ALL: 'Todas'
+      };
+
+      badges.push({
+        key: 'ignoredState',
+        label: 'Exibicao',
+        value: ignoredStateLabels[filters.ignoredState]
+      });
+    }
+
     if (filters.search.trim()) {
       badges.push({
         key: 'search',
@@ -458,6 +521,7 @@ export default function TransactionsListPage() {
     categoryFilterOptions,
     filters.accountId,
     filters.categoryIds,
+    filters.ignoredState,
     filters.search,
     filters.status
   ]);
@@ -528,6 +592,7 @@ export default function TransactionsListPage() {
     router.query.categoryIds,
     router.query.dateField,
     router.query.endDate,
+    router.query.ignoredState,
     router.query.search,
     router.query.showOnlyMaterialized,
     router.query.startDate,
@@ -605,7 +670,8 @@ export default function TransactionsListPage() {
         startDate: activePeriod.startDate,
         endDate: activePeriod.endDate,
         dateField,
-        includeVirtualFixed: (!showOnlyMaterialized).toString()
+        includeVirtualFixed: (!showOnlyMaterialized).toString(),
+        ignoredState: filters.ignoredState
       });
 
       if (filters.types.length === 0) {
@@ -885,6 +951,86 @@ export default function TransactionsListPage() {
     );
   }
 
+  async function handleArchive(transaction: Transaction) {
+    if (!canArchiveTransaction(transaction)) {
+      return;
+    }
+
+    const archiveTargetLabel = formatTransactionDescription(
+      transaction.description,
+      transaction.installmentNumber,
+      transaction.totalInstallments
+    );
+
+    confirmation.confirm(
+      {
+        title: 'Ignorar Transacao',
+        message: transaction.isVirtual || transaction.isProjected
+          ? `Deseja ignorar a projecao "${archiveTargetLabel}"? Ela sera materializada e marcada como ignorada.`
+          : `Deseja ignorar a transacao "${archiveTargetLabel}"? Ela deixara de entrar nos calculos e listagens operacionais.`,
+        confirmText: 'Ignorar',
+        cancelText: 'Cancelar',
+        type: 'warning'
+      },
+      async () => {
+        try {
+          if (transaction.isVirtual || transaction.isProjected) {
+            if (!transaction.fixedTemplateId) {
+              throw new Error('Transacao projetada sem template associado');
+            }
+
+            const occurrenceDate = transaction.dueDate || transaction.date;
+            if (!occurrenceDate) {
+              throw new Error('Data da ocorrencia projetada nao encontrada');
+            }
+
+            await api.post(`/financial/fixed-transactions/${transaction.fixedTemplateId}/archive`, {
+              occurrenceDate
+            });
+          } else if (transaction.id) {
+            await api.patch(`/financial/transactions/${transaction.id}/archive`);
+          }
+
+          addToast('Transacao ignorada com sucesso', 'success');
+          await fetchData();
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao ignorar transacao', 'error');
+          throw error;
+        }
+      }
+    );
+  }
+
+  async function handleUnarchive(transaction: Transaction) {
+    if (!transaction.id || !canUnarchiveTransaction(transaction)) {
+      return;
+    }
+
+    confirmation.confirm(
+      {
+        title: 'Restaurar Transacao',
+        message: `Deseja restaurar "${formatTransactionDescription(
+          transaction.description,
+          transaction.installmentNumber,
+          transaction.totalInstallments
+        )}"? Ela voltara a entrar nos calculos e listagens operacionais.`,
+        confirmText: 'Restaurar',
+        cancelText: 'Cancelar',
+        type: 'info'
+      },
+      async () => {
+        try {
+          await api.patch(`/financial/transactions/${transaction.id}/unarchive`);
+          addToast('Transacao restaurada com sucesso', 'success');
+          await fetchData();
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao restaurar transacao', 'error');
+          throw error;
+        }
+      }
+    );
+  }
+
   async function handleMaterializeAndEdit(transaction: Transaction) {
     if (!transaction.fixedTemplateId) {
       addToast('Transação virtual sem template associado', 'error');
@@ -1083,6 +1229,8 @@ export default function TransactionsListPage() {
         return <AlertTriangle size={12} className="text-red-400" />;
       case 'CANCELED':
         return <X size={12} className="text-gray-300" />;
+      case 'ARCHIVED':
+        return <Archive size={12} className="text-amber-300" />;
       case 'PROJECTED':
       case 'OPEN':
         return <Clock size={12} className="text-sky-300" />;
@@ -1410,6 +1558,21 @@ export default function TransactionsListPage() {
           </div>
 
           <div className="flex flex-col">
+            <label className={filterLabelClassName}>Ignorados</label>
+            <select
+              value={filters.ignoredState}
+              onChange={(event) =>
+                updateFilters({ ignoredState: event.target.value as IgnoredTransactionState })
+              }
+              className={filterControlClassName}
+            >
+              <option value="ACTIVE">Apenas ativas</option>
+              <option value="IGNORED">Apenas ignoradas</option>
+              <option value="ALL">Todas</option>
+            </select>
+          </div>
+
+          <div className="flex flex-col">
             <span className={`${filterLabelClassName} select-none text-transparent`}>
               Ações
             </span>
@@ -1620,6 +1783,17 @@ export default function TransactionsListPage() {
 	                      );
 	                    }
 
+	                    if (transaction.archivedAt) {
+	                      characteristicBadges.push(
+	                        <span
+	                          key="archived"
+	                          className="rounded-full bg-amber-900 px-2 py-0.5 text-[10px] uppercase text-amber-200"
+	                        >
+	                          Ignorada
+	                        </span>
+	                      );
+	                    }
+
 	                    if (isBalanceAdjustmentTransaction(transaction)) {
 	                      characteristicBadges.push(
 	                        <span
@@ -1681,7 +1855,13 @@ export default function TransactionsListPage() {
 	                    return (
 	                      <tr
 	                        key={rowKey}
-	                        className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${isProjectedLike ? 'bg-sky-950/20' : ''}`}
+	                        className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                            transaction.archivedAt
+                              ? 'bg-amber-950/15'
+                              : isProjectedLike
+                                ? 'bg-sky-950/20'
+                                : ''
+                          }`}
 	                      >
 	                        <td className="px-4 py-3">
 	                          <div className="flex items-center justify-center gap-1">
@@ -1695,43 +1875,73 @@ export default function TransactionsListPage() {
 	                                </button>
 	                              </Link>
 	                            ) : transaction.isVirtual ? (
-	                              <button
-	                                onClick={() => handleMaterializeAndEdit(transaction)}
-	                                className="p-1 text-gray-300 transition-colors hover:text-accent"
-                                title="Materializar e editar"
-                                disabled={isMaterializing}
-                              >
-                                {isMaterializing ? (
-                                  <Loader2 size={14} className="animate-spin" />
-                                ) : (
-                                  <Edit2 size={14} />
-                                )}
-                              </button>
-                            ) : (
-                              <>
-                                {canSettleTransaction(transaction) && (
+                                <>
+	                                <button
+	                                  onClick={() => handleMaterializeAndEdit(transaction)}
+	                                  className="p-1 text-gray-300 transition-colors hover:text-accent"
+                                  title="Materializar e editar"
+                                  disabled={isMaterializing}
+                                >
+                                  {isMaterializing ? (
+                                    <Loader2 size={14} className="animate-spin" />
+                                  ) : (
+                                    <Edit2 size={14} />
+                                  )}
+                                </button>
+                                {canArchiveTransaction(transaction) && (
                                   <button
-                                    onClick={() => handleOpenSettlement(transaction)}
-                                    className="p-1 text-gray-300 transition-colors hover:text-green-400"
+                                    onClick={() => void handleArchive(transaction)}
+                                    className="p-1 text-gray-300 transition-colors hover:text-amber-300"
+                                    title="Ignorar projeção"
+                                  >
+                                    <Archive size={14} />
+                                  </button>
+                                )}
+                              </>
+	                            ) : (
+	                              <>
+	                                {canUnarchiveTransaction(transaction) ? (
+                                  <button
+                                    onClick={() => void handleUnarchive(transaction)}
+                                    className="p-1 text-gray-300 transition-colors hover:text-emerald-300"
+                                    title="Restaurar"
+                                  >
+                                    <ArchiveRestore size={14} />
+                                  </button>
+                                ) : canSettleTransaction(transaction) && (
+	                                  <button
+	                                    onClick={() => handleOpenSettlement(transaction)}
+	                                    className="p-1 text-gray-300 transition-colors hover:text-green-400"
                                     title={transaction.type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita'}
                                   >
                                     <CheckCircle size={14} />
                                   </button>
                                 )}
-                                {transaction.id && (
-                                  <Link href={`/financial/transactions/${transaction.id}`}>
-                                    <button
-                                      className="p-1 text-gray-300 transition-colors hover:text-accent"
+	                                {transaction.id && !transaction.archivedAt && (
+	                                  <Link href={`/financial/transactions/${transaction.id}`}>
+	                                    <button
+	                                      className="p-1 text-gray-300 transition-colors hover:text-accent"
                                       title="Editar"
                                     >
                                       <Edit2 size={14} />
+	                                    </button>
+	                                  </Link>
+	                                )}
+                                  {canArchiveTransaction(transaction) && (
+                                    <button
+                                      onClick={() => void handleArchive(transaction)}
+                                      className="p-1 text-gray-300 transition-colors hover:text-amber-300"
+                                      title="Ignorar"
+                                    >
+                                      <Archive size={14} />
                                     </button>
-                                  </Link>
-                                )}
-                                {transaction.id && (transaction.status !== 'COMPLETED' || transaction.purchaseGroupId) && (
-                                  <button
-                                    onClick={() => handleDelete(transaction)}
-                                    className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                                  )}
+	                                {transaction.id &&
+                                    !transaction.archivedAt &&
+                                    (transaction.status !== 'COMPLETED' || transaction.purchaseGroupId) && (
+	                                  <button
+	                                    onClick={() => handleDelete(transaction)}
+	                                    className="p-1 text-gray-300 transition-colors hover:text-red-400"
                                     title="Excluir"
                                   >
                                     <Trash2 size={14} />

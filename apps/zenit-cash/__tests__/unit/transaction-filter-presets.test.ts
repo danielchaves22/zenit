@@ -30,6 +30,7 @@ describe('transaction filter presets', () => {
       filters: {
         types: ['EXPENSE'],
         status: 'PENDING',
+        ignoredState: 'IGNORED',
         accountId: '10',
         categoryIds: ['20'],
         search: 'fornecedor'
@@ -44,6 +45,7 @@ describe('transaction filter presets', () => {
       periodOffset: -2,
       types: ['EXPENSE'],
       status: 'PENDING',
+      ignoredState: 'IGNORED',
       accountId: '10',
       categoryId: '20',
       categoryIds: ['20'],
@@ -73,6 +75,7 @@ describe('transaction filter presets', () => {
       },
       types: ALL_TRANSACTION_TYPES,
       status: '',
+      ignoredState: 'ACTIVE',
       accountId: '',
       categoryIds: [],
       categoryId: '',
@@ -92,6 +95,7 @@ describe('transaction filter presets', () => {
       },
       types: ['INCOME', 'TRANSFER'],
       status: 'COMPLETED',
+      ignoredState: 'ALL',
       accountId: '55',
       categoryId: '77',
       categoryIds: ['77'],
@@ -115,6 +119,7 @@ describe('transaction filter presets', () => {
       filters: {
         types: ['INCOME', 'TRANSFER'],
         status: 'COMPLETED',
+        ignoredState: 'ALL',
         accountId: '55',
         categoryIds: ['77'],
         search: 'cliente'
@@ -131,6 +136,7 @@ describe('transaction filter presets', () => {
       periodOffset: 1,
       types: ['EXPENSE'],
       status: 'PENDING',
+      ignoredState: 'ACTIVE',
       accountId: '999',
       categoryId: '888',
       categoryIds: ['888'],
@@ -149,6 +155,7 @@ describe('transaction filter presets', () => {
       filters: {
         types: ['EXPENSE'],
         status: 'PENDING',
+        ignoredState: 'ACTIVE',
         accountId: '',
         categoryIds: [],
         search: 'aluguel'
@@ -164,6 +171,7 @@ describe('transaction filter presets', () => {
       periodOffset: -1,
       types: ['EXPENSE'],
       status: 'PENDING',
+      ignoredState: 'IGNORED',
       accountId: '2',
       categoryId: '7',
       categoryIds: ['7'],
@@ -187,6 +195,7 @@ describe('transaction filter presets', () => {
       filters: {
         types: ['EXPENSE'],
         status: 'PENDING',
+        ignoredState: 'IGNORED',
         accountId: '2',
         categoryIds: ['7'],
         search: 'fornecedor'
@@ -216,6 +225,7 @@ describe('transaction filter presets', () => {
             periodOffset: 3,
             types: ['TRANSFER'],
             status: 'PENDING',
+            ignoredState: 'ACTIVE',
             accountId: '2',
             categoryId: '7',
             categoryIds: ['7'],
@@ -238,6 +248,8 @@ describe('transaction filter presets', () => {
         categoryIds: [],
         search: 'energia',
         status: 'COMPLETED'
+        ,
+        ignoredState: 'ACTIVE'
       }
     })
   })
@@ -278,6 +290,7 @@ describe('transaction filter presets', () => {
     expect(hasExplicitTransactionFilterQuery({ categoryId: '4' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ categoryIds: ['4', '8'] })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ status: 'PENDING' })).toBe(true)
+    expect(hasExplicitTransactionFilterQuery({ ignoredState: 'IGNORED' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ search: '  energia  ' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ startDate: '2026-06-01' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ page: '2' })).toBe(false)

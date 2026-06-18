@@ -174,7 +174,7 @@ const TRANSACTION_DATE_FIELD_OPTIONS: Array<{
   value: TransactionDateFieldFilter;
   label: string;
 }> = [
-  { value: 'dueDate', label: 'Data de vencimento' },
+  { value: 'dueDate', label: 'Vencimento' },
   { value: 'date', label: 'Data da transação' },
   { value: 'effectiveDate', label: 'Data de liquidação' },
   { value: 'createdAt', label: 'Data de criação' }
@@ -220,6 +220,21 @@ function getPeriodOptionLabel(
   }
 
   return 'Mês atual';
+}
+
+function getDateFieldOptionLabel(value: TransactionDateFieldFilter): string {
+  switch (value) {
+    case 'dueDate':
+      return 'Vencimento';
+    case 'date':
+      return 'Transacao';
+    case 'effectiveDate':
+      return 'Liquidacao';
+    case 'createdAt':
+      return 'Criacao';
+    default:
+      return value;
+  }
 }
 
 function buildInvoiceKeyFromReference(referenceYear: number, referenceMonth: number): string {
@@ -1277,12 +1292,12 @@ export default function TransactionsListPage() {
   }, [transactions, sortConfig]);
   const filterLabelClassName = 'mb-1 block text-sm font-medium text-gray-300';
   const filterControlClassName =
-    'h-10 w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-sm text-white focus:border-accent focus:outline-none focus:ring';
+    'h-10 min-w-0 w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-sm text-white focus:border-accent focus:outline-none focus:ring';
   const compactCreateButtonClass =
     'flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-sm';
   const filterHeaderGridClass = isCustomPeriod
-    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(220px,0.7fr)_minmax(260px,0.95fr)_auto_auto]'
-    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(260px,0.95fr)_auto_auto]';
+    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_auto_auto_auto]'
+    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_auto_auto_auto]';
 
   if (loading && transactions.length === 0) {
     return (
@@ -1379,10 +1394,10 @@ export default function TransactionsListPage() {
 
       <Card className="mb-6">
         <div className={filterHeaderGridClass}>
-          <div className="flex flex-col">
-            <label className={filterLabelClassName}>Periodo</label>
+          <div className="flex min-w-0 flex-col">
+            <label className={filterLabelClassName}>Periodo - data de:</label>
             {isCustomPeriod ? (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-[minmax(180px,0.88fr)_minmax(145px,0.64fr)_minmax(180px,0.98fr)_minmax(180px,0.98fr)]">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-[160px_minmax(145px,max-content)_minmax(180px,1fr)_minmax(180px,1fr)]">
                 <select
                   value={dateField}
                   onChange={(event) =>
@@ -1393,7 +1408,7 @@ export default function TransactionsListPage() {
                 >
                   {TRANSACTION_DATE_FIELD_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {getDateFieldOptionLabel(option.value)}
                     </option>
                   ))}
                 </select>
@@ -1437,7 +1452,7 @@ export default function TransactionsListPage() {
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(200px,0.95fr)_auto_minmax(0,1fr)_auto]">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-[160px_auto_minmax(0,1fr)_auto]">
                 <select
                   value={dateField}
                   onChange={(event) =>
@@ -1448,7 +1463,7 @@ export default function TransactionsListPage() {
                 >
                   {TRANSACTION_DATE_FIELD_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {getDateFieldOptionLabel(option.value)}
                     </option>
                   ))}
                 </select>
@@ -1490,7 +1505,7 @@ export default function TransactionsListPage() {
             )}
           </div>
 
-          <div className={`flex flex-col ${isCustomPeriod ? 'xl:min-w-[240px]' : ''}`}>
+          <div className="flex min-w-0 flex-col xl:w-[260px]">
             <label className={filterLabelClassName}>Tipo</label>
             <MultiSelect
               options={TRANSACTION_TYPE_OPTIONS}
@@ -1504,7 +1519,7 @@ export default function TransactionsListPage() {
             />
           </div>
 
-          <div className="flex flex-col">
+          <div className="flex flex-col xl:w-[220px]">
             <label className={filterLabelClassName}>Exibicao</label>
             <Button
               variant={showOnlyMaterialized ? 'accent' : 'outline'}
@@ -1514,11 +1529,11 @@ export default function TransactionsListPage() {
               }}
               className="flex h-10 w-full items-center justify-center whitespace-nowrap px-3 xl:w-auto"
             >
-              {showOnlyMaterialized ? 'Somente materializadas' : 'Incluindo projetadas'}
+              {showOnlyMaterialized ? 'So materializadas' : 'Com projetadas'}
             </Button>
           </div>
 
-          <div className="flex flex-col">
+          <div className="flex flex-col xl:w-[190px]">
             <span className={`${filterLabelClassName} select-none text-transparent`}>
               Ações
             </span>

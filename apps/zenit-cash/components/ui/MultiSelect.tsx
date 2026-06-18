@@ -154,7 +154,11 @@ export function MultiSelect({
             error ? 'border-red-500' : 'border-gray-700 hover:border-gray-600'
           } ${disabled ? 'cursor-not-allowed opacity-60' : ''} ${triggerClassName}`}
         >
-          <span className={selectedLabels.length === 0 ? 'text-gray-400' : 'text-white'}>
+          <span
+            className={`min-w-0 flex-1 truncate ${
+              selectedLabels.length === 0 ? 'text-gray-400' : 'text-white'
+            }`}
+          >
             {getButtonText()}
           </span>
           <ChevronDown

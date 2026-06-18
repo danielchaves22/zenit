@@ -406,6 +406,50 @@ describe('Credit card statement reconciliation service', () => {
     expect(classification.matchedTransactions).toHaveLength(1);
   });
 
+  it('ignores other installments from different invoice references when checking installment divergence', () => {
+    const parsed = __private__.parseNubankStatementText(
+      sampleNubankStatementText,
+      'Nubank_2026-06-17.csv'
+    );
+    const installmentItem = parsed.items.find(
+      (item) => item.sourceDescription === 'Deivid Pinturas'
+    );
+
+    expect(installmentItem).toBeTruthy();
+
+    const classification = __private__.classifyMatches(
+      installmentItem!,
+      [
+        {
+          matchKey: 'transaction:511',
+          matchSource: 'TRANSACTION',
+          id: 511,
+          fixedTemplateId: null,
+          occurrenceKey: null,
+          description: 'Pintura casa aluguel',
+          amount: new Prisma.Decimal('471.00'),
+          date: new Date('2026-05-10T12:00:00.000Z'),
+          installmentNumber: 9,
+          totalInstallments: 10,
+          status: TransactionStatus.COMPLETED,
+          purchaseGroupId: 'purchase-group-511',
+          creditCardInvoice: {
+            id: 91,
+            referenceYear: 2027,
+            referenceMonth: 1,
+            status: CreditCardInvoiceStatus.OPEN
+          }
+        }
+      ],
+      2026,
+      6
+    );
+
+    expect(classification.status).toBe('PENDING');
+    expect(classification.reason).toBe('NO_MATCH');
+    expect(classification.matchedTransactions).toHaveLength(0);
+  });
+
   it('shifts statement-reference items when the target invoice reference is changed', () => {
     const parsed = __private__.parseCaixaStatementText(
       sampleCaixaStatementText,

@@ -1603,7 +1603,9 @@ function classifyMatches(
       }
 
       if (!sameInstallmentSignature && sameDate) {
-        return true;
+        return item.kind === 'INSTALLMENT'
+          ? sameStatementReference
+          : true;
       }
 
       return false;

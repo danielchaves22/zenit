@@ -6,6 +6,7 @@ import {
   TransactionStatus,
   TransactionType
 } from '@prisma/client';
+import CreditCardInvoiceService from './credit-card-invoice.service';
 import FinancialTransactionService from './financial-transaction.service';
 import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
 import CreditCardReconciliationCategorySuggestionService, {
@@ -1662,9 +1663,17 @@ async function loadCandidateTransactions(params: {
   accountId: number;
   companyId: number;
   items: ParsedStatementItem[];
+  targetReferenceYear: number;
+  targetReferenceMonth: number;
 }) {
   const { minDate, maxDate } = buildDateWindow(params.items);
-  const [materializedTransactions, projectedFixedCandidates] = await Promise.all([
+  const [targetInvoiceCandidates, materializedTransactions, projectedFixedCandidates] = await Promise.all([
+    loadTargetInvoiceCandidates({
+      accountId: params.accountId,
+      companyId: params.companyId,
+      referenceYear: params.targetReferenceYear,
+      referenceMonth: params.targetReferenceMonth
+    }),
     prisma.financialTransaction.findMany({
       where: {
         companyId: params.companyId,
@@ -1712,7 +1721,8 @@ async function loadCandidateTransactions(params: {
     })
   ]);
 
-  return [
+  const mergedCandidates = [
+    ...targetInvoiceCandidates,
     ...materializedTransactions.map((candidate) => ({
       ...candidate,
       matchKey: `transaction:${candidate.id}`,
@@ -1722,6 +1732,104 @@ async function loadCandidateTransactions(params: {
     })),
     ...projectedFixedCandidates
   ] as ExistingTransactionCandidate[];
+
+  return Array.from(
+    new Map(mergedCandidates.map((candidate) => [candidate.matchKey, candidate])).values()
+  );
+}
+
+function mapInvoiceTransactionToCandidate(params: {
+  transaction: any;
+  invoice: {
+    id: number | null;
+    referenceYear: number;
+    referenceMonth: number;
+    status: CreditCardInvoiceStatus;
+    dueDate: Date | string;
+  };
+}): ExistingTransactionCandidate {
+  const isProjectedFixed = Boolean(
+    params.transaction.isProjected ||
+      params.transaction.isFixedProjection ||
+      params.transaction.id === null
+  );
+  const dueDate = params.invoice.dueDate instanceof Date
+    ? params.invoice.dueDate
+    : new Date(params.invoice.dueDate);
+
+  return {
+    matchKey: isProjectedFixed
+      ? `projected-fixed:${params.transaction.fixedTemplateId}:${params.transaction.occurrenceKey}`
+      : `transaction:${params.transaction.id}`,
+    matchSource: isProjectedFixed ? 'PROJECTED_FIXED' : 'TRANSACTION',
+    id: isProjectedFixed ? null : params.transaction.id,
+    fixedTemplateId: isProjectedFixed ? params.transaction.fixedTemplateId ?? null : null,
+    occurrenceKey: params.transaction.occurrenceKey ?? null,
+    description: params.transaction.description,
+    amount: new Prisma.Decimal(params.transaction.amount.toString()),
+    date: new Date(params.transaction.date),
+    installmentNumber: params.transaction.installmentNumber ?? null,
+    totalInstallments: params.transaction.totalInstallments ?? null,
+    status: isProjectedFixed
+      ? TransactionStatus.PENDING
+      : params.transaction.status,
+    purchaseGroupId: params.transaction.purchaseGroupId ?? null,
+    importSourceType: params.transaction.importSourceType ?? null,
+    importSourceDescription: params.transaction.importSourceDescription ?? null,
+    creditCardInvoice: {
+      id: params.invoice.id ?? 0,
+      referenceYear: params.invoice.referenceYear,
+      referenceMonth: params.invoice.referenceMonth,
+      status: params.invoice.status,
+      dueDate
+    }
+  };
+}
+
+async function loadTargetInvoiceCandidates(params: {
+  accountId: number;
+  companyId: number;
+  referenceYear: number;
+  referenceMonth: number;
+}) {
+  const invoice = await prisma.creditCardInvoice.findFirst({
+    where: {
+      accountId: params.accountId,
+      account: {
+        companyId: params.companyId
+      },
+      referenceYear: params.referenceYear,
+      referenceMonth: params.referenceMonth
+    },
+    select: {
+      id: true
+    }
+  });
+
+  const invoiceDetail = invoice
+    ? await CreditCardInvoiceService.getInvoiceById(invoice.id, params.companyId)
+    : await CreditCardInvoiceService.getProjectedInvoiceByKey({
+        accountId: params.accountId,
+        projectionKey: buildInvoiceProjectionKey(params.referenceYear, params.referenceMonth),
+        companyId: params.companyId
+      });
+
+  if (!invoiceDetail) {
+    return [] as ExistingTransactionCandidate[];
+  }
+
+  return (invoiceDetail.transactions || []).map((transaction) =>
+    mapInvoiceTransactionToCandidate({
+      transaction,
+      invoice: {
+        id: invoiceDetail.id ?? null,
+        referenceYear: invoiceDetail.referenceYear,
+        referenceMonth: invoiceDetail.referenceMonth,
+        status: invoiceDetail.status as CreditCardInvoiceStatus,
+        dueDate: invoiceDetail.dueDate
+      }
+    })
+  );
 }
 
 async function loadProjectedFixedCandidates(params: {
@@ -2052,6 +2160,10 @@ function normalizeCreatedTransactions(
   return Array.isArray(transaction) ? transaction : [transaction];
 }
 
+function buildInvoiceProjectionKey(referenceYear: number, referenceMonth: number) {
+  return `${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
+}
+
 export default class CreditCardStatementReconciliationService {
   static async buildPreview(params: {
     accountId: number;
@@ -2081,7 +2193,9 @@ export default class CreditCardStatementReconciliationService {
       loadCandidateTransactions({
         accountId: params.accountId,
         companyId: params.companyId,
-        items: statement.items
+        items: statement.items,
+        targetReferenceYear: statement.referenceYear,
+        targetReferenceMonth: statement.referenceMonth
       }),
       CreditCardReconciliationCategorySuggestionService.suggestForItems({
         companyId: params.companyId,
@@ -2173,7 +2287,9 @@ export default class CreditCardStatementReconciliationService {
     let candidates = await loadCandidateTransactions({
       accountId: params.accountId,
       companyId: params.companyId,
-      items: statement.items
+      items: statement.items,
+      targetReferenceYear: statement.referenceYear,
+      targetReferenceMonth: statement.referenceMonth
     });
     const fixedDescriptionAliases = await loadFixedDescriptionAliases({
       accountId: params.accountId,

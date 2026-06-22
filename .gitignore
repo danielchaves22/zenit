@@ -57,3 +57,8 @@ coverage/
 
 # Artefatos locais de automacao/navegador
 .playwright-mcp/
+
+# Artefatos temporarios locais
+apps/zenit-cash/tmp/
+/tmp-*
+/tmp_*

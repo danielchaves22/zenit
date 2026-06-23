@@ -63,10 +63,13 @@ interface ReconciliationInvoiceListItem {
   dueDate: string;
   status: string;
   isProjected?: boolean;
+  projectionKey?: string | null;
 }
 
 interface TargetInvoiceOption {
   key: string;
+  invoiceId: number | null;
+  projectionKey: string | null;
   referenceYear: number;
   referenceMonth: number;
   closingDate: string;
@@ -74,6 +77,36 @@ interface TargetInvoiceOption {
   status: string;
   isProjected: boolean;
   source: 'CURRENT_RECOMMENDED' | 'PREVIOUS_RECOMMENDED' | 'INVOICE_HISTORY';
+}
+
+interface ReconciliationInvoiceSystemTransaction {
+  id: number | null;
+  description: string;
+  amount: string;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
+  date?: string | null;
+  dueDate?: string | null;
+  isExternalCreditCardSettlement?: boolean;
+  isProjected?: boolean;
+  isFixedProjection?: boolean;
+  fixedTemplateId?: number | null;
+  category?: {
+    id: number;
+    name: string;
+    color: string;
+  } | null;
+}
+
+interface ReconciliationTargetInvoiceDetail {
+  id: number | null;
+  referenceYear: number;
+  referenceMonth: number;
+  dueDate: string;
+  status: string;
+  isProjected?: boolean;
+  projectionKey?: string | null;
+  transactions: ReconciliationInvoiceSystemTransaction[];
 }
 
 interface ReconciliationMatchedTransaction {
@@ -446,6 +479,8 @@ function buildTargetInvoiceOptions(
 
     addOption({
       key: currentOpenKey,
+      invoiceId: currentOpenInvoice?.id ?? null,
+      projectionKey: currentOpenInvoice?.projectionKey ?? null,
       referenceYear: currentOpenReference.referenceYear,
       referenceMonth: currentOpenReference.referenceMonth,
       closingDate: currentOpenInvoice?.closingDate || currentOpenReference.closingDate,
@@ -470,6 +505,8 @@ function buildTargetInvoiceOptions(
 
     addOption({
       key: previousKey,
+      invoiceId: previousInvoice?.id ?? null,
+      projectionKey: previousInvoice?.projectionKey ?? null,
       referenceYear: previousReference.referenceYear,
       referenceMonth: previousReference.referenceMonth,
       closingDate: previousInvoice?.closingDate || previousReference.closingDate,
@@ -485,6 +522,8 @@ function buildTargetInvoiceOptions(
 
     addOption({
       key,
+      invoiceId: invoice.id,
+      projectionKey: invoice.projectionKey ?? null,
       referenceYear: invoice.referenceYear,
       referenceMonth: invoice.referenceMonth,
       closingDate: invoice.closingDate,
@@ -564,6 +603,47 @@ function canLinkToFixed(item: ReconciliationPreviewItem) {
     getProjectedFixedMatches(item).length === item.matchedTransactions.length &&
     Boolean(getUniqueProjectedFixedTemplateId(item))
   );
+}
+
+function getSystemInvoiceTransactionKey(transaction: ReconciliationInvoiceSystemTransaction) {
+  if (transaction.id !== null) {
+    return `transaction:${transaction.id}`;
+  }
+
+  if (transaction.fixedTemplateId !== null && transaction.fixedTemplateId !== undefined) {
+    return `fixed:${transaction.fixedTemplateId}`;
+  }
+
+  return `projection:${transaction.description}:${transaction.amount}:${
+    transaction.dueDate || transaction.date || ''
+  }:${transaction.installmentNumber || ''}:${transaction.totalInstallments || ''}`;
+}
+
+function getMatchedTransactionSystemKey(transaction: ReconciliationMatchedTransaction) {
+  if (transaction.matchSource === 'TRANSACTION' && transaction.id !== null) {
+    return `transaction:${transaction.id}`;
+  }
+
+  if (
+    transaction.matchSource === 'PROJECTED_FIXED' &&
+    transaction.fixedTemplateId !== null
+  ) {
+    return `fixed:${transaction.fixedTemplateId}`;
+  }
+
+  return null;
+}
+
+function getSystemTransactionDateLabel(transaction: ReconciliationInvoiceSystemTransaction) {
+  if (transaction.date) {
+    return `Compra em ${formatCalendarDate(transaction.date)}`;
+  }
+
+  if (transaction.dueDate) {
+    return `Vence em ${formatCalendarDate(transaction.dueDate)}`;
+  }
+
+  return 'Sem data informada';
 }
 
 function buildItemDrafts(items: ReconciliationPreviewItem[]) {
@@ -733,6 +813,10 @@ function CreditCardReconciliationPageInner() {
   const [commitLoading, setCommitLoading] = useState(false);
   const [committingItemIds, setCommittingItemIds] = useState<string[]>([]);
   const [selectedTargetInvoiceKey, setSelectedTargetInvoiceKey] = useState('');
+  const [targetInvoiceDetail, setTargetInvoiceDetail] =
+    useState<ReconciliationTargetInvoiceDetail | null>(null);
+  const [targetInvoiceDetailLoading, setTargetInvoiceDetailLoading] = useState(false);
+  const [localSystemSelections, setLocalSystemSelections] = useState<Record<string, string>>({});
   const commitInFlightItemIdsRef = useRef<Set<string>>(new Set());
   const batchCommitInFlightRef = useRef(false);
 
@@ -752,6 +836,36 @@ function CreditCardReconciliationPageInner() {
       targetInvoiceOptions.find((option) => option.key === selectedTargetInvoiceKey) || null,
     [selectedTargetInvoiceKey, targetInvoiceOptions]
   );
+  const targetInvoiceTransactions = useMemo(
+    () => targetInvoiceDetail?.transactions || [],
+    [targetInvoiceDetail]
+  );
+  const targetInvoiceTransactionsByKey = useMemo(
+    () =>
+      new Map(
+        targetInvoiceTransactions.map((transaction) => [
+          getSystemInvoiceTransactionKey(transaction),
+          transaction
+        ])
+      ),
+    [targetInvoiceTransactions]
+  );
+  const previewMatchedTransactionKeys = useMemo(() => {
+    if (!preview) {
+      return new Set<string>();
+    }
+
+    return preview.items.reduce((keys, item) => {
+      item.matchedTransactions.forEach((transaction) => {
+        const transactionKey = getMatchedTransactionSystemKey(transaction);
+
+        if (transactionKey) {
+          keys.add(transactionKey);
+        }
+      });
+      return keys;
+    }, new Set<string>());
+  }, [preview]);
 
   const filteredItems = useMemo(() => {
     if (!preview) {
@@ -833,6 +947,40 @@ function CreditCardReconciliationPageInner() {
     setSelectedTargetInvoiceKey(targetInvoiceOptions[0]!.key);
   }, [selectedTargetInvoiceKey, targetInvoiceOptions]);
 
+  useEffect(() => {
+    if (!router.isReady || Number.isNaN(accountId) || !selectedTargetInvoice) {
+      setTargetInvoiceDetail(null);
+      return;
+    }
+
+    void fetchTargetInvoiceDetail(selectedTargetInvoice);
+  }, [accountId, router.isReady, selectedTargetInvoice]);
+
+  useEffect(() => {
+    setLocalSystemSelections({});
+  }, [preview, selectedTargetInvoiceKey]);
+
+  useEffect(() => {
+    if (targetInvoiceTransactionsByKey.size === 0) {
+      return;
+    }
+
+    setLocalSystemSelections((current) => {
+      let changed = false;
+      const nextEntries = Object.entries(current).filter(([, transactionKey]) => {
+        const exists = targetInvoiceTransactionsByKey.has(transactionKey);
+
+        if (!exists) {
+          changed = true;
+        }
+
+        return exists;
+      });
+
+      return changed ? Object.fromEntries(nextEntries) : current;
+    });
+  }, [targetInvoiceTransactionsByKey]);
+
   async function fetchCard() {
     setLoadingCard(true);
 
@@ -885,6 +1033,36 @@ function CreditCardReconciliationPageInner() {
       addToast(error.response?.data?.error || 'Erro ao carregar referencias de fatura', 'error');
     } finally {
       setInvoicesLoading(false);
+    }
+  }
+
+  async function fetchTargetInvoiceDetail(invoice: TargetInvoiceOption) {
+    const canLoadProjected = invoice.isProjected && Boolean(invoice.projectionKey);
+    const canLoadReal = invoice.invoiceId !== null;
+
+    if (!canLoadProjected && !canLoadReal) {
+      setTargetInvoiceDetail(null);
+      setTargetInvoiceDetailLoading(false);
+      return;
+    }
+
+    setTargetInvoiceDetailLoading(true);
+
+    try {
+      const response = canLoadProjected
+        ? await api.get(
+            `/financial/credit-cards/${accountId}/invoices/projected/${invoice.projectionKey}`
+          )
+        : await api.get(`/financial/credit-card-invoices/${invoice.invoiceId}`);
+      setTargetInvoiceDetail(response.data);
+    } catch (error: any) {
+      setTargetInvoiceDetail(null);
+      addToast(
+        error.response?.data?.error || 'Erro ao carregar itens da fatura selecionada',
+        'error'
+      );
+    } finally {
+      setTargetInvoiceDetailLoading(false);
     }
   }
 
@@ -998,6 +1176,29 @@ function CreditCardReconciliationPageInner() {
     setCommitResult(null);
     setItemDrafts({});
     setSelectedItemIds([]);
+  }
+
+  function handleLocalSystemSelectionChange(itemId: string, transactionKey: string) {
+    setLocalSystemSelections((current) => {
+      if (!transactionKey) {
+        if (!(itemId in current)) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[itemId];
+        return next;
+      }
+
+      if (current[itemId] === transactionKey) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [itemId]: transactionKey
+      };
+    });
   }
 
   function handleToggleSelection(itemId: string, checked: boolean) {
@@ -1694,135 +1895,375 @@ function CreditCardReconciliationPageInner() {
                   const itemCommitLoading = committingItemIds.includes(item.id);
                   const missingDescription = selectable && !draft.description.trim();
                   const missingCategory = selectable && !draft.categoryId;
+                  const localSelectionKey = localSystemSelections[item.id] || '';
+                  const selectedSystemTransaction = localSelectionKey
+                    ? targetInvoiceTransactionsByKey.get(localSelectionKey) || null
+                    : null;
+                  const otherLocalSelectionKeys = new Set(
+                    Object.entries(localSystemSelections)
+                      .filter(([entryItemId]) => entryItemId !== item.id)
+                      .map(([, transactionKey]) => transactionKey)
+                  );
+                  const availableSystemTransactions =
+                    item.matchedTransactions.length > 0
+                      ? []
+                      : targetInvoiceTransactions.filter((transaction) => {
+                          if (transaction.isExternalCreditCardSettlement) {
+                            return false;
+                          }
+
+                          const transactionKey = getSystemInvoiceTransactionKey(transaction);
+
+                          if (transactionKey === localSelectionKey) {
+                            return true;
+                          }
+
+                          if (previewMatchedTransactionKeys.has(transactionKey)) {
+                            return false;
+                          }
+
+                          return !otherLocalSelectionKeys.has(transactionKey);
+                        });
+                  const bankDateLabel = item.purchaseDate
+                    ? formatCalendarDate(item.purchaseDate)
+                    : `Referencia ${formatReference(
+                        preview.statement.referenceMonth,
+                        preview.statement.referenceYear
+                      )}`;
 
                   return (
                     <Card key={item.id} className="overflow-visible p-0">
-                      <div className="border-b border-gray-700 px-5 py-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="flex items-start gap-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedItemSet.has(item.id)}
-                              disabled={!selectable || commitLoading || itemCommitLoading}
-                              onChange={(event) =>
-                                handleToggleSelection(item.id, event.target.checked)
-                              }
-                              className="mt-1 h-4 w-4 rounded border-gray-600 bg-background text-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
-                            />
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                                  Item {item.sequence}
-                                </span>
-                                <span
-                                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusClasses(item.status)}`}
-                                >
-                                  {getStatusLabel(item.status)}
-                                </span>
-                                <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
-                                  {getSectionLabel(item.sourceSection)}
-                                </span>
+                      <div className="grid divide-y divide-gray-700 xl:grid-cols-2 xl:divide-x xl:divide-y-0">
+                        <div className="px-5 py-4">
+                          <div className="mb-3 text-xs uppercase tracking-[0.22em] text-gray-500">
+                            Na fatura do banco
+                          </div>
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={selectedItemSet.has(item.id)}
+                                disabled={!selectable || commitLoading || itemCommitLoading}
+                                onChange={(event) =>
+                                  handleToggleSelection(item.id, event.target.checked)
+                                }
+                                className="mt-1 h-4 w-4 rounded border-gray-600 bg-background text-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+                              />
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                    Item {item.sequence}
+                                  </span>
+                                  <span
+                                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusClasses(item.status)}`}
+                                  >
+                                    {getStatusLabel(item.status)}
+                                  </span>
+                                  <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+                                    {getSectionLabel(item.sourceSection)}
+                                  </span>
+                                </div>
+                                <div className="mt-2 text-base font-semibold text-white">
+                                  {item.sourceDescription}
+                                </div>
+                                <div className="mt-2 text-sm text-gray-400">
+                                  {getReasonLabel(item)}
+                                </div>
+                                {item.nonImportableReason && (
+                                  <div className="mt-2 text-sm text-amber-300">
+                                    {item.nonImportableReason}
+                                  </div>
+                                )}
                               </div>
-                              <div className="mt-2 text-base font-semibold text-white">
-                                {item.sourceDescription}
+                            </div>
+
+                            <div className="flex flex-col items-start gap-2 lg:items-end">
+                              <div className="text-2xl font-semibold text-white">
+                                {formatCurrency(item.amount)}
+                              </div>
+                              <div className="flex flex-wrap gap-2 lg:justify-end">
+                                {linkableToFixed && (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => void commitItems([item.id], 'LINK_FIXED')}
+                                    disabled={
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      itemCommitLoading
+                                    }
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    {itemCommitLoading && (
+                                      <RefreshCw size={14} className="animate-spin" />
+                                    )}
+                                    {itemCommitLoading ? 'Salvando vinculo...' : 'Vincular a fixa'}
+                                  </Button>
+                                )}
+                                {selectable && (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => void commitItems([item.id])}
+                                    disabled={
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      categoriesLoading ||
+                                      itemCommitLoading ||
+                                      missingDescription ||
+                                      missingCategory
+                                    }
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    {itemCommitLoading && (
+                                      <RefreshCw size={14} className="animate-spin" />
+                                    )}
+                                    {itemCommitLoading ? 'Importando...' : 'Importar este item'}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                Data da compra
+                              </div>
+                              <div className="mt-1 text-sm text-white">{bankDateLabel}</div>
+                            </div>
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                Parcela
+                              </div>
+                              <div className="mt-1 text-sm text-white">
+                                {formatInstallmentLabel(
+                                  item.installmentNumber,
+                                  item.totalInstallments
+                                )}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                Cartao na fatura
+                              </div>
+                              <div className="mt-1 text-sm text-white">
+                                {item.cardSuffix ? `Final ${item.cardSuffix}` : '-'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                Correspondencias
+                              </div>
+                              <div className="mt-1 text-sm text-white">
+                                {item.matchedTransactions.length}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-[#0f141b] px-5 py-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="text-xs uppercase tracking-[0.22em] text-gray-500">
+                                No Zenit
                               </div>
                               <div className="mt-2 text-sm text-gray-400">
-                                {getReasonLabel(item)}
+                                {selectedTargetInvoice
+                                  ? `Fatura ${formatReference(
+                                      selectedTargetInvoice.referenceMonth,
+                                      selectedTargetInvoice.referenceYear
+                                    )}`
+                                  : 'Selecione a fatura-alvo'}
                               </div>
-                              {item.nonImportableReason && (
-                                <div className="mt-2 text-sm text-amber-300">
-                                  {item.nonImportableReason}
+                            </div>
+                            <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+                              {item.matchedTransactions.length > 0
+                                ? `${item.matchedTransactions.length} relacionado(s)`
+                                : 'Sem relacao atual'}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 space-y-3">
+                            {item.matchedTransactions.length > 0 ? (
+                              item.matchedTransactions.map((transaction) => (
+                                <div
+                                  key={`${item.id}-${transaction.matchKey}`}
+                                  className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3"
+                                >
+                                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                                    <div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <div className="font-medium text-white">
+                                          {transaction.description}
+                                        </div>
+                                        {transaction.matchSource === 'PROJECTED_FIXED' && (
+                                          <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
+                                            Fixa projetada
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-1 text-sm text-gray-400">
+                                        {transaction.matchSource === 'PROJECTED_FIXED'
+                                          ? `Fechamento em ${formatCalendarDate(transaction.date)}`
+                                          : `Compra em ${formatCalendarDate(transaction.date)}`}{' '}
+                                        • parcela{' '}
+                                        {formatInstallmentLabel(
+                                          transaction.installmentNumber,
+                                          transaction.totalInstallments
+                                        )}
+                                        {transaction.invoiceReference
+                                          ? ` • fatura ${transaction.invoiceReference}`
+                                          : ''}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      <div className="text-sm font-semibold text-white">
+                                        {formatCurrency(transaction.amount)}
+                                      </div>
+                                      {transaction.matchSource === 'TRANSACTION' &&
+                                        transaction.id && (
+                                          <Link
+                                            href={`/financial/transactions/${transaction.id}`}
+                                            className="text-sm font-medium text-accent hover:text-accent-hover"
+                                          >
+                                            Abrir
+                                          </Link>
+                                        )}
+                                      {transaction.matchSource === 'PROJECTED_FIXED' &&
+                                        transaction.fixedTemplateId && (
+                                          <Link
+                                            href={`/financial/fixed-transactions/${transaction.fixedTemplateId}`}
+                                            className="text-sm font-medium text-accent hover:text-accent-hover"
+                                          >
+                                            Abrir fixa
+                                          </Link>
+                                        )}
+                                    </div>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col items-start gap-2 lg:items-end">
-                            <div className="text-2xl font-semibold text-white">
-                              {formatCurrency(item.amount)}
-                            </div>
-                            <div className="flex flex-wrap gap-2 lg:justify-end">
-                              {linkableToFixed && (
-                                <Button
-                                  variant="outline"
-                                  onClick={() => void commitItems([item.id], 'LINK_FIXED')}
-                                  disabled={
-                                    commitLoading ||
-                                    hasPendingSingleCommit ||
-                                    itemCommitLoading
-                                  }
-                                  className="flex items-center gap-2 text-sm"
-                                >
-                                  {itemCommitLoading && (
-                                    <RefreshCw size={14} className="animate-spin" />
-                                  )}
-                                  {itemCommitLoading ? 'Salvando vinculo...' : 'Vincular a fixa'}
-                                </Button>
-                              )}
-                              {selectable && (
-                                <Button
-                                  variant="outline"
-                                  onClick={() => void commitItems([item.id])}
-                                  disabled={
-                                    commitLoading ||
-                                    hasPendingSingleCommit ||
-                                    categoriesLoading ||
-                                    itemCommitLoading ||
-                                    missingDescription ||
-                                    missingCategory
-                                  }
-                                  className="flex items-center gap-2 text-sm"
-                                >
-                                  {itemCommitLoading && (
-                                    <RefreshCw size={14} className="animate-spin" />
-                                  )}
-                                  {itemCommitLoading ? 'Importando...' : 'Importar este item'}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-3 px-5 py-4 md:grid-cols-4">
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                            Data da compra
-                          </div>
-                          <div className="mt-1 text-sm text-white">
-                            {item.purchaseDate
-                              ? formatCalendarDate(item.purchaseDate)
-                              : `Referencia ${formatReference(
-                                  preview.statement.referenceMonth,
-                                  preview.statement.referenceYear
-                                )}`}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                            Parcela
-                          </div>
-                          <div className="mt-1 text-sm text-white">
-                            {formatInstallmentLabel(
-                              item.installmentNumber,
-                              item.totalInstallments
+                              ))
+                            ) : targetInvoiceDetailLoading ? (
+                              <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-6 text-sm text-gray-400">
+                                Carregando itens da fatura do Zenit...
+                              </div>
+                            ) : selectedSystemTransaction ? (
+                              <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
+                                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <div className="font-medium text-white">
+                                        {selectedSystemTransaction.description}
+                                      </div>
+                                      {selectedSystemTransaction.isFixedProjection && (
+                                        <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
+                                          Fixa projetada
+                                        </span>
+                                      )}
+                                      {selectedSystemTransaction.category && (
+                                        <span
+                                          className="rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
+                                          style={{
+                                            backgroundColor:
+                                              selectedSystemTransaction.category.color
+                                          }}
+                                        >
+                                          {selectedSystemTransaction.category.name}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="mt-1 text-sm text-gray-400">
+                                      {getSystemTransactionDateLabel(selectedSystemTransaction)} •
+                                      parcela{' '}
+                                      {formatInstallmentLabel(
+                                        selectedSystemTransaction.installmentNumber ?? null,
+                                        selectedSystemTransaction.totalInstallments ?? null
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <div className="text-sm font-semibold text-white">
+                                      {formatCurrency(selectedSystemTransaction.amount)}
+                                    </div>
+                                    {selectedSystemTransaction.id !== null && (
+                                      <Link
+                                        href={`/financial/transactions/${selectedSystemTransaction.id}`}
+                                        className="text-sm font-medium text-accent hover:text-accent-hover"
+                                      >
+                                        Abrir
+                                      </Link>
+                                    )}
+                                    {selectedSystemTransaction.id === null &&
+                                      selectedSystemTransaction.fixedTemplateId && (
+                                        <Link
+                                          href={`/financial/fixed-transactions/${selectedSystemTransaction.fixedTemplateId}`}
+                                          className="text-sm font-medium text-accent hover:text-accent-hover"
+                                        >
+                                          Abrir fixa
+                                        </Link>
+                                      )}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : targetInvoiceDetail ? (
+                              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-6 text-sm text-gray-400">
+                                Nenhum item relacionado na fatura do Zenit para este lancamento.
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-6 text-sm text-gray-400">
+                                A referencia selecionada ainda nao expoe itens da fatura do Zenit
+                                para comparacao visual.
+                              </div>
                             )}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                            Cartao na fatura
-                          </div>
-                          <div className="mt-1 text-sm text-white">
-                            {item.cardSuffix ? `Final ${item.cardSuffix}` : '-'}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                            Correspondencias
-                          </div>
-                          <div className="mt-1 text-sm text-white">
-                            {item.matchedTransactions.length}
+
+                            {item.matchedTransactions.length === 0 && (
+                              <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
+                                <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                  Selecionar contraparte na fatura do Zenit
+                                </div>
+                                <select
+                                  value={localSelectionKey}
+                                  onChange={(event) =>
+                                    handleLocalSystemSelectionChange(item.id, event.target.value)
+                                  }
+                                  disabled={
+                                    targetInvoiceDetailLoading ||
+                                    (!selectedSystemTransaction &&
+                                      availableSystemTransactions.length === 0)
+                                  }
+                                  className="mt-2 w-full rounded-lg border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none"
+                                >
+                                  <option value="">
+                                    {availableSystemTransactions.length > 0
+                                      ? 'Nenhum item selecionado'
+                                      : 'Nenhum item disponivel'}
+                                  </option>
+                                  {availableSystemTransactions.map((transaction) => {
+                                    const transactionDate = transaction.date || transaction.dueDate;
+
+                                    return (
+                                      <option
+                                        key={getSystemInvoiceTransactionKey(transaction)}
+                                        value={getSystemInvoiceTransactionKey(transaction)}
+                                      >
+                                        {`${transaction.description} • ${formatCurrency(
+                                          transaction.amount
+                                        )} • ${
+                                          transactionDate
+                                            ? formatCalendarDate(transactionDate)
+                                            : 'sem data'
+                                        } • ${formatInstallmentLabel(
+                                          transaction.installmentNumber ?? null,
+                                          transaction.totalInstallments ?? null
+                                        )}`}
+                                      </option>
+                                    );
+                                  })}
+                                </select>
+                                <div className="mt-2 text-sm text-gray-400">
+                                  Comparacao visual apenas. O vinculo efetivo continua sendo
+                                  definido pela conciliacao.
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1887,73 +2328,6 @@ function CreditCardReconciliationPageInner() {
                                 </div>
                               )}
                             </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {item.matchedTransactions.length > 0 && (
-                        <div className="border-t border-gray-700 bg-[#11161d] px-5 py-4">
-                          <div className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
-                            <CheckCircle2 size={16} className="text-accent" />
-                            Correspondencias encontradas no cartao
-                          </div>
-                          <div className="space-y-3">
-                            {item.matchedTransactions.map((transaction) => (
-                              <div
-                                key={`${item.id}-${transaction.matchKey}`}
-                                className="rounded-lg border border-gray-700 px-4 py-3"
-                              >
-                                <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                                  <div>
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <div className="font-medium text-white">
-                                        {transaction.description}
-                                      </div>
-                                      {transaction.matchSource === 'PROJECTED_FIXED' && (
-                                        <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
-                                          Fixa projetada
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="mt-1 text-sm text-gray-400">
-                                      {transaction.matchSource === 'PROJECTED_FIXED'
-                                        ? `Fechamento em ${formatCalendarDate(transaction.date)}`
-                                        : `Compra em ${formatCalendarDate(transaction.date)}`}{' '}
-                                      • parcela{' '}
-                                      {formatInstallmentLabel(
-                                        transaction.installmentNumber,
-                                        transaction.totalInstallments
-                                      )}
-                                      {transaction.invoiceReference
-                                        ? ` • fatura ${transaction.invoiceReference}`
-                                        : ''}
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-3">
-                                    <div className="text-sm font-semibold text-white">
-                                      {formatCurrency(transaction.amount)}
-                                    </div>
-                                    {transaction.matchSource === 'TRANSACTION' && transaction.id && (
-                                      <Link
-                                        href={`/financial/transactions/${transaction.id}`}
-                                        className="text-sm font-medium text-accent hover:text-accent-hover"
-                                      >
-                                        Abrir
-                                      </Link>
-                                    )}
-                                    {transaction.matchSource === 'PROJECTED_FIXED' &&
-                                      transaction.fixedTemplateId && (
-                                        <Link
-                                          href={`/financial/fixed-transactions/${transaction.fixedTemplateId}`}
-                                          className="text-sm font-medium text-accent hover:text-accent-hover"
-                                        >
-                                          Abrir fixa
-                                        </Link>
-                                      )}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
                           </div>
                         </div>
                       )}

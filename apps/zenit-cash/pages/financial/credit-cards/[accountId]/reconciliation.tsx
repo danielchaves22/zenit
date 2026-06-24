@@ -2058,6 +2058,74 @@ function CreditCardReconciliationPageInner() {
                               </div>
                             </div>
                           </div>
+
+                          {selectable && (
+                            <div className="mt-4 border-t border-gray-700 pt-4">
+                              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+                                <div>
+                                  <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                    Descricao a lancar
+                                  </div>
+                                  <AutocompleteInput
+                                    value={draft.description}
+                                    onChange={(value) => handleDraftDescriptionChange(item.id, value)}
+                                    onSuggestionSelect={(suggestion) =>
+                                      handleDraftSuggestionSelect(item.id, suggestion)
+                                    }
+                                    fetchSuggestions={fetchDescriptionSuggestions}
+                                    placeholder="Digite para buscar descricoes anteriores"
+                                    minLength={3}
+                                    maxSuggestions={10}
+                                    disabled={commitLoading || itemCommitLoading}
+                                    className="mt-2"
+                                  />
+                                  {missingDescription && (
+                                    <div className="mt-2 text-sm text-amber-300">
+                                      Informe a descricao que deve ser salva no lancamento.
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div>
+                                  <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                    Categoria do lancamento
+                                  </div>
+                                  <div className="mt-2">
+                                    <CategorySelect
+                                      categories={categories}
+                                      value={draft.categoryId}
+                                      onChange={(value) => handleDraftCategoryChange(item.id, value)}
+                                      placeholder={
+                                        categoriesLoading
+                                          ? 'Carregando categorias...'
+                                          : 'Selecione a categoria'
+                                      }
+                                      disabled={
+                                        commitLoading ||
+                                        categoriesLoading ||
+                                        itemCommitLoading
+                                      }
+                                    />
+                                  </div>
+                                  {suggestionSourceLabel && (
+                                    <div className="mt-2 text-sm text-gray-400">
+                                      Sugestao inicial por {suggestionSourceLabel.toLowerCase()}.
+                                    </div>
+                                  )}
+                                  {item.categorySuggestion.reason && (
+                                    <div className="mt-1 text-sm text-gray-500">
+                                      {item.categorySuggestion.reason}
+                                    </div>
+                                  )}
+                                  {missingCategory && (
+                                    <div className="mt-2 text-sm text-amber-300">
+                                      Escolha a categoria antes de importar este item.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="bg-[#0f141b] px-5 py-4">
@@ -2214,7 +2282,8 @@ function CreditCardReconciliationPageInner() {
                               </div>
                             )}
 
-                            {item.matchedTransactions.length === 0 && (
+                            {item.matchedTransactions.length === 0 &&
+                              item.status !== 'NOT_IMPORTABLE' && (
                               <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
                                 <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
                                   Selecionar contraparte na fatura do Zenit
@@ -2267,70 +2336,6 @@ function CreditCardReconciliationPageInner() {
                           </div>
                         </div>
                       </div>
-
-                      {selectable && (
-                        <div className="border-t border-gray-700 bg-[#0f141b] px-5 py-4">
-                          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-                            <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                                Descricao a lancar
-                              </div>
-                              <AutocompleteInput
-                                value={draft.description}
-                                onChange={(value) => handleDraftDescriptionChange(item.id, value)}
-                                onSuggestionSelect={(suggestion) =>
-                                  handleDraftSuggestionSelect(item.id, suggestion)
-                                }
-                                fetchSuggestions={fetchDescriptionSuggestions}
-                                placeholder="Digite para buscar descricoes anteriores"
-                                minLength={3}
-                                maxSuggestions={10}
-                                disabled={commitLoading || itemCommitLoading}
-                                className="mt-2"
-                              />
-                              {missingDescription && (
-                                <div className="mt-2 text-sm text-amber-300">
-                                  Informe a descricao que deve ser salva no lancamento.
-                                </div>
-                              )}
-                            </div>
-
-                            <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                                Categoria do lancamento
-                              </div>
-                              <div className="mt-2">
-                                <CategorySelect
-                                  categories={categories}
-                                  value={draft.categoryId}
-                                  onChange={(value) => handleDraftCategoryChange(item.id, value)}
-                                  placeholder={
-                                    categoriesLoading
-                                      ? 'Carregando categorias...'
-                                      : 'Selecione a categoria'
-                                  }
-                                  disabled={commitLoading || categoriesLoading || itemCommitLoading}
-                                />
-                              </div>
-                              {suggestionSourceLabel && (
-                                <div className="mt-2 text-sm text-gray-400">
-                                  Sugestao inicial por {suggestionSourceLabel.toLowerCase()}.
-                                </div>
-                              )}
-                              {item.categorySuggestion.reason && (
-                                <div className="mt-1 text-sm text-gray-500">
-                                  {item.categorySuggestion.reason}
-                                </div>
-                              )}
-                              {missingCategory && (
-                                <div className="mt-2 text-sm text-amber-300">
-                                  Escolha a categoria antes de importar este item.
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </Card>
                   );
                 })}

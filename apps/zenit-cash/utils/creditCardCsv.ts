@@ -69,6 +69,7 @@ type ReconciliationReason =
   | 'MAPPED_FIXED'
   | 'AMBIGUOUS_EXACT'
   | 'INVOICE_DIVERGENCE'
+  | 'AMOUNT_DIVERGENCE'
   | 'DATE_DIVERGENCE'
   | 'INSTALLMENT_DIVERGENCE'
   | 'NON_IMPORTABLE'
@@ -258,6 +259,8 @@ function getReconciliationReasonLabel(item: CreditCardReconciliationCsvItem) {
         : 'Mais de um lancamento ja bate exatamente.';
     case 'INVOICE_DIVERGENCE':
       return 'Mesmo valor ou valor muito proximo, com mesma data/parcela, mas vinculado a outra fatura.';
+    case 'AMOUNT_DIVERGENCE':
+      return 'Mesma data, mesma parcela e mesma fatura, mas com pequena divergencia de valor.';
     case 'DATE_DIVERGENCE':
       return hasProjectedFixedMatch
         ? 'Existe fixa projetada com valor igual ou muito proximo nesta fatura; revise a data.'

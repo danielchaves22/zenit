@@ -406,6 +406,50 @@ describe('Credit card statement reconciliation service', () => {
     expect(classification.matchedTransactions).toHaveLength(1);
   });
 
+  it('marks same-date installments with a one-cent difference in the same invoice as similar', () => {
+    const parsed = __private__.parseNubankStatementText(
+      sampleNubankStatementText,
+      'Nubank_2026-06-17.csv'
+    );
+    const installmentItem = parsed.items.find(
+      (item) => item.sourceDescription === 'Deivid Pinturas'
+    );
+
+    expect(installmentItem).toBeTruthy();
+
+    const classification = __private__.classifyMatches(
+      installmentItem!,
+      [
+        {
+          matchKey: 'transaction:412',
+          matchSource: 'TRANSACTION',
+          id: 412,
+          fixedTemplateId: null,
+          occurrenceKey: null,
+          description: 'Magico Aniversario Cibele',
+          amount: new Prisma.Decimal('471.01'),
+          date: new Date('2026-05-10T12:00:00.000Z'),
+          installmentNumber: 4,
+          totalInstallments: 10,
+          status: TransactionStatus.COMPLETED,
+          purchaseGroupId: 'purchase-group-412',
+          creditCardInvoice: {
+            id: 82,
+            referenceYear: 2026,
+            referenceMonth: 6,
+            status: CreditCardInvoiceStatus.OPEN
+          }
+        }
+      ],
+      2026,
+      6
+    );
+
+    expect(classification.status).toBe('SIMILAR');
+    expect(classification.reason).toBe('AMOUNT_DIVERGENCE');
+    expect(classification.matchedTransactions).toHaveLength(1);
+  });
+
   it('ignores other installments from different invoice references when checking installment divergence', () => {
     const parsed = __private__.parseNubankStatementText(
       sampleNubankStatementText,

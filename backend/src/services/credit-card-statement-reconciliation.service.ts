@@ -113,6 +113,7 @@ type MatchReason =
   | 'MAPPED_FIXED'
   | 'AMBIGUOUS_EXACT'
   | 'INVOICE_DIVERGENCE'
+  | 'AMOUNT_DIVERGENCE'
   | 'DATE_DIVERGENCE'
   | 'INSTALLMENT_DIVERGENCE'
   | 'NON_IMPORTABLE'
@@ -1559,6 +1560,46 @@ function classifyMatches(
         matchedTransactions: mappedProjectedFixedMatches
       };
     }
+  }
+
+  const amountDivergenceMatches = candidates.filter((candidate) => {
+    if (!hasComparableAmountMatch(item, candidate, amount)) {
+      return false;
+    }
+
+    if (parseDecimal(candidate.amount).equals(amount)) {
+      return false;
+    }
+
+    const candidateInstallments = normalizeInstallmentSignature(
+      candidate.installmentNumber,
+      candidate.totalInstallments
+    );
+    const sameInstallmentSignature =
+      candidateInstallments.installmentNumber === importInstallments.installmentNumber &&
+      candidateInstallments.totalInstallments === importInstallments.totalInstallments;
+
+    if (!sameInstallmentSignature) {
+      return false;
+    }
+
+    if (!isCandidateInStatementReference(candidate, referenceYear, referenceMonth)) {
+      return false;
+    }
+
+    if (item.datePrecision === 'PURCHASE_DATE' && item.purchaseDate) {
+      return isSameCalendarDate(candidate.date, item.purchaseDate);
+    }
+
+    return true;
+  });
+
+  if (amountDivergenceMatches.length > 0) {
+    return {
+      status: 'SIMILAR',
+      reason: 'AMOUNT_DIVERGENCE',
+      matchedTransactions: amountDivergenceMatches
+    };
   }
 
   const partialMatches = candidates.filter((candidate) => {

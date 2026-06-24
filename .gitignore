@@ -60,5 +60,6 @@ coverage/
 
 # Artefatos temporarios locais
 apps/zenit-cash/tmp/
+backend/tmp/
 /tmp-*
 /tmp_*

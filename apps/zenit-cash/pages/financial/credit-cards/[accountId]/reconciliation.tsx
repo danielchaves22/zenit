@@ -236,26 +236,26 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
   }
 > = {
   CAIXA_PDF: {
-    fileLabel: 'PDF da Caixa',
-    sourceLabel: 'PDF Caixa',
-    selectLabel: 'Selecionar PDF da Caixa',
-    helperText: 'Somente o layout atual da fatura Caixa e suportado neste momento.',
-    accept: 'application/pdf,.pdf',
-    invalidFileMessage: 'Selecione um arquivo PDF da fatura da Caixa',
-    analyzeFileMessage: 'Selecione o PDF da fatura da Caixa antes de analisar',
+    fileLabel: 'Arquivo da Caixa',
+    sourceLabel: 'Arquivo Caixa',
+    selectLabel: 'Selecionar arquivo da Caixa',
+    helperText: 'Aceita o PDF da fatura fechada da Caixa ou um TXT copiado da fatura aberta.',
+    accept: '.pdf,.txt',
+    invalidFileMessage: 'Selecione um arquivo PDF ou TXT da fatura da Caixa',
+    analyzeFileMessage: 'Selecione o arquivo da Caixa antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
     unsupportedDescription:
-      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.',
-    statementDateLabel: 'Vencimento',
-    totalAmountLabel: 'Total da fatura',
-    parsedAmountLabel: 'Lido do PDF'
+      'No momento a conciliacao aceita PDF ou TXT da Caixa e CSVs do Bradesco e Nubank.',
+    statementDateLabel: 'Data de referencia',
+    totalAmountLabel: 'Total do arquivo',
+    parsedAmountLabel: 'Calculado do arquivo'
   },
   BRADESCO_CSV: {
     fileLabel: 'CSV do Bradesco',
     sourceLabel: 'CSV Bradesco',
     selectLabel: 'Selecionar CSV do Bradesco',
     helperText: 'Somente o layout atual de exportacao CSV do Bradesco e suportado neste momento.',
-    accept: '.csv,text/csv',
+    accept: '.csv',
     invalidFileMessage: 'Selecione um arquivo CSV da fatura do Bradesco',
     analyzeFileMessage: 'Selecione o CSV da fatura do Bradesco antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
@@ -270,7 +270,7 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
     sourceLabel: 'CSV Nubank',
     selectLabel: 'Selecionar CSV do Nubank',
     helperText: 'Somente o layout atual de exportacao CSV do Nubank e suportado neste momento.',
-    accept: '.csv,text/csv',
+    accept: '.csv',
     invalidFileMessage: 'Selecione um arquivo CSV da fatura do Nubank',
     analyzeFileMessage: 'Selecione o CSV do Nubank antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
@@ -668,6 +668,35 @@ function parseAmountToCents(value: string | number) {
 
 function centsToDecimalString(value: number) {
   return (value / 100).toFixed(2);
+}
+
+function hasAnyFileExtension(fileName: string, extensions: string[]) {
+  const normalizedFileName = fileName.toLowerCase();
+
+  return extensions.some((extension) => normalizedFileName.endsWith(extension));
+}
+
+function isPdfOrTxtStatementFile(file: File) {
+  const fileType = file.type.toLowerCase();
+
+  return (
+    hasAnyFileExtension(file.name, ['.pdf', '.txt']) ||
+    fileType === 'application/pdf' ||
+    fileType === 'text/plain' ||
+    fileType === 'application/octet-stream'
+  );
+}
+
+function isCsvStatementFile(file: File) {
+  const fileType = file.type.toLowerCase();
+
+  return (
+    hasAnyFileExtension(file.name, ['.csv']) ||
+    fileType === 'text/csv' ||
+    fileType === 'application/csv' ||
+    fileType === 'application/vnd.ms-excel' ||
+    fileType === 'application/octet-stream'
+  );
 }
 
 function buildPreviewSummary(items: ReconciliationPreviewItem[]): ReconciliationPreview['summary'] {
@@ -1146,10 +1175,9 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
-    const fileNameLower = nextFile.name.toLowerCase();
     const isValidFile = reconciliationSourceType === 'CAIXA_PDF'
-      ? nextFile.type === 'application/pdf' || fileNameLower.endsWith('.pdf')
-      : nextFile.type === 'text/csv' || fileNameLower.endsWith('.csv');
+      ? isPdfOrTxtStatementFile(nextFile)
+      : isCsvStatementFile(nextFile);
     if (!isValidFile) {
       addToast(sourceConfig?.invalidFileMessage || 'Selecione um arquivo suportado', 'error');
       event.target.value = '';

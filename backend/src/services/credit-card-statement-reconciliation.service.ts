@@ -534,12 +534,33 @@ function parseStatementDateFromFileName(fileName: string | null) {
     return null;
   }
 
-  const match = fileName.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) {
+  const isoMatch = fileName.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return new Date(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]) - 1,
+      Number(isoMatch[3]),
+      12,
+      0,
+      0,
+      0
+    );
+  }
+
+  const compactMatch = fileName.match(/(?:^|[^\d])(\d{2})(\d{2})(\d{4})(?:[^\d]|$)/);
+  if (!compactMatch) {
     return null;
   }
 
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+  return new Date(
+    Number(compactMatch[3]),
+    Number(compactMatch[2]) - 1,
+    Number(compactMatch[1]),
+    12,
+    0,
+    0,
+    0
+  );
 }
 
 function splitCsvLine(line: string) {
@@ -587,6 +608,29 @@ function inferPurchaseDate(dayMonth: string, statementDueDate: Date) {
 
   if (candidate.getTime() > statementDueDate.getTime()) {
     year -= 1;
+    candidate = new Date(year, month - 1, day, 12, 0, 0, 0);
+  }
+
+  return candidate;
+}
+
+function inferOpenStatementPurchaseDate(dayMonth: string, statementDate: Date) {
+  const match = dayMonth.match(/^(\d{2})\/(\d{2})$/);
+  if (!match) {
+    return null;
+  }
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  let year = statementDate.getFullYear();
+  let candidate = new Date(year, month - 1, day, 12, 0, 0, 0);
+  const diffInDays = differenceInDays(candidate, statementDate);
+
+  if (diffInDays > 180) {
+    year -= 1;
+    candidate = new Date(year, month - 1, day, 12, 0, 0, 0);
+  } else if (diffInDays < -180) {
+    year += 1;
     candidate = new Date(year, month - 1, day, 12, 0, 0, 0);
   }
 
@@ -963,8 +1007,7 @@ function parseCaixaStatementText(text: string, fileName: string | null): ParsedS
   const referenceMonth = dueDate.getMonth() + 1;
   const lines = normalizedText
     .split(/\r\n|\n|\r/)
-    .map((line) => line.trim())
-    .filter(Boolean);
+    .filter((line) => line.trim().length > 0);
   const firstDemonstrativoIndex = lines.findIndex(
     (line) => normalizeComparableText(line) === 'DEMONSTRATIVO'
   );
@@ -1106,6 +1149,196 @@ function parseCaixaStatementText(text: string, fileName: string | null): ParsedS
     parsedNetAmount: parsedNetAmount.toString(),
     referenceYear,
     referenceMonth,
+    items
+  };
+}
+
+function parseCaixaOpenStatementLine(params: {
+  line: string;
+  sequence: number;
+  statementDate: Date;
+  cardSuffix: string | null;
+  section: string;
+}): ParsedStatementItem | null {
+  const fields = params.line.split('\t').map((field) => field.trim());
+  if (fields.length < 4) {
+    return null;
+  }
+
+  const dateValue = fields[0];
+  const rawDescription = normalizeInlineWhitespace(fields.slice(1, -2).join(' '));
+  const creditField = normalizeInlineWhitespace(fields[fields.length - 2] || '');
+  const debitField = normalizeInlineWhitespace(fields[fields.length - 1] || '');
+
+  if (!/^\d{2}\/\d{2}$/.test(dateValue) || !rawDescription || (!creditField && !debitField)) {
+    return null;
+  }
+
+  const direction: StatementDirection = creditField ? 'CREDIT' : 'DEBIT';
+  const amountField = debitField || creditField;
+  const amount = parseDecimal(amountField.replace(/[CD]$/i, '')).toString();
+  const installmentMatch = rawDescription.match(/^(.*?)(\d{2})\s+(\d{2})$/);
+  const annuityInstallmentMatch = installmentMatch
+    ? null
+    : rawDescription.match(/^(\d{2})\s+PARCELA\s+(.+)$/i);
+  const sourceDescription = installmentMatch
+    ? normalizeInlineWhitespace(installmentMatch[1])
+    : annuityInstallmentMatch
+      ? normalizeInlineWhitespace(annuityInstallmentMatch[2])
+      : rawDescription;
+  const installmentNumber = installmentMatch
+    ? Number(installmentMatch[2])
+    : annuityInstallmentMatch
+      ? Number(annuityInstallmentMatch[1])
+      : null;
+  const totalInstallments = installmentMatch ? Number(installmentMatch[3]) : null;
+  const kind = classifyItemKind(
+    params.section,
+    sourceDescription,
+    direction,
+    Boolean(installmentMatch)
+  );
+  const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+    kind,
+    direction,
+    amount
+  );
+  const purchaseDate = inferOpenStatementPurchaseDate(dateValue, params.statementDate);
+  const signedAmount = direction === 'CREDIT' ? `-${amount}` : amount;
+
+  return {
+    id: `item-${String(params.sequence).padStart(4, '0')}`,
+    sequence: params.sequence,
+    kind,
+    direction,
+    amount,
+    signedAmount,
+    purchaseDate,
+    createDate: purchaseDate || params.statementDate,
+    datePrecision: 'PURCHASE_DATE',
+    installmentNumber,
+    totalInstallments,
+    sourceDescription,
+    sourceSection: getStatementSourceSection(kind),
+    cardSuffix: params.cardSuffix,
+    canImport,
+    nonImportableReason,
+    rawLine: params.line
+  };
+}
+
+function parseCaixaOpenStatementText(text: string, fileName: string | null): ParsedStatement {
+  const normalizedText = text.replace(/\uFEFF/g, '');
+  const totalAmountMatch = normalizedText.match(/Total parcial \(R\$\):\s*([\d.,]+)([CD])?/i);
+  const statementDateMatch =
+    normalizedText.match(/Cot[açc][aã]o D[oó]lar em (\d{2}\/\d{2}\/\d{4})/i) ||
+    normalizedText.match(/Cotacao Dolar em (\d{2}\/\d{2}\/\d{4})/i);
+
+  if (!totalAmountMatch) {
+    throw new Error('Nao foi possivel identificar o total parcial da fatura aberta da Caixa');
+  }
+
+  const statementDate = statementDateMatch
+    ? parseDdMmYyyy(statementDateMatch[1])
+    : parseStatementDateFromFileName(fileName);
+  if (!statementDate) {
+    throw new Error(
+      'Nao foi possivel identificar a data de referencia da fatura aberta da Caixa'
+    );
+  }
+
+  const totalAmount = parseDecimal(totalAmountMatch[1]).toString();
+  const lines = normalizedText
+    .split(/\r\n|\n|\r/)
+    .filter((line) => line.trim().length > 0);
+
+  const items: ParsedStatementItem[] = [];
+  let currentCardSuffix: string | null = null;
+  let currentSection = 'PURCHASES';
+  let insideTransactions = false;
+  let sequence = 0;
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+    const normalizedLine = normalizeComparableText(trimmedLine);
+
+    if (
+      normalizedLine.startsWith('TOTAL PARCIAL') ||
+      normalizedLine.startsWith('COTACAO DOLAR') ||
+      normalizedLine.startsWith('SALDO DISPONIVEL') ||
+      normalizedLine.startsWith('* COTACAO DA DATA') ||
+      normalizedLine === 'NULL'
+    ) {
+      continue;
+    }
+
+    const cardHolderMatch = trimmedLine.match(/^Seta\s+.+?-\s+.*?(\d{4})$/i);
+    if (cardHolderMatch) {
+      currentCardSuffix = cardHolderMatch[1];
+      insideTransactions = false;
+      currentSection = 'PURCHASES';
+      continue;
+    }
+
+    if (normalizedLine.startsWith('MOVIMENTACOES NACIONAIS')) {
+      currentSection = 'PURCHASES';
+      insideTransactions = true;
+      continue;
+    }
+
+    if (normalizedLine.startsWith('MOVIMENTACOES INTERNACIONAIS')) {
+      currentSection = 'PURCHASES';
+      insideTransactions = true;
+      continue;
+    }
+
+    if (
+      normalizedLine === 'DATA DESCRITIVO CREDITO DEBITO' ||
+      normalizedLine.startsWith('* NAO FORAM ENCONTRADOS LANCAMENTOS')
+    ) {
+      continue;
+    }
+
+    if (!currentCardSuffix || !insideTransactions) {
+      continue;
+    }
+
+    sequence += 1;
+    const parsedLine = parseCaixaOpenStatementLine({
+      line,
+      sequence,
+      statementDate,
+      cardSuffix: currentCardSuffix,
+      section: currentSection
+    });
+
+    if (!parsedLine) {
+      sequence -= 1;
+      continue;
+    }
+
+    items.push(parsedLine);
+  }
+
+  if (items.length === 0) {
+    throw new Error(
+      'Nenhum lancamento valido foi encontrado na fatura aberta em texto da Caixa'
+    );
+  }
+
+  const parsedNetAmount = items.reduce(
+    (sum, item) => sum.plus(parseDecimal(item.signedAmount)),
+    new Prisma.Decimal(0)
+  );
+
+  return {
+    sourceType: 'CAIXA_PDF',
+    fileName,
+    dueDate: statementDate,
+    totalAmount,
+    parsedNetAmount: parsedNetAmount.toString(),
+    referenceYear: statementDate.getFullYear(),
+    referenceMonth: statementDate.getMonth() + 1,
     items
   };
 }
@@ -2178,8 +2411,14 @@ async function parseStatementFromSource(params: {
 }) {
   if (params.sourceType === 'CAIXA_PDF') {
     const buffer = decodeBase64File(params.fileBase64);
-    const pdfResult = await pdfParse(buffer);
-    return parseCaixaStatementText(pdfResult.text, params.fileName ?? null);
+    const isPdfBuffer = buffer.subarray(0, 4).toString('ascii') === '%PDF';
+
+    if (isPdfBuffer) {
+      const pdfResult = await pdfParse(buffer);
+      return parseCaixaStatementText(pdfResult.text, params.fileName ?? null);
+    }
+
+    return parseCaixaOpenStatementText(buffer.toString('utf8'), params.fileName ?? null);
   }
 
   if (params.sourceType === 'BRADESCO_CSV') {
@@ -2560,6 +2799,7 @@ export default class CreditCardStatementReconciliationService {
 
 export const __private__ = {
   parseCaixaStatementText,
+  parseCaixaOpenStatementText,
   parseBradescoStatementText,
   parseNubankStatementText,
   classifyMatches,

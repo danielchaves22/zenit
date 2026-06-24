@@ -57,6 +57,40 @@ date,title,amount
 2026-05-10,Deivid Pinturas - Parcela 4/10,"471,00"
 `.trim();
 
+const sampleCaixaOpenStatementText = `
+Total parcial (R$):	2.368,84C
+Cotação Dólar em 23/06/2026 (R$):	5,3825
+* Cotação da data de realização da compra, exceto quando feita a opção por cotação no pagamento/vencimento da fatura.Seta  Saldos
+Saldo disponível de Credito:	0,00
+Saldo disponível para Saques:	0,00
+Seta  ANA CLAUDIA S F CHAVES - 421960XXXXXX7139
+Movimentações Nacionais em Reais (R$)
+DATA	DESCRITIVO	CRÉDITO	DÉBITO
+16/02	CICERO ELETRICI 05 10		341,19
+25/02	SYMA SOLUTIONS 05 10		124,90
+19/03	JIM COM ESSENCI 04 10		191,80
+08/05	FEITO CRIANCA 02 05		127,76
+16/06	AJUSTE CRED PARC S JUROS	0,06	
+Movimentações Internacionais
+* Não foram encontrados lançamentos
+Seta  DANIEL GONCALVES CHAVES - 421960XXXXXX9665
+Movimentações Nacionais em Reais (R$)
+DATA	DESCRITIVO	CRÉDITO	DÉBITO
+04/03	BAVELLONISECC 04 06		410,00
+07/03	CARMEN STEFFENS 04 05		166,96
+08/03	CENTAURO CE145 04 04		85,01
+07/05	CAPPTA DOCE MO 02 04		324,75
+11/05	HAVAN MARINGA A 02 10		60,00
+05/06	PANIFICADORA CHIK		26,29
+08/06	INDIGO		17,00
+09/06	AJUSTE CRED PARC S JUROS	0,02	
+10/06	IG MAUATENISCLU		220,00
+11/06	SANTA PIZZA		119,90
+12/06	AJUSTE CRED PARC S JUROS	0,01	
+17/06	CAIXA RESIDENCIAL		84,37
+03/07	05 PARCELA ANUIDADE		69,00
+`.trim();
+
 describe('Credit card statement reconciliation service', () => {
   it('parses the Caixa statement layout, including annuity installments', () => {
     const parsed = __private__.parseCaixaStatementText(
@@ -521,6 +555,50 @@ describe('Credit card statement reconciliation service', () => {
     expect(shiftedPurchaseItem?.createDate.getTime()).toBe(
       originalPurchaseItem?.createDate.getTime()
     );
+  });
+
+  it('parses the Caixa open statement text layout copied from the invoice screen', () => {
+    const parsed = __private__.parseCaixaOpenStatementText(
+      sampleCaixaOpenStatementText,
+      'caixa_23062026.txt'
+    );
+
+    expect(parsed.sourceType).toBe('CAIXA_PDF');
+    expect(parsed.totalAmount).toBe('2368.84');
+    expect(parsed.parsedNetAmount).toBe('2368.84');
+    expect(parsed.referenceYear).toBe(2026);
+    expect(parsed.referenceMonth).toBe(6);
+    expect(parsed.items).toHaveLength(18);
+
+    expect(parsed.items[0]).toMatchObject({
+      kind: 'INSTALLMENT',
+      amount: '341.19',
+      installmentNumber: 5,
+      totalInstallments: 10,
+      sourceDescription: 'CICERO ELETRICI',
+      sourceSection: 'INSTALLMENTS',
+      cardSuffix: '7139'
+    });
+    expect(parsed.items[4]).toMatchObject({
+      kind: 'ADJUSTMENT',
+      direction: 'CREDIT',
+      amount: '0.06',
+      canImport: false,
+      sourceDescription: 'AJUSTE CRED PARC S JUROS',
+      sourceSection: 'OTHER'
+    });
+    expect(parsed.items[17]).toMatchObject({
+      kind: 'ANNUITY',
+      amount: '69',
+      installmentNumber: 5,
+      totalInstallments: null,
+      sourceDescription: 'ANUIDADE',
+      sourceSection: 'ANNUITY',
+      cardSuffix: '9665'
+    });
+    expect(parsed.items[17]?.purchaseDate?.getFullYear()).toBe(2026);
+    expect(parsed.items[17]?.purchaseDate?.getMonth()).toBe(6);
+    expect(parsed.items[17]?.purchaseDate?.getDate()).toBe(3);
   });
 
   it('parses the Bradesco CSV layout with multiple cards and installment markers', () => {

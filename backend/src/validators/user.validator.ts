@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const appGrantSchema = z.object({
   companyId: z.number(),
-  appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin']),
+  appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin', 'zenit-whatsapp']),
   granted: z.boolean().optional()
 })
 

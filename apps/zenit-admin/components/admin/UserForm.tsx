@@ -28,7 +28,7 @@ interface User {
     companyId: number;
     granted: boolean;
     app: {
-      appKey: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN';
+      appKey: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN' | 'ZENIT_WHATSAPP';
     };
   }[];
   companies: {
@@ -64,12 +64,16 @@ const APP_KEY = (process.env.NEXT_PUBLIC_APP_KEY || 'zenit-admin') as AppKey;
 const APP_LABELS: Record<AppKey, string> = {
   'zenit-cash': 'Zenit Cash',
   'zenit-calc': 'Zenit Calc',
-  'zenit-admin': 'Zenit Admin'
+  'zenit-admin': 'Zenit Admin',
+  'zenit-whatsapp': 'Zenit WhatsApp'
 };
 
-function fromBackendAppKey(value: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN'): AppKey {
+function fromBackendAppKey(
+  value: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN' | 'ZENIT_WHATSAPP'
+): AppKey {
   if (value === 'ZENIT_CASH') return 'zenit-cash';
   if (value === 'ZENIT_CALC') return 'zenit-calc';
+  if (value === 'ZENIT_WHATSAPP') return 'zenit-whatsapp';
   return 'zenit-admin';
 }
 

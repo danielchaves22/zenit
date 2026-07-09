@@ -12,7 +12,12 @@ import { z } from 'zod';
 import CreditCardInvoiceService from './credit-card-invoice.service';
 import FinancialAccountService from './financial-account.service';
 import PendingActionService, { DraftTransactionPayload } from './pending-action.service';
+import UserService from './user.service';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
+import {
+  CATEGORY_ICON_NAMES,
+  DEFAULT_CATEGORY_ICON
+} from '../constants/category-icons';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
 const prisma = new PrismaClient();
@@ -66,6 +71,16 @@ const searchCategoriesArgsSchema = z.object({
   limit: z.coerce.number().int().nullable().optional()
 });
 
+const createCategoryArgsSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']),
+  color: z.string().trim().nullable().optional(),
+  icon: z.string().trim().nullable().optional(),
+  parentCategoryId: z.coerce.number().int().positive().nullable().optional(),
+  parentCategoryHint: z.string().trim().min(1).nullable().optional(),
+  accountingCode: z.string().trim().nullable().optional()
+});
+
 const searchAccountsArgsSchema = z.object({
   query: z.string().trim().min(1).nullable().optional(),
   type: z.enum(['CHECKING', 'SAVINGS', 'CREDIT_CARD', 'INVESTMENT', 'CASH']).nullable().optional(),
@@ -80,6 +95,30 @@ const getRecentTransactionsArgsSchema = z.object({
   type: z.enum(['INCOME', 'EXPENSE', 'TRANSFER']).nullable().optional(),
   limit: z.coerce.number().int().nullable().optional()
 });
+
+const CATEGORY_DEFAULT_COLORS: Record<TransactionType, string> = {
+  [TransactionType.EXPENSE]: '#DC2626',
+  [TransactionType.INCOME]: '#16A34A',
+  [TransactionType.TRANSFER]: '#64748B'
+};
+
+const CATEGORY_ICON_HINTS: Array<{
+  icon: (typeof CATEGORY_ICON_NAMES)[number];
+  keywords: string[];
+}> = [
+  { icon: 'scissors', keywords: ['beleza', 'salao', 'cabeleireiro', 'barbearia'] },
+  { icon: 'fuel', keywords: ['combustivel', 'gasolina', 'etanol', 'posto'] },
+  { icon: 'utensilsCrossed', keywords: ['restaurante', 'alimentacao', 'mercado', 'supermercado', 'ifood'] },
+  { icon: 'coffee', keywords: ['cafe', 'cafeteria', 'lanche', 'lanches'] },
+  { icon: 'stethoscope', keywords: ['saude', 'farmacia', 'medico', 'medicina'] },
+  { icon: 'graduationCap', keywords: ['educacao', 'curso', 'faculdade', 'escola'] },
+  { icon: 'car', keywords: ['carro', 'veiculo', 'uber', 'transporte'] },
+  { icon: 'briefcaseBusiness', keywords: ['trabalho', 'servico', 'consultoria', 'honorario'] },
+  { icon: 'building2', keywords: ['aluguel', 'moradia', 'casa', 'condominio'] },
+  { icon: 'banknote', keywords: ['salario', 'renda', 'receita', 'recebimento'] },
+  { icon: 'piggyBank', keywords: ['reserva', 'poupanca', 'investimento'] },
+  { icon: 'creditCard', keywords: ['cartao', 'credito', 'fatura'] }
+];
 
 export type AssistantToolExecutionContext = {
   sessionId: number;
@@ -202,6 +241,46 @@ function normalizeDateString(value: string): string {
   }
 
   return date.toISOString().slice(0, 10);
+}
+
+function normalizeHexColor(value: string | null | undefined, type: TransactionType) {
+  if (value && /^#([0-9A-F]{3}){1,2}$/i.test(value)) {
+    return value.toUpperCase();
+  }
+
+  return CATEGORY_DEFAULT_COLORS[type];
+}
+
+function suggestCategoryIcon(
+  name: string,
+  type: TransactionType,
+  requestedIcon?: string | null
+): (typeof CATEGORY_ICON_NAMES)[number] {
+  if (
+    requestedIcon &&
+    CATEGORY_ICON_NAMES.includes(requestedIcon as (typeof CATEGORY_ICON_NAMES)[number])
+  ) {
+    return requestedIcon as (typeof CATEGORY_ICON_NAMES)[number];
+  }
+
+  const normalizedName = normalizeText(name);
+  const matchedGroup = CATEGORY_ICON_HINTS.find((group) =>
+    group.keywords.some((keyword) => normalizedName.includes(keyword))
+  );
+
+  if (matchedGroup) {
+    return matchedGroup.icon;
+  }
+
+  if (type === TransactionType.INCOME) {
+    return 'banknote';
+  }
+
+  if (type === TransactionType.TRANSFER) {
+    return 'creditCard';
+  }
+
+  return DEFAULT_CATEGORY_ICON;
 }
 
 function getTodayDateString(timeZone = 'America/Sao_Paulo'): string {
@@ -811,6 +890,8 @@ export default class ToolExecutorService {
         return this.confirmPendingAction(argumentsJson, context);
       case 'search_categories':
         return this.searchCategories(argumentsJson, context);
+      case 'create_category':
+        return this.createCategory(argumentsJson, context);
       case 'search_accounts':
         return this.searchAccounts(argumentsJson, context);
       case 'cancel_pending_action':
@@ -1245,6 +1326,124 @@ export default class ToolExecutorService {
           matchScore: query && score >= 0 ? score : null
         })),
         usedFallback: Boolean(query) && positiveMatches.length === 0
+      }
+    };
+  }
+
+  private static async createCategory(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = createCategoryArgsSchema.parse(rawArguments);
+
+    if (context.role === 'USER') {
+      const companyContext = await UserService.getUserCompanyContext(
+        context.userId,
+        context.companyId
+      );
+
+      if (!companyContext?.manageFinancialCategories) {
+        throw new Error('Usuario sem permissao para gerenciar categorias financeiras');
+      }
+    }
+
+    const type = args.type as TransactionType;
+    const categories = await getSearchableCategories({
+      companyId: context.companyId,
+      type
+    });
+
+    let parentCategory: (typeof categories)[number] | null =
+      args.parentCategoryId != null
+        ? categories.find((category) => category.id === args.parentCategoryId) ?? null
+        : null;
+
+    if (!parentCategory && args.parentCategoryHint) {
+      parentCategory =
+        (chooseBestCategoryMatch(categories, args.parentCategoryHint) as
+          | (typeof categories)[number]
+          | null) ?? null;
+    }
+
+    if (args.parentCategoryHint && !parentCategory) {
+      return {
+        data: {
+          ok: false,
+          error: 'Categoria pai nao encontrada',
+          suggestedParents: categories.slice(0, 5).map((category) => ({
+            id: category.id,
+            name: category.name
+          }))
+        }
+      };
+    }
+
+    const existingCategory = await prisma.financialCategory.findFirst({
+      where: {
+        companyId: context.companyId,
+        name: {
+          equals: args.name.trim(),
+          mode: 'insensitive'
+        },
+        parentId: parentCategory?.id ?? null,
+        type
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        color: true,
+        icon: true,
+        parent: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    if (existingCategory) {
+      return {
+        data: {
+          ok: true,
+          created: false,
+          category: existingCategory,
+          reason: 'already_exists'
+        }
+      };
+    }
+
+    const category = await prisma.financialCategory.create({
+      data: {
+        accountingCode: args.accountingCode ?? null,
+        color: normalizeHexColor(args.color, type),
+        companyId: context.companyId,
+        icon: suggestCategoryIcon(args.name, type, args.icon),
+        name: args.name.trim(),
+        parentId: parentCategory?.id ?? null,
+        type
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        color: true,
+        icon: true,
+        parent: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    return {
+      data: {
+        ok: true,
+        created: true,
+        category
       }
     };
   }

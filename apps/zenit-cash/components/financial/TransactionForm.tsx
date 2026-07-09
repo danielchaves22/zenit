@@ -802,17 +802,28 @@ export default function TransactionForm({
     }
   }
 
+  function getCreateAnotherDatesToKeep(status: TransactionStatus, liquidationDate: string) {
+    const preservedDate = formData.date || getTodayValue();
+    const preservedDueDate = formData.dueDate || preservedDate;
+
+    return {
+      date: preservedDate,
+      dueDate: preservedDueDate,
+      liquidationDate: status === 'COMPLETED' ? liquidationDate || preservedDate : ''
+    };
+  }
+
   function resetStandardTransactionForm(type: TransactionKind, status: TransactionStatus) {
-    const today = getTodayValue();
     const nextStatus = status === 'CANCELED' ? 'PENDING' : status;
     const preservedAccounts = getCreateAnotherAccountsToKeep(type);
+    const preservedDates = getCreateAnotherDatesToKeep(nextStatus, formData.liquidationDate);
 
     setFormData({
       description: '',
       amount: '0.00',
-      date: today,
-      dueDate: today,
-      liquidationDate: nextStatus === 'COMPLETED' ? today : '',
+      date: preservedDates.date,
+      dueDate: preservedDates.dueDate,
+      liquidationDate: preservedDates.liquidationDate,
       type,
       status: nextStatus,
       notes: '',

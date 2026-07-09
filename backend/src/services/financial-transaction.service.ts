@@ -2554,22 +2554,20 @@ export default class FinancialTransactionService {
     type?: TransactionType;
     entryKind?: FinancialTransactionEntryKind;
     amount?: Prisma.Decimal | string | number | null;
+    isCreditCardInvoicePayment?: boolean | null;
   }>): TransactionListSummary {
     let incomeTotal = new Prisma.Decimal(0);
     let expenseTotal = new Prisma.Decimal(0);
 
     for (const transaction of transactions) {
-      if (transaction.entryKind === FinancialTransactionEntryKind.BALANCE_ADJUSTMENT) {
-        continue;
-      }
-
-      if (transaction.type !== TransactionType.INCOME && transaction.type !== TransactionType.EXPENSE) {
+      const summaryType = this.resolveEconomicSummaryType(transaction);
+      if (!summaryType) {
         continue;
       }
 
       const amount = this.parseTransactionListSummaryAmount(transaction.amount);
 
-      if (transaction.type === TransactionType.INCOME) {
+      if (summaryType === TransactionType.INCOME) {
         incomeTotal = incomeTotal.plus(amount);
       } else {
         expenseTotal = expenseTotal.plus(amount);
@@ -2580,6 +2578,29 @@ export default class FinancialTransactionService {
       incomeTotal: incomeTotal.toString(),
       expenseTotal: expenseTotal.toString()
     };
+  }
+
+  private static resolveEconomicSummaryType(transaction: {
+    type?: TransactionType;
+    entryKind?: FinancialTransactionEntryKind;
+    isCreditCardInvoicePayment?: boolean | null;
+  }): TransactionType | null {
+    if (transaction.entryKind === FinancialTransactionEntryKind.BALANCE_ADJUSTMENT) {
+      return null;
+    }
+
+    if (transaction.type === TransactionType.INCOME || transaction.type === TransactionType.EXPENSE) {
+      return transaction.type;
+    }
+
+    if (
+      transaction.type === TransactionType.TRANSFER &&
+      transaction.isCreditCardInvoicePayment
+    ) {
+      return TransactionType.EXPENSE;
+    }
+
+    return null;
   }
 
   private static parseTransactionListSummaryAmount(
@@ -3472,32 +3493,6 @@ export default class FinancialTransactionService {
       _sum: { amount: true }
     });
 
-    // Inclui transferÃªncias na soma quando filtrando por contas especÃ­ficas
-    let incomingTransferAggregate = { _sum: { amount: new Prisma.Decimal(0) } } as { _sum: { amount: Prisma.Decimal | null } };
-    let outgoingTransferAggregate = { _sum: { amount: new Prisma.Decimal(0) } } as { _sum: { amount: Prisma.Decimal | null } };
-
-    if (accessibleAccountIds && accessibleAccountIds.length > 0) {
-      incomingTransferAggregate = await prisma.financialTransaction.aggregate({
-        where: {
-          ...transactionWhere,
-          type: 'TRANSFER',
-          ...operationalTransactionWhere,
-          toAccountId: { in: accessibleAccountIds }
-        },
-        _sum: { amount: true }
-      });
-
-      outgoingTransferAggregate = await prisma.financialTransaction.aggregate({
-        where: {
-          ...transactionWhere,
-          type: 'TRANSFER',
-          ...operationalTransactionWhere,
-          fromAccountId: { in: accessibleAccountIds }
-        },
-        _sum: { amount: true }
-      });
-    }
-
     const topExpenseCategories = await prisma.financialTransaction.groupBy({
       by: ['categoryId'],
       where: {
@@ -3532,13 +3527,8 @@ export default class FinancialTransactionService {
         };
       });
 
-    const income =
-      Number(incomeAggregate._sum.amount || 0) +
-      Number(incomingTransferAggregate._sum.amount || 0);
-
-    const expense =
-      Number(expenseAggregate._sum.amount || 0) +
-      Number(outgoingTransferAggregate._sum.amount || 0);
+    const income = Number(incomeAggregate._sum.amount || 0);
+    const expense = Number(expenseAggregate._sum.amount || 0);
 
     const balance = income - expense;
 

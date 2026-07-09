@@ -18,6 +18,7 @@ enum AppKey {
   ZENIT_CASH
   ZENIT_CALC
   ZENIT_ADMIN
+  ZENIT_WHATSAPP
 }
 
 enum AccountType {
@@ -220,6 +221,25 @@ enum AssistantPendingActionStatus {
   EXPIRED
 }
 
+enum WhatsAppBindingChallengeStatus {
+  PENDING
+  CONFIRMED
+  CANCELED
+  EXPIRED
+}
+
+enum WhatsAppMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum WhatsAppMessageKind {
+  TEXT
+  INTERACTIVE
+  STATUS
+  SYSTEM
+}
+
 model User {
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
@@ -250,6 +270,9 @@ model User {
   assistantMessages      AssistantMessage[]
   assistantPendingActions AssistantPendingAction[]
   assistantToolTraces    AssistantToolTrace[]
+  whatsappBindingChallenges WhatsAppBindingChallenge[]
+  whatsappBindings       WhatsAppUserBinding[]
+  whatsappMessageLogs    WhatsAppMessageLog[]
 }
 
 model Company {
@@ -292,6 +315,10 @@ model Company {
   assistantMessages   AssistantMessage[]
   assistantPendingActions AssistantPendingAction[]
   assistantToolTraces AssistantToolTrace[]
+  whatsappBindingChallenges WhatsAppBindingChallenge[]
+  whatsappBindings    WhatsAppUserBinding[]
+  whatsappBindingCompanyContexts WhatsAppBindingCompanyContext[]
+  whatsappMessageLogs WhatsAppMessageLog[]
 }
 
 model CompanyGroup {
@@ -961,6 +988,8 @@ model AssistantSession {
   messages   AssistantMessage[]
   turns      AssistantTurn[]
   pendingActions AssistantPendingAction[]
+  whatsappBindingCompanyContexts WhatsAppBindingCompanyContext[]
+  whatsappMessageLogs WhatsAppMessageLog[]
 
   @@index([userId, companyId, status])
   @@index([companyId, createdAt])
@@ -1057,6 +1086,92 @@ model AssistantToolTrace {
 
   @@index([turnId, createdAt])
   @@index([companyId, toolName, createdAt])
+}
+
+model WhatsAppBindingChallenge {
+  id               Int                           @id @default(autoincrement())
+  userId           Int
+  preferredCompanyId Int
+  code             String                        @unique
+  status           WhatsAppBindingChallengeStatus @default(PENDING)
+  expiresAt        DateTime
+  confirmedAt      DateTime?
+  canceledAt       DateTime?
+  metadata         Json?
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+
+  user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  preferredCompany Company                       @relation(fields: [preferredCompanyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, expiresAt])
+  @@index([preferredCompanyId, status])
+}
+
+model WhatsAppUserBinding {
+  id               Int                           @id @default(autoincrement())
+  userId           Int                           @unique
+  activeCompanyId  Int
+  phoneNumber      String                        @unique
+  waId             String                        @unique
+  displayName      String?
+  lastInboundAt    DateTime?
+  lastOutboundAt   DateTime?
+  createdAt        DateTime                      @default(now())
+  updatedAt        DateTime                      @updatedAt
+
+  user             User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeCompany    Company                       @relation(fields: [activeCompanyId], references: [id], onDelete: Cascade)
+  companyContexts  WhatsAppBindingCompanyContext[]
+  messageLogs      WhatsAppMessageLog[]
+
+  @@index([activeCompanyId])
+}
+
+model WhatsAppBindingCompanyContext {
+  id               Int              @id @default(autoincrement())
+  bindingId        Int
+  companyId        Int
+  assistantSessionId Int            @unique
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  lastMessageAt    DateTime?
+
+  binding          WhatsAppUserBinding @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assistantSession AssistantSession @relation(fields: [assistantSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([bindingId, companyId], name: "unique_whatsapp_binding_company_context")
+  @@index([companyId, updatedAt])
+}
+
+model WhatsAppMessageLog {
+  id               Int                @id @default(autoincrement())
+  bindingId        Int?
+  assistantSessionId Int?
+  userId           Int?
+  companyId        Int?
+  waId             String
+  phoneNumber      String?
+  direction        WhatsAppMessageDirection
+  kind             WhatsAppMessageKind @default(TEXT)
+  whatsappMessageId String?          @unique
+  status           String?
+  text             String?
+  payload          Json?
+  createdAt        DateTime          @default(now())
+  deliveredAt      DateTime?
+  readAt           DateTime?
+  failedAt         DateTime?
+
+  binding          WhatsAppUserBinding? @relation(fields: [bindingId], references: [id], onDelete: SetNull)
+  assistantSession AssistantSession? @relation(fields: [assistantSessionId], references: [id], onDelete: SetNull)
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  company          Company?          @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([waId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([assistantSessionId, createdAt])
 }
 
 model CompanyAiCredential {

@@ -1,4 +1,4 @@
-export const APP_KEYS = ['zenit-cash', 'zenit-calc', 'zenit-admin'] as const
+export const APP_KEYS = ['zenit-cash', 'zenit-calc', 'zenit-admin', 'zenit-whatsapp'] as const
 
 export type AppKey = (typeof APP_KEYS)[number]
 

@@ -2,13 +2,13 @@
 title: Assistant examples
 slug: /docs/architecture/assistant/examples
 type: overview
-product: zenit-cash-mobile
+product: zenit-cash
 audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-06-04
-summary: Exemplos concretos de como o assistente interpreta, orquestra tools e responde no Zenit Cash Mobile.
+last_reviewed: 2026-06-27
+summary: Exemplos concretos de como o assistente interpreta, orquestra tools e responde nos canais do Zenit Cash.
 tags:
   - assistant
   - examples
@@ -28,6 +28,7 @@ Esta pasta cobre:
 
 - um fluxo implementado do `Operador`;
 - dois fluxos-alvo do `Especialista`.
+- um fluxo-alvo do canal WhatsApp, assumindo onboarding `QR-first`.
 
 ## Publico-alvo
 
@@ -37,14 +38,16 @@ Esta pasta cobre:
 
 ## Conceitos principais
 
-- o app envia a mensagem ao backend;
+- o canal envia a mensagem ao backend;
 - o backend chama a OpenAI com tools;
 - o modelo pede function calls;
 - o backend executa a tool e devolve o resultado ao modelo;
-- o backend streama a resposta final ao app.
+- o backend devolve a resposta final ao canal apropriado.
 
 ## Links relacionados
 
 - [Operator transaction draft example](operator-transaction-draft-example.md)
+- [WhatsApp transaction draft example](whatsapp-transaction-draft-example.md)
+- [WhatsApp Meta webhook setup](../whatsapp-meta-webhook-setup.md)
 - [Specialist fuel spend this month example](specialist-fuel-spend-this-month-example.md)
 - [Specialist fuel average last 3 months example](specialist-fuel-average-last-3-months-example.md)

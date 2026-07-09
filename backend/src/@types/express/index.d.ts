@@ -3,6 +3,7 @@ import { User, Role, AppKey } from "@prisma/client";
 declare global {
   namespace Express {
     interface Request {
+      rawBody?: Buffer;
       user: (Partial<User> & {
         companyId?: number;
       }) & {

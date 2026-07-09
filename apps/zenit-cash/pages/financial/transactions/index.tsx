@@ -339,10 +339,6 @@ function canUnarchiveTransaction(transaction: Transaction) {
   );
 }
 
-function shouldAdjustExpenseSummaryWithTransferPayments(types: TransactionTypeFilter[]) {
-  return types.includes('TRANSFER');
-}
-
 function isBalanceAdjustmentTransaction(
   transaction?: Pick<Transaction, 'entryKind'> | null
 ) {
@@ -645,37 +641,6 @@ export default function TransactionsListPage() {
     showOnlyMaterialized
   ]);
 
-  async function fetchTransferPaymentExpenseAdjustment(baseParams: URLSearchParams): Promise<number> {
-    if (!shouldAdjustExpenseSummaryWithTransferPayments(filters.types)) {
-      return 0;
-    }
-
-    const pageSize = 100;
-    let page = 1;
-    let totalPagesForTransfers = 1;
-    let total = 0;
-
-    do {
-      const params = new URLSearchParams(baseParams.toString());
-      params.set('page', page.toString());
-      params.set('pageSize', pageSize.toString());
-      params.delete('types');
-      params.append('types', 'TRANSFER');
-
-      const response = await api.get(`/financial/transactions?${params.toString()}`);
-      const transferRows = (response.data.data || []) as Transaction[];
-
-      total += transferRows
-        .filter((transaction) => transaction.isCreditCardInvoicePayment)
-        .reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
-
-      totalPagesForTransfers = Number(response.data.pages || 1);
-      page += 1;
-    } while (page <= totalPagesForTransfers);
-
-    return total;
-  }
-
   async function fetchData() {
     if (isCustomPeriod && customPeriodError) {
       setLoading(false);
@@ -720,7 +685,6 @@ export default function TransactionsListPage() {
       }
 
       const response = await api.get(`/financial/transactions?${params.toString()}`);
-      const transferPaymentExpenseAdjustment = await fetchTransferPaymentExpenseAdjustment(params);
       const apiIncomeTotal = Number(response.data.summary?.incomeTotal || 0);
       const apiExpenseTotal = Number(response.data.summary?.expenseTotal || 0);
 
@@ -728,7 +692,7 @@ export default function TransactionsListPage() {
       setTotalPages(response.data.pages || 1);
       setSummary({
         incomeTotal: apiIncomeTotal.toString(),
-        expenseTotal: (apiExpenseTotal + transferPaymentExpenseAdjustment).toString()
+        expenseTotal: apiExpenseTotal.toString()
       });
     } catch (error: any) {
       const fallback = 'Erro ao carregar transacoes';

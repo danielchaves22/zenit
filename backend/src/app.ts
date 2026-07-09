@@ -18,6 +18,7 @@ import inboundImportRoutes from './routes/inbound-import.routes';
 import openAiIntegrationRoutes from './routes/openai-integration.routes';
 import gmailIntegrationRoutes from './routes/gmail-integration.routes';
 import integrationPublicRoutes from './routes/integration-public.routes';
+import whatsappIntegrationRoutes from './routes/whatsapp-integration.routes';
 import adminCompanyOpenAiRoutes from './routes/admin-company-openai.routes';
 import adminBankRoutes from './routes/admin-bank.routes';
 import appAccessRoutes from './routes/app-access.routes';
@@ -41,6 +42,10 @@ import { getRedisStatus } from './middlewares/rate-limit.middleware';
 import { REDIS_ENABLED } from './config';
 
 const app = express();
+
+function captureRawBody(req: express.Request, _res: express.Response, buf: Buffer) {
+  req.rawBody = buf;
+}
 
 /**
  * Helper para extrair IP de forma segura
@@ -128,7 +133,7 @@ app.use(
 );
 
 // 8) Body parsing com limites
-app.use(json({ limit: '10mb' }));
+app.use(json({ limit: '10mb', verify: captureRawBody }));
 app.use(urlencoded({ extended: true, limit: '10mb' }));
 
 // 9) Sanitização contra NoSQL injection
@@ -205,6 +210,7 @@ app.use('/api/process-tags', createRateLimitMiddleware('api'), processTagRoutes)
 app.use('/api/inbound-imports', createRateLimitMiddleware('api'), inboundImportRoutes);
 app.use('/api/integrations/openai', createRateLimitMiddleware('api'), openAiIntegrationRoutes);
 app.use('/api/integrations/gmail', createRateLimitMiddleware('api'), gmailIntegrationRoutes);
+app.use('/api/integrations/whatsapp', createRateLimitMiddleware('api'), whatsappIntegrationRoutes);
 app.use('/api/admin/companies', createRateLimitMiddleware('api'), adminCompanyOpenAiRoutes);
 app.use('/api/admin/banks', createRateLimitMiddleware('api'), adminBankRoutes);
 app.use('/api/app-access', createRateLimitMiddleware('api'), appAccessRoutes);

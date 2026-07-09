@@ -552,6 +552,107 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(Number(invoiceSummary.fixedSubtotal)).toBeCloseTo(0, 5);
   });
 
+  it('counts credit card invoice payment transfers as expense while keeping regular transfers neutral in transaction list summary', async () => {
+    const purchaseDate = buildOccurrenceDate(3, 5);
+    const regularExpenseDate = buildOccurrenceDate(3, 12);
+    const transferDate = buildOccurrenceDate(3, 18);
+    const paymentDate = buildOccurrenceDate(3, 14);
+    const destinationAccount = await prisma.financialAccount.create({
+      data: {
+        name: `Fixed Test Transfer Destination ${Date.now()}`,
+        type: 'SAVINGS',
+        balance: 0,
+        allowNegativeBalance: true,
+        companyId
+      }
+    });
+
+    const regularExpenseResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Expense Visible In Summary',
+        amount: 40,
+        date: regularExpenseDate.toISOString(),
+        dueDate: regularExpenseDate.toISOString(),
+        effectiveDate: regularExpenseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: expenseAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(regularExpenseResponse.status).toBe(201);
+
+    const cardExpenseResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Credit Card Expense Paid Via Transfer',
+        amount: 120,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: creditCardAccountId,
+        categoryId: expenseCategoryId
+      });
+
+    expect(cardExpenseResponse.status).toBe(201);
+
+    const targetInvoice = await prisma.creditCardInvoice.findFirst({
+      where: {
+        accountId: creditCardAccountId,
+        referenceYear: paymentDate.getFullYear(),
+        referenceMonth: paymentDate.getMonth() + 1
+      }
+    });
+
+    expect(targetInvoice).not.toBeNull();
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${targetInvoice!.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: expenseAccountId,
+        paymentDate: paymentDate.toISOString()
+      });
+
+    expect(paymentResponse.status).toBe(200);
+
+    const regularTransferResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Internal Transfer Neutral',
+        amount: 60,
+        date: transferDate.toISOString(),
+        dueDate: transferDate.toISOString(),
+        effectiveDate: transferDate.toISOString(),
+        type: 'TRANSFER',
+        status: 'COMPLETED',
+        fromAccountId: expenseAccountId,
+        toAccountId: destinationAccount.id
+      });
+
+    expect(regularTransferResponse.status).toBe(201);
+
+    const { start, end } = monthBounds(3);
+    const listResponse = await listTransactions(start, end, {
+      dateField: 'dueDate',
+      types: ['EXPENSE', 'TRANSFER']
+    });
+
+    expect(listResponse.status).toBe(200);
+    expect(Number(listResponse.body.summary.incomeTotal)).toBeCloseTo(0, 5);
+    expect(Number(listResponse.body.summary.expenseTotal)).toBeCloseTo(160, 5);
+    expect(
+      listResponse.body.data.some((item: any) => item.description === 'Internal Transfer Neutral')
+    ).toBe(true);
+    expect(
+      listResponse.body.data.some((item: any) => item.isCreditCardInvoicePayment === true)
+    ).toBe(true);
+  });
+
   it('can hide credit card materialized transactions from the list', async () => {
     const purchaseDate = buildOccurrenceDate(1, 5);
 

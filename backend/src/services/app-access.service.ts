@@ -16,7 +16,8 @@ export default class AppAccessService {
     const catalog = [
       { appKey: AppKey.ZENIT_CASH, name: 'Zenit Cash' },
       { appKey: AppKey.ZENIT_CALC, name: 'Zenit Calc' },
-      { appKey: AppKey.ZENIT_ADMIN, name: 'Zenit Admin' }
+      { appKey: AppKey.ZENIT_ADMIN, name: 'Zenit Admin' },
+      { appKey: AppKey.ZENIT_WHATSAPP, name: 'Zenit WhatsApp' }
     ]
 
     for (const item of catalog) {

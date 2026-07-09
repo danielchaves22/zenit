@@ -14,7 +14,8 @@ const ADMIN_PASSWORD = '@dmin05c10';
 const APP_CATALOG = [
   { appKey: 'ZENIT_CASH', name: 'Zenit Cash' },
   { appKey: 'ZENIT_CALC', name: 'Zenit Calc' },
-  { appKey: 'ZENIT_ADMIN', name: 'Zenit Admin' }
+  { appKey: 'ZENIT_ADMIN', name: 'Zenit Admin' },
+  { appKey: 'ZENIT_WHATSAPP', name: 'Zenit WhatsApp' }
 ];
 
 function loadBankCatalog() {

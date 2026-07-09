@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const appKeySchema = z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin'])
+const appKeySchema = z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin', 'zenit-whatsapp'])
 
 export const companyEntitlementSchema = z.object({
   entitlements: z.array(

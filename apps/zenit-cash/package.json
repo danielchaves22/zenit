@@ -22,6 +22,7 @@
     "react-dom": "^18.3.1",
     "recharts": "^2.10.4",
     "react-icons": "^4.12.0",
+    "toqr": "^0.1.1",
     "@zenit/shared-users-core": "*"
   },
   "devDependencies": {

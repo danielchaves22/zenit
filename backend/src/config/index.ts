@@ -79,6 +79,18 @@ export const INTEGRATIONS_CONFIG = {
   gmailRedirectUri: process.env.GMAIL_OAUTH_REDIRECT_URI || '',
   gmailPubSubTopic: process.env.GMAIL_PUBSUB_TOPIC || '',
   gmailWebhookSecret: process.env.GMAIL_WEBHOOK_SECRET || '',
+  whatsappApiVersion: process.env.WHATSAPP_API_VERSION || 'v23.0',
+  whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
+  whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+  whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+  whatsappBusinessPhoneE164: process.env.WHATSAPP_BUSINESS_PHONE_E164 || '',
+  whatsappVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || '',
+  whatsappAppSecret: process.env.WHATSAPP_APP_SECRET || '',
+  whatsappBindingMessagePrefix: process.env.WHATSAPP_BINDING_MESSAGE_PREFIX || 'VINCULAR ZENIT',
+  whatsappBindingChallengeTtlMinutes: parseInt(
+    process.env.WHATSAPP_BINDING_CHALLENGE_TTL_MINUTES || '10',
+    10
+  ),
   frontendUrl: process.env.FRONTEND_URL || '',
   webhookBaseUrl: process.env.WEBHOOK_BASE_URL || ''
 };

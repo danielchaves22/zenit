@@ -509,6 +509,95 @@ describe('Credit card invoices', () => {
     expect(Number(cardAccountAfterDelete?.balance)).toBe(-350);
   });
 
+  it('does not treat regular transfers as income or expense in the restricted financial summary', async () => {
+    const hiddenAccount = await prisma.financialAccount.create({
+      data: {
+        name: `Conta Oculta ${Date.now()}`,
+        type: 'SAVINGS',
+        balance: 0,
+        allowNegativeBalance: true,
+        companyId
+      }
+    });
+    const incomeCategory = await prisma.financialCategory.create({
+      data: {
+        name: `Categoria Receita ${Date.now()}`,
+        type: 'INCOME',
+        color: '#22c55e',
+        companyId
+      }
+    });
+    const activityDate = new Date('2099-05-10T12:00:00.000Z');
+
+    await prisma.userFinancialAccountAccess.create({
+      data: {
+        userId: regularUserId,
+        financialAccountId: payerAccountId,
+        companyId,
+        grantedBy: userId
+      }
+    });
+
+    await prisma.financialTransaction.createMany({
+      data: [
+        {
+          description: 'Receita permitida',
+          amount: 300,
+          date: activityDate,
+          dueDate: activityDate,
+          effectiveDate: activityDate,
+          type: 'INCOME',
+          status: 'COMPLETED',
+          toAccountId: payerAccountId,
+          categoryId: incomeCategory.id,
+          companyId,
+          createdBy: userId
+        },
+        {
+          description: 'Despesa permitida',
+          amount: 120,
+          date: activityDate,
+          dueDate: activityDate,
+          effectiveDate: activityDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: payerAccountId,
+          categoryId: expenseCategoryId,
+          companyId,
+          createdBy: userId
+        },
+        {
+          description: 'Transferencia interna',
+          amount: 70,
+          date: activityDate,
+          dueDate: activityDate,
+          effectiveDate: activityDate,
+          type: 'TRANSFER',
+          status: 'COMPLETED',
+          fromAccountId: payerAccountId,
+          toAccountId: hiddenAccount.id,
+          companyId,
+          createdBy: userId
+        }
+      ]
+    });
+
+    const summaryResponse = await request(app)
+      .get('/api/financial/summary')
+      .set(regularUserAuthHeaders())
+      .query({
+        startDate: '2099-05-01T00:00:00.000Z',
+        endDate: '2099-05-31T23:59:59.999Z'
+      });
+
+    expect(summaryResponse.status).toBe(200);
+    expect(summaryResponse.body.income).toBe(300);
+    expect(summaryResponse.body.expense).toBe(120);
+    expect(summaryResponse.body.balance).toBe(180);
+    expect(summaryResponse.body.accounts).toHaveLength(1);
+    expect(summaryResponse.body.accounts[0].id).toBe(payerAccountId);
+  });
+
   it('reopens a paid invoice through the explicit endpoint', async () => {
     const card = await createCreditCardAccount();
     const purchaseDate = new Date('2099-05-05T12:00:00.000Z');

@@ -93,12 +93,28 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
     type: 'function',
     name: 'search_categories',
     description:
-      'Consulta categorias financeiras da empresa para descobrir a melhor categoria e o id correto antes de criar ou ajustar um lancamento. Reformule a busca por conceito quando fizer sentido, por exemplo: cabeleireiro -> beleza ou salao de beleza.',
+      'Consulta categorias financeiras da empresa para descobrir a melhor categoria e o id correto antes de criar ou ajustar um lancamento. Se query vier nula, use como listagem de categorias. Reformule a busca por conceito quando fizer sentido, por exemplo: cabeleireiro -> beleza ou salao de beleza.',
     strict: true,
     parameters: strictObject({
       query: { type: ['string', 'null'] },
       type: { type: ['string', 'null'], enum: ['INCOME', 'EXPENSE', 'TRANSFER', null] },
       limit: { type: ['number', 'null'], minimum: 1, maximum: 20 }
+    })
+  },
+  {
+    type: 'function',
+    name: 'create_category',
+    description:
+      'Cria uma nova categoria financeira quando a categoria desejada nao existir. Use apenas depois de consultar categorias existentes para evitar duplicidade. Se icon vier nulo, o backend sugere automaticamente um icone adequado.',
+    strict: true,
+    parameters: strictObject({
+      name: { type: 'string' },
+      type: { type: 'string', enum: ['INCOME', 'EXPENSE', 'TRANSFER'] },
+      color: { type: ['string', 'null'] },
+      icon: { type: ['string', 'null'] },
+      parentCategoryId: { type: ['number', 'null'] },
+      parentCategoryHint: { type: ['string', 'null'] },
+      accountingCode: { type: ['string', 'null'] }
     })
   },
   {

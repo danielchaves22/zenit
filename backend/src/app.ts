@@ -137,7 +137,16 @@ app.use(json({ limit: '10mb', verify: captureRawBody }));
 app.use(urlencoded({ extended: true, limit: '10mb' }));
 
 // 9) Sanitização contra NoSQL injection
-app.use(mongoSanitize());
+const mongoSanitizeMiddleware = mongoSanitize();
+app.use((req, res, next) => {
+  // Meta sends dotted query keys like `hub.mode` and `hub.verify_token`
+  // when validating the WhatsApp webhook callback.
+  if (req.method === 'GET' && req.path === '/api/webhooks/whatsapp') {
+    return next();
+  }
+
+  return mongoSanitizeMiddleware(req, res, next);
+});
 
 // 10) Health check endpoint (sem rate limit)
 app.get('/health', async (req, res) => {

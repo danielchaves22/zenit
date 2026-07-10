@@ -11,6 +11,7 @@ import { DraftTransactionSummary, PendingAction } from '@zenit/assistant-contrac
 import { z } from 'zod';
 import CreditCardInvoiceService from './credit-card-invoice.service';
 import FinancialAccountService from './financial-account.service';
+import FinancialTransactionService from './financial-transaction.service';
 import PendingActionService, { DraftTransactionPayload } from './pending-action.service';
 import UserService from './user.service';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
@@ -84,6 +85,20 @@ const createCategoryArgsSchema = z.object({
 const searchAccountsArgsSchema = z.object({
   query: z.string().trim().min(1).nullable().optional(),
   type: z.enum(['CHECKING', 'SAVINGS', 'CREDIT_CARD', 'INVESTMENT', 'CASH']).nullable().optional(),
+  limit: z.coerce.number().int().nullable().optional()
+});
+
+const getFinancialOverviewArgsSchema = z.object({});
+
+const getCreditCardOverviewArgsSchema = z.object({
+  accountId: z.coerce.number().int().positive().nullable().optional(),
+  accountHint: z.string().trim().min(1).nullable().optional()
+});
+
+const getDueObligationsArgsSchema = z.object({
+  window: z.enum(['TODAY', 'THIS_WEEK', 'NEXT_7_DAYS', 'REST_OF_MONTH', 'CUSTOM']),
+  startDate: z.string().min(1).nullable().optional(),
+  endDate: z.string().min(1).nullable().optional(),
   limit: z.coerce.number().int().nullable().optional()
 });
 
@@ -302,6 +317,55 @@ function clampLimit(value: number | null | undefined, fallback: number, max: num
   }
 
   return Math.max(1, Math.min(max, normalized));
+}
+
+function parseDateOnly(value: string): Date {
+  const normalized = normalizeDateString(value);
+  const [year, month, day] = normalized.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
+function startOfDayLocal(date: Date): Date {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
+  return normalized;
+}
+
+function endOfDayLocal(date: Date): Date {
+  const normalized = new Date(date);
+  normalized.setHours(23, 59, 59, 999);
+  return normalized;
+}
+
+function endOfWeekLocal(date: Date): Date {
+  const normalized = startOfDayLocal(date);
+  const dayOfWeek = normalized.getDay();
+  const daysUntilSunday = (7 - dayOfWeek) % 7;
+  normalized.setDate(normalized.getDate() + daysUntilSunday);
+  return endOfDayLocal(normalized);
+}
+
+function endOfMonthLocal(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+}
+
+function addDaysLocal(date: Date, days: number): Date {
+  const normalized = new Date(date);
+  normalized.setDate(normalized.getDate() + days);
+  return normalized;
+}
+
+function formatCreditCardReference(referenceYear?: number | null, referenceMonth?: number | null) {
+  if (!referenceYear || !referenceMonth) {
+    return null;
+  }
+
+  return `${String(referenceMonth).padStart(2, '0')}/${referenceYear}`;
+}
+
+function toMoneyNumber(value: unknown): number {
+  const normalized = Number(value ?? 0);
+  return Number.isFinite(normalized) ? normalized : 0;
 }
 
 function levenshteinDistance(left: string, right: string): number {
@@ -756,6 +820,20 @@ async function getAccessibleAccountIds(params: {
       );
 }
 
+async function getAccessibleTransactionFilter(params: {
+  userId: number;
+  role: Role;
+  companyId: number;
+}) {
+  return params.role === 'ADMIN' || params.role === 'SUPERUSER'
+    ? undefined
+    : UserFinancialAccountAccessService.getAccessibleTransactionFilter(
+        params.userId,
+        params.role,
+        params.companyId
+      );
+}
+
 async function getSearchableCategories(params: {
   companyId: number;
   type?: TransactionType | null;
@@ -831,10 +909,70 @@ async function getSearchableAccounts(params: {
               : String(card.nextInvoice.dueDate),
             totalAmount: card.nextInvoice.totalAmount,
             displayStatus: card.nextInvoice.displayStatus
-          }
+      }
         : null
     };
   });
+}
+
+type SearchableAccount = Awaited<ReturnType<typeof getSearchableAccounts>>[number];
+
+function rankSearchableAccounts(accounts: SearchableAccount[], hint?: string | null) {
+  const normalizedHint = normalizeText(hint);
+  if (!normalizedHint) {
+    return [];
+  }
+
+  return accounts
+    .map((account) => ({
+      account,
+      score: scoreAccountCandidate(account, normalizedHint)
+    }))
+    .filter((entry) => entry.score >= 0)
+    .sort((left, right) => right.score - left.score);
+}
+
+function buildDueWindow(args: z.infer<typeof getDueObligationsArgsSchema>) {
+  const today = startOfDayLocal(parseDateOnly(getTodayDateString()));
+
+  switch (args.window) {
+    case 'TODAY':
+      return {
+        label: 'today',
+        startDate: today,
+        endDate: endOfDayLocal(today)
+      };
+    case 'THIS_WEEK':
+      return {
+        label: 'this_week',
+        startDate: today,
+        endDate: endOfWeekLocal(today)
+      };
+    case 'NEXT_7_DAYS':
+      return {
+        label: 'next_7_days',
+        startDate: today,
+        endDate: endOfDayLocal(addDaysLocal(today, 6))
+      };
+    case 'REST_OF_MONTH':
+      return {
+        label: 'rest_of_month',
+        startDate: today,
+        endDate: endOfMonthLocal(today)
+      };
+    case 'CUSTOM':
+      if (!args.startDate || !args.endDate) {
+        throw new Error('startDate e endDate sao obrigatorios quando window = CUSTOM');
+      }
+
+      return {
+        label: 'custom',
+        startDate: startOfDayLocal(parseDateOnly(args.startDate)),
+        endDate: endOfDayLocal(parseDateOnly(args.endDate))
+      };
+    default:
+      throw new Error('Janela de vencimento nao suportada');
+  }
 }
 
 function getPendingActionIdLabel(value?: number | null) {
@@ -894,6 +1032,12 @@ export default class ToolExecutorService {
         return this.createCategory(argumentsJson, context);
       case 'search_accounts':
         return this.searchAccounts(argumentsJson, context);
+      case 'get_financial_overview':
+        return this.getFinancialOverview(argumentsJson, context);
+      case 'get_credit_card_overview':
+        return this.getCreditCardOverview(argumentsJson, context);
+      case 'get_due_obligations':
+        return this.getDueObligations(argumentsJson, context);
       case 'cancel_pending_action':
         return this.cancelPendingAction(argumentsJson, context);
       case 'get_recent_transactions':
@@ -1487,6 +1631,204 @@ export default class ToolExecutorService {
         accounts: ranked.map(({ account, score }) => ({
           ...account,
           matchScore: query ? score : null
+        }))
+      }
+    };
+  }
+
+  private static async getFinancialOverview(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    getFinancialOverviewArgsSchema.parse(rawArguments);
+
+    const accounts = await getSearchableAccounts(context);
+    const nonCreditAccounts = accounts.filter((account) => account.type !== AccountType.CREDIT_CARD);
+    const creditCards = accounts.filter((account) => account.type === AccountType.CREDIT_CARD);
+
+    const currentBalanceTotal = nonCreditAccounts.reduce(
+      (total, account) => total + toMoneyNumber(account.balance),
+      0
+    );
+    const creditCardsSummary = creditCards.reduce(
+      (summary, card) => ({
+        totalLimit: summary.totalLimit + toMoneyNumber(card.creditLimit),
+        usedLimit: summary.usedLimit + toMoneyNumber(card.usedLimit),
+        availableLimit: summary.availableLimit + toMoneyNumber(card.availableLimit)
+      }),
+      {
+        totalLimit: 0,
+        usedLimit: 0,
+        availableLimit: 0
+      }
+    );
+
+    return {
+      data: {
+        ok: true,
+        referenceDate: getTodayDateString(),
+        totalCurrentBalance: currentBalanceTotal,
+        totalCurrentBalanceIncludesCreditCards: false,
+        accounts: nonCreditAccounts.map((account) => ({
+          id: account.id,
+          name: account.name,
+          type: account.type,
+          bankName: account.bankName,
+          balance: toMoneyNumber(account.balance),
+          isDefault: account.isDefault
+        })),
+        creditCardsSummary
+      }
+    };
+  }
+
+  private static async getCreditCardOverview(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = getCreditCardOverviewArgsSchema.parse(rawArguments);
+    const creditCards = await getSearchableAccounts({
+      userId: context.userId,
+      role: context.role,
+      companyId: context.companyId,
+      type: AccountType.CREDIT_CARD
+    });
+
+    let selectedCards = creditCards;
+
+    if (args.accountId != null) {
+      selectedCards = creditCards.filter((card) => card.id === args.accountId);
+    } else if (hasExplicitHint(args.accountHint)) {
+      const rankedMatches = rankSearchableAccounts(creditCards, args.accountHint);
+      const bestMatch = rankedMatches[0]?.score >= 60 ? rankedMatches[0].account : null;
+
+      if (bestMatch) {
+        selectedCards = creditCards.filter((card) => card.id === bestMatch.id);
+      } else {
+        return {
+          data: {
+            ok: false,
+            error: 'Cartao de credito nao encontrado para o criterio informado.',
+            matches: rankedMatches.slice(0, 5).map(({ account, score }) => ({
+              id: account.id,
+              name: account.name,
+              bankName: account.bankName,
+              matchScore: score
+            }))
+          }
+        };
+      }
+    }
+
+    if (selectedCards.length === 0) {
+      return {
+        data: {
+          ok: false,
+          error: 'Nenhum cartao de credito acessivel encontrado.'
+        }
+      };
+    }
+
+    const summary = selectedCards.reduce(
+      (totals, card) => ({
+        totalLimit: totals.totalLimit + toMoneyNumber(card.creditLimit),
+        usedLimit: totals.usedLimit + toMoneyNumber(card.usedLimit),
+        availableLimit: totals.availableLimit + toMoneyNumber(card.availableLimit)
+      }),
+      {
+        totalLimit: 0,
+        usedLimit: 0,
+        availableLimit: 0
+      }
+    );
+
+    return {
+      data: {
+        ok: true,
+        referenceDate: getTodayDateString(),
+        summary,
+        cards: selectedCards.map((card) => ({
+          id: card.id,
+          name: card.name,
+          bankName: card.bankName,
+          balance: toMoneyNumber(card.balance),
+          creditLimit: toMoneyNumber(card.creditLimit),
+          usedLimit: toMoneyNumber(card.usedLimit),
+          availableLimit: toMoneyNumber(card.availableLimit),
+          statementClosingDay: card.statementClosingDay,
+          statementDueDay: card.statementDueDay,
+          currentInvoice: card.nextInvoice
+            ? {
+                reference: formatCreditCardReference(
+                  card.nextInvoice.referenceYear,
+                  card.nextInvoice.referenceMonth
+                ),
+                referenceYear: card.nextInvoice.referenceYear,
+                referenceMonth: card.nextInvoice.referenceMonth,
+                dueDate: card.nextInvoice.dueDate,
+                totalAmount: toMoneyNumber(card.nextInvoice.totalAmount),
+                displayStatus: card.nextInvoice.displayStatus
+              }
+            : null
+        }))
+      }
+    };
+  }
+
+  private static async getDueObligations(
+    rawArguments: Record<string, unknown>,
+    context: AssistantToolExecutionContext
+  ): Promise<ToolExecutionResult> {
+    const args = getDueObligationsArgsSchema.parse(rawArguments);
+    const limit = clampLimit(args.limit, 10, 20);
+    const { startDate, endDate, label } = buildDueWindow(args);
+    const [accessibleAccountIds, accessFilter] = await Promise.all([
+      getAccessibleAccountIds(context),
+      getAccessibleTransactionFilter(context)
+    ]);
+
+    const result = await FinancialTransactionService.listTransactions({
+      companyId: context.companyId,
+      startDate,
+      endDate,
+      dateField: 'dueDate',
+      includeCreditCardTransactions: true,
+      includeVirtualFixed: true,
+      ignoredState: 'ACTIVE',
+      types: [TransactionType.EXPENSE],
+      status: TransactionStatus.PENDING,
+      page: 1,
+      pageSize: limit,
+      accessFilter,
+      accessibleAccountIds
+    });
+
+    return {
+      data: {
+        ok: true,
+        window: label,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        totalItems: result.total,
+        totalAmount: toMoneyNumber(result.summary.expenseTotal),
+        items: result.data.map((item: any) => ({
+          id: item.id ?? null,
+          description: item.description,
+          amount: toMoneyNumber(item.amount),
+          dueDate: item.dueDate instanceof Date
+            ? item.dueDate.toISOString()
+            : item.dueDate
+              ? String(item.dueDate)
+              : null,
+          status: item.status,
+          accountName: item.fromAccount?.name || item.toAccount?.name || null,
+          categoryName: item.category?.name || null,
+          isProjected: Boolean(item.isProjected),
+          isCreditCardInvoiceSummary: Boolean(item.isCreditCardInvoiceSummary),
+          invoiceReference: formatCreditCardReference(
+            item.creditCardInvoice?.referenceYear,
+            item.creditCardInvoice?.referenceMonth
+          )
         }))
       }
     };

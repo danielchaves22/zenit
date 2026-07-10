@@ -134,6 +134,41 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
   },
   {
     type: 'function',
+    name: 'get_financial_overview',
+    description:
+      'Consulta a visao atual de saldos das contas acessiveis e o saldo total consolidado fora de cartoes de credito. Use para perguntas como "qual meu saldo total?" ou "como estao meus saldos?".',
+    strict: true,
+    parameters: strictObject({})
+  },
+  {
+    type: 'function',
+    name: 'get_credit_card_overview',
+    description:
+      'Consulta dados atuais dos cartoes de credito acessiveis, incluindo fatura atual ainda nao paga, status da fatura, limite total, limite usado e limite disponivel. Se accountHint vier preenchido, tente focar em um cartao especifico.',
+    strict: true,
+    parameters: strictObject({
+      accountId: { type: ['number', 'null'] },
+      accountHint: { type: ['string', 'null'] }
+    })
+  },
+  {
+    type: 'function',
+    name: 'get_due_obligations',
+    description:
+      'Consulta obrigacoes financeiras pendentes por vencimento, incluindo despesas pendentes, recorrencias projetadas e resumos de fatura de cartao. Use para perguntas como "o que vence hoje?", "o que vence esta semana?" ou "quanto ainda tenho para pagar ate o fim do mes?".',
+    strict: true,
+    parameters: strictObject({
+      window: {
+        type: 'string',
+        enum: ['TODAY', 'THIS_WEEK', 'NEXT_7_DAYS', 'REST_OF_MONTH', 'CUSTOM']
+      },
+      startDate: { type: ['string', 'null'], description: 'Obrigatorio apenas quando window = CUSTOM, em YYYY-MM-DD.' },
+      endDate: { type: ['string', 'null'], description: 'Obrigatorio apenas quando window = CUSTOM, em YYYY-MM-DD.' },
+      limit: { type: ['number', 'null'], minimum: 1, maximum: 20 }
+    })
+  },
+  {
+    type: 'function',
     name: 'cancel_pending_action',
     description:
       'Cancela uma acao pendente do assistente quando o usuario pedir cancelamento. Se pendingActionId vier nulo, cancele a ultima acao pendente da sessao.',

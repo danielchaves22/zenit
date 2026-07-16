@@ -179,6 +179,29 @@ type CreditCardPurchaseBaseTransaction = {
 // ============================================
 
 export default class FinancialTransactionService {
+  private static normalizeTagNames(tags?: string[]): string[] {
+    if (!Array.isArray(tags)) {
+      return [];
+    }
+
+    const seen = new Set<string>();
+    const normalizedTags: string[] = [];
+
+    for (const tag of tags) {
+      const normalizedTag = tag.trim();
+      const key = normalizedTag.toLocaleLowerCase('pt-BR');
+
+      if (!normalizedTag || seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      normalizedTags.push(normalizedTag);
+    }
+
+    return normalizedTags;
+  }
+
   /**
    * Cria transaÃ§Ãµes financeiras considerando repetiÃ§Ãµes
    */
@@ -584,8 +607,9 @@ export default class FinancialTransactionService {
         creditCardInvoiceId = ensuredInvoice.invoiceId;
         isExternalCreditCardSettlement = ensuredInvoice.isExternalSettlement;
       }
-      
+
       // âœ… CRITICAL: Create transaction record FIRST (for audit trail)
+      const normalizedTags = FinancialTransactionService.normalizeTagNames(data.tags);
       const transaction = await tx.financialTransaction.create({
         data: {
           description: data.description,
@@ -616,8 +640,8 @@ export default class FinancialTransactionService {
           isExternalCreditCardSettlement,
           company: { connect: { id: data.companyId } },
           createdByUser: { connect: { id: data.createdBy } },
-          tags: data.tags && data.tags.length > 0 ? {
-            connectOrCreate: data.tags.map((tagName: string) => ({
+          tags: normalizedTags.length > 0 ? {
+            connectOrCreate: normalizedTags.map((tagName: string) => ({
               where: { name_companyId: { name: tagName, companyId: data.companyId } },
               create: { name: tagName, company: { connect: { id: data.companyId } } }
             }))
@@ -1296,11 +1320,13 @@ export default class FinancialTransactionService {
         : { disconnect: true };
     }
     if (data.tags !== undefined) {
+      const normalizedTags = this.normalizeTagNames(data.tags);
+
       updatedData.tags = {
         set: [],
-        ...(data.tags.length > 0
+        ...(normalizedTags.length > 0
           ? {
-              connectOrCreate: data.tags.map((tagName) => ({
+              connectOrCreate: normalizedTags.map((tagName) => ({
                 where: {
                   name_companyId: {
                     name: tagName,

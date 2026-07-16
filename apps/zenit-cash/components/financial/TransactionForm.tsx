@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { AutocompleteInput } from '@/components/ui/AutoCompleteInput';
 import type { AutocompleteSuggestion } from '@/components/ui/AutoCompleteInput';
+import { TagInput } from '@/components/ui/TagInput';
+import type { TagSuggestion } from '@/components/ui/TagInput';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
@@ -147,6 +149,24 @@ interface TransactionFormProps {
   onSuccess?: () => void;
   onCancel?: () => void;
   onTransactionLoaded?: (transaction: Transaction) => void;
+}
+
+interface TransactionFormState {
+  description: string;
+  amount: string;
+  date: string;
+  dueDate: string;
+  liquidationDate: string;
+  type: TransactionKind;
+  status: TransactionStatus;
+  notes: string;
+  fromAccountId: string;
+  toAccountId: string;
+  categoryId: string;
+  tags: string[];
+  repeatTimes: string;
+  installmentCount: string;
+  purchaseScope: PurchaseScope;
 }
 
 function getTodayValue() {
@@ -291,7 +311,7 @@ export default function TransactionForm({
   const postCreateActionRef = useRef<PostCreateAction>('default');
   const lastCreateTransactionDateRef = useRef(getTodayValue());
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<TransactionFormState>({
     description: '',
     amount: '0.00',
     date: getTodayValue(),
@@ -303,11 +323,12 @@ export default function TransactionForm({
     fromAccountId: '',
     toAccountId: '',
     categoryId: '',
-    tags: '',
+    tags: [],
     repeatTimes: '',
     installmentCount: '1',
     purchaseScope: 'PURCHASE' as PurchaseScope
   });
+  const [pendingTagNames, setPendingTagNames] = useState<string[]>([]);
 
   const [isRecurring, setIsRecurring] = useState(false);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
@@ -669,6 +690,28 @@ export default function TransactionForm({
     }
   };
 
+  const fetchTagSuggestions = async (query: string): Promise<TagSuggestion[]> => {
+    const search = query.trim();
+
+    if (!search) {
+      return [];
+    }
+
+    try {
+      const response = await api.get('/financial/tags', {
+        params: {
+          search,
+          limit: 10
+        }
+      });
+
+      return response.data.tags || [];
+    } catch (error) {
+      console.error('Error fetching tag suggestions:', error);
+      return [];
+    }
+  };
+
   async function fetchCreditCardInvoices(accountId: number) {
     try {
       const response = await api.get(`/financial/credit-cards/${accountId}/invoices`);
@@ -716,11 +759,12 @@ export default function TransactionForm({
         fromAccountId: txn.fromAccount?.id.toString() || '',
         toAccountId: txn.toAccount?.id.toString() || '',
         categoryId: txn.category?.id.toString() || '',
-        tags: txn.tags.map((tag) => tag.name).join(', '),
+        tags: txn.tags.map((tag) => tag.name),
         repeatTimes: txn.repeatTimes?.toString() || '',
         installmentCount: txn.totalInstallments?.toString() || '1',
         purchaseScope: 'PURCHASE'
       });
+      setPendingTagNames([]);
     } catch (error: any) {
       console.error('Erro ao carregar transação:', error);
       addToast('Erro ao carregar dados da transação', 'error');
@@ -772,11 +816,12 @@ export default function TransactionForm({
       fromAccountId,
       toAccountId: '',
       categoryId: getDefaultCategoryId('EXPENSE'),
-      tags: '',
+      tags: [],
       repeatTimes: '',
       installmentCount: '1',
       purchaseScope: 'PURCHASE'
     });
+    setPendingTagNames([]);
     setIsInvoicePreviewExpanded(false);
     setShouldFocusAmount(true);
   }
@@ -830,11 +875,12 @@ export default function TransactionForm({
       fromAccountId: preservedAccounts.fromAccountId,
       toAccountId: preservedAccounts.toAccountId,
       categoryId: type === 'TRANSFER' ? '' : getDefaultCategoryId(type),
-      tags: '',
+      tags: [],
       repeatTimes: '',
       installmentCount: '1',
       purchaseScope: 'PURCHASE'
     });
+    setPendingTagNames([]);
     setIsRecurring(false);
     setShouldFocusAmount(true);
   }
@@ -941,7 +987,7 @@ export default function TransactionForm({
     }
 
     setFormData((prev) => {
-      const updated = { ...prev, [name]: value };
+      const updated = { ...prev, [name]: value } as TransactionFormState;
 
       if (name === 'status') {
         if (value === 'COMPLETED') {
@@ -985,6 +1031,10 @@ export default function TransactionForm({
 
   const handleAmountChange = (value: string) => {
     setFormData((prev) => ({ ...prev, amount: value }));
+  };
+
+  const handleTagsChange = (tags: string[]) => {
+    setFormData((prev) => ({ ...prev, tags }));
   };
 
   const handleFormModeChange = (nextMode: TransactionFormMode) => {
@@ -1170,7 +1220,7 @@ export default function TransactionForm({
         payload.description = formData.description;
         payload.amount = parseFloat(formData.amount);
         payload.categoryId = formData.categoryId ? parseInt(formData.categoryId, 10) : null;
-        payload.tags = formData.tags.split(',').map((tag) => tag.trim()).filter(Boolean);
+        payload.tags = formData.tags;
         payload.notes = formData.notes;
         payload.purchaseScope = formData.purchaseScope;
 
@@ -2055,14 +2105,17 @@ export default function TransactionForm({
           {!isSimpleMode && (
             <>
               <div>
-                <Input
+                <TagInput
                   id="tags"
-                  name="tags"
-                  label="Tags (separadas por vírgula)"
+                  label="Tags"
                   value={formData.tags}
-                  onChange={handleChange}
-                  placeholder="Ex: alimentação, mercado, urgente"
+                  onChange={handleTagsChange}
+                  pendingValues={pendingTagNames}
+                  onPendingChange={setPendingTagNames}
+                  fetchSuggestions={fetchTagSuggestions}
+                  placeholder="Ex: alimentacao mercado urgente"
                   disabled={saving || isReadOnly}
+                  maxTags={10}
                 />
               </div>
 

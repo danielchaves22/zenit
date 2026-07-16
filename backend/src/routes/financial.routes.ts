@@ -21,6 +21,7 @@ import {
   updateCategorySchema,
   listCategoriesSchema
 } from '../validators/financial-category.validator';
+import { listFinancialTagsSchema } from '../validators/financial-tag.validator';
 import {
   createTransactionSchema,
   updateTransactionSchema,
@@ -68,6 +69,7 @@ import {
   updateCategory,
   deleteCategory
 } from '../controllers/financial-category.controller';
+import { listFinancialTags } from '../controllers/financial-tag.controller';
 import {
   setDefaultAccount,
   unsetDefaultAccount,
@@ -165,6 +167,8 @@ router.delete('/categories/:id', requireFeaturePermission('FINANCIAL_CATEGORIES'
 
 router.post('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), setDefaultCategory);
 router.delete('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), unsetDefaultCategory);
+
+router.get('/tags', validate(listFinancialTagsSchema), listFinancialTags);
 
 router.get('/preferences/variable-projection', getVariableProjectionPreference);
 router.put(

@@ -804,19 +804,23 @@ export default function TransactionForm({
   }
 
   function resetCreditCardPurchaseForm(fromAccountId: string) {
+    const preservedDate = formData.date || getTodayValue();
+    const preservedDueDate = formData.dueDate || preservedDate;
+    const preservedLiquidationDate = formData.liquidationDate || preservedDate;
+
     setFormData({
       description: '',
       amount: '0.00',
-      date: getTodayValue(),
-      dueDate: getTodayValue(),
-      liquidationDate: getTodayValue(),
+      date: preservedDate,
+      dueDate: preservedDueDate,
+      liquidationDate: preservedLiquidationDate,
       type: 'EXPENSE',
       status: 'COMPLETED',
       notes: '',
       fromAccountId,
       toAccountId: '',
       categoryId: getDefaultCategoryId('EXPENSE'),
-      tags: [],
+      tags: [...formData.tags],
       repeatTimes: '',
       installmentCount: '1',
       purchaseScope: 'PURCHASE'
@@ -875,7 +879,7 @@ export default function TransactionForm({
       fromAccountId: preservedAccounts.fromAccountId,
       toAccountId: preservedAccounts.toAccountId,
       categoryId: type === 'TRANSFER' ? '' : getDefaultCategoryId(type),
-      tags: [],
+      tags: [...formData.tags],
       repeatTimes: '',
       installmentCount: '1',
       purchaseScope: 'PURCHASE'

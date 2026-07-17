@@ -1,6 +1,12 @@
 import request from 'supertest';
 import bcrypt from 'bcrypt';
-import { AppKey, PrismaClient, TransactionStatus, TransactionType } from '@prisma/client';
+import {
+  AppKey,
+  FinancialTransactionImportSourceType,
+  PrismaClient,
+  TransactionStatus,
+  TransactionType
+} from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 import {
@@ -659,11 +665,9 @@ describe('Credit card invoices', () => {
     expect(Number(cardAccountAfterReopen?.balance)).toBe(-120);
   });
 
-  it('creates retroactive card purchases with historical installments settled externally', async () => {
+  it('blocks manual retroactive card purchases into closed invoices', async () => {
     const card = await createCreditCardAccount();
     const purchaseDate = buildMonthDate(-1, 5);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
 
     const installmentPurchase = await request(app)
       .post('/api/financial/transactions')
@@ -679,44 +683,13 @@ describe('Credit card invoices', () => {
         installmentCount: 3
       });
 
-    expect(installmentPurchase.status).toBe(201);
-    expect(Array.isArray(installmentPurchase.body)).toBe(true);
-    expect(installmentPurchase.body).toHaveLength(3);
-
-    const references = [0, 1, 2].map((index) =>
-      resolveCreditCardInvoiceReference(addMonthsClamped(purchaseDate, index), 10, 15)
+    expect(installmentPurchase.status).toBe(400);
+    expect(installmentPurchase.body.error).toBe(
+      'A data informada direciona esta compra para uma fatura ja fechada. Escolha a fatura aberta atual ou altere a data da compra.'
     );
-    const expectedExternalInstallments = references.filter(
-      (reference) => reference.dueDate.getTime() < today.getTime()
-    ).length;
-    const expectedBalanceImpactInstallments = 3 - expectedExternalInstallments;
-
-    expect(
-      installmentPurchase.body.filter((transaction: any) => transaction.isExternalCreditCardSettlement).length
-    ).toBe(expectedExternalInstallments);
-
-    const cardsResponse = await request(app)
-      .get('/api/financial/credit-cards')
-      .set(authHeaders());
-
-    expect(cardsResponse.status).toBe(200);
-    expect(cardsResponse.body[0].usedLimit).toBe(expectedBalanceImpactInstallments * 100);
-    expect(cardsResponse.body[0].availableLimit).toBe(1000 - expectedBalanceImpactInstallments * 100);
-
-    const invoicesResponse = await request(app)
-      .get(`/api/financial/credit-cards/${card.id}/invoices`)
-      .set(authHeaders());
-
-    expect(invoicesResponse.status).toBe(200);
-    expect(
-      invoicesResponse.body.filter(
-        (invoice: any) =>
-          invoice.status === 'PAID' && invoice.settlementType === 'EXTERNAL'
-      )
-    ).toHaveLength(expectedExternalInstallments);
   });
 
-  it('adds purchases to an already paid invoice as external historical settlements', async () => {
+  it('blocks manual purchases into an already paid invoice', async () => {
     const card = await createCreditCardAccount();
     const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
 
@@ -766,30 +739,10 @@ describe('Credit card invoices', () => {
         categoryId: expenseCategoryId
       });
 
-    expect(retroactivePurchase.status).toBe(201);
-    expect(retroactivePurchase.body.isExternalCreditCardSettlement).toBe(true);
-
-    const invoiceDetail = await request(app)
-      .get(`/api/financial/credit-card-invoices/${mayInvoice.id}`)
-      .set(authHeaders());
-
-    expect(invoiceDetail.status).toBe(200);
-    expect(invoiceDetail.body.status).toBe('PAID');
-    expect(invoiceDetail.body.settlementType).toBe('TRANSFER');
-    expect(invoiceDetail.body.paymentTransaction).toBeTruthy();
-    expect(invoiceDetail.body.totalAmount).toBe('140');
-    expect(invoiceDetail.body.externalSettledAmount).toBe('40');
-    expect(
-      invoiceDetail.body.transactions.some((transaction: any) => transaction.isExternalCreditCardSettlement)
-    ).toBe(true);
-
-    const cardsAfterRetroactivePurchase = await request(app)
-      .get('/api/financial/credit-cards')
-      .set(authHeaders());
-
-    expect(cardsAfterRetroactivePurchase.status).toBe(200);
-    expect(cardsAfterRetroactivePurchase.body[0].usedLimit).toBe(0);
-    expect(cardsAfterRetroactivePurchase.body[0].availableLimit).toBe(1000);
+    expect(retroactivePurchase.status).toBe(400);
+    expect(retroactivePurchase.body.error).toBe(
+      'A fatura selecionada ja esta paga. Escolha uma fatura aberta ou altere a data da compra.'
+    );
   });
 
   it('does not reopen a paid invoice when it contains external historical settlements', async () => {
@@ -828,21 +781,22 @@ describe('Credit card invoices', () => {
 
     expect(paymentResponse.status).toBe(200);
 
-    const retroactivePurchase = await request(app)
-      .post('/api/financial/transactions')
-      .set(authHeaders())
-      .send({
-        description: 'Compra Historica Externa',
-        amount: 40,
-        date: '2099-05-06T12:00:00.000Z',
-        type: 'EXPENSE',
-        status: 'COMPLETED',
-        fromAccountId: card.id,
-        categoryId: expenseCategoryId
-      });
+    const retroactivePurchase = await FinancialTransactionService.createTransaction({
+      description: 'Compra Historica Externa',
+      amount: 40,
+      date: new Date('2099-05-06T12:00:00.000Z'),
+      type: TransactionType.EXPENSE,
+      status: TransactionStatus.COMPLETED,
+      fromAccountId: card.id,
+      categoryId: expenseCategoryId,
+      companyId,
+      createdBy: userId,
+      importSourceType: FinancialTransactionImportSourceType.NUBANK_CSV,
+      importSourceDescription: 'Teste importado'
+    });
 
-    expect(retroactivePurchase.status).toBe(201);
-    expect(retroactivePurchase.body.isExternalCreditCardSettlement).toBe(true);
+    expect(Array.isArray(retroactivePurchase)).toBe(false);
+    expect((retroactivePurchase as any).isExternalCreditCardSettlement).toBe(true);
 
     const reopenResponse = await request(app)
       .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/reopen`)
@@ -852,6 +806,82 @@ describe('Credit card invoices', () => {
     expect(reopenResponse.body.error).toBe(
       'Faturas com liquidacoes fora do sistema nao podem ser reabertas'
     );
+  });
+
+  it('allows deleting a single external settlement from a paid invoice', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
+
+    const firstPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Base Exclusao Externa',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(firstPurchase.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
+    expect(mayInvoice).toBeTruthy();
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        paymentDate: '2099-05-14T12:00:00.000Z'
+      });
+
+    expect(paymentResponse.status).toBe(200);
+
+    const externalPurchase = await FinancialTransactionService.createTransaction({
+      description: 'Compra Externa Para Excluir',
+      amount: 40,
+      date: new Date('2099-05-06T12:00:00.000Z'),
+      type: TransactionType.EXPENSE,
+      status: TransactionStatus.COMPLETED,
+      fromAccountId: card.id,
+      categoryId: expenseCategoryId,
+      companyId,
+      createdBy: userId,
+      importSourceType: FinancialTransactionImportSourceType.NUBANK_CSV,
+      importSourceDescription: 'Teste importado'
+    });
+    const externalPurchaseId = (externalPurchase as any).id;
+
+    expect((externalPurchase as any).isExternalCreditCardSettlement).toBe(true);
+
+    const deleteResponse = await request(app)
+      .delete(`/api/financial/transactions/${externalPurchaseId}`)
+      .query({ scope: 'single' })
+      .set(authHeaders());
+
+    expect(deleteResponse.status).toBe(204);
+
+    const deletedTransaction = await prisma.financialTransaction.findUnique({
+      where: { id: externalPurchaseId }
+    });
+    expect(deletedTransaction).toBeNull();
+
+    const invoiceDetail = await request(app)
+      .get(`/api/financial/credit-card-invoices/${mayInvoice.id}`)
+      .set(authHeaders());
+
+    expect(invoiceDetail.status).toBe(200);
+    expect(invoiceDetail.body.status).toBe('PAID');
+    expect(invoiceDetail.body.settlementType).toBe('TRANSFER');
+    expect(invoiceDetail.body.totalAmount).toBe('100');
+    expect(invoiceDetail.body.externalSettledAmount).toBe('0');
   });
 
   it('anchors imported installments to the invoice reference selected during reconciliation', async () => {

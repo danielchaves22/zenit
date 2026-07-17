@@ -28,6 +28,7 @@ import { formatTransactionDescription } from '@/utils/transactions';
 import { formatAccountDisplayName } from '@/utils/accounts';
 import { useAuth } from '@/contexts/AuthContext';
 import {
+  addMonthsClamped,
   buildCreditCardInvoicePreview,
   formatInvoiceDate,
   getAvailableCreditLimit,
@@ -53,6 +54,13 @@ type PurchaseScope = 'SINGLE' | 'FUTURE' | 'PURCHASE';
 type CreateFlow = 'standard' | 'credit-card-purchase';
 type PostCreateAction = 'default' | 'create-another';
 type TransactionFormMode = 'simple' | 'detailed';
+
+type CreditCardInvoiceReferencePayload = {
+  referenceYear: number;
+  referenceMonth: number;
+  closingDate: string;
+  dueDate: string;
+};
 
 const TRANSACTION_FORM_MODE_STORAGE_KEY = 'transactionFormMode';
 
@@ -309,6 +317,7 @@ export default function TransactionForm({
   const [existingCreditCardInvoices, setExistingCreditCardInvoices] = useState<CreditCardInvoicePreviewStatus[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
   const postCreateActionRef = useRef<PostCreateAction>('default');
+  const creditCardInvoiceReferenceOverrideRef = useRef<CreditCardInvoiceReferencePayload | null>(null);
   const lastCreateTransactionDateRef = useRef(getTodayValue());
 
   const [formData, setFormData] = useState<TransactionFormState>({
@@ -407,6 +416,7 @@ export default function TransactionForm({
       const referenceLabel = getInvoiceReferenceLabel(item.referenceYear, item.referenceMonth);
       const existingInvoice =
         existingCreditCardInvoicesByReference.get(`${item.referenceYear}-${item.referenceMonth}`) || null;
+      const isClosedReference = isCalendarDateBefore(item.closingDate) || item.closingDate.slice(0, 10) === getTodayValue();
       const shouldSettleExternally = existingInvoice
         ? existingInvoice.status === 'PAID'
         : isCalendarDateBefore(item.dueDate);
@@ -414,11 +424,14 @@ export default function TransactionForm({
       return {
         ...item,
         existingInvoice,
+        isClosedReference,
         shouldSettleExternally,
         destinationLabel: shouldSettleExternally
           ? existingInvoice?.status === 'PAID'
             ? `Fatura ${referenceLabel} ja paga - liquidada fora do sistema`
             : 'Historica liquidada fora do sistema'
+          : isClosedReference
+            ? `Fatura ${referenceLabel} ja fechada`
           : `Entrara na fatura ${referenceLabel}`
       };
     });
@@ -429,6 +442,41 @@ export default function TransactionForm({
   const currentLimitImpactInstallmentCount = resolvedInvoicePreview.filter(
     (item) => !item.shouldSettleExternally
   ).length;
+  const currentOpenInvoiceReference = useMemo<CreditCardInvoiceReferencePayload | null>(() => {
+    if (!isCreditCardPurchaseFlow || !selectedFromAccount) {
+      return null;
+    }
+
+    const todayValue = getTodayValue();
+    const today = new Date(`${todayValue}T12:00:00`);
+
+    for (let offset = 0; offset < 12; offset += 1) {
+      const candidateDate = addMonthsClamped(today, offset).toISOString().slice(0, 10);
+      const [candidate] = buildCreditCardInvoicePreview(selectedFromAccount, candidateDate, 1);
+
+      if (!candidate) {
+        continue;
+      }
+
+      const existingInvoice = existingCreditCardInvoicesByReference.get(
+        `${candidate.referenceYear}-${candidate.referenceMonth}`
+      );
+      const closingDate = new Date(candidate.closingDate);
+
+      if (existingInvoice?.status === 'PAID' || closingDate.getTime() <= today.getTime()) {
+        continue;
+      }
+
+      return {
+        referenceYear: candidate.referenceYear,
+        referenceMonth: candidate.referenceMonth,
+        closingDate: candidate.closingDate,
+        dueDate: candidate.dueDate
+      };
+    }
+
+    return null;
+  }, [existingCreditCardInvoicesByReference, isCreditCardPurchaseFlow, selectedFromAccount]);
   const impactedInvoicesCount = new Set(
     resolvedInvoicePreview
       .filter((item) => !item.shouldSettleExternally)
@@ -463,6 +511,10 @@ export default function TransactionForm({
     ((activePurchaseScope === 'PURCHASE' && !canEditPurchaseScope) ||
       (activePurchaseScope === 'FUTURE' && !canEditFutureScope) ||
       (activePurchaseScope === 'SINGLE' && !canEditSingleScope));
+  const canDeleteBlockedExternalCreditCardPurchase =
+    isGroupedCreditCardPurchase &&
+    purchaseGroupTransactions.length === 1 &&
+    Boolean(currentGroupTransaction?.isExternalCreditCardSettlement);
   const isCompletedReadOnly =
     mode === 'edit' &&
     transaction?.status === 'COMPLETED' &&
@@ -470,6 +522,7 @@ export default function TransactionForm({
   const isReadOnly = currentScopeBlocked || (isCompletedReadOnly && !isSuperuser);
   const showActions = isGroupedCreditCardPurchase ? true : !isCompletedReadOnly || isSuperuser;
   const actionDisabled = saving || isReadOnly;
+  const deleteActionDisabled = saving || (isReadOnly && !canDeleteBlockedExternalCreditCardPurchase);
   const isPending = formData.status === 'PENDING';
   const isSimpleMode = formMode === 'simple';
   const isCompleted = formData.status === 'COMPLETED';
@@ -1147,10 +1200,50 @@ export default function TransactionForm({
     setFormData((prev) => ({ ...prev, purchaseScope: scope }));
   };
 
+  const confirmHistoricalCreditCardPurchase = (postCreateAction: PostCreateAction) => {
+    if (!currentOpenInvoiceReference) {
+      addToast(
+        'A data informada direciona a compra para uma fatura ja fechada. Altere a data para uma fatura aberta antes de salvar.',
+        'error'
+      );
+      return;
+    }
+
+    const historicalInvoice =
+      resolvedInvoicePreview.find((item) => item.shouldSettleExternally) ||
+      resolvedInvoicePreview.find((item) => item.isClosedReference);
+    const historicalInvoiceLabel = historicalInvoice
+      ? getInvoiceReferenceLabel(historicalInvoice.referenceYear, historicalInvoice.referenceMonth)
+      : 'anterior';
+    const currentInvoiceLabel = getInvoiceReferenceLabel(
+      currentOpenInvoiceReference.referenceYear,
+      currentOpenInvoiceReference.referenceMonth
+    );
+
+    confirmation.confirm(
+      {
+        title: 'Fatura ja fechada',
+        message:
+          `Pela data informada, esta compra entraria na fatura ${historicalInvoiceLabel}, que ja esta fechada ou paga. ` +
+          `Voce pode incluir o lancamento na fatura aberta ${currentInvoiceLabel} ou voltar para corrigir a data da compra.`,
+        confirmText: `Incluir na fatura ${currentInvoiceLabel}`,
+        cancelText: 'Voltar e mudar data',
+        type: 'warning'
+      },
+      () => {
+        creditCardInvoiceReferenceOverrideRef.current = currentOpenInvoiceReference;
+        postCreateActionRef.current = postCreateAction;
+        formRef.current?.requestSubmit();
+      }
+    );
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const postCreateAction = postCreateActionRef.current;
     postCreateActionRef.current = 'default';
+    const creditCardInvoiceReferenceOverride = creditCardInvoiceReferenceOverrideRef.current;
+    creditCardInvoiceReferenceOverrideRef.current = null;
 
     if (mode === 'create' && isCreditCardPurchaseFlow && selectedFromAccount?.type !== 'CREDIT_CARD') {
       addToast('Selecione um cartão de crédito para registrar a compra', 'error');
@@ -1206,6 +1299,16 @@ export default function TransactionForm({
       normalizedStatus = 'COMPLETED';
     }
 
+    if (
+      mode === 'create' &&
+      isCreditCardPurchaseFlow &&
+      !creditCardInvoiceReferenceOverride &&
+      resolvedInvoicePreview.some((item) => item.shouldSettleExternally || item.isClosedReference)
+    ) {
+      confirmHistoricalCreditCardPurchase(postCreateAction);
+      return;
+    }
+
     if (normalizedStatus === 'COMPLETED' && !normalizedLiquidationDate) {
       addToast('Informe a data de liquidação para transações concluídas', 'error');
       return;
@@ -1241,6 +1344,9 @@ export default function TransactionForm({
       delete payload.installmentCount;
       if (mode === 'create' && isCreditCardPurchaseFlow) {
         payload.installmentCount = installmentCountValue;
+        if (creditCardInvoiceReferenceOverride) {
+          payload.creditCardInvoiceReference = creditCardInvoiceReferenceOverride;
+        }
       }
 
       if (mode === 'create') {
@@ -1283,8 +1389,11 @@ export default function TransactionForm({
       return;
     }
 
-    const isPurchaseDelete = transaction.purchaseGroupId && formData.purchaseScope === 'PURCHASE';
-    const isFutureDelete = transaction.purchaseGroupId && formData.purchaseScope === 'FUTURE';
+    const deleteScope: PurchaseScope = canDeleteBlockedExternalCreditCardPurchase
+      ? 'SINGLE'
+      : formData.purchaseScope;
+    const isPurchaseDelete = transaction.purchaseGroupId && deleteScope === 'PURCHASE';
+    const isFutureDelete = transaction.purchaseGroupId && deleteScope === 'FUTURE';
     const scopeLabel = isPurchaseDelete
       ? 'a compra inteira'
       : isFutureDelete
@@ -1307,7 +1416,7 @@ export default function TransactionForm({
         try {
           await api.delete(`/financial/transactions/${transactionId}`, {
             params: transaction.purchaseGroupId
-              ? { scope: formData.purchaseScope.toLowerCase() }
+              ? { scope: deleteScope.toLowerCase() }
               : undefined
           });
 
@@ -1516,7 +1625,7 @@ export default function TransactionForm({
                   variant="danger"
                   onClick={handleDelete}
                   className="flex items-center gap-2"
-                  disabled={actionDisabled}
+                  disabled={deleteActionDisabled}
                 >
                   <Trash2 size={16} />
                   Excluir

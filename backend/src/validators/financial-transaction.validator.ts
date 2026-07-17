@@ -110,6 +110,26 @@ export const autocompleteQuerySchema = z.object({
     .optional()
 });
 
+const creditCardInvoiceReferenceSchema = z.object({
+  referenceYear: z.coerce.number()
+    .int('Ano da fatura deve ser um numero inteiro')
+    .min(2000, 'Ano da fatura invalido')
+    .max(2100, 'Ano da fatura invalido'),
+
+  referenceMonth: z.coerce.number()
+    .int('Mes da fatura deve ser um numero inteiro')
+    .min(1, 'Mes da fatura invalido')
+    .max(12, 'Mes da fatura invalido'),
+
+  closingDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data de fechamento da fatura deve ser valida' })
+  }),
+
+  dueDate: z.coerce.date({
+    errorMap: () => ({ message: 'Data de vencimento da fatura deve ser valida' })
+  })
+});
+
 export const createTransactionSchema = z
   .object({
     description: z.string()
@@ -171,7 +191,15 @@ export const createTransactionSchema = z
       .min(1, 'Parcelas deve ser no minimo 1')
       .max(120, 'Parcelas deve ser no maximo 120')
       .optional()
-      .default(1)
+      .default(1),
+
+    creditCardInvoiceReference: creditCardInvoiceReferenceSchema.optional(),
+
+    creditCardInvoiceAnchorInstallmentNumber: z.coerce.number()
+      .int('Parcela ancora da fatura deve ser um numero inteiro')
+      .min(1, 'Parcela ancora da fatura deve ser no minimo 1')
+      .max(120, 'Parcela ancora da fatura deve ser no maximo 120')
+      .optional()
   })
   .refine((data) => {
     if (data.type === 'INCOME' && !data.toAccountId) return false;

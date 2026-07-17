@@ -44,7 +44,9 @@ export async function createTransaction(req: Request, res: Response) {
       categoryId,
       tags,
       repeatTimes,
-      installmentCount
+      installmentCount,
+      creditCardInvoiceReference,
+      creditCardInvoiceAnchorInstallmentNumber
     } = req.body;
 
     const transaction = await FinancialTransactionService.createTransaction({
@@ -63,7 +65,14 @@ export async function createTransaction(req: Request, res: Response) {
       createdBy: userId,
       tags,
       repeatTimes,
-      installmentCount
+      installmentCount,
+      creditCardInvoiceReference: creditCardInvoiceReference
+        ? {
+            ...creditCardInvoiceReference,
+            accountId: fromAccountId
+          }
+        : null,
+      creditCardInvoiceAnchorInstallmentNumber
     });
 
     return res.status(201).json(transaction);

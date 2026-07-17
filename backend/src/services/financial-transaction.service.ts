@@ -31,6 +31,7 @@ type TransactionListDateField = 'dueDate' | 'date' | 'effectiveDate' | 'createdA
 type CreditCardInvoiceReferenceInput = CreditCardInvoiceReference & {
   accountId: number;
   allowExternalSettlement?: boolean;
+  allowPaidInvoiceSettlement?: boolean;
 };
 type CreditCardInvoiceSummaryDateField = Extract<TransactionListDateField, 'dueDate' | 'date'>;
 type CreditCardInvoiceNavigation = {
@@ -376,6 +377,7 @@ export default class FinancialTransactionService {
     const purchaseGroupId = randomUUID();
     const purchaseDate = new Date(data.date);
     const explicitInvoiceReference = data.creditCardInvoiceReference ?? null;
+    const isImportedCreditCardPurchase = Boolean(data.importSourceType);
     const anchorInstallmentNumber = Math.min(
       Math.max(data.creditCardInvoiceAnchorInstallmentNumber ?? 1, 1),
       installmentCount
@@ -401,6 +403,15 @@ export default class FinancialTransactionService {
         creditCardInvoiceAnchorInstallmentNumber: _ignoredAnchorInstallmentNumber,
         ...transactionData
       } = data;
+      const invoiceClosingDate = new Date(invoiceReference.closingDate);
+      invoiceClosingDate.setHours(0, 0, 0, 0);
+      const invoiceClosed = invoiceClosingDate.getTime() <= today.getTime();
+
+      if (!isImportedCreditCardPurchase && invoiceClosed) {
+        throw new Error(
+          'A data informada direciona esta compra para uma fatura ja fechada. Escolha a fatura aberta atual ou altere a data da compra.'
+        );
+      }
 
       const transaction = await this.createSingleTransaction({
         ...transactionData,
@@ -418,7 +429,10 @@ export default class FinancialTransactionService {
         creditCardInvoiceReference: {
           ...invoiceReference,
           accountId: cardAccount.id,
-          allowExternalSettlement: invoiceReference.dueDate.getTime() < today.getTime()
+          allowExternalSettlement:
+            isImportedCreditCardPurchase &&
+            invoiceReference.dueDate.getTime() < today.getTime(),
+          allowPaidInvoiceSettlement: isImportedCreditCardPurchase
         }
       });
 
@@ -918,9 +932,17 @@ export default class FinancialTransactionService {
     });
 
     const invoiceStatus = resolveCreditCardInvoiceStatus(reference.closingDate, false);
+    const allowExternalSettlement = Boolean(reference.allowExternalSettlement);
+    const allowPaidInvoiceSettlement =
+      Boolean(reference.allowPaidInvoiceSettlement) || allowExternalSettlement;
     const invoiceIsPaid = this.isCreditCardInvoicePaid(existingInvoice);
+    if (invoiceIsPaid && !allowPaidInvoiceSettlement) {
+      throw new Error('A fatura selecionada ja esta paga. Escolha uma fatura aberta ou altere a data da compra.');
+    }
+
     const isExternalSettlement =
-      invoiceIsPaid || (!existingInvoice && Boolean(reference.allowExternalSettlement));
+      (invoiceIsPaid && allowPaidInvoiceSettlement) ||
+      (!existingInvoice && allowExternalSettlement);
 
     if (existingInvoice) {
       const hasCompletedPayment =
@@ -1154,7 +1176,8 @@ export default class FinancialTransactionService {
     purchaseGroupId: string,
     companyId: number,
     scope: PurchaseScope,
-    currentTransactionId: number
+    currentTransactionId: number,
+    options: { allowPaidExternalSingle?: boolean } = {}
   ) {
     const groupedTransactions = await this.getGroupedPurchaseTransactionsTx(
       tx,
@@ -1176,6 +1199,12 @@ export default class FinancialTransactionService {
       throw new Error('Parcela nao encontrada na compra agrupada');
     }
 
+    const allowPaidExternalSingle =
+      Boolean(options.allowPaidExternalSingle) &&
+      scope === 'SINGLE' &&
+      Boolean(currentTransaction.isExternalCreditCardSettlement) &&
+      currentTransaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID;
+
     const hasPaidInvoice = groupedTransactions.some(
       (transaction) =>
         transaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID
@@ -1189,7 +1218,10 @@ export default class FinancialTransactionService {
       return groupedTransactions;
     }
 
-    if (currentTransaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID) {
+    if (
+      currentTransaction.creditCardInvoice?.status === CreditCardInvoiceStatus.PAID &&
+      !allowPaidExternalSingle
+    ) {
       throw new Error('Não é possível alterar parcela que pertence a fatura paga');
     }
 
@@ -1203,7 +1235,7 @@ export default class FinancialTransactionService {
     );
     currentScheduledDate.setHours(0, 0, 0, 0);
 
-    if (currentScheduledDate <= today) {
+    if (currentScheduledDate <= today && !allowPaidExternalSingle) {
       throw new Error('Ajustes individuais sao permitidos apenas para parcelas futuras e nao pagas');
     }
 
@@ -1663,12 +1695,15 @@ export default class FinancialTransactionService {
         (originalTxn.purchaseGroupId ? 'PURCHASE' : 'SINGLE');
 
       if (originalTxn.purchaseGroupId) {
+        const allowPaidExternalSingleDelete =
+          scope === 'SINGLE' && Boolean(originalTxn.isExternalCreditCardSettlement);
         const groupedTransactions = await this.assertGroupedPurchaseMutationAllowedTx(
           tx,
           originalTxn.purchaseGroupId,
           options.companyId,
           scope,
-          id
+          id,
+          { allowPaidExternalSingle: allowPaidExternalSingleDelete }
         );
 
         for (const groupedTransaction of groupedTransactions) {

@@ -180,6 +180,13 @@ const TRANSACTION_DATE_FIELD_OPTIONS: Array<{
   { value: 'createdAt', label: 'Data de criação' }
 ];
 
+const TRANSACTION_STATUS_FILTER_OPTIONS = [
+  { value: '', label: 'Todos' },
+  { value: 'PENDING', label: 'Em aberto / vencida' },
+  { value: 'COMPLETED', label: 'Concluida' },
+  { value: 'CANCELED', label: 'Cancelada' }
+];
+
 function formatPeriodSummary(startDate: string, endDate: string): string {
   return `${parseInputDate(startDate).toLocaleDateString('pt-BR')} a ${parseInputDate(endDate).toLocaleDateString('pt-BR')}`;
 }
@@ -425,7 +432,10 @@ export default function TransactionsListPage() {
     return '';
   }, [customPeriod.endDate, customPeriod.startDate, isCustomPeriod]);
 
-  const moreFiltersCount = useMemo(() => countAdvancedTransactionFilters(filters), [filters]);
+  const moreFiltersCount = useMemo(
+    () => countAdvancedTransactionFilters(filters, { showOnlyMaterialized }),
+    [filters, showOnlyMaterialized]
+  );
   const validAccountIds = useMemo(
     () => (accountsAvailableForValidation ? new Set(accounts.map((account) => account.id.toString())) : null),
     [accounts, accountsAvailableForValidation]
@@ -464,6 +474,29 @@ export default function TransactionsListPage() {
   const activeMoreFilterBadges = useMemo<ActiveFilterBadge[]>(() => {
     const badges: ActiveFilterBadge[] = [];
 
+    if (
+      filters.types.length !== ALL_TRANSACTION_TYPES.length ||
+      ALL_TRANSACTION_TYPES.some((type) => !filters.types.includes(type))
+    ) {
+      const selectedTypeLabels = TRANSACTION_TYPE_OPTIONS
+        .filter((option) => filters.types.includes(option.value as TransactionTypeFilter))
+        .map((option) => option.label);
+
+      badges.push({
+        key: 'types',
+        label: 'Tipo',
+        value: selectedTypeLabels.length > 0 ? selectedTypeLabels.join(', ') : 'Nenhum'
+      });
+    }
+
+    if (showOnlyMaterialized) {
+      badges.push({
+        key: 'showOnlyMaterialized',
+        label: 'Exibicao',
+        value: 'So materializadas'
+      });
+    }
+
     if (filters.accountId) {
       const account = accounts.find((item) => item.id.toString() === filters.accountId);
       badges.push({
@@ -491,20 +524,6 @@ export default function TransactionsListPage() {
               : `${selectedCategoryLabels.slice(0, 2).join(', ')} +${
                   selectedCategoryLabels.length - 2
                 }`
-      });
-    }
-
-    if (filters.status) {
-      const statusLabels: Record<string, string> = {
-        PENDING: 'Em aberto / vencida',
-        COMPLETED: 'Concluida',
-        CANCELED: 'Cancelada'
-      };
-
-      badges.push({
-        key: 'status',
-        label: 'Status',
-        value: statusLabels[filters.status] || filters.status
       });
     }
 
@@ -538,7 +557,8 @@ export default function TransactionsListPage() {
     filters.categoryIds,
     filters.ignoredState,
     filters.search,
-    filters.status
+    filters.types,
+    showOnlyMaterialized
   ]);
   const projectedSavings = useMemo(
     () => Number(summary.incomeTotal || 0) - Number(summary.expenseTotal || 0),
@@ -753,7 +773,9 @@ export default function TransactionsListPage() {
     setShowOnlyMaterialized(state.showOnlyMaterialized);
     setFilters(state.filters);
     setShowMoreFilters(
-      countAdvancedTransactionFilters(state.filters) > 0 || Boolean(options.selectedPresetId)
+      countAdvancedTransactionFilters(state.filters, {
+        showOnlyMaterialized: state.showOnlyMaterialized
+      }) > 0 || Boolean(options.selectedPresetId)
     );
   }
 
@@ -1260,8 +1282,8 @@ export default function TransactionsListPage() {
   const compactCreateButtonClass =
     'flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-sm';
   const filterHeaderGridClass = isCustomPeriod
-    ? 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.75fr)_auto_auto_auto]'
-    : 'grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_auto_auto_auto]';
+    ? 'grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,570px)_minmax(145px,160px)_auto] xl:items-end'
+    : 'grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,520px)_minmax(145px,160px)_auto] xl:items-end';
 
   if (loading && transactions.length === 0) {
     return (
@@ -1359,9 +1381,9 @@ export default function TransactionsListPage() {
       <Card className="mb-6">
         <div className={filterHeaderGridClass}>
           <div className="flex min-w-0 flex-col">
-            <label className={filterLabelClassName}>Periodo - data de:</label>
+            <label className={filterLabelClassName}>Periodo de</label>
             {isCustomPeriod ? (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-[160px_minmax(145px,max-content)_minmax(180px,1fr)_minmax(180px,1fr)]">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-[130px_128px_144px_144px]">
                 <select
                   value={dateField}
                   onChange={(event) =>
@@ -1416,7 +1438,7 @@ export default function TransactionsListPage() {
                 />
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-[160px_auto_minmax(0,1fr)_auto]">
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-[130px_auto_minmax(150px,1fr)_auto]">
                 <select
                   value={dateField}
                   onChange={(event) =>
@@ -1469,46 +1491,33 @@ export default function TransactionsListPage() {
             )}
           </div>
 
-          <div className="flex min-w-0 flex-col xl:w-[260px]">
-            <label className={filterLabelClassName}>Tipo</label>
-            <MultiSelect
-              options={TRANSACTION_TYPE_OPTIONS}
-              values={filters.types}
-              onChange={(values) =>
-                updateFilters({ types: values as TransactionTypeFilter[] })
-              }
-              placeholder="Selecione os tipos"
-              className="mb-0"
-              triggerClassName="h-10"
-            />
-          </div>
-
-          <div className="flex flex-col xl:w-[220px]">
-            <label className={filterLabelClassName}>Exibicao</label>
-            <Button
-              variant={showOnlyMaterialized ? 'accent' : 'outline'}
-              onClick={() => {
-                setCurrentPage(1);
-                setShowOnlyMaterialized((prev) => !prev);
-              }}
-              className="flex h-10 w-full items-center justify-center whitespace-nowrap px-3 xl:w-auto"
+          <div className="flex min-w-0 flex-col">
+            <label className={filterLabelClassName}>Status</label>
+            <select
+              value={filters.status}
+              onChange={(event) => updateFilters({ status: event.target.value })}
+              className={filterControlClassName}
             >
-              {showOnlyMaterialized ? 'So materializadas' : 'Com projetadas'}
-            </Button>
+              {TRANSACTION_STATUS_FILTER_OPTIONS.map((option) => (
+                <option key={option.value || 'all'} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex flex-col xl:w-[190px]">
+          <div className="flex min-w-0 flex-col">
             <span className={`${filterLabelClassName} select-none text-transparent`}>
               Ações
             </span>
             <Button
               variant="outline"
               onClick={() => setShowMoreFilters((prev) => !prev)}
-              className="flex h-10 w-full items-center justify-center gap-2 xl:w-auto"
+              className="flex h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap px-2 text-xs xl:w-auto"
             >
-              <Filter size={16} />
+              <Filter size={14} />
               {moreFiltersCount > 0 ? `Mais filtros (${moreFiltersCount})` : 'Mais filtros'}
-              {showMoreFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              {showMoreFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
             </Button>
           </div>
         </div>
@@ -1545,7 +1554,35 @@ export default function TransactionsListPage() {
                 className="mb-0 xl:col-span-2"
               />
 
+              <div className="xl:col-span-2">
+                <MultiSelect
+                  label="Tipo"
+                  options={TRANSACTION_TYPE_OPTIONS}
+                  values={filters.types}
+                  onChange={(values) =>
+                    updateFilters({ types: values as TransactionTypeFilter[] })
+                  }
+                  placeholder="Selecione os tipos"
+                  className="mb-0"
+                  triggerClassName="h-10"
+                />
+              </div>
+
               <div>
+                <label className="mb-1 block text-sm font-medium text-gray-300">Exibicao</label>
+                <Button
+                  variant={showOnlyMaterialized ? 'accent' : 'outline'}
+                  onClick={() => {
+                    setCurrentPage(1);
+                    setShowOnlyMaterialized((prev) => !prev);
+                  }}
+                  className="flex h-10 w-full items-center justify-center whitespace-nowrap px-3"
+                >
+                  {showOnlyMaterialized ? 'So materializadas' : 'Com projetadas'}
+                </Button>
+              </div>
+
+              <div className="hidden">
                 <label className="mb-1 block text-sm font-medium text-gray-300">Status</label>
                 <select
                   value={filters.status}

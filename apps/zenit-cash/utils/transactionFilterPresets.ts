@@ -310,12 +310,19 @@ export function applyTransactionsPresetPayload(
 }
 
 export function countAdvancedTransactionFilters(
-  filters: Pick<TransactionFilters, 'search' | 'status' | 'ignoredState' | 'accountId' | 'categoryIds'>
+  filters: Pick<TransactionFilters, 'types' | 'search' | 'ignoredState' | 'accountId' | 'categoryIds'>,
+  options: { showOnlyMaterialized?: boolean } = {}
 ): number {
   let count = 0;
 
+  if (
+    filters.types.length !== ALL_TRANSACTION_TYPES.length ||
+    ALL_TRANSACTION_TYPES.some((type) => !filters.types.includes(type))
+  ) {
+    count += 1;
+  }
+  if (options.showOnlyMaterialized) count += 1;
   if (filters.search.trim()) count += 1;
-  if (filters.status) count += 1;
   if (filters.ignoredState !== DEFAULT_IGNORED_TRANSACTION_STATE) count += 1;
   if (filters.accountId) count += 1;
   if (filters.categoryIds.length > 0) count += 1;

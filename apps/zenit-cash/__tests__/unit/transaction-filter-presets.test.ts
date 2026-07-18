@@ -3,6 +3,7 @@ import {
   ALL_TRANSACTION_TYPES,
   applyTransactionsPresetPayload,
   buildTransactionsPresetPayload,
+  countAdvancedTransactionFilters,
   getDefaultTransactionsFilterState,
   getPeriodRange,
   hasExplicitTransactionFilterQuery,
@@ -295,5 +296,17 @@ describe('transaction filter presets', () => {
     expect(hasExplicitTransactionFilterQuery({ startDate: '2026-06-01' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ page: '2' })).toBe(false)
     expect(hasExplicitTransactionFilterQuery({})).toBe(false)
+  })
+
+  it('counts filters hidden inside the advanced filters panel', () => {
+    const defaults = getDefaultTransactionsFilterState()
+    const statusOnlyFilters = { ...defaults.filters, status: 'PENDING' }
+    const narrowedTypeFilters = { ...defaults.filters, types: ['EXPENSE' as const] }
+
+    expect(countAdvancedTransactionFilters(defaults.filters)).toBe(0)
+    expect(countAdvancedTransactionFilters(statusOnlyFilters)).toBe(0)
+    expect(
+      countAdvancedTransactionFilters(narrowedTypeFilters, { showOnlyMaterialized: true })
+    ).toBe(2)
   })
 })

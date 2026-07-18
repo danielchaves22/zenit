@@ -286,14 +286,43 @@ describe('transaction filter presets', () => {
     })
   })
 
+  it('restores explicit type and relative period query filters from the url', () => {
+    const resolved = resolveInitialTransactionsFilterState({
+      query: {
+        dateField: 'effectiveDate',
+        periodPreset: 'CURRENT_WEEK',
+        periodOffset: '-2',
+        types: ['INCOME', 'TRANSFER'],
+        showOnlyMaterialized: 'true'
+      },
+      presets: []
+    })
+
+    expect(resolved.selectedPresetId).toBe('')
+    expect(resolved.state).toEqual({
+      ...getDefaultTransactionsFilterState(),
+      dateField: 'effectiveDate',
+      periodPreset: 'CURRENT_WEEK',
+      periodOffset: -2,
+      filters: {
+        ...getDefaultTransactionsFilterState().filters,
+        types: ['INCOME', 'TRANSFER']
+      },
+      showOnlyMaterialized: true
+    })
+  })
+
   it('detects only the supported explicit query keys', () => {
     expect(hasExplicitTransactionFilterQuery({ accountId: '1' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ categoryId: '4' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ categoryIds: ['4', '8'] })).toBe(true)
+    expect(hasExplicitTransactionFilterQuery({ types: ['INCOME'] })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ status: 'PENDING' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ ignoredState: 'IGNORED' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ search: '  energia  ' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ startDate: '2026-06-01' })).toBe(true)
+    expect(hasExplicitTransactionFilterQuery({ periodPreset: 'CURRENT_WEEK' })).toBe(true)
+    expect(hasExplicitTransactionFilterQuery({ periodOffset: '-1' })).toBe(true)
     expect(hasExplicitTransactionFilterQuery({ page: '2' })).toBe(false)
     expect(hasExplicitTransactionFilterQuery({})).toBe(false)
   })
@@ -301,10 +330,12 @@ describe('transaction filter presets', () => {
   it('counts filters hidden inside the advanced filters panel', () => {
     const defaults = getDefaultTransactionsFilterState()
     const statusOnlyFilters = { ...defaults.filters, status: 'PENDING' }
+    const searchOnlyFilters = { ...defaults.filters, search: 'energia' }
     const narrowedTypeFilters = { ...defaults.filters, types: ['EXPENSE' as const] }
 
     expect(countAdvancedTransactionFilters(defaults.filters)).toBe(0)
     expect(countAdvancedTransactionFilters(statusOnlyFilters)).toBe(0)
+    expect(countAdvancedTransactionFilters(searchOnlyFilters)).toBe(0)
     expect(
       countAdvancedTransactionFilters(narrowedTypeFilters, { showOnlyMaterialized: true })
     ).toBe(2)

@@ -220,6 +220,18 @@ function parseBooleanQueryValue(value: string): boolean | undefined {
   return undefined;
 }
 
+function hasQueryKey(
+  query: Record<string, string | string[] | undefined>,
+  key: string
+): boolean {
+  return Object.prototype.hasOwnProperty.call(query, key);
+}
+
+function parseIntegerQueryValue(value: string, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) ? parsed : fallback;
+}
+
 export function buildTransactionsPresetPayload(
   state: TransactionsFilterState
 ): TransactionsPresetPayload {
@@ -310,7 +322,7 @@ export function applyTransactionsPresetPayload(
 }
 
 export function countAdvancedTransactionFilters(
-  filters: Pick<TransactionFilters, 'types' | 'search' | 'ignoredState' | 'accountId' | 'categoryIds'>,
+  filters: Pick<TransactionFilters, 'types' | 'ignoredState' | 'accountId' | 'categoryIds'>,
   options: { showOnlyMaterialized?: boolean } = {}
 ): number {
   let count = 0;
@@ -322,7 +334,6 @@ export function countAdvancedTransactionFilters(
     count += 1;
   }
   if (options.showOnlyMaterialized) count += 1;
-  if (filters.search.trim()) count += 1;
   if (filters.ignoredState !== DEFAULT_IGNORED_TRANSACTION_STATE) count += 1;
   if (filters.accountId) count += 1;
   if (filters.categoryIds.length > 0) count += 1;
@@ -352,6 +363,7 @@ export function hasExplicitTransactionFilterQuery(
 ): boolean {
   return Boolean(
     getSingleQueryValue(query.accountId) ||
+      hasQueryKey(query, 'types') ||
       getMultiQueryValues(query.categoryIds).length > 0 ||
       getSingleQueryValue(query.categoryId) ||
       getSingleQueryValue(query.status) ||
@@ -360,6 +372,8 @@ export function hasExplicitTransactionFilterQuery(
       getSingleQueryValue(query.startDate) ||
       getSingleQueryValue(query.endDate) ||
       getSingleQueryValue(query.dateField) ||
+      getSingleQueryValue(query.periodPreset) ||
+      getSingleQueryValue(query.periodOffset) ||
       getSingleQueryValue(query.showOnlyMaterialized)
   );
 }
@@ -385,6 +399,35 @@ export function resolveInitialTransactionsFilterState(
       getSingleQueryValue(options.query.showOnlyMaterialized)
     );
     const explicitDateFieldCandidate = getSingleQueryValue(options.query.dateField);
+    const explicitPeriodPresetCandidate = getSingleQueryValue(options.query.periodPreset);
+    const explicitPeriodPreset = isPeriodPreset(explicitPeriodPresetCandidate)
+      ? explicitPeriodPresetCandidate
+      : null;
+    const explicitPeriodOffset = parseIntegerQueryValue(
+      getSingleQueryValue(options.query.periodOffset),
+      defaults.periodOffset
+    );
+    const rawTypeFilters = getMultiQueryValues(options.query.types);
+    const explicitTypeFilters = normalizeTransactionTypes(rawTypeFilters);
+    const hasExplicitTypes = hasQueryKey(options.query, 'types');
+    let resolvedPeriodPreset = defaults.periodPreset;
+    let resolvedPeriodOffset = defaults.periodOffset;
+    let resolvedCustomPeriod = defaults.customPeriod;
+
+    if (explicitPeriodPreset === 'CUSTOM') {
+      if (hasExplicitCustomPeriod) {
+        resolvedPeriodPreset = 'CUSTOM';
+        resolvedPeriodOffset = 0;
+        resolvedCustomPeriod = { startDate, endDate };
+      }
+    } else if (explicitPeriodPreset) {
+      resolvedPeriodPreset = explicitPeriodPreset;
+      resolvedPeriodOffset = explicitPeriodOffset;
+    } else if (hasExplicitCustomPeriod) {
+      resolvedPeriodPreset = 'CUSTOM';
+      resolvedPeriodOffset = 0;
+      resolvedCustomPeriod = { startDate, endDate };
+    }
 
     return {
       state: {
@@ -392,16 +435,18 @@ export function resolveInitialTransactionsFilterState(
         dateField: isTransactionDateFieldFilter(explicitDateFieldCandidate)
           ? explicitDateFieldCandidate
           : defaults.dateField,
-        periodPreset: hasExplicitCustomPeriod ? 'CUSTOM' : defaults.periodPreset,
-        periodOffset: hasExplicitCustomPeriod ? 0 : defaults.periodOffset,
-        customPeriod: hasExplicitCustomPeriod
-          ? {
-              startDate,
-              endDate
-            }
-          : defaults.customPeriod,
+        periodPreset: resolvedPeriodPreset,
+        periodOffset: resolvedPeriodOffset,
+        customPeriod: resolvedCustomPeriod,
         filters: {
           ...defaults.filters,
+          types: hasExplicitTypes
+            ? rawTypeFilters.length > 0
+              ? explicitTypeFilters.length > 0
+                ? explicitTypeFilters
+                : defaults.filters.types
+              : []
+            : defaults.filters.types,
           accountId: normalizeLookupValue(
             getSingleQueryValue(options.query.accountId),
             options.validAccountIds

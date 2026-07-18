@@ -244,6 +244,13 @@ function getDateFieldOptionLabel(value: TransactionDateFieldFilter): string {
   }
 }
 
+function getPositivePageQueryValue(value: string | string[] | undefined): number {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  const parsedValue = Number(rawValue);
+
+  return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : 1;
+}
+
 function buildInvoiceKeyFromReference(referenceYear: number, referenceMonth: number): string {
   return `projection:${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
 }
@@ -541,14 +548,6 @@ export default function TransactionsListPage() {
       });
     }
 
-    if (filters.search.trim()) {
-      badges.push({
-        key: 'search',
-        label: 'Busca',
-        value: filters.search.trim()
-      });
-    }
-
     return badges;
   }, [
     accounts,
@@ -556,7 +555,6 @@ export default function TransactionsListPage() {
     filters.accountId,
     filters.categoryIds,
     filters.ignoredState,
-    filters.search,
     filters.types,
     showOnlyMaterialized
   ]);
@@ -614,6 +612,7 @@ export default function TransactionsListPage() {
     applyTransactionsFilterState(resolvedInitialState.state, {
       selectedPresetId: resolvedInitialState.selectedPresetId
     });
+    setCurrentPage(getPositivePageQueryValue(router.query.page));
     setSelectedPresetId(resolvedInitialState.selectedPresetId);
 
     setFiltersInitialized(true);
@@ -630,10 +629,14 @@ export default function TransactionsListPage() {
     router.query.dateField,
     router.query.endDate,
     router.query.ignoredState,
+    router.query.page,
+    router.query.periodOffset,
+    router.query.periodPreset,
     router.query.search,
     router.query.showOnlyMaterialized,
     router.query.startDate,
     router.query.status,
+    router.query.types,
     router.isReady,
     validAccountIds,
     validCategoryIds
@@ -1072,7 +1075,7 @@ export default function TransactionsListPage() {
         return;
       }
 
-      router.push(`/financial/transactions/${materializedId}`);
+      router.push(getTransactionEditHref(materializedId));
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao materializar transação virtual', 'error');
     } finally {
@@ -1282,8 +1285,80 @@ export default function TransactionsListPage() {
   const compactCreateButtonClass =
     'flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-sm';
   const filterHeaderGridClass = isCustomPeriod
-    ? 'grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,570px)_minmax(145px,160px)_auto] xl:items-end'
-    : 'grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,520px)_minmax(145px,160px)_auto] xl:items-end';
+    ? 'grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,570px)_minmax(145px,160px)_minmax(220px,1fr)_auto] xl:items-end'
+    : 'grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,520px)_minmax(145px,160px)_minmax(220px,1fr)_auto] xl:items-end';
+  const transactionListReturnPath = useMemo(() => {
+    const params = new URLSearchParams({
+      dateField,
+      periodPreset
+    });
+
+    if (periodPreset === 'CUSTOM') {
+      params.set('startDate', customPeriod.startDate);
+      params.set('endDate', customPeriod.endDate);
+    } else {
+      params.set('periodOffset', periodOffset.toString());
+    }
+
+    if (filters.types.length === 0) {
+      params.set('types', '');
+    } else if (
+      filters.types.length !== ALL_TRANSACTION_TYPES.length ||
+      ALL_TRANSACTION_TYPES.some((type) => !filters.types.includes(type))
+    ) {
+      filters.types.forEach((type) => params.append('types', type));
+    }
+
+    if (filters.status) {
+      params.set('status', filters.status);
+    }
+
+    if (filters.ignoredState !== 'ACTIVE') {
+      params.set('ignoredState', filters.ignoredState);
+    }
+
+    if (filters.accountId) {
+      params.set('accountId', filters.accountId);
+    }
+
+    filters.categoryIds.forEach((categoryId) => {
+      params.append('categoryIds', categoryId);
+    });
+
+    if (filters.search.trim()) {
+      params.set('search', filters.search.trim());
+    }
+
+    if (showOnlyMaterialized) {
+      params.set('showOnlyMaterialized', 'true');
+    }
+
+    if (currentPage > 1) {
+      params.set('page', currentPage.toString());
+    }
+
+    return `/financial/transactions?${params.toString()}`;
+  }, [
+    currentPage,
+    customPeriod.endDate,
+    customPeriod.startDate,
+    dateField,
+    filters.accountId,
+    filters.categoryIds,
+    filters.ignoredState,
+    filters.search,
+    filters.status,
+    filters.types,
+    periodOffset,
+    periodPreset,
+    showOnlyMaterialized
+  ]);
+
+  function getTransactionEditHref(transactionId: number | string): string {
+    return `/financial/transactions/${transactionId}?returnTo=${encodeURIComponent(
+      transactionListReturnPath
+    )}`;
+  }
 
   if (loading && transactions.length === 0) {
     return (
@@ -1507,13 +1582,23 @@ export default function TransactionsListPage() {
           </div>
 
           <div className="flex min-w-0 flex-col">
+            <label className={filterLabelClassName}>Buscar</label>
+            <input
+              value={filters.search}
+              onChange={(event) => updateFilters({ search: event.target.value })}
+              placeholder="Descricao, observacoes..."
+              className={filterControlClassName}
+            />
+          </div>
+
+          <div className="flex min-w-0 flex-col">
             <span className={`${filterLabelClassName} select-none text-transparent`}>
               Ações
             </span>
             <Button
               variant="outline"
               onClick={() => setShowMoreFilters((prev) => !prev)}
-              className="flex h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap px-2 text-xs xl:w-auto"
+              className="flex h-10 w-full items-center justify-center gap-1.5 whitespace-nowrap px-2 text-xs xl:w-[150px]"
             >
               <Filter size={14} />
               {moreFiltersCount > 0 ? `Mais filtros (${moreFiltersCount})` : 'Mais filtros'}
@@ -1551,7 +1636,7 @@ export default function TransactionsListPage() {
                 value={filters.search}
                 onChange={(event) => updateFilters({ search: event.target.value })}
                 placeholder="Descrição, observações..."
-                className="mb-0 xl:col-span-2"
+                className="hidden"
               />
 
               <div className="xl:col-span-2">
@@ -1946,7 +2031,7 @@ export default function TransactionsListPage() {
                                   </button>
                                 )}
 	                                {transaction.id && !transaction.archivedAt && (
-	                                  <Link href={`/financial/transactions/${transaction.id}`}>
+	                                  <Link href={getTransactionEditHref(transaction.id)}>
 	                                    <button
 	                                      className="p-1 text-gray-300 transition-colors hover:text-accent"
                                       title="Editar"
@@ -2042,7 +2127,7 @@ export default function TransactionsListPage() {
                             {transaction.purchaseGroupId && transaction.id && (
                               <div className="mt-1">
                                 <Link
-                                  href={`/financial/transactions/${transaction.id}`}
+                                  href={getTransactionEditHref(transaction.id)}
                                   className="text-xs text-accent hover:text-accent-hover"
                                 >
                                   Abrir compra agrupada

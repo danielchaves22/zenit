@@ -7,9 +7,22 @@ import { PageLoader } from '@/components/ui/PageLoader';
 import TransactionForm from '@/components/financial/TransactionForm';
 import { formatTransactionDescription } from '@/utils/transactions';
 
+function readQueryValue(value: string | string[] | undefined): string | null {
+  if (typeof value === 'string' && value.length > 0) {
+    return value;
+  }
+
+  if (Array.isArray(value) && typeof value[0] === 'string' && value[0].length > 0) {
+    return value[0];
+  }
+
+  return null;
+}
+
 export default function EditTransactionPage() {
   const router = useRouter();
   const { id } = router.query;
+  const returnTo = readQueryValue(router.query.returnTo);
   const [transactionTitle, setTransactionTitle] = useState<string | null>(null);
 
   const handleTransactionLoaded = useCallback((txn: {
@@ -47,6 +60,7 @@ export default function EditTransactionPage() {
       <TransactionForm
         mode="edit"
         transactionId={id as string}
+        returnTo={returnTo}
         onTransactionLoaded={handleTransactionLoaded}
       />
     </DashboardLayout>

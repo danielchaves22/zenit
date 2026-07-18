@@ -51,6 +51,59 @@ function normalizePhoneNumber(value: string | null | undefined): string {
   return digits ? `+${digits}` : '';
 }
 
+function maskWaId(value: string | null | undefined): string {
+  const digits = normalizeDigits(value);
+  if (!digits) {
+    return 'unknown';
+  }
+
+  if (digits.length <= 4) {
+    return digits;
+  }
+
+  return `${digits.slice(0, 2)}***${digits.slice(-4)}`;
+}
+
+function buildTextPreview(text: string | null | undefined, maxLength = 80): string | null {
+  const normalized = String(text || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.length > maxLength
+    ? `${normalized.slice(0, maxLength).trim()}...`
+    : normalized;
+}
+
+function summarizeWebhookEnvelope(payload: Record<string, any>) {
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  const changeCount = entries.reduce((total, entry) => {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    return total + changes.length;
+  }, 0);
+  const messageCount = entries.reduce((total, entry) => {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    return total + changes.reduce((changeTotal: number, change: any) => {
+      const messages = Array.isArray(change?.value?.messages) ? change.value.messages : [];
+      return changeTotal + messages.length;
+    }, 0);
+  }, 0);
+  const statusCount = entries.reduce((total, entry) => {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    return total + changes.reduce((changeTotal: number, change: any) => {
+      const statuses = Array.isArray(change?.value?.statuses) ? change.value.statuses : [];
+      return changeTotal + statuses.length;
+    }, 0);
+  }, 0);
+
+  return {
+    changeCount,
+    entryCount: entries.length,
+    messageCount,
+    statusCount
+  };
+}
+
 function chunkMessage(text: string, maxLength = 1200): string[] {
   const normalized = text.trim();
   if (!normalized) {
@@ -504,11 +557,35 @@ export default class WhatsAppIntegrationService {
     waId: string;
   }) {
     try {
+      logger.info(
+        `WhatsApp outbound send attempt ${JSON.stringify({
+          assistantSessionId: params.assistantSessionId ?? null,
+          bindingId: params.bindingId ?? null,
+          companyId: params.companyId ?? null,
+          replyToMessageId: params.replyToMessageId ?? null,
+          textLength: params.text.length,
+          textPreview: buildTextPreview(params.text),
+          userId: params.userId ?? null,
+          waId: maskWaId(params.waId)
+        })}`
+      );
+
       const sent = await WhatsAppCloudApiService.sendTextMessage({
         replyToMessageId: params.replyToMessageId,
         text: params.text,
         to: params.waId
       });
+
+      logger.info(
+        `WhatsApp outbound send succeeded ${JSON.stringify({
+          assistantSessionId: params.assistantSessionId ?? null,
+          bindingId: params.bindingId ?? null,
+          companyId: params.companyId ?? null,
+          messageId: sent.messageId,
+          userId: params.userId ?? null,
+          waId: maskWaId(params.waId)
+        })}`
+      );
 
       await recordMessageLog({
         assistantSessionId: params.assistantSessionId,
@@ -534,6 +611,18 @@ export default class WhatsAppIntegrationService {
         });
       }
     } catch (error) {
+      logger.error(
+        `WhatsApp outbound send failed ${JSON.stringify({
+          assistantSessionId: params.assistantSessionId ?? null,
+          bindingId: params.bindingId ?? null,
+          companyId: params.companyId ?? null,
+          error: error instanceof Error ? error.message : String(error),
+          replyToMessageId: params.replyToMessageId ?? null,
+          userId: params.userId ?? null,
+          waId: maskWaId(params.waId)
+        })}`
+      );
+
       await recordMessageLog({
         assistantSessionId: params.assistantSessionId,
         bindingId: params.bindingId,
@@ -836,14 +925,32 @@ export default class WhatsAppIntegrationService {
     signatureHeader?: string | null;
     payload: Record<string, any>;
   }) {
+    const payloadSummary = summarizeWebhookEnvelope(params.payload);
     const signatureOk = await this.verifyWebhookRequest(
       params.rawBody,
       params.signatureHeader || null
     );
 
     if (!signatureOk) {
+      logger.warn(
+        `WhatsApp webhook signature rejected ${JSON.stringify({
+          ...payloadSummary,
+          hasRawBody: Boolean(params.rawBody),
+          hasSignatureHeader: Boolean(params.signatureHeader),
+          rawBodyLength: params.rawBody?.length ?? 0
+        })}`
+      );
       throw new Error('Assinatura do webhook WhatsApp invalida.');
     }
+
+    logger.info(
+      `WhatsApp webhook payload accepted ${JSON.stringify({
+        ...payloadSummary,
+        hasRawBody: Boolean(params.rawBody),
+        hasSignatureHeader: Boolean(params.signatureHeader),
+        rawBodyLength: params.rawBody?.length ?? 0
+      })}`
+    );
 
     await this.expirePendingChallenges();
 
@@ -863,6 +970,12 @@ export default class WhatsAppIntegrationService {
           try {
             const waId = normalizeDigits(message?.from || contact?.wa_id);
             if (!waId) {
+              logger.warn(
+                `WhatsApp inbound message skipped without waId ${JSON.stringify({
+                  messageId: typeof message?.id === 'string' ? message.id : null,
+                  messageType: String(message?.type || 'unknown')
+                })}`
+              );
               continue;
             }
 
@@ -875,9 +988,27 @@ export default class WhatsAppIntegrationService {
               });
 
               if (existingInbound) {
+                logger.info(
+                  `WhatsApp inbound duplicate ignored ${JSON.stringify({
+                    messageId: incomingMessageId,
+                    waId: maskWaId(waId)
+                  })}`
+                );
                 continue;
               }
             }
+
+            logger.info(
+              `WhatsApp inbound message received ${JSON.stringify({
+                hasBindingCode: Boolean(extractBindingCode(text)),
+                hasText: Boolean(text),
+                messageId: incomingMessageId,
+                messageType: String(message?.type || 'unknown'),
+                textLength: text?.length ?? 0,
+                textPreview: buildTextPreview(text),
+                waId: maskWaId(waId)
+              })}`
+            );
 
             const consumedChallenge = await this.consumeBindingChallenge({
               incomingMessageId,
@@ -918,12 +1049,30 @@ export default class WhatsAppIntegrationService {
               whatsappMessageId: incomingMessageId
             });
 
+            logger.info(
+              `WhatsApp inbound message persisted ${JSON.stringify({
+                assistantSessionId,
+                bindingFound: Boolean(binding),
+                companyId: binding?.activeCompanyId ?? null,
+                consumedChallenge: consumedChallenge.consumed,
+                messageId: incomingMessageId,
+                userId: binding?.userId ?? null,
+                waId: maskWaId(waId)
+              })}`
+            );
+
             if (consumedChallenge.consumed) {
               inboundMessages += 1;
               continue;
             }
 
             if (!binding) {
+              logger.warn(
+                `WhatsApp inbound message without binding ${JSON.stringify({
+                  messageId: incomingMessageId,
+                  waId: maskWaId(waId)
+                })}`
+              );
               await this.sendOutboundMessage({
                 replyToMessageId: incomingMessageId,
                 text: 'Seu numero ainda nao esta vinculado ao Zenit. Gere um QR Code no perfil do sistema para concluir a conexao.',
@@ -944,6 +1093,17 @@ export default class WhatsAppIntegrationService {
             binding = await prisma.whatsAppUserBinding.findUniqueOrThrow({
               where: { id: binding.id }
             });
+
+            logger.info(
+              `WhatsApp bound message processing started ${JSON.stringify({
+                assistantSessionId,
+                bindingId: binding.id,
+                companyId: binding.activeCompanyId,
+                messageId: incomingMessageId,
+                userId: binding.userId,
+                waId: maskWaId(waId)
+              })}`
+            );
 
             await this.processBoundMessage({
               binding,
@@ -968,6 +1128,14 @@ export default class WhatsAppIntegrationService {
         }
       }
     }
+
+    logger.info(
+      `WhatsApp webhook payload completed ${JSON.stringify({
+        ...payloadSummary,
+        inboundMessages,
+        statusEvents
+      })}`
+    );
 
     return {
       accepted: true,

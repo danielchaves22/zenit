@@ -15,6 +15,27 @@ function normalizeWebhookQueryValue(value: unknown): string {
   return String(value || '').trim();
 }
 
+function summarizeWebhookPayload(payload: Record<string, any>) {
+  const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+  const changeCount = entries.reduce((total, entry) => {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    return total + changes.length;
+  }, 0);
+  const fields = entries.flatMap((entry) => {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    return changes
+      .map((change: any) => String(change?.field || '').trim())
+      .filter(Boolean);
+  });
+
+  return {
+    changeCount,
+    entryCount: entries.length,
+    fields: Array.from(new Set(fields)).sort(),
+    object: typeof payload?.object === 'string' ? payload.object : null
+  };
+}
+
 export async function verifyWhatsAppWebhook(req: Request, res: Response) {
   const rawMode = req.query['hub.mode'];
   const rawVerifyToken = req.query['hub.verify_token'];
@@ -63,11 +84,31 @@ export async function verifyWhatsAppWebhook(req: Request, res: Response) {
 export async function receiveWhatsAppWebhook(req: Request, res: Response) {
   try {
     const signatureHeader = String(req.headers['x-hub-signature-256'] || '');
+    const payloadSummary = summarizeWebhookPayload(req.body || {});
+
+    logger.info(
+      `WhatsApp webhook POST received ${JSON.stringify({
+        ...payloadSummary,
+        hasRawBody: Boolean(req.rawBody),
+        hasSignatureHeader: Boolean(signatureHeader),
+        rawBodyLength: req.rawBody?.length ?? 0,
+        requestId: req.id || null
+      })}`
+    );
+
     const result = await WhatsAppIntegrationService.processWebhookPayload({
       payload: req.body || {},
       rawBody: req.rawBody,
       signatureHeader
     });
+
+    logger.info(
+      `WhatsApp webhook POST processed ${JSON.stringify({
+        ...payloadSummary,
+        requestId: req.id || null,
+        result
+      })}`
+    );
 
     return res.status(202).json(result);
   } catch (error: any) {

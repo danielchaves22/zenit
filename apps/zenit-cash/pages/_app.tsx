@@ -1,28 +1,28 @@
-// frontend/pages/_app.tsx - COM THEME PROVIDER
 import '@/styles/globals.css'
 import { AppProps } from 'next/app'
 import Head from 'next/head'
-import { AuthProvider, useAuth } from '@/contexts/AuthContext'
-import { ThemeProvider } from '@/contexts/ThemeContext' // ✅ NOVO IMPORT
+import { AuthProvider } from '@/contexts/AuthContext'
+import { ThemeProvider } from '@/contexts/ThemeContext'
 import { ToastProvider } from '@/components/ui/ToastContext'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { PageTransition } from '@/components/ui/PageTransition'
-import { BUILD_INFO } from '@/lib/buildInfo';
+import { BUILD_INFO } from '@/lib/buildInfo'
+import { useProtectedRoute } from '@/hooks/useProtectedRoute'
 
 function AppContent({ Component, pageProps }: AppProps) {
-  console.log('🏗️ [APP] Build info loaded:', BUILD_INFO);
-  const { isLoading } = useAuth();
-  
-  if (isLoading) {
-    return <LoadingScreen />;
+  console.log('[APP] Build info loaded:', BUILD_INFO)
+  const { canRender, isLoading } = useProtectedRoute()
+
+  if (isLoading || !canRender) {
+    return <LoadingScreen />
   }
-  
-  return <Component {...pageProps} />;
+
+  return <Component {...pageProps} />
 }
 
 export default function App(props: AppProps) {
   return (
-    <ThemeProvider> {/* ✅ WRAPPER PRINCIPAL PARA TEMAS */}
+    <ThemeProvider>
       <Head>
         <title>Zenit Cash</title>
         <meta name="application-name" content="Zenit Cash" />

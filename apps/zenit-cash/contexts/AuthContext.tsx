@@ -94,50 +94,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const storedToken = readStoredToken()
-      const storedMustChange = readStoredMustChangePassword()
 
+      if (!storedToken) {
+        safeCleanup()
+        return
+      }
+
+      const storedMustChange = readStoredMustChangePassword()
       setMustChangePassword(storedMustChange)
 
-      if (storedToken) {
-        const response = await api.get('/auth/me', {
-          headers: { Authorization: `Bearer ${storedToken}` }
-        })
+      const response = await api.get('/auth/me', {
+        headers: { Authorization: `Bearer ${storedToken}` }
+      })
 
-        const userData = {
-          ...response.data.user,
-          mustChangePassword: storedMustChange
-        } as User
+      const userData = {
+        ...response.data.user,
+        mustChangePassword: storedMustChange
+      } as User
 
-        setToken(storedToken)
-        setUser(userData)
+      setToken(storedToken)
+      setUser(userData)
 
-        if (response.data.preferences?.colorScheme) {
-          changeTheme(response.data.preferences.colorScheme)
-          storeThemePreference(response.data.preferences.colorScheme)
-        }
+      if (response.data.preferences?.colorScheme) {
+        changeTheme(response.data.preferences.colorScheme)
+        storeThemePreference(response.data.preferences.colorScheme)
+      }
 
-        if (
-          response.data.preferences?.homeScreen === 'quick-access' ||
-          response.data.preferences?.homeScreen === 'accounts-overview'
-        ) {
-          storeHomeScreenPreference(response.data.preferences.homeScreen)
-        }
+      if (
+        response.data.preferences?.homeScreen === 'quick-access' ||
+        response.data.preferences?.homeScreen === 'accounts-overview'
+      ) {
+        storeHomeScreenPreference(response.data.preferences.homeScreen)
+      }
 
-        if (typeof response.data.preferences?.showHomeBalances === 'boolean') {
-          storeHomeBalancesVisibility(response.data.preferences.showHomeBalances)
-        }
+      if (typeof response.data.preferences?.showHomeBalances === 'boolean') {
+        storeHomeBalancesVisibility(response.data.preferences.showHomeBalances)
+      }
 
-        const parsedStoredCompany = readStoredCompanyId()
-        const accessibleCompany = pickAccessibleCompanyId(userData)
-        const selectedCompanyId =
-          parsedStoredCompany && hasAppAccess(userData, parsedStoredCompany)
-            ? parsedStoredCompany
-            : accessibleCompany
+      const parsedStoredCompany = readStoredCompanyId()
+      const accessibleCompany = pickAccessibleCompanyId(userData)
+      const selectedCompanyId =
+        parsedStoredCompany && hasAppAccess(userData, parsedStoredCompany)
+          ? parsedStoredCompany
+          : accessibleCompany
 
-        setCompanyId(selectedCompanyId)
-        if (selectedCompanyId !== null) {
-          storeCompanyId(selectedCompanyId)
-        }
+      setCompanyId(selectedCompanyId)
+      if (selectedCompanyId !== null) {
+        storeCompanyId(selectedCompanyId)
       }
     } catch (error) {
       safeCleanup()
@@ -225,6 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
     setUser(null)
     setCompanyId(null)
+    setMustChangePassword(false)
   }
 
   function logout() {

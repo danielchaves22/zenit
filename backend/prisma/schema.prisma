@@ -634,6 +634,26 @@ model FinancialTag {
   @@index([companyId])
 }
 
+model SystemJobRun {
+  id             Int      @id @default(autoincrement())
+  jobName        String
+  status         String
+  startedAt      DateTime
+  finishedAt     DateTime?
+  durationMs     Int?
+  processedCount Int      @default(0)
+  createdCount   Int      @default(0)
+  skippedCount   Int      @default(0)
+  failedCount    Int      @default(0)
+  errorMessage   String?
+  errorDetails   Json?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  @@index([jobName, startedAt])
+  @@index([status, startedAt])
+}
+
 model UserFinancialAccountAccess {
   id                   Int              @id @default(autoincrement())
   userId               Int

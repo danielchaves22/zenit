@@ -477,6 +477,10 @@ export default function TransactionForm({
 
     return null;
   }, [existingCreditCardInvoicesByReference, isCreditCardPurchaseFlow, selectedFromAccount]);
+  const firstPaidOrExternallySettledInvoicePreview = resolvedInvoicePreview.find(
+    (item) => item.shouldSettleExternally
+  );
+  const firstClosedInvoicePreview = resolvedInvoicePreview.find((item) => item.isClosedReference);
   const impactedInvoicesCount = new Set(
     resolvedInvoicePreview
       .filter((item) => !item.shouldSettleExternally)
@@ -1200,21 +1204,52 @@ export default function TransactionForm({
     setFormData((prev) => ({ ...prev, purchaseScope: scope }));
   };
 
+  const requestCreditCardPurchaseSubmit = (
+    postCreateAction: PostCreateAction,
+    invoiceReference: CreditCardInvoiceReferencePayload
+  ) => {
+    creditCardInvoiceReferenceOverrideRef.current = invoiceReference;
+    postCreateActionRef.current = postCreateAction;
+    formRef.current?.requestSubmit();
+  };
+
   const confirmHistoricalCreditCardPurchase = (postCreateAction: PostCreateAction) => {
+    const historicalInvoice = firstPaidOrExternallySettledInvoicePreview || firstClosedInvoicePreview;
+    const historicalInvoiceLabel = historicalInvoice
+      ? getInvoiceReferenceLabel(historicalInvoice.referenceYear, historicalInvoice.referenceMonth)
+      : 'anterior';
+
+    if (!firstPaidOrExternallySettledInvoicePreview && firstClosedInvoicePreview) {
+      confirmation.confirm(
+        {
+          title: 'Fatura fechada',
+          message:
+            `Pela data informada, esta compra entrara na fatura ${historicalInvoiceLabel}, que ja esta fechada e ainda nao foi paga. ` +
+            'Confirme para incluir o lancamento nessa fatura.',
+          confirmText: `Incluir na fatura ${historicalInvoiceLabel}`,
+          cancelText: 'Voltar e mudar data',
+          type: 'warning'
+        },
+        () => {
+          requestCreditCardPurchaseSubmit(postCreateAction, {
+            referenceYear: firstClosedInvoicePreview.referenceYear,
+            referenceMonth: firstClosedInvoicePreview.referenceMonth,
+            closingDate: firstClosedInvoicePreview.closingDate,
+            dueDate: firstClosedInvoicePreview.dueDate
+          });
+        }
+      );
+      return;
+    }
+
     if (!currentOpenInvoiceReference) {
       addToast(
-        'A data informada direciona a compra para uma fatura ja fechada. Altere a data para uma fatura aberta antes de salvar.',
+        'A data informada direciona a compra para uma fatura ja paga. Altere a data para uma fatura aberta antes de salvar.',
         'error'
       );
       return;
     }
 
-    const historicalInvoice =
-      resolvedInvoicePreview.find((item) => item.shouldSettleExternally) ||
-      resolvedInvoicePreview.find((item) => item.isClosedReference);
-    const historicalInvoiceLabel = historicalInvoice
-      ? getInvoiceReferenceLabel(historicalInvoice.referenceYear, historicalInvoice.referenceMonth)
-      : 'anterior';
     const currentInvoiceLabel = getInvoiceReferenceLabel(
       currentOpenInvoiceReference.referenceYear,
       currentOpenInvoiceReference.referenceMonth
@@ -1231,9 +1266,7 @@ export default function TransactionForm({
         type: 'warning'
       },
       () => {
-        creditCardInvoiceReferenceOverrideRef.current = currentOpenInvoiceReference;
-        postCreateActionRef.current = postCreateAction;
-        formRef.current?.requestSubmit();
+        requestCreditCardPurchaseSubmit(postCreateAction, currentOpenInvoiceReference);
       }
     );
   };

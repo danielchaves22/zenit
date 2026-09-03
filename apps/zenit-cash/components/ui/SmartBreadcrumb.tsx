@@ -162,6 +162,12 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Configurações' }
   ],
 
+  '/admin/operations': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Administracao' },
+    { label: 'Operacoes' }
+  ],
+
   '/profile': [
     { label: 'Dashboard', href: '/' },
     { label: 'Meu Perfil' }

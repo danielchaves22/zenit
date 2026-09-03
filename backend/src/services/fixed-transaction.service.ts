@@ -1156,7 +1156,12 @@ export default class FixedTransactionService {
     }
   }
 
-  static async materializeDueOccurrencesForDate(referenceDate: Date = new Date()): Promise<{ processed: number; created: number }> {
+  static async materializeDueOccurrencesForDate(referenceDate: Date = new Date()): Promise<{
+    processed: number;
+    created: number;
+    failed: number;
+    errors: Array<{ templateId: number; companyId: number; error: string }>;
+  }> {
     const today = startOfDay(referenceDate);
 
     const templates = await prisma.recurringTransaction.findMany({
@@ -1188,6 +1193,8 @@ export default class FixedTransactionService {
     });
 
     let createdCount = 0;
+    let failedCount = 0;
+    const errors: Array<{ templateId: number; companyId: number; error: string }> = [];
 
     for (const template of templates) {
       try {
@@ -1208,6 +1215,12 @@ export default class FixedTransactionService {
           createdCount += 1;
         }
       } catch (error: any) {
+        failedCount += 1;
+        errors.push({
+          templateId: template.id,
+          companyId: template.companyId,
+          error: error?.message ?? String(error)
+        });
         logger.warn('Skipping fixed transaction template during daily materialization', {
           templateId: template.id,
           companyId: template.companyId,
@@ -1219,7 +1232,9 @@ export default class FixedTransactionService {
 
     return {
       processed: templates.length,
-      created: createdCount
+      created: createdCount,
+      failed: failedCount,
+      errors: errors.slice(0, 20)
     };
   }
 

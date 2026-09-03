@@ -5,7 +5,7 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   PieChart, CreditCard, Building2, Receipt, Home,
-  Users, Settings, ChevronLeft, ChevronRight, Shield, BarChart3, Repeat, PiggyBank
+  Users, Settings, ChevronLeft, ChevronRight, Shield, BarChart3, Repeat, PiggyBank, Activity
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useConfirmation } from '@/hooks/useConfirmation';
@@ -254,6 +254,14 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         { label: 'Configurações', href: '/admin/settings' },
       ],
       requiredRole: 'SUPERUSER' // ✅ Apenas SUPERUSER e ADMIN podem ver
+    },
+    {
+      icon: <Activity size={20} />,
+      label: 'Operacoes',
+      subItems: [
+        { label: 'Operacoes do Sistema', href: '/admin/operations' },
+      ],
+      requiredRole: 'SUPERUSER'
     },
   ];
 

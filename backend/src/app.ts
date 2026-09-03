@@ -21,6 +21,7 @@ import integrationPublicRoutes from './routes/integration-public.routes';
 import whatsappIntegrationRoutes from './routes/whatsapp-integration.routes';
 import adminCompanyOpenAiRoutes from './routes/admin-company-openai.routes';
 import adminBankRoutes from './routes/admin-bank.routes';
+import systemOperationsRoutes from './routes/system-operations.routes';
 import appAccessRoutes from './routes/app-access.routes';
 import cashBootstrapRoutes from './routes/cash-bootstrap.routes';
 import cashRoutes from './routes/cash.routes';
@@ -222,6 +223,7 @@ app.use('/api/integrations/gmail', createRateLimitMiddleware('api'), gmailIntegr
 app.use('/api/integrations/whatsapp', createRateLimitMiddleware('api'), whatsappIntegrationRoutes);
 app.use('/api/admin/companies', createRateLimitMiddleware('api'), adminCompanyOpenAiRoutes);
 app.use('/api/admin/banks', createRateLimitMiddleware('api'), adminBankRoutes);
+app.use('/api/admin/operations', createRateLimitMiddleware('api'), systemOperationsRoutes);
 app.use('/api/app-access', createRateLimitMiddleware('api'), appAccessRoutes);
 app.use('/api/cash', createRateLimitMiddleware('financial'), cashRoutes);
 app.use('/api/assistant', createRateLimitMiddleware('financial'), assistantRoutes);

@@ -6,7 +6,7 @@ import { usePermissions, UserRole } from '@/hooks/usePermissions';
 import { 
   Home, DollarSign, CreditCard, Receipt, Building2, 
   BarChart3, Users, Settings, TrendingUp, TrendingDown,
-  ArrowUpDown, Calendar, Repeat
+  ArrowUpDown, Calendar, Repeat, Activity
 } from 'lucide-react';
 
 interface NavigationItem {
@@ -222,6 +222,14 @@ const navigationItems: NavigationItem[] = [
     href: '/admin/settings',
     icon: <Settings size={20} />,
     description: 'Configurações do sistema',
+    category: 'administração',
+    requiredRole: 'SUPERUSER'
+  },
+  {
+    label: 'Operacoes',
+    href: '/admin/operations',
+    icon: <Activity size={20} />,
+    description: 'Monitorar jobs e bloqueios operacionais',
     category: 'administração',
     requiredRole: 'SUPERUSER'
   }

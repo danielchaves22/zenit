@@ -689,6 +689,53 @@ describe('Credit card invoices', () => {
     );
   });
 
+  it('allows confirmed manual retroactive card purchases into closed unpaid invoices', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = buildMonthDate(-1, 5);
+    const invoiceReference = resolveCreditCardInvoiceReference(purchaseDate, 10, 15);
+
+    const installmentPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra Retroativa Confirmada',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        installmentCount: 3,
+        creditCardInvoiceReference: {
+          referenceYear: invoiceReference.referenceYear,
+          referenceMonth: invoiceReference.referenceMonth,
+          closingDate: invoiceReference.closingDate.toISOString(),
+          dueDate: invoiceReference.dueDate.toISOString()
+        }
+      });
+
+    expect(installmentPurchase.status).toBe(201);
+
+    const transactions = await prisma.financialTransaction.findMany({
+      where: {
+        companyId,
+        purchaseGroupId: installmentPurchase.body[0].purchaseGroupId
+      },
+      include: {
+        creditCardInvoice: true
+      },
+      orderBy: {
+        installmentNumber: 'asc'
+      }
+    });
+
+    expect(transactions).toHaveLength(3);
+    expect(transactions[0].creditCardInvoice?.referenceYear).toBe(invoiceReference.referenceYear);
+    expect(transactions[0].creditCardInvoice?.referenceMonth).toBe(invoiceReference.referenceMonth);
+    expect(transactions[0].creditCardInvoice?.status).toBe('CLOSED');
+    expect(transactions[0].isExternalCreditCardSettlement).toBe(false);
+  });
+
   it('blocks manual purchases into an already paid invoice', async () => {
     const card = await createCreditCardAccount();
     const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
@@ -1501,5 +1548,70 @@ describe('Credit card invoices', () => {
     expect(projectedDetail.body.transactions[0].isProjected).toBe(true);
     expect(projectedDetail.body.transactions[0].isFixedProjection).toBe(true);
     expect(projectedDetail.body.transactions[0].fixedTemplateId).toBe(fixedResponse.body.id);
+  });
+
+  it('reports closed unpaid invoices blocked by non-materialized fixed card expenses', async () => {
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const lastDayOfCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const closingDay = Math.max(1, Math.min(today.getDate() - 1, lastDayOfCurrentMonth - 1));
+    const dueDay = Math.min(lastDayOfCurrentMonth, Math.max(closingDay + 1, today.getDate() + 1));
+    const closingDate = new Date(today.getFullYear(), today.getMonth(), closingDay, 12, 0, 0, 0);
+    const dueDate = new Date(today.getFullYear(), today.getMonth(), dueDay, 12, 0, 0, 0);
+
+    const card = await prisma.financialAccount.create({
+      data: {
+        name: `Cartao Fechado Projetado ${Date.now()}`,
+        type: 'CREDIT_CARD',
+        balance: 0,
+        allowNegativeBalance: true,
+        creditLimit: 2000,
+        statementClosingDay: closingDay,
+        statementDueDay: dueDay,
+        companyId
+      }
+    });
+
+    const fixedResponse = await request(app)
+      .post('/api/financial/fixed-transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Assinatura pendente fechada',
+        amount: 75.5,
+        type: 'EXPENSE',
+        startDate: new Date(today.getFullYear(), today.getMonth(), 1, 12, 0, 0, 0).toISOString(),
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(fixedResponse.status).toBe(201);
+
+    const invoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear: today.getFullYear(),
+        referenceMonth: today.getMonth() + 1,
+        closingDate,
+        dueDate,
+        status: 'CLOSED',
+        totalAmount: 0
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/admin/operations/overview')
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    const blocks = response.body.issues.creditCardInvoiceProjectionBlocks;
+    const block = blocks.find((item: any) => item.invoiceId === invoice.id);
+
+    expect(block).toBeTruthy();
+    expect(block.accountId).toBe(card.id);
+    expect(block.pendingFixedCount).toBe(1);
+    expect(Number(block.pendingFixedSubtotal)).toBeCloseTo(75.5, 5);
+    expect(block.pendingOccurrences).toHaveLength(1);
+    expect(block.pendingOccurrences[0].templateId).toBe(fixedResponse.body.id);
+    expect(block.pendingOccurrences[0].description).toBe('Assinatura pendente fechada');
   });
 });

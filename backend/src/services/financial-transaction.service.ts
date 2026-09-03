@@ -407,7 +407,7 @@ export default class FinancialTransactionService {
       invoiceClosingDate.setHours(0, 0, 0, 0);
       const invoiceClosed = invoiceClosingDate.getTime() <= today.getTime();
 
-      if (!isImportedCreditCardPurchase && invoiceClosed) {
+      if (!isImportedCreditCardPurchase && invoiceClosed && !explicitInvoiceReference) {
         throw new Error(
           'A data informada direciona esta compra para uma fatura ja fechada. Escolha a fatura aberta atual ou altere a data da compra.'
         );

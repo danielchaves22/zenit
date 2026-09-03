@@ -1,4 +1,5 @@
 ﻿import FixedTransactionService from '../services/fixed-transaction.service';
+import SystemJobRunService from '../services/system-job-run.service';
 import { logger } from '../utils/logger';
 
 let intervalHandle: NodeJS.Timeout | null = null;
@@ -19,16 +20,41 @@ async function runMaterializationForCurrentDay(): Promise<void> {
     return;
   }
 
+  const jobRun = await SystemJobRunService.start('fixed-transaction-materializer', {
+    dateKey
+  });
+
   try {
     const result = await FixedTransactionService.materializeDueOccurrencesForDate(now);
     lastRunDate = dateKey;
+    await SystemJobRunService.finish({
+      runId: jobRun?.id,
+      status: result.failed > 0 ? 'PARTIAL' : 'SUCCESS',
+      processedCount: result.processed,
+      createdCount: result.created,
+      failedCount: result.failed,
+      skippedCount: Math.max(0, result.processed - result.created - result.failed),
+      errorDetails: result.errors.length > 0 ? result.errors : undefined,
+      metadata: { dateKey }
+    });
 
     logger.info('Daily fixed transaction materialization executed', {
       dateKey,
       processedTemplates: result.processed,
-      createdTransactions: result.created
+      createdTransactions: result.created,
+      failedTemplates: result.failed
     });
   } catch (error: any) {
+    await SystemJobRunService.finish({
+      runId: jobRun?.id,
+      status: 'FAILED',
+      errorMessage: error?.message ?? String(error),
+      errorDetails: {
+        stack: error?.stack
+      },
+      metadata: { dateKey }
+    });
+
     logger.error('Error running daily fixed materialization job', {
       error: error.message,
       stack: error.stack

@@ -1836,6 +1836,110 @@ export default class FinancialTransactionService {
     return this.archivePendingTransaction(transactionId, params.companyId, params.userId);
   }
 
+  private static getTransactionListInclude(): Prisma.FinancialTransactionInclude {
+    return {
+      category: { select: { id: true, name: true, color: true } },
+      fromAccount: { select: { id: true, name: true, type: true } },
+      toAccount: { select: { id: true, name: true, type: true } },
+      creditCardInvoice: {
+        select: {
+          id: true,
+          referenceYear: true,
+          referenceMonth: true,
+          dueDate: true,
+          status: true,
+          settlementType: true
+        }
+      },
+      paidInvoice: {
+        select: {
+          id: true,
+          accountId: true,
+          referenceYear: true,
+          referenceMonth: true
+        }
+      },
+      tags: { select: { id: true, name: true } },
+      createdByUser: { select: { id: true, name: true } }
+    };
+  }
+
+  private static getTransactionListShellInclude(): Prisma.FinancialTransactionInclude {
+    return {
+      paidInvoice: {
+        select: {
+          id: true,
+          accountId: true,
+          referenceYear: true,
+          referenceMonth: true
+        }
+      }
+    };
+  }
+
+  private static decorateMaterializedTransactionForList(transaction: any) {
+    const { paidInvoice, ...baseTransaction } = transaction;
+
+    return {
+      ...baseTransaction,
+      isVirtual: false,
+      isArchived: Boolean(transaction.archivedAt),
+      isFixed: !!transaction.recurringTransactionId,
+      fixedTemplateId: transaction.recurringTransactionId ?? null,
+      virtualKey: undefined,
+      isCreditCardInvoicePayment: Boolean(paidInvoice),
+      invoiceNavigation: paidInvoice
+        ? this.buildCreditCardInvoiceNavigation({
+            accountId: paidInvoice.accountId,
+            realInvoiceId: paidInvoice.id,
+            referenceYear: paidInvoice.referenceYear,
+            referenceMonth: paidInvoice.referenceMonth
+          })
+        : undefined
+    };
+  }
+
+  private static async hydrateTransactionListPage(rows: any[]): Promise<any[]> {
+    const materializedIds = rows
+      .filter((row) =>
+        typeof row?.id === 'number' &&
+        !row.isVirtual &&
+        !row.isProjected &&
+        !row.isCreditCardInvoiceSummary
+      )
+      .map((row) => row.id);
+
+    if (materializedIds.length === 0) {
+      return rows;
+    }
+
+    const materialized = await prisma.financialTransaction.findMany({
+      where: {
+        id: { in: materializedIds }
+      },
+      include: this.getTransactionListInclude()
+    });
+    const materializedById = new Map(
+      materialized.map((transaction) => [
+        transaction.id,
+        this.decorateMaterializedTransactionForList(transaction)
+      ])
+    );
+
+    return rows.map((row) => {
+      if (
+        typeof row?.id !== 'number' ||
+        row.isVirtual ||
+        row.isProjected ||
+        row.isCreditCardInvoiceSummary
+      ) {
+        return row;
+      }
+
+      return materializedById.get(row.id) ?? row;
+    });
+  }
+
   static async listTransactions(params: {
     companyId: number;
     startDate?: Date;
@@ -1973,54 +2077,12 @@ export default class FinancialTransactionService {
 
     const materialized = await prisma.financialTransaction.findMany({
       where,
-      include: {
-        category: { select: { id: true, name: true, color: true } },
-        fromAccount: { select: { id: true, name: true, type: true } },
-        toAccount: { select: { id: true, name: true, type: true } },
-        creditCardInvoice: {
-          select: {
-            id: true,
-            referenceYear: true,
-            referenceMonth: true,
-            dueDate: true,
-            status: true,
-            settlementType: true
-          }
-        },
-        paidInvoice: {
-          select: {
-            id: true,
-            accountId: true,
-            referenceYear: true,
-            referenceMonth: true
-          }
-        },
-        tags: { select: { id: true, name: true } },
-        createdByUser: { select: { id: true, name: true } }
-      }
+      include: this.getTransactionListShellInclude()
     });
 
-    const decoratedMaterialized = materialized.map((transaction: any) => {
-      const { paidInvoice, ...baseTransaction } = transaction;
-
-      return {
-        ...baseTransaction,
-        isVirtual: false,
-        isArchived: Boolean(transaction.archivedAt),
-        isFixed: !!transaction.recurringTransactionId,
-        fixedTemplateId: transaction.recurringTransactionId ?? null,
-        virtualKey: undefined,
-        isCreditCardInvoicePayment: Boolean(paidInvoice),
-        invoiceNavigation: paidInvoice
-          ? this.buildCreditCardInvoiceNavigation({
-              accountId: paidInvoice.accountId,
-              realInvoiceId: paidInvoice.id,
-              referenceYear: paidInvoice.referenceYear,
-              referenceMonth: paidInvoice.referenceMonth
-            })
-          : undefined
-      };
-    });
+    const decoratedMaterialized = materialized.map((transaction: any) =>
+      this.decorateMaterializedTransactionForList(transaction)
+    );
     const visibleMaterialized = decoratedMaterialized;
 
     const buildResult = async (paramsForResult?: {
@@ -2051,7 +2113,8 @@ export default class FinancialTransactionService {
       const sorted = this.sortTransactionsForList(merged);
       const total = sorted.length;
       const pages = Math.ceil(total / pageSize) || 1;
-      const data = sorted.slice((page - 1) * pageSize, page * pageSize);
+      const pagedRows = sorted.slice((page - 1) * pageSize, page * pageSize);
+      const data = await this.hydrateTransactionListPage(pagedRows);
 
       return {
         data,

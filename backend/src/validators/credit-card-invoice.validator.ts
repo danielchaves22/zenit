@@ -1,9 +1,28 @@
 import { z } from 'zod';
 
+const booleanQuerySchema = z.preprocess((value) => {
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+
+    if (normalized === 'true') {
+      return true;
+    }
+
+    if (normalized === 'false') {
+      return false;
+    }
+  }
+
+  return value;
+}, z.boolean());
+
 export const listCreditCardInvoicesSchema = z.object({
   accountId: z.coerce.number()
     .int('ID da conta deve ser um numero inteiro')
-    .positive('ID da conta deve ser positivo')
+    .positive('ID da conta deve ser positivo'),
+  includePaid: booleanQuerySchema
+    .optional()
+    .default(true)
 });
 
 export const getCreditCardInvoiceSchema = z.object({

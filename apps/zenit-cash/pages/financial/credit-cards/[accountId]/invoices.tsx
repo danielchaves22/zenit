@@ -193,6 +193,7 @@ function InvoicesPageInner() {
   const [showPaidInvoices, setShowPaidInvoices] = useState(false);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
   const invoiceItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const internalInvoiceSelectionRef = useRef<string | null>(null);
   const [paymentData, setPaymentData] = useState({
     fromAccountId: '',
     paymentDate: getTodayDateValue(),
@@ -267,7 +268,7 @@ function InvoicesPageInner() {
     }
 
     void fetchPageData();
-  }, [accountId, router.isReady]);
+  }, [accountId, router.isReady, showPaidInvoices]);
 
   useEffect(() => {
     const selectedInvoice = visibleInvoices.find(
@@ -346,9 +347,17 @@ function InvoicesPageInner() {
     setLoading(true);
 
     try {
+      const includePaidInvoices =
+        showPaidInvoices ||
+        Boolean(
+          selectedInvoiceFromQuery &&
+          internalInvoiceSelectionRef.current !== selectedInvoiceFromQuery
+        );
       const [cardsResponse, invoicesResponse, accountsResponse] = await Promise.all([
         api.get('/financial/credit-cards'),
-        api.get(`/financial/credit-cards/${accountId}/invoices`),
+        api.get(
+          `/financial/credit-cards/${accountId}/invoices?includePaid=${includePaidInvoices}`
+        ),
         api.get('/financial/accounts')
       ]);
 
@@ -469,6 +478,7 @@ function InvoicesPageInner() {
 
   function handleSelectInvoice(invoice: CreditCardInvoiceListItem) {
     const invoiceKey = getInvoiceSelectionKey(invoice);
+    internalInvoiceSelectionRef.current = invoiceKey;
     setSelectedInvoiceKey(invoiceKey);
     router.replace(
       {

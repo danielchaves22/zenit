@@ -42,10 +42,12 @@ export async function listCreditCardInvoices(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
     const accountId = Number(req.params.accountId);
+    const includePaid = (req.query as { includePaid?: boolean }).includePaid ?? true;
 
     const invoices = await CreditCardInvoiceService.listInvoicesByAccount({
       accountId,
-      companyId
+      companyId,
+      includePaid
     });
 
     return res.status(200).json(invoices);

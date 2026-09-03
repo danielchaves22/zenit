@@ -54,6 +54,10 @@ function resolveTransferSettledAt(invoice: {
   );
 }
 
+function sameNullableDate(left: Date | null | undefined, right: Date | null | undefined) {
+  return (left?.getTime() ?? null) === (right?.getTime() ?? null);
+}
+
 function buildProjectionKey(referenceYear: number, referenceMonth: number) {
   return `${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
 }
@@ -238,14 +242,139 @@ export default class CreditCardInvoiceService {
     });
   }
 
-  static async syncInvoicesForAccount(accountId: number): Promise<void> {
+  static async syncInvoicesForAccount(
+    accountId: number,
+    options?: { includePaid?: boolean }
+  ): Promise<void> {
     const invoices = await prisma.creditCardInvoice.findMany({
-      where: { accountId },
-      select: { id: true }
+      where: {
+        accountId,
+        ...(options?.includePaid === false
+          ? {
+              OR: [
+                { status: { not: CreditCardInvoiceStatus.PAID } },
+                {
+                  paymentTransaction: {
+                    is: {
+                      status: { not: TransactionStatus.COMPLETED }
+                    }
+                  }
+                }
+              ]
+            }
+          : {})
+      },
+      include: {
+        paymentTransaction: {
+          select: {
+            id: true,
+            status: true,
+            effectiveDate: true,
+            date: true
+          }
+        }
+      }
     });
 
+    if (invoices.length === 0) {
+      return;
+    }
+
+    const invoiceIds = invoices.map((invoice) => invoice.id);
+    const [transactionTotals, externalSettlementCounts] = await Promise.all([
+      prisma.financialTransaction.groupBy({
+        by: ['creditCardInvoiceId'],
+        where: {
+          creditCardInvoiceId: { in: invoiceIds },
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED
+        },
+        _sum: {
+          amount: true
+        }
+      }),
+      prisma.financialTransaction.groupBy({
+        by: ['creditCardInvoiceId'],
+        where: {
+          creditCardInvoiceId: { in: invoiceIds },
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED,
+          isExternalCreditCardSettlement: true
+        },
+        _count: {
+          _all: true
+        }
+      })
+    ]);
+
+    const totalByInvoiceId = new Map(
+      transactionTotals
+        .filter((item) => item.creditCardInvoiceId !== null)
+        .map((item) => [
+          item.creditCardInvoiceId as number,
+          item._sum.amount ?? new Prisma.Decimal(0)
+        ])
+    );
+    const externalSettlementCountByInvoiceId = new Map(
+      externalSettlementCounts
+        .filter((item) => item.creditCardInvoiceId !== null)
+        .map((item) => [item.creditCardInvoiceId as number, item._count._all])
+    );
+    const writeOperations: Prisma.PrismaPromise<unknown>[] = [];
+
     for (const invoice of invoices) {
-      await this.syncInvoice(invoice.id);
+      const totalAmount = totalByInvoiceId.get(invoice.id) ?? new Prisma.Decimal(0);
+      const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
+      const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
+      const hasExternalSettlements = (externalSettlementCountByInvoiceId.get(invoice.id) ?? 0) > 0;
+
+      if (totalAmount.eq(0) && !paymentTransactionId && !hasExternalSettlements) {
+        writeOperations.push(prisma.creditCardInvoice.delete({ where: { id: invoice.id } }));
+        continue;
+      }
+
+      const settlementType = hasCompletedPayment
+        ? CreditCardInvoiceSettlementType.TRANSFER
+        : hasExternalSettlements
+          ? CreditCardInvoiceSettlementType.EXTERNAL
+          : null;
+      const settledAt = hasCompletedPayment
+        ? resolveTransferSettledAt(invoice)
+        : settlementType === CreditCardInvoiceSettlementType.EXTERNAL
+          ? invoice.settledAt || invoice.dueDate
+          : null;
+      const status = settlementType
+        ? CreditCardInvoiceStatus.PAID
+        : resolveCreditCardInvoiceStatus(invoice.closingDate, false);
+
+      const hasChanges =
+        !invoice.totalAmount.eq(totalAmount) ||
+        invoice.paymentTransactionId !== paymentTransactionId ||
+        invoice.status !== status ||
+        invoice.settlementType !== settlementType ||
+        !sameNullableDate(invoice.settledAt, settledAt);
+
+      if (!hasChanges) {
+        continue;
+      }
+
+      writeOperations.push(
+        prisma.creditCardInvoice.update({
+          where: { id: invoice.id },
+          data: {
+            totalAmount,
+            paymentTransactionId,
+            status,
+            settlementType,
+            settledAt
+          }
+        })
+      );
+    }
+
+    const batchSize = 25;
+    for (let index = 0; index < writeOperations.length; index += batchSize) {
+      await prisma.$transaction(writeOperations.slice(index, index + batchSize));
     }
   }
 
@@ -584,18 +713,24 @@ export default class CreditCardInvoiceService {
   static async listInvoicesByAccount(params: {
     accountId: number;
     companyId: number;
+    includePaid?: boolean;
   }) {
     const card = await this.getCardAccount(params.accountId, params.companyId);
     if (!card) {
       return [];
     }
 
-    await this.syncInvoicesForAccount(params.accountId);
+    const includePaid = params.includePaid ?? true;
+
+    await this.syncInvoicesForAccount(params.accountId, { includePaid });
 
     const [invoices, projectedBuckets] = await Promise.all([
       prisma.creditCardInvoice.findMany({
         where: {
           accountId: params.accountId,
+          ...(includePaid
+            ? {}
+            : { status: { not: CreditCardInvoiceStatus.PAID } }),
           account: {
             companyId: params.companyId
           }

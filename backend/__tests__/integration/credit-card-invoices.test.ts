@@ -515,6 +515,82 @@ describe('Credit card invoices', () => {
     expect(Number(cardAccountAfterDelete?.balance)).toBe(-350);
   });
 
+  it('can omit paid invoices from the card invoice list', async () => {
+    const card = await createCreditCardAccount();
+
+    const mayPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra paga filtravel',
+        amount: 100,
+        date: '2099-05-05T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+    const junePurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra aberta filtravel',
+        amount: 80,
+        date: '2099-06-05T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+
+    expect(mayPurchase.status).toBe(201);
+    expect(junePurchase.status).toBe(201);
+
+    const initialInvoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    expect(initialInvoicesResponse.status).toBe(200);
+
+    const mayInvoice = initialInvoicesResponse.body.find(
+      (invoice: any) => invoice.referenceYear === 2099 && invoice.referenceMonth === 5
+    );
+    const juneInvoice = initialInvoicesResponse.body.find(
+      (invoice: any) => invoice.referenceYear === 2099 && invoice.referenceMonth === 6
+    );
+
+    expect(mayInvoice).toBeTruthy();
+    expect(juneInvoice).toBeTruthy();
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        paymentDate: '2099-05-14T12:00:00.000Z'
+      });
+
+    expect(paymentResponse.status).toBe(200);
+    expect(paymentResponse.body.status).toBe('PAID');
+
+    const fullInvoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+
+    expect(fullInvoicesResponse.status).toBe(200);
+    expect(fullInvoicesResponse.body.some((invoice: any) => invoice.id === mayInvoice.id)).toBe(true);
+
+    const unpaidInvoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .query({ includePaid: 'false' })
+      .set(authHeaders());
+
+    expect(unpaidInvoicesResponse.status).toBe(200);
+    expect(unpaidInvoicesResponse.body.some((invoice: any) => invoice.id === mayInvoice.id)).toBe(false);
+    expect(unpaidInvoicesResponse.body.some((invoice: any) => invoice.id === juneInvoice.id)).toBe(true);
+    expect(unpaidInvoicesResponse.body.every((invoice: any) => invoice.status !== 'PAID')).toBe(true);
+  });
+
   it('does not treat regular transfers as income or expense in the restricted financial summary', async () => {
     const hiddenAccount = await prisma.financialAccount.create({
       data: {

@@ -530,15 +530,19 @@ model FinancialTransaction {
   @@index([toAccountId])
   @@index([categoryId])
   @@index([date])
+  @@index([companyId, date], map: "idx_ft_company_date")
   @@index([purchaseGroupId])
   @@index([creditCardInvoiceId])
+  @@index([companyId, creditCardInvoiceId], map: "idx_ft_company_invoice")
   @@index([companyId, entryKind])
   @@index([companyId, archivedAt])
   
   // ✅ NOVOS ÍNDICES PARA PERFORMANCE
   @@index([dueDate, status])                              // Relatórios de inadimplência
+  @@index([companyId, dueDate], map: "idx_ft_company_due_date")
   @@index([effectiveDate])                               // Conciliação bancária
   @@index([companyId, effectiveDate, status])           // Relatórios financeiros
+  @@index([companyId, createdAt], map: "idx_ft_company_created_at")
 }
 
 model CreditCardInvoice {
@@ -596,6 +600,7 @@ model RecurringTransaction {
   @@index([type])
   @@index([nextDueDate])
   @@index([isActive])
+  @@index([companyId, isActive, frequency, type, fromAccountId], map: "idx_rt_company_card_projection")
 }
 
 model CreditCardRecurringDescriptionAlias {

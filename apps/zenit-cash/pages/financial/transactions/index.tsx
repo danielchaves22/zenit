@@ -412,6 +412,7 @@ export default function TransactionsListPage() {
   const [settlementTarget, setSettlementTarget] = useState<Transaction | null>(null);
   const [settlementLoading, setSettlementLoading] = useState(false);
   const [settlementAccountId, setSettlementAccountId] = useState('');
+  const [settlementAmount, setSettlementAmount] = useState('0.00');
   const [settlementDate, setSettlementDate] = useState(getTodayDateValue());
   const [settlementNotes, setSettlementNotes] = useState('');
 
@@ -1100,6 +1101,7 @@ export default function TransactionsListPage() {
 
       setSettlementTarget(detail);
       setSettlementAccountId(initialAccountId);
+      setSettlementAmount(detail.amount || '0.00');
       setSettlementDate(getTodayDateValue());
       setSettlementNotes(detail.notes || '');
     } catch (error: any) {
@@ -1116,6 +1118,7 @@ export default function TransactionsListPage() {
 
     setSettlementTarget(null);
     setSettlementAccountId('');
+    setSettlementAmount('0.00');
     setSettlementDate(getTodayDateValue());
     setSettlementNotes('');
   }
@@ -1145,10 +1148,17 @@ export default function TransactionsListPage() {
       return;
     }
 
+    const settlementAmountValue = Number(settlementAmount || 0);
+    if (!Number.isFinite(settlementAmountValue) || settlementAmountValue <= 0) {
+      addToast('Informe um valor maior que zero', 'error');
+      return;
+    }
+
     setSettlementLoading(true);
 
     try {
       const payload = buildTransactionUpsertPayload(settlementTarget, {
+        amount: settlementAmount,
         status: 'COMPLETED',
         liquidationDate: settlementDate,
         notes: settlementNotes,
@@ -2243,6 +2253,7 @@ export default function TransactionsListPage() {
           kind={settlementTarget.type}
           accounts={settlementAccounts}
           accountId={settlementAccountId}
+          amount={settlementAmount}
           settlementDate={settlementDate}
           notes={settlementNotes}
           loading={settlementLoading}
@@ -2250,6 +2261,7 @@ export default function TransactionsListPage() {
           onClose={() => handleCloseSettlement()}
           onConfirm={handleConfirmSettlement}
           onAccountIdChange={setSettlementAccountId}
+          onAmountChange={setSettlementAmount}
           onSettlementDateChange={setSettlementDate}
           onNotesChange={setSettlementNotes}
         />

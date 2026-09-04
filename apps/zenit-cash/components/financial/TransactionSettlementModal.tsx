@@ -1,5 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/Button';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { formatAccountDisplayName } from '@/utils/accounts';
@@ -17,6 +18,7 @@ interface TransactionSettlementModalProps {
   kind: SettlementKind;
   accounts: AccountOption[];
   accountId: string;
+  amount: string | number;
   settlementDate: string;
   notes: string;
   loading?: boolean;
@@ -25,6 +27,7 @@ interface TransactionSettlementModalProps {
   onClose: () => void;
   onConfirm: () => void;
   onAccountIdChange: (value: string) => void;
+  onAmountChange: (value: string) => void;
   onSettlementDateChange: (value: string) => void;
   onNotesChange: (value: string) => void;
 }
@@ -50,6 +53,7 @@ export default function TransactionSettlementModal({
   kind,
   accounts,
   accountId,
+  amount,
   settlementDate,
   notes,
   loading = false,
@@ -58,6 +62,7 @@ export default function TransactionSettlementModal({
   onClose,
   onConfirm,
   onAccountIdChange,
+  onAmountChange,
   onSettlementDateChange,
   onNotesChange
 }: TransactionSettlementModalProps) {
@@ -79,6 +84,17 @@ export default function TransactionSettlementModal({
       }
     >
       <div className="space-y-4">
+        <CurrencyInput
+          id="settlement-amount"
+          label="Valor da transação"
+          value={amount}
+          onChange={onAmountChange}
+          disabled={loading}
+          autoFocus
+          selectOnFocus
+          className="mb-0"
+        />
+
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-300">
             {getAccountLabel(kind)}

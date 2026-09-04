@@ -9,10 +9,43 @@ interface CurrencyInputProps {
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
+  autoFocus?: boolean;
+  selectOnFocus?: boolean;
   className?: string;
   inputClassName?: string;
   error?: string;
 }
+
+const formatCurrency = (cents: number): string => {
+  const reais = Math.floor(cents / 100);
+  const centavos = cents % 100;
+  return `${reais.toLocaleString('pt-BR')},${centavos.toString().padStart(2, '0')}`;
+};
+
+const parseCurrency = (formatted: string): number => {
+  const digits = formatted.replace(/\D/g, '');
+  return parseInt(digits, 10) || 0;
+};
+
+const centsToDecimal = (cents: number): string => {
+  return (cents / 100).toFixed(2);
+};
+
+const formatInputValue = (value: string | number): string => {
+  let cents: number;
+
+  if (typeof value === 'string') {
+    if (value.includes(',')) {
+      cents = parseCurrency(value);
+    } else {
+      cents = Math.round(parseFloat(value) * 100) || 0;
+    }
+  } else {
+    cents = Math.round(value * 100) || 0;
+  }
+
+  return formatCurrency(cents);
+};
 
 export function CurrencyInput({
   id,
@@ -22,54 +55,43 @@ export function CurrencyInput({
   placeholder = "0,00",
   required = false,
   disabled = false,
+  autoFocus = false,
+  selectOnFocus = false,
   className = '',
   inputClassName = '',
   error
 }: CurrencyInputProps) {
-  const [displayValue, setDisplayValue] = useState('0,00');
+  const [displayValue, setDisplayValue] = useState(() => formatInputValue(value));
   const inputRef = useRef<HTMLInputElement>(null);
-
-  // Converte valor numérico para string formatada
-  const formatCurrency = (cents: number): string => {
-    const reais = Math.floor(cents / 100);
-    const centavos = cents % 100;
-    return `${reais.toLocaleString('pt-BR')},${centavos.toString().padStart(2, '0')}`;
-  };
-
-  // Converte string para centavos, removendo formatação
-  const parseCurrency = (formatted: string): number => {
-    // Remove tudo que não é dígito
-    const digits = formatted.replace(/\D/g, '');
-    return parseInt(digits) || 0;
-  };
-
-  // Converte centavos para valor decimal
-  const centsToDecimal = (cents: number): string => {
-    return (cents / 100).toFixed(2);
-  };
+  const didAutoFocusRef = useRef(false);
 
   // Inicializa o valor quando o componente é montado ou value muda
   useEffect(() => {
     if (value !== undefined && value !== null) {
-      let cents: number;
-      
-      if (typeof value === 'string') {
-        // Se é string, pode vir formatada ou como decimal
-        if (value.includes(',')) {
-          // Já formatada (1.234,56)
-          cents = parseCurrency(value);
-        } else {
-          // Decimal (1234.56)
-          cents = Math.round(parseFloat(value) * 100) || 0;
-        }
-      } else {
-        // Se é number, converte para centavos
-        cents = Math.round(value * 100) || 0;
-      }
-      
-      setDisplayValue(formatCurrency(cents));
+      setDisplayValue(formatInputValue(value));
     }
   }, [value]);
+
+  useEffect(() => {
+    if (!autoFocus || disabled || didAutoFocusRef.current) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const input = inputRef.current;
+      if (!input) {
+        return;
+      }
+
+      input.focus();
+      if (selectOnFocus) {
+        input.select();
+      }
+      didAutoFocusRef.current = true;
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [autoFocus, disabled, selectOnFocus]);
 
   const applyMask = (inputValue: string, cursorPosition: number, wasBackspaceAtEnd: boolean = false) => {
     // Extrair apenas os dígitos
@@ -236,7 +258,7 @@ export function CurrencyInput({
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     // Se o valor é zero, selecionar tudo para facilitar digitação
-    if (displayValue === '0,00') {
+    if (selectOnFocus || displayValue === '0,00') {
       e.target.select();
     }
   };
@@ -303,6 +325,7 @@ export function CurrencyInput({
           placeholder={placeholder}
           required={required}
           disabled={disabled}
+          autoFocus={autoFocus}
           className={`w-full pl-10 pr-3 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] text-right font-mono ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           } ${error ? 'border-red-500' : ''} ${inputClassName}`}

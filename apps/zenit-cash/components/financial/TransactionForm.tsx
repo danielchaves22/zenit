@@ -342,6 +342,7 @@ export default function TransactionForm({
   const [isRecurring, setIsRecurring] = useState(false);
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [settlementAccountId, setSettlementAccountId] = useState('');
+  const [settlementAmount, setSettlementAmount] = useState('0.00');
   const [settlementDate, setSettlementDate] = useState(getTodayValue());
   const [settlementNotes, setSettlementNotes] = useState('');
   const isCreditCardPurchaseFlow = mode === 'create' && createFlow === 'credit-card-purchase';
@@ -1131,6 +1132,7 @@ export default function TransactionForm({
     }
 
     setSettlementAccountId(isExpense ? formData.fromAccountId : formData.toAccountId);
+    setSettlementAmount(formData.amount || '0.00');
     setSettlementDate(formData.liquidationDate || getTodayValue());
     setSettlementNotes(formData.notes || '');
     setIsSettlementModalOpen(true);
@@ -1162,6 +1164,12 @@ export default function TransactionForm({
       return;
     }
 
+    const settlementAmountValue = Number(settlementAmount || 0);
+    if (!Number.isFinite(settlementAmountValue) || settlementAmountValue <= 0) {
+      addToast('Informe um valor maior que zero', 'error');
+      return;
+    }
+
     if (formData.type === 'TRANSFER' && (!formData.fromAccountId || !formData.toAccountId)) {
       addToast('Informe as contas de origem e destino para a transferencia', 'error');
       return;
@@ -1171,6 +1179,7 @@ export default function TransactionForm({
 
     try {
       const payload = buildTransactionUpsertPayload(formData, {
+        amount: settlementAmount,
         status: 'COMPLETED',
         liquidationDate: settlementDate,
         notes: settlementNotes,
@@ -1183,6 +1192,7 @@ export default function TransactionForm({
 
       setFormData((prev) => ({
         ...prev,
+        amount: settlementAmount,
         status: 'COMPLETED',
         liquidationDate: settlementDate,
         notes: settlementNotes,
@@ -2436,6 +2446,7 @@ export default function TransactionForm({
           kind={isExpense ? 'EXPENSE' : 'INCOME'}
           accounts={settlementAccounts}
           accountId={settlementAccountId}
+          amount={settlementAmount}
           settlementDate={settlementDate}
           notes={settlementNotes}
           loading={saving}
@@ -2444,6 +2455,7 @@ export default function TransactionForm({
           onClose={handleCloseSettlementModal}
           onConfirm={handleConfirmSettlement}
           onAccountIdChange={setSettlementAccountId}
+          onAmountChange={setSettlementAmount}
           onSettlementDateChange={setSettlementDate}
           onNotesChange={setSettlementNotes}
         />

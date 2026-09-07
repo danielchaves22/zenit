@@ -26,6 +26,7 @@ export interface BankCandidate {
   reason: string;
   source: 'RULE' | 'HISTORY' | 'AI';
   model?: string;
+  confidence?: { level: 'HIGH' | 'MEDIUM' | 'LOW'; reasons: string[] };
 }
 export const day = (value: Date) => value.toISOString().slice(0, 10);
 export const transactionDay = (t: MatchTransaction) => day(t.status === 'COMPLETED' ? (t.effectiveDate || t.date) : (t.dueDate || t.date));
@@ -83,22 +84,45 @@ export function hasConfidentBankMatch(candidates: BankCandidate[], neighbors: Ma
     && dayDistance(day(other.date), transaction.date) <= 1);
 }
 
+export function classifyBankCandidates(candidates: BankCandidate[], neighbors: MatchItem[] = [], limited = false): BankCandidate[] {
+  return candidates.map(candidate => {
+    const exact = cents(candidate.difference) === 0;
+    const distance = Math.max(...candidate.transactions.map(t => Math.min(...candidate.items.map(i => dayDistance(i.date, t.date)))));
+    const text = Math.max(...candidate.items.flatMap(i => candidate.transactions.map(t => similarity(i.description, t.description))));
+    const history = candidate.source === 'HISTORY';
+    const alternatives = candidates.filter(c => c.key !== candidate.key);
+    const competing = alternatives.some(c => cents(c.difference) === 0 && candidate.score - c.score < 15);
+    const duplicate = neighbors.some(other => !candidate.itemIds.includes(other.id) && candidate.items.some(i => cents(other.amount) === cents(i.amount))
+      && candidate.transactions.some(t => dayDistance(day(other.date), t.date) <= 1));
+    const high = hasConfidentBankMatch([candidate, ...alternatives], neighbors, limited);
+    const reasons = [exact ? 'Valor exato' : 'Valor divergente', distance === 0 ? 'Mesma data' : `${distance} dia(s) de diferença`,
+      text >= 0.6 ? 'Descrições compatíveis' : 'Descrições pouco semelhantes'];
+    if (history) reasons.push('Histórico confirmado compatível');
+    if (candidate.items.length > 1 || candidate.transactions.length > 1) reasons.push('Exige conferir o agrupamento');
+    if (candidate.transactions.some(t => t.status !== 'COMPLETED')) reasons.push('Requer liquidação');
+    if (competing || duplicate) reasons.push('Há outra correspondência plausível');
+    if (limited) reasons.push('Busca limitada: podem existir outros candidatos');
+    return { ...candidate, confidence: { level: high ? 'HIGH' : exact && (distance <= 3 || text >= 0.4 || history) ? 'MEDIUM' : 'LOW', reasons } };
+  });
+}
+
 // Bound the combinatorial search. Manual selection remains available outside these suggestions.
 export function rankBankCandidates(items: MatchItem[], transactions: MatchTransaction[], accountId: number, neighbors: MatchItem[] = []): BankCandidate[] {
   const total = sumCents(items.map(i => cents(i.amount)));
   const usable = transactions.filter(t => ['PENDING', 'COMPLETED'].includes(t.status) && Math.sign(signedTransactionAmount(t, accountId)) === Math.sign(total));
   const candidates = usable.map(t => candidateFor(items, [t], accountId));
-  const closest = [...usable].sort((a, b) => {
-    const score = (t: MatchTransaction) => Math.min(...items.map(i => dayDistance(day(i.date), transactionDay(t))));
-    return score(a) - score(b) || a.id - b.id;
-  }).filter(t => Math.abs(signedTransactionAmount(t, accountId)) < Math.abs(total)).slice(0, 25);
+  // Convert amounts/dates once, rather than inside every pair/triple and sort comparison.
+  const prepared = usable.map(t => ({ transaction: t, amount: signedTransactionAmount(t, accountId),
+    distance: Math.min(...items.map(i => dayDistance(day(i.date), transactionDay(t)))) }));
+  const closest = [...prepared].sort((a, b) => a.distance - b.distance || a.transaction.id - b.transaction.id)
+    .filter(t => Math.abs(t.amount) < Math.abs(total)).slice(0, 25);
   for (let a = 0; a < closest.length; a++) {
     for (let b = a + 1; b < closest.length; b++) {
-      const pair = [closest[a], closest[b]];
-      if (pair.reduce((s, t) => s + signedTransactionAmount(t, accountId), 0) === total) candidates.push(candidateFor(items, pair, accountId));
+      const pair = [closest[a].transaction, closest[b].transaction];
+      const pairAmount = closest[a].amount + closest[b].amount;
+      if (pairAmount === total) candidates.push(candidateFor(items, pair, accountId));
       for (let c = b + 1; c < closest.length; c++) {
-        const group = [...pair, closest[c]];
-        if (group.reduce((s, t) => s + signedTransactionAmount(t, accountId), 0) === total) candidates.push(candidateFor(items, group, accountId));
+        if (pairAmount + closest[c].amount === total) candidates.push(candidateFor(items, [...pair, closest[c].transaction], accountId));
       }
     }
   }
@@ -106,7 +130,7 @@ export function rankBankCandidates(items: MatchItem[], transactions: MatchTransa
     const nearby = neighbors.filter(i => i.id !== items[0].id && Math.sign(cents(i.amount)) === Math.sign(total)).slice(0, 25);
     for (const other of nearby) {
       const combined = total + cents(other.amount);
-      for (const t of usable) if (signedTransactionAmount(t, accountId) === combined) candidates.push(candidateFor([...items, other], [t], accountId));
+      for (const t of prepared) if (t.amount === combined) candidates.push(candidateFor([...items, other], [t.transaction], accountId));
     }
   }
   return candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, 10);

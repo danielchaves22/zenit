@@ -6,6 +6,7 @@ export interface BankTransaction {
 export interface BankCandidate {
   key: string; itemIds: number[]; items: BankItem[]; transactions: BankTransaction[];
   amount: string; difference: string; score: number; reason: string; source: 'RULE' | 'HISTORY' | 'AI'; model?: string;
+  confidence?: { level: 'HIGH' | 'MEDIUM' | 'LOW'; reasons: string[] };
 }
 export interface BankSearchResult {
   itemId: number;

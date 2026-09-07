@@ -91,6 +91,21 @@ describe('Bank reconciliation persisted workflow', () => {
     await expect(Service.candidatesBatch(context, month, ids)).rejects.toThrow('já foi conciliado');
     expect((await Service.candidatesBatch(context, month, [ids[1]])).results).toHaveLength(1);
   });
+  it('searches ambiguous rows automatically without invoking AI or persisting search progress', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria']]);
+    await createExisting('20.00'); await createExisting('20.00');
+    const ids = await importedIds();
+    const result = await Service.candidatesBatch(context, month, ids, false);
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+    expect(result.results[0].candidates.map(c => c.confidence?.level)).toEqual(['MEDIUM', 'MEDIUM']);
+    expect(await prisma.bankMatchCache.count({ where: { accountId } })).toBe(0);
+    expect(await prisma.bankMatchDecision.count({ where: { reconciliation: { accountId } } })).toBe(0);
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
+    jest.mocked(suggestBankMatchByAi).mockImplementationOnce(async ({ candidates }) => ({ candidates: [...candidates].reverse().map(c => ({ ...c, source: 'AI', confidence: { level: 'HIGH', reasons: ['AI'] } })), message: 'AI' }));
+    const refined = await Service.candidatesBatch(context, month, ids, 'auto');
+    expect(suggestBankMatchByAi).toHaveBeenCalledTimes(1);
+    expect(refined.results[0].candidates.every(c => c.confidence?.level === 'MEDIUM')).toBe(true);
+  });
   it('rejects batch items belonging to another account and keeps the batch bounded', async () => {
     await importRows([['22/08/2026', '-20.00', 'a', 'Padaria']]);
     const ids = await importedIds();
@@ -285,6 +300,12 @@ describe('Bank reconciliation persisted workflow', () => {
     expect((await request(app).get(path)).body.account.id).toBe(accountId);
     const ids = await importedIds();
     expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids })).body.results[0].itemId).toBe(ids[0]);
+    await createExisting('20.00'); await createExisting('20.00');
+    const rulesOnly = await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids, useAi: false, accountId: otherAccountId });
+    expect(rulesOnly.status).toBe(200);
+    expect(rulesOnly.body.results[0].candidates[0].confidence.level).toBe('MEDIUM');
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+    expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids, useAi: 'false' })).status).toBe(400);
     expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: [...ids, ...ids] })).status).toBe(400);
     expect((await request(app).post(`${path}/reset`).send({ confirmed: false })).status).toBe(400);
     expect((await Service.load(context, month)).summary.total).toBe(1);

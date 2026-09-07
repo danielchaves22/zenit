@@ -14,7 +14,7 @@ export default function BankReconciliationPage() {
   const month = typeof router.query.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(router.query.month) ? router.query.month : fallbackMonth;
   const accountId = Number(router.query.id);
   return <PageGuard requiredRole="USER" requiredPermission="FINANCIAL_ACCOUNTS"><DashboardLayout title="Conciliação bancária">
-    <div className="flex flex-col gap-3 lg:h-full lg:min-h-0">
+    <div className="flex min-h-full flex-col gap-3">
     <div className="shrink-0"><Breadcrumb items={[{ label: 'Financeiro' }, { label: 'Contas', href: '/financial/accounts' }, { label: 'Conciliação bancária' }]} /></div>
     {router.isReady && accountId > 0 && companyId && <BankReconciliationWorkspace key={`${companyId}:${accountId}:${month}`} accountId={accountId} month={month}
       onMonthChange={value => void router.push({ pathname: '/financial/accounts/[id]/reconciliation', query: { id: accountId, month: value } }, undefined, { shallow: true })} />}

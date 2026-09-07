@@ -2,7 +2,7 @@ import { BankStatementItem, FinancialTransaction, Prisma, PrismaClient } from '@
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
 import FinancialTransactionService from './financial-transaction.service';
 import { BankStatement, calendarDate, hash, parseBankStatement } from './bank-statement-parser';
-import { BankCandidate, candidateFor, cents, day, hasConfidentBankMatch, idsKey, money, rankBankCandidates, signedTransactionAmount, similarity, sumCents, transactionDay } from './bank-reconciliation-matching';
+import { BankCandidate, candidateFor, cents, classifyBankCandidates, day, hasConfidentBankMatch, idsKey, money, rankBankCandidates, signedTransactionAmount, similarity, sumCents, transactionDay } from './bank-reconciliation-matching';
 import { suggestBankMatchByAi } from './bank-reconciliation-ai.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
@@ -231,10 +231,10 @@ export default class BankReconciliationService {
     return (await this.searchCandidates(context, month, [items], accountIds, useAi))[0];
   }
 
-  static async candidatesBatch(context: BankContext, month: string, itemIds: number[]) {
+  static async candidatesBatch(context: BankContext, month: string, itemIds: number[], useAi: boolean | 'auto' = 'auto') {
     const { accountIds } = await access(context);
     const items = await selectedItems(prisma, context.accountId, month, itemIds, true);
-    const results = await this.searchCandidates(context, month, items.map(item => [item]), accountIds, 'auto');
+    const results = await this.searchCandidates(context, month, items.map(item => [item]), accountIds, useAi);
     return { results: results.map((result, index) => ({ itemId: items[index].id, ...result })) };
   }
 
@@ -275,11 +275,14 @@ export default class BankReconciliationService {
         if (known) { candidate.source = 'HISTORY'; candidate.score += 12; candidate.reason += ' Padrão semelhante a uma correspondência confirmada.'; }
       }
       candidates.sort((a, b) => b.score - a.score);
+      candidates = classifyBankCandidates(candidates, neighbors, limited);
+      const confidenceByKey = new Map(candidates.map(c => [c.key, c.confidence]));
       let cacheId: number | undefined, aiMessage: string | undefined;
       const confident = hasConfidentBankMatch(candidates, neighbors, limited);
       if (candidates.length && (useAi === true || (useAi === 'auto' && !confident))) {
         const result = await suggestBankMatchByAi({ context, items, candidates, examples });
-        candidates = result.candidates; cacheId = result.cacheId; aiMessage = result.message;
+        // AI can reorder suggestions, but cannot promote their confidence or return stale cached criteria.
+        candidates = result.candidates.map(c => ({ ...c, confidence: confidenceByKey.get(c.key) })); cacheId = result.cacheId; aiMessage = result.message;
       } else if (confident) {
         aiMessage = 'Correspondência forte pelas regras e pelo histórico disponível. Confira os dados antes de confirmar.';
       }
@@ -323,7 +326,7 @@ export default class BankReconciliationService {
       if (input.cacheId && input.candidateKey) {
         const cached = await tx.bankMatchCache.findFirst({ where: { id: input.cacheId, accountId: context.accountId, expiresAt: { gt: new Date() } } });
         const candidate = (cached?.result as unknown as { candidates?: BankCandidate[] })?.candidates?.find(c => c.key === input.candidateKey && idsKey(c.itemIds) === idsKey(input.itemIds) && idsKey(c.transactions.map(t => t.id)) === idsKey(transactionIds));
-        if (candidate) suggestion = json({ source: candidate.source, model: candidate.model, reason: candidate.reason, key: candidate.key });
+        if (candidate) suggestion = json({ source: candidate.source, model: candidate.model, reason: candidate.reason, key: candidate.key, confidence: candidate.confidence });
       }
       const completed: FinancialTransaction[] = [];
       for (const t of transactions) {

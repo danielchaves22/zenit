@@ -148,7 +148,10 @@ const bankSuggestionLimit = rateLimit({ windowMs: 60_000, max: 30, standardHeade
   keyGenerator: req => `bank:${req.user.companyId}:${req.user.userId}`,
   message: { error: 'Aguarde um minuto antes de solicitar novas sugestões.' } });
 bankRouter.post('/suggestions', bankSuggestionLimit, suggestBankCandidates);
-bankRouter.post('/suggestions/batch', bankSuggestionLimit, suggestBankCandidatesBatch);
+const bankRuleSuggestionLimit = rateLimit({ windowMs: 60_000, max: 120, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: req => `bank-rules:${req.user.companyId}:${req.user.userId}`,
+  message: { error: 'Aguarde um minuto antes de solicitar novas buscas automáticas.' } });
+bankRouter.post('/suggestions/batch', (req, res, next) => (req.body?.useAi === false ? bankRuleSuggestionLimit : bankSuggestionLimit)(req, res, next), suggestBankCandidatesBatch);
 bankRouter.post('/confirm', confirmBankMatch);
 bankRouter.post('/reject', rejectBankMatch);
 bankRouter.post('/transactions', createBankTransaction);

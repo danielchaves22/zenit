@@ -1,139 +1,159 @@
 ---
-title: Conciliacao de contas de disponibilidade via OFX
+title: Conciliacao bancaria de contas
 slug: /docs/products/zenit-cash/availability-accounts-ofx-reconciliation
 type: functional-spec
 product: zenit-cash
 audience: product
 visibility: internal
-status: draft
+status: implemented
 owner: product
-last_reviewed: 2026-06-10
-summary: Especificacao funcional da conciliacao de contas de disponibilidade a partir de arquivos OFX.
+last_reviewed: 2026-09-07
+summary: Conciliacao mensal de contas Nubank e Bradesco com OFX/CSV, confirmacao humana e historico persistente.
 tags:
   - cash
   - accounts
   - reconciliation
   - ofx
-related:
-  - /docs/internal/rfc/zenit-cash-product-direction-rfc
-  - /docs/products/zenit-cash/accounts-negative-balance
+  - csv
 ---
 
-# Conciliacao de contas de disponibilidade via OFX
+# Conciliação bancária de contas
 
-## Objetivo
+## Acesso e objetivo
 
-Definir a rotina de conciliacao de contas de disponibilidade a partir de arquivos OFX, com foco em identificar o que ja foi lancado, o que ainda esta pendente e o que precisa de revisao antes de virar lancamento.
+Financeiro → Contas → **Conciliar** na conta corrente ou poupança. A página
+`/financial/accounts/[id]/reconciliation?month=AAAA-MM` abre com a conta selecionada
+e sugere o mês anterior. É destinada à conferência retrospectiva dos lançamentos
+já registrados, com progresso salvo por conta e mês.
 
-## Escopo
+A tela oferece Extrato, Lançamentos sem vínculo e Histórico. O usuário importa o
+arquivo, seleciona movimentos, revisa candidatos e confirma os vínculos. Nenhuma
+sugestão, mesmo com data e valor iguais, é automaticamente confirmada.
 
-A funcionalidade deve permitir:
+## Importação
 
-- importar um arquivo OFX associado a uma conta de disponibilidade;
-- normalizar os movimentos financeiros do arquivo;
-- comparar esses movimentos com os lancamentos ja existentes na conta;
-- exibir uma tela de conciliacao no mesmo estilo operacional da conciliacao de cartao;
-- permitir criacao individual ou em lote dos itens pendentes.
+- Nubank: OFX e CSV, com FITID/Identificador como identidade do movimento.
+- Bradesco: OFX e CSV, usando data, valor assinado, documento, descrição normalizada
+  e ocorrência para compatibilizar os formatos. Documento sozinho não é identidade.
+- O parser suporta SGML OFX 1.x, UTF-8/Windows-1252, CSV com campos entre aspas,
+  quebras CR/CRLF/LF e linhas de continuação do histórico Bradesco.
+- Saldo anterior, totalizações e a seção Saldos Invest Fácil são referências,
+  não movimentos financeiros. Rendimentos efetivamente lançados permanecem.
+- Últimos Lançamentos fora do mês são preservados nas respectivas datas e
+  apresentados separadamente na prévia. Importar não altera a data bancária.
+- A prévia informa banco, conta (quando presente), período, totais e linhas fora
+  do mês; o usuário confirma a importação na conta escolhida.
+- Banco e número da conta são comparados com o cadastro e importações anteriores.
+  CSV Nubank não informa o número da conta: essa primeira escolha exige conferência.
+- O arquivo original é guardado uma vez por conta/hash. Reimportações vinculam
+  o arquivo aos movimentos existentes e não criam lançamentos financeiros.
+- Movimentos idênticos com identificadores distintos são preservados. No Bradesco,
+  ocorrências indistinguíveis recebem identidades por ocorrência e um aviso. Uma
+  exportação parcial dessas ocorrências exige revisão humana: sem identificador
+  comum ao CSV não é possível provar identidade individual somente pelo conteúdo.
+- Limites: 5 MB, 5.000 movimentos por arquivo, 20 itens por grupo manual.
 
-Esta rotina existe para reduzir divergencias quando um movimento bancario passou na conta, mas ainda nao foi registrado manualmente no sistema.
+## Correspondências e efeitos financeiros
 
-## Premissas
+O motor busca na empresa e conta autorizadas, respeitando as permissões de ambas
+as contas de uma transferência. Compara direção, valor, data de liquidação
+(`effectiveDate`, com fallback em `date`), descrição e histórico confirmado.
+Pendentes usam vencimento/data como referência e permanecem identificados.
+Os ajustes manuais de saldo e movimentos internos de orçamento seguem o filtro
+operacional existente e não são oferecidos como movimentos bancários a vincular.
 
-- o OFX deve ser tratado como formato padrao e, em principio, independente de banco;
-- nao deve ser necessario criar um parser por banco, salvo quando um banco gerar um OFX fora do padrao esperado;
-- a conciliacao sempre acontece dentro de uma conta previamente escolhida;
-- a descricao livre usada pelo usuario no Zenit nao deve ser o criterio principal de matching;
-- identificadores nativos do OFX, quando existirem, devem ser aproveitados para auditoria e para fortalecer o matching.
+As sugestões permitem 1:1, 1:N, N:1 e seleção manual de grupos N:N. A busca
+combinatória automática é limitada: até três lançamentos entre 25 próximos, ou
+pares de movimentos bancários para um lançamento. A busca manual paginada permite
+ampliar as datas sem aumentar indefinidamente o contexto da IA.
 
-## Regras de negocio
+A confirmação exige soma exata em centavos, mesma direção, versões atuais dos
+lançamentos e ausência de vínculos ativos anteriores na mesma conta. Não há
+tolerância financeira automática; diferenças permanecem para revisão.
 
-### Estados da conciliacao
+- **Vincular liquidado:** somente grava o vínculo, sem alterar saldo, valor ou data.
+- **Liquidar e vincular pendente:** exige confirmação explícita e data de liquidação;
+  usa a rotina financeira existente dentro da mesma transação de banco do vínculo.
+- **Registrar faltante:** descrição, categoria ou outra conta e data são revisadas;
+  criação, saldo e vínculo são atômicos. Uma nova tentativa não duplica o lançamento.
+- **Transferência:** o mesmo lançamento pode ser conciliado uma vez em cada conta.
+  A criação direta não substitui o pagamento de fatura; para cartão usa-se a rotina
+  existente de pagamento, vinculando depois a transferência gerada.
+- **Desfazer:** libera o vínculo, preservando o lançamento, seu saldo e a auditoria.
 
-Cada movimento importado deve receber um dos estados abaixo:
+Um índice único parcial garante uma associação ativa por conta/lado de lançamento.
+As escritas usam transações serializáveis, bloqueios e validação da versão revisada.
+Conflitos concorrentes retornam pedido de atualização da tela.
 
-- `OK`: ja existe um lancamento equivalente na conta e nao ha divergencia relevante;
-- `SIMILAR`: existe um ou mais candidatos proximos, mas a confirmacao depende de revisao humana;
-- `PENDENTE`: nao foi encontrado lancamento equivalente e o item pode ser criado;
-- `NAO_IMPORTAVEL`: o item nao deve virar lancamento, seja por falta de dados validos, por ser uma linha nao operacional ou por cair numa regra explicita de exclusao.
+## Mês e alterações posteriores
 
-### Criterios de comparacao
+Concluir o mês exige movimentos importados, todos vinculados, e ausência de
+lançamentos liquidados sem vínculo na conferência. O mês concluído pode ser
+reaberto explicitamente. Isso não bloqueia lançamentos retroativos financeiros.
 
-O matching deve priorizar criterios objetivos do movimento:
+A migração instala um trigger em FinancialTransaction: mudanças em valor, conta,
+data, liquidação, status, arquivamento ou exclusão colocam o grupo em revisão,
+liberam suas associações ativas e reabrem o mês. Novos lançamentos retroativos
+liquidados também reabrem meses concluídos. Os snapshots e eventos são preservados.
 
-- conta conciliada;
-- direcao do movimento (`credito` ou `debito`);
-- valor;
-- data do movimento;
-- identificador de origem do OFX, quando houver, como `FITID`.
+O saldo final do extrato é uma referência histórica; não é comparado ao saldo
+atual da conta, que pode conter movimentações posteriores ao mês conciliado.
 
-A descricao do OFX pode ser exibida como apoio visual e persistida como metadado de origem, mas nao deve ser exigida para classificar um item como `OK`.
+## IA e feedback
 
-### Classificacao sugerida
+O botão **Sugerir com IA** utiliza a credencial e o modelo ativos da empresa.
+Envia somente a seleção, até dez candidatos e até cinco exemplos relevantes
+confirmados na mesma conta e com acesso autorizado. Descrições são dados, nunca
+instruções. A resposta estruturada pode escolher um candidato fornecido ou abster-se;
+IDs inventados, respostas incompletas e falhas do provedor são descartados.
 
-Regras iniciais esperadas:
+Confirmar é o feedback positivo: grupos ativos confirmados constituem os exemplos
+recuperáveis. **Não corresponde** grava rejeição daquele par e versão. Alterar o
+lançamento invalida a versão rejeitada. Desfazer ou invalidar um grupo retira-o dos
+exemplos positivos. Deixar pendente não representa rejeição. Não há fine-tuning nem
+treinamento automático do modelo.
 
-- `OK` quando houver coincidencia objetiva e sem ambiguidade entre conta, direcao, valor e data; se houver identificador unico de origem previamente vinculado ao lancamento, ele deve prevalecer como prova mais forte;
-- `SIMILAR` quando existir coincidencia parcial ou ambigua, como mesmo valor e direcao com pequena divergencia de data, ou mais de um candidato plausivel;
-- `PENDENTE` quando nao houver candidato suficientemente confiavel;
-- `NAO_IMPORTAVEL` para linhas invalidas, movimentos sem dados minimos, duplicidades internas do arquivo ou registros que nao devam materializar lancamentos operacionais.
+O cache inclui conta, empresa, usuário, versões dos candidatos, exemplos,
+configuração do modelo e versão do prompt. Guarda somente o resultado compacto,
+expira em sete dias e mantém até cem resultados recentes por conta (limpeza em uso).
+Confirmações, importações e desfazimentos invalidam o cache da conta. Chamadas
+simultâneas com o mesmo contexto são agrupadas no processo. A rota limita pedidos
+por empresa/usuário; indisponibilidade da IA mantém a conciliação manual disponível.
 
-### Acao do usuario
+A qualidade real da IA exige decisões revisadas no uso: coincidências de data e
+valor e testes de contrato não constituem medição da acurácia do modelo.
 
-Na tela de conciliacao, o usuario deve poder:
+## Persistência
 
-- revisar item a item;
-- confirmar se um item `SIMILAR` deve ser aceito como equivalente ou tratado como pendente;
-- criar um lancamento individualmente a partir de um item pendente;
-- criar em lote os itens pendentes selecionados.
+| Registro | Finalidade |
+| --- | --- |
+| BankReconciliation | Conta/mês, estado e conclusão |
+| BankStatementImport / ImportItem | Arquivo único, metadados e linhas nele presentes |
+| BankStatementItem | Movimento normalizado, identidade e vínculo ativo |
+| BankReconciliationGroup / GroupItem | Grupo confirmado e histórico de itens |
+| BankReconciliationTransaction | Referência ao lançamento, snapshot e associação ativa |
+| BankReconciliationEvent | Quem confirmou/desfez e mudanças automáticas |
+| BankMatchDecision | Rejeição ou correção do par revisado |
+| BankMatchCache | Sugestões substituíveis com contexto versionado e expiração |
 
-## Fluxos principais
+As listagens de movimentos e transações são paginadas no servidor em 50 registros;
+o histórico de grupos usa 20. Arquivos binários não são carregados nas listagens.
+Consultas de candidatos e exemplos têm limites explícitos, com índices por conta,
+data, identidade, período e associação ativa. O crescimento permanente acompanha
+os movimentos e decisões; candidatos descartados não geram produtos cartesianos
+persistentes nem logs completos de prompts por item.
 
-1. usuario seleciona uma conta de disponibilidade e envia um arquivo OFX;
-2. sistema interpreta o arquivo e converte seus movimentos para um modelo interno normalizado;
-3. sistema compara os movimentos importados com os lancamentos ja existentes naquela conta;
-4. sistema apresenta a tela de conciliacao com resumo, estados e diferencas;
-5. usuario revisa os itens e decide quais devem ser lancados;
-6. sistema cria os lancamentos confirmados e persiste os metadados de origem para auditoria e uso futuro no matching.
+## Entrega e verificação
 
-## Casos excepcionais
+Aplicar `backend/prisma/migrations/20260907010000_bank_account_reconciliation` via
+`prisma migrate deploy` antes de publicar o backend/frontend. A aplicação não
+executa essa migração automaticamente durante uma importação.
 
-- OFX sem `FITID` ou sem outro identificador forte deve continuar sendo suportado, com matching baseado em conta, direcao, valor e data;
-- o sistema deve ignorar ou marcar como `NAO_IMPORTAVEL` linhas que representem apenas saldo, fechamento tecnico ou conteudo sem efeito operacional;
-- arquivos com movimentos duplicados internamente devem sinalizar esse risco para evitar dupla criacao;
-- diferencas de descricao entre o extrato e o lancamento interno nao devem, por si so, impedir um `OK`;
-- transferencias podem exigir tratamento adicional no futuro, mas a primeira versao pode manter o foco em credito e debito por conta.
+Os testes usam exemplos fictícios e cobrem parsers, agrupamentos, permissões,
+deduplicação entre formatos, rollback financeiro, transferência, concorrência,
+reabertura e contratos da IA. Os quatro arquivos fornecidos no estudo foram
+verificados localmente; seus dados pessoais não integram os fixtures do repositório.
 
-## Impactos em dados e API
-
-A implementacao deve prever:
-
-- uma rotina de preview antes do commit, como ja ocorre na conciliacao de cartao;
-- persistencia de metadados de origem do OFX nos lancamentos criados ou vinculados;
-- registro minimo de auditoria da importacao, incluindo conta, arquivo, periodo lido e quantidade de movimentos;
-- suporte futuro a historico de importacoes e reprocessamento.
-
-Metadados desejaveis de origem incluem, quando disponiveis:
-
-- identificador do movimento no OFX;
-- data original do movimento;
-- valor;
-- direcao;
-- tipo do movimento;
-- nome, memo ou historico original;
-- identificador da sessao de importacao ou hash do arquivo.
-
-## Direcao de UX
-
-A experiencia deve seguir o mesmo padrao mental da conciliacao de cartao:
-
-- resumo no topo;
-- lista de itens conciliados e pendentes;
-- destaque visual para `OK`, `SIMILAR`, `PENDENTE` e `NAO_IMPORTAVEL`;
-- revisao humana antes do commit;
-- acoes individuais e em lote.
-
-## Pendencias em aberto
-
-- definir a janela exata de tolerancia para classificar um item como `SIMILAR`;
-- decidir se transferencias entre contas internas terao heuristica propria na primeira versao ou numa fase posterior;
-- definir se o historico de importacoes entra junto da primeira entrega ou apenas na futura central de conciliacao.
+Para usar uma base descartável sem editar `.env.test`, definir `TEST_DATABASE_URL`.
+O guard existente exige marcador de base/schema de teste. A suíte de integração
+recria apenas essa base de teste.

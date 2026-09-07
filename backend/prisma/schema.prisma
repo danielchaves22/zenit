@@ -440,6 +440,10 @@ model FinancialAccount {
   creditCardRecurringDescriptionAliases CreditCardRecurringDescriptionAlias[]
   userAccess            UserFinancialAccountAccess[]
   budget                Budget?
+  bankReconciliations   BankReconciliation[]
+  bankStatementImports  BankStatementImport[]
+  bankStatementItems    BankStatementItem[]
+  bankMatchCaches       BankMatchCache[]
 
   @@unique([name, type, companyId])
   @@index([bankId])
@@ -525,6 +529,7 @@ model FinancialTransaction {
   updatedAt       DateTime             @updatedAt
 
   // ✅ ÍNDICES EXISTENTES
+  bankReconciliationLinks BankReconciliationTransaction[]
   @@index([companyId])
   @@index([fromAccountId])
   @@index([toAccountId])
@@ -543,6 +548,161 @@ model FinancialTransaction {
   @@index([effectiveDate])                               // Conciliação bancária
   @@index([companyId, effectiveDate, status])           // Relatórios financeiros
   @@index([companyId, createdAt], map: "idx_ft_company_created_at")
+}
+
+// Bank statements are evidence; linking them never changes a financial balance.
+model BankReconciliation {
+  id          Int @id @default(autoincrement())
+  accountId   Int
+  account     FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  month       String @db.VarChar(7)
+  status      String @default("OPEN") @db.VarChar(16)
+  completedAt DateTime?
+  completedBy Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  groups      BankReconciliationGroup[]
+  events      BankReconciliationEvent[]
+  decisions   BankMatchDecision[]
+
+  @@unique([accountId, month])
+}
+
+model BankStatementImport {
+  id              Int @id @default(autoincrement())
+  accountId       Int
+  account         FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fileHash        String @db.VarChar(64)
+  fileName        String @db.VarChar(255)
+  fileData        Bytes
+  bank            String @db.VarChar(16)
+  format          String @db.VarChar(3)
+  bankAccount     String?
+  importedForMonth String @db.VarChar(7)
+  metadata        Json
+  createdBy       Int
+  createdAt       DateTime @default(now())
+  items           BankStatementImportItem[]
+
+  @@unique([accountId, fileHash])
+  @@index([accountId, importedForMonth])
+}
+
+model BankStatementItem {
+  id                    Int @id @default(autoincrement())
+  accountId             Int
+  account               FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  identityKey           String @db.VarChar(180)
+  date                  DateTime @db.Date
+  amount                Decimal @db.Decimal(15, 2)
+  description           String
+  normalizedDescription String
+  externalId            String?
+  document              String?
+  activeGroupId         Int?
+  activeGroup           BankReconciliationGroup? @relation("ActiveBankGroup", fields: [activeGroupId], references: [id], onDelete: SetNull)
+  createdAt             DateTime @default(now())
+  imports               BankStatementImportItem[]
+  groupHistory          BankReconciliationGroupItem[]
+
+  @@unique([accountId, identityKey])
+  @@index([accountId, externalId])
+  @@index([accountId, date, activeGroupId])
+  @@index([activeGroupId])
+}
+
+model BankStatementImportItem {
+  importId Int
+  itemId   Int
+  position Int
+  import   BankStatementImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  item     BankStatementItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([importId, itemId])
+  @@index([itemId])
+}
+
+model BankReconciliationGroup {
+  id               Int @id @default(autoincrement())
+  reconciliationId Int
+  reconciliation   BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  status           String @default("CONFIRMED") @db.VarChar(16)
+  createdBy        Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  note             String?
+  suggestion       Json?
+  activeItems      BankStatementItem[] @relation("ActiveBankGroup")
+  items            BankReconciliationGroupItem[]
+  transactions     BankReconciliationTransaction[]
+
+  @@index([reconciliationId, status])
+}
+
+model BankReconciliationGroupItem {
+  groupId Int
+  itemId  Int
+  group   BankReconciliationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  item    BankStatementItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, itemId])
+  @@index([itemId])
+}
+
+model BankReconciliationTransaction {
+  id                    Int @id @default(autoincrement())
+  groupId               Int
+  accountId             Int
+  transactionId         Int?
+  originalTransactionId Int
+  snapshot              Json
+  active                Boolean @default(true)
+  group                 BankReconciliationGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  transaction           FinancialTransaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  // The migration adds a partial unique index for active (accountId, transactionId).
+  @@index([transactionId])
+  @@index([groupId])
+  @@index([accountId, active])
+}
+
+model BankReconciliationEvent {
+  id               Int @id @default(autoincrement())
+  reconciliationId Int
+  reconciliation   BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  groupId          Int?
+  userId           Int?
+  action           String @db.VarChar(32)
+  details          Json?
+  createdAt        DateTime @default(now())
+
+  @@index([reconciliationId, createdAt])
+}
+
+model BankMatchDecision {
+  id               Int @id @default(autoincrement())
+  reconciliationId Int
+  reconciliation   BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  contextKey       String @unique @db.VarChar(64)
+  itemIds          Json
+  transactionIds   Json
+  decision         String @db.VarChar(16)
+  userId           Int
+  createdAt        DateTime @default(now())
+
+  @@index([reconciliationId])
+}
+
+model BankMatchCache {
+  id        Int @id @default(autoincrement())
+  accountId Int
+  account   FinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  key       String @unique @db.VarChar(64)
+  result    Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([accountId, expiresAt])
 }
 
 model CreditCardInvoice {

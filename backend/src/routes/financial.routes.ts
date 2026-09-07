@@ -129,8 +129,31 @@ import {
   previewCreditCardReconciliation
 } from '../controllers/credit-card-reconciliation.controller';
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
+import {
+  loadBankReconciliation, previewBankStatement, importBankStatement, suggestBankCandidates,
+  confirmBankMatch, rejectBankMatch, createBankTransaction, undoBankMatch, updateBankMonthStatus,
+  getBankAudit, getBankTransactions
+} from '../controllers/bank-reconciliation.controller';
+import rateLimit from 'express-rate-limit';
 
 const router = Router();
+
+const bankRouter = Router({ mergeParams: true });
+bankRouter.use(requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess());
+bankRouter.get('/', loadBankReconciliation);
+bankRouter.post('/preview', previewBankStatement);
+bankRouter.post('/imports', importBankStatement);
+bankRouter.post('/suggestions', rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: req => `bank:${req.user.companyId}:${req.user.userId}`,
+  message: { error: 'Aguarde um minuto antes de solicitar novas sugestões.' } }), suggestBankCandidates);
+bankRouter.post('/confirm', confirmBankMatch);
+bankRouter.post('/reject', rejectBankMatch);
+bankRouter.post('/transactions', createBankTransaction);
+bankRouter.get('/transactions', getBankTransactions);
+bankRouter.post('/undo', undoBankMatch);
+bankRouter.post('/status', updateBankMonthStatus);
+bankRouter.get('/audit', getBankAudit);
+router.use('/accounts/:id/reconciliation/:month', bankRouter);
 
 router.get('/defaults', getCompanyDefaults);
 router.get('/banks', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listFinancialBanks);

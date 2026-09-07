@@ -19,6 +19,8 @@ function loadTestEnv(options = {}) {
   }
 
   dotenv.config({ path: testEnvPath, override: true });
+  // Allow a disposable local database without rewriting the developer's .env.test.
+  if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   process.env.NODE_ENV = 'test';
   return true;
 }

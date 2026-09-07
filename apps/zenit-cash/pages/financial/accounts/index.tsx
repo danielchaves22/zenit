@@ -19,6 +19,7 @@ import {
   MinusCircle,
   Plus,
   Receipt,
+  Scale,
   Settings,
   Star,
   StarOff,
@@ -37,6 +38,7 @@ interface Account {
   isActive: boolean;
   isDefault: boolean;
   allowNegativeBalance: boolean;
+  purpose?: 'GENERAL' | 'BUDGET';
 }
 
 function formatCurrency(value: string | number): string {
@@ -523,6 +525,15 @@ function AccountsPageInner() {
                         >
                           <Receipt size={16} />
                         </Link>
+                        {['CHECKING', 'SAVINGS'].includes(account.type) && account.purpose !== 'BUDGET' && (
+                          <Link
+                            href={`/financial/accounts/${account.id}/reconciliation`}
+                            className="inline-flex items-center gap-1 rounded border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:border-blue-500 hover:text-blue-300"
+                            title={`Conciliar ${account.name}`}
+                          >
+                            <Scale size={14} /> Conciliar
+                          </Link>
+                        )}
                         <Link
                           href={`/financial/accounts/${account.id}`}
                           className="p-1 text-gray-300 transition-colors hover:text-[#2563eb]"

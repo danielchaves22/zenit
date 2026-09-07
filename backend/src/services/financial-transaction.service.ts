@@ -547,10 +547,11 @@ export default class FinancialTransactionService {
     data: any,
     parsedAmount: any,
     transactionId: string,
-    startTime: number
+    startTime: number,
+    existingTx?: Prisma.TransactionClient
   ): Promise<FinancialTransaction> {
     
-    return await prisma.$transaction(async (tx) => {
+    const execute = async (tx: Prisma.TransactionClient) => {
       
       // âœ… CRITICAL: Acquire locks in DETERMINISTIC ORDER to prevent deadlocks
       const accountsToLock = [];
@@ -697,11 +698,41 @@ export default class FinancialTransactionService {
       
       return transaction;
       
-    }, {
+    };
+    if (existingTx) return execute(existingTx);
+    return prisma.$transaction(execute, {
       isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       timeout: 30000, // 30 seconds timeout
       maxWait: 10000   // 10 seconds max wait for transaction slot
     });
+  }
+
+  /** Reuse financial validation and balances inside the reconciliation's atomic commit. */
+  static async createForBankReconciliationTx(
+    tx: Prisma.TransactionClient,
+    data: {
+      description: string; amount: string; date: Date; effectiveDate: Date;
+      type: TransactionType; fromAccountId?: number | null; toAccountId?: number | null;
+      categoryId?: number | null; companyId: number; createdBy: number;
+    }
+  ): Promise<FinancialTransaction> {
+    this.validateTransactionData(data.type, data.fromAccountId, data.toAccountId, false);
+    const amount = parseDecimal(data.amount);
+    if (amount.lte(0)) throw new Error('O valor deve ser positivo.');
+    return this.executeTransactionWithFullLocking(
+      { ...data, status: TransactionStatus.COMPLETED }, amount, `bank_${randomUUID()}`, Date.now(), tx
+    );
+  }
+
+  static async settleForBankReconciliationTx(
+    tx: Prisma.TransactionClient, original: FinancialTransaction, effectiveDate: Date, companyId: number
+  ): Promise<FinancialTransaction> {
+    if (original.status !== TransactionStatus.PENDING) throw new Error('O lançamento já foi liquidado. Atualize a conciliação.');
+    const updated = await this.updateSingleTransactionRecordTx(tx, original, {
+      status: TransactionStatus.COMPLETED, effectiveDate
+    }, companyId);
+    await this.invalidateFinancialCaches(companyId, [original.fromAccountId, original.toAccountId].filter((id): id is number => id !== null));
+    return updated;
   }
 
   /**

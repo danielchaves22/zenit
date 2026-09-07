@@ -245,6 +245,13 @@ export const routeSurfaces: RouteSurface[] = [
     requiredPermission: 'FINANCIAL_ACCOUNTS',
   },
   {
+    pattern: '/financial/accounts/[id]/reconciliation',
+    module: 'accounts',
+    template: 'workspace',
+    title: 'Conciliacao bancaria',
+    requiredPermission: 'FINANCIAL_ACCOUNTS',
+  },
+  {
     pattern: '/financial/accounts/[id]',
     module: 'accounts',
     template: 'form',

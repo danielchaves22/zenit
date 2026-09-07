@@ -70,6 +70,19 @@ export function candidateFor(items: MatchItem[], transactions: MatchTransaction[
   };
 }
 
+// A score is a ranking signal, not a probability. Skip AI only when independent
+// evidence agrees and neither side has a plausible competing match.
+export function hasConfidentBankMatch(candidates: BankCandidate[], neighbors: MatchItem[] = [], limited = false): boolean {
+  const best = candidates[0];
+  if (limited || !best || cents(best.difference) !== 0 || best.items.length !== 1 || best.transactions.length !== 1) return false;
+  const item = best.items[0], transaction = best.transactions[0];
+  if (transaction.status !== 'COMPLETED' || dayDistance(item.date, transaction.date) > 1) return false;
+  if (similarity(item.description, transaction.description) < 0.6 && best.source !== 'HISTORY') return false;
+  if (candidates.slice(1).some(c => cents(c.difference) === 0 && best.score - c.score < 15)) return false;
+  return !neighbors.some(other => other.id !== item.id && cents(other.amount) === cents(item.amount)
+    && dayDistance(day(other.date), transaction.date) <= 1);
+}
+
 // Bound the combinatorial search. Manual selection remains available outside these suggestions.
 export function rankBankCandidates(items: MatchItem[], transactions: MatchTransaction[], accountId: number, neighbors: MatchItem[] = []): BankCandidate[] {
   const total = sumCents(items.map(i => cents(i.amount)));

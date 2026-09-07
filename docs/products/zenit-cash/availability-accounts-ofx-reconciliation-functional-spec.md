@@ -30,7 +30,30 @@ A tela oferece Extrato, Lançamentos sem vínculo e Histórico. O usuário impor
 arquivo, seleciona movimentos, revisa candidatos e confirma os vínculos. Nenhuma
 sugestão, mesmo com data e valor iguais, é automaticamente confirmada.
 
+**Marcar todos desta página** seleciona somente movimentos ainda não conciliados,
+até 50 por busca; mudar de página ou filtro limpa a seleção. Por padrão cada movimento
+é pesquisado separadamente, em lotes de até cinco que compartilham consultas e histórico.
+O progresso e os resultados são apresentados por movimento. Confirmar um vínculo mantém
+os demais resultados e remove candidatos que usam itens ou lançamentos já vinculados.
+**Buscar pela soma dos selecionados** é uma opção explícita para grupos de até 20 itens
+da mesma direção. As ações manuais continuam disponíveis em cada resultado.
+
+No desktop, a lista do extrato e as sugestões têm rolagem própria dentro da altura
+disponível, seguindo a tela de faturas. Os indicadores superiores usam cards compactos.
+
 ## Importação
+
+Selecionar o arquivo mostra uma prévia sem persistir. **Iniciar Conciliação** grava o
+extrato e esconde o painel de importação, sem criar ou alterar lançamentos financeiros.
+O painel reaparece quando ainda não há movimentos ou após reiniciar o mês.
+
+**Reiniciar conciliação**, junto a **Concluir mês**, exige confirmação explícita e é
+bloqueado no servidor para meses concluídos. Apaga a sessão do mês, seus grupos,
+histórico, decisões e movimentos, limpa o cache e remove arquivos sem uso restante.
+Lançamentos financeiros, inclusive os criados/liquidados durante a conciliação, são
+preservados com seus saldos. Arquivos compartilhados e vínculos de outros meses são
+mantidos. Reimportar o mesmo arquivo depois do reinício restaura os movimentos apagados
+sem duplicar os que pertencem aos meses preservados. Não exige nova migração.
 
 - Nubank: OFX e CSV, com FITID/Identificador como identidade do movimento.
 - Bradesco: OFX e CSV, usando data, valor assinado, documento, descrição normalizada
@@ -101,7 +124,12 @@ atual da conta, que pode conter movimentações posteriores ao mês conciliado.
 
 ## IA e feedback
 
-O botão **Sugerir com IA** utiliza a credencial e o modelo ativos da empresa.
+O botão único **Buscar correspondências** usa regras e histórico antes da IA.
+A IA é dispensada somente para um candidato 1:1 liquidado, com valor exato, até um
+dia de diferença e descrição semelhante ou histórico confirmado relevante, sem
+concorrentes próximos em nenhum dos lados e sem truncamento da busca. O score serve
+para ordenação, não representa uma probabilidade calibrada. Casos ambíguos consultam
+automaticamente a credencial e o modelo ativos da empresa; sem candidatos a IA não é chamada.
 Envia somente a seleção, até dez candidatos e até cinco exemplos relevantes
 confirmados na mesma conta e com acesso autorizado. Descrições são dados, nunca
 instruções. A resposta estruturada pode escolher um candidato fornecido ou abster-se;

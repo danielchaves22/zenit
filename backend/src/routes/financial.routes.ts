@@ -130,9 +130,9 @@ import {
 } from '../controllers/credit-card-reconciliation.controller';
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 import {
-  loadBankReconciliation, previewBankStatement, importBankStatement, suggestBankCandidates,
+  loadBankReconciliation, previewBankStatement, importBankStatement, suggestBankCandidates, suggestBankCandidatesBatch,
   confirmBankMatch, rejectBankMatch, createBankTransaction, undoBankMatch, updateBankMonthStatus,
-  getBankAudit, getBankTransactions
+  getBankAudit, getBankTransactions, resetBankReconciliation
 } from '../controllers/bank-reconciliation.controller';
 import rateLimit from 'express-rate-limit';
 
@@ -143,9 +143,12 @@ bankRouter.use(requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAcc
 bankRouter.get('/', loadBankReconciliation);
 bankRouter.post('/preview', previewBankStatement);
 bankRouter.post('/imports', importBankStatement);
-bankRouter.post('/suggestions', rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false,
+bankRouter.post('/reset', resetBankReconciliation);
+const bankSuggestionLimit = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false,
   keyGenerator: req => `bank:${req.user.companyId}:${req.user.userId}`,
-  message: { error: 'Aguarde um minuto antes de solicitar novas sugestões.' } }), suggestBankCandidates);
+  message: { error: 'Aguarde um minuto antes de solicitar novas sugestões.' } });
+bankRouter.post('/suggestions', bankSuggestionLimit, suggestBankCandidates);
+bankRouter.post('/suggestions/batch', bankSuggestionLimit, suggestBankCandidatesBatch);
 bankRouter.post('/confirm', confirmBankMatch);
 bankRouter.post('/reject', rejectBankMatch);
 bankRouter.post('/transactions', createBankTransaction);

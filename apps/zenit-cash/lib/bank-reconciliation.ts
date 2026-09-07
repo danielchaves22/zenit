@@ -7,6 +7,14 @@ export interface BankCandidate {
   key: string; itemIds: number[]; items: BankItem[]; transactions: BankTransaction[];
   amount: string; difference: string; score: number; reason: string; source: 'RULE' | 'HISTORY' | 'AI'; model?: string;
 }
+export interface BankSearchResult {
+  itemId: number;
+  candidates: BankCandidate[];
+  cacheId?: number;
+  aiMessage?: string;
+  limited?: boolean;
+  error?: string;
+}
 export interface BankMonth { id: number; month: string; status: 'OPEN' | 'COMPLETED'; completedAt?: string | null }
 export interface BankImport {
   id: number; fileName: string; bank: string; format: string; bankAccount: string | null; createdAt: string;

@@ -5,6 +5,9 @@ import { bradescoCsv, bradescoOfx, nubankCsv, ofx } from '../fixtures/bank-state
 import express from 'express';
 import request from 'supertest';
 import financialRoutes from '../../src/routes/financial.routes';
+import { suggestBankMatchByAi } from '../../src/services/bank-reconciliation-ai.service';
+
+jest.mock('../../src/services/bank-reconciliation-ai.service', () => ({ suggestBankMatchByAi: jest.fn(async ({ candidates }) => ({ candidates, message: 'IA consultada no teste.' })) }));
 
 jest.mock('../../src/services/cache.service', () => ({ __esModule: true, default: {
   invalidatePattern: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined),
@@ -31,6 +34,7 @@ describe('Bank reconciliation persisted workflow', () => {
     userId = user.id;
   });
   beforeEach(async () => {
+    jest.mocked(suggestBankMatchByAi).mockClear();
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.financialAccount.deleteMany({ where: { companyId } });
     await prisma.financialCategory.deleteMany({ where: { companyId } });
@@ -59,6 +63,79 @@ describe('Bank reconciliation persisted workflow', () => {
     expect((await Service.load(context, month)).summary.total).toBe(2);
     expect((await Service.load(context, '2026-09')).summary.total).toBe(1);
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+  });
+  it('searches selected movements separately, including both directions, without creating links', async () => {
+    await importRows([['22/08/2026', '-20.00', 'out', 'Padaria'], ['22/08/2026', '30.00', 'in', 'Reembolso']]);
+    const expense = await createExisting('20.00');
+    const income = await createExisting('30.00', { type: 'INCOME', fromAccountId: null, toAccountId: accountId, description: 'Reembolso', categoryId: null });
+    const ids = await importedIds();
+    const result = await Service.candidatesBatch(context, month, ids);
+    expect(result.results).toHaveLength(2);
+    expect(result.results[0].candidates[0].transactions.map(t => t.id)).toEqual([expense.id]);
+    expect(result.results[1].candidates[0].transactions.map(t => t.id)).toEqual([income.id]);
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
+    await expect(Service.candidates(context, month, ids)).rejects.toThrow('mesma direção');
+  });
+  it('uses AI only for ambiguous items and retains feedback from rule-based confirmations', async () => {
+    await importRows([['22/08/2026', '-20.00', 'strong', 'Padaria'], ['22/08/2026', '-30.00', 'uncertain', 'Mercado']]);
+    const strong = await createExisting('20.00');
+    await createExisting('30.00', { description: 'Mercado' });
+    await createExisting('30.00', { description: 'Mercado' });
+    const ids = await importedIds();
+    await Service.candidatesBatch(context, month, ids);
+    expect(suggestBankMatchByAi).toHaveBeenCalledTimes(1);
+    expect(jest.mocked(suggestBankMatchByAi).mock.calls[0][0].items.map(i => i.id)).toEqual([ids[1]]);
+    await confirm([ids[0]], [strong.id]);
+    expect((await prisma.bankReconciliationGroup.findFirstOrThrow({ where: { reconciliation: { accountId } }, include: { items: true, transactions: true } })).items).toHaveLength(1);
+    await expect(Service.candidatesBatch(context, month, ids)).rejects.toThrow('já foi conciliado');
+    expect((await Service.candidatesBatch(context, month, [ids[1]])).results).toHaveLength(1);
+  });
+  it('rejects batch items belonging to another account and keeps the batch bounded', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria']]);
+    const ids = await importedIds();
+    await expect(Service.candidatesBatch({ ...context, accountId: otherAccountId }, month, ids)).rejects.toThrow('não pertence');
+    await expect(Service.candidatesBatch(context, month, Array.from({ length: 6 }, (_, i) => i + 1))).rejects.toThrow('1 a 5');
+  });
+  it('resets only reconciliation evidence and reuses financial transactions after importing again', async () => {
+    const rows: Array<[string, string, string, string]> = [['22/08/2026', '-20.00', 'a', 'Padaria'], ['22/08/2026', '-10.00', 'b', 'Tarifa']];
+    await importRows(rows);
+    const ids = await importedIds();
+    const existing = await createExisting('20.00');
+    await confirm([ids[0]], [existing.id]);
+    await Service.create(context, month, { itemIds: [ids[1]], description: 'Tarifa', effectiveDate: '2026-08-22', categoryId });
+    const before = await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } });
+    const session = (await Service.load(context, month)).session!;
+    await prisma.bankMatchDecision.create({ data: { reconciliationId: session.id, contextKey: `reset-${accountId}`, itemIds: ids, transactionIds: [existing.id], decision: 'REJECTED', userId } });
+    await prisma.bankMatchCache.create({ data: { accountId, key: `cache-${accountId}`, result: {}, expiresAt: new Date('2200-01-01') } });
+    expect(await Service.reset(context, month)).toEqual({ removedItems: 2, removedFiles: 1 });
+    expect(await prisma.bankReconciliation.count({ where: { accountId } })).toBe(0);
+    expect(await prisma.bankMatchDecision.count({ where: { reconciliationId: session.id } })).toBe(0);
+    expect(await prisma.bankReconciliationEvent.count({ where: { reconciliationId: session.id } })).toBe(0);
+    expect(await prisma.bankReconciliationTransaction.count({ where: { accountId } })).toBe(0);
+    expect(await prisma.bankStatementImport.count({ where: { accountId } })).toBe(0);
+    expect(await prisma.bankMatchCache.count({ where: { accountId } })).toBe(0);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(2);
+    expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } })).balance.toFixed(2)).toBe(before.balance.toFixed(2));
+    expect((await importRows(rows)).created).toBe(2);
+    expect((await Service.load(context, month)).summary.unmatchedTransactions).toBe(2);
+  });
+  it('preserves a shared file and a completed neighboring month when resetting and reimporting', async () => {
+    const rows: Array<[string, string, string, string]> = [['22/08/2026', '-20.00', 'aug', 'Padaria'], ['02/09/2026', '-30.00', 'sep', 'Mercado']];
+    const imported = await importRows(rows);
+    const september = await prisma.bankStatementItem.findFirstOrThrow({ where: { accountId, date: new Date('2026-09-02') } });
+    const existing = await createExisting('30.00', { date: new Date('2026-09-02'), effectiveDate: new Date('2026-09-02') });
+    await Service.confirm(context, '2026-09', { itemIds: [september.id], transactions: [{ id: existing.id, version: existing.updatedAt.toISOString() }] });
+    await Service.status(context, '2026-09', 'COMPLETED');
+    expect(await Service.reset(context, month)).toEqual({ removedItems: 1, removedFiles: 0 });
+    expect((await Service.load(context, month)).imports).toHaveLength(0);
+    expect((await Service.load(context, '2026-09')).summary.confirmed).toBe(1);
+    const repeated = await importRows(rows);
+    expect(repeated.importId).toBe(imported.importId); expect(repeated.created).toBe(1);
+    expect(await prisma.bankStatementImport.count({ where: { accountId } })).toBe(1);
+    expect((await Service.load(context, '2026-09')).session?.status).toBe('COMPLETED');
+    await expect(Service.reset(context, '2026-09')).rejects.toThrow('concluída');
+    expect((await Service.load(context, '2026-09')).summary.confirmed).toBe(1);
   });
   it('reimports Nubank in another format and preserves individually distinct same-value rows', async () => {
     await importRows([['22/08/2026', '-20.00', 'nu1', 'Padaria'], ['22/08/2026', '-20.00', 'nu2', 'Padaria']]);
@@ -206,6 +283,11 @@ describe('Bank reconciliation persisted workflow', () => {
     expect((await request(app).post(`${path}/preview`).send({ fileBase64: upload, fileName: 'file.csv', accountId: otherAccountId })).status).toBe(200);
     expect((await request(app).post(`${path}/imports?id=${otherAccountId}`).send({ fileBase64: upload, fileName: 'file.csv', id: otherAccountId })).status).toBe(200);
     expect((await request(app).get(path)).body.account.id).toBe(accountId);
+    const ids = await importedIds();
+    expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids })).body.results[0].itemId).toBe(ids[0]);
+    expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: [...ids, ...ids] })).status).toBe(400);
+    expect((await request(app).post(`${path}/reset`).send({ confirmed: false })).status).toBe(400);
+    expect((await Service.load(context, month)).summary.total).toBe(1);
     expect(await prisma.bankStatementItem.count({ where: { accountId: otherAccountId } })).toBe(0);
     expect((await request(app).post(`${path}/confirm`).send({ itemIds: [], transactions: [] })).status).toBe(400);
     expect((await request(app).get(`/financial/accounts/${accountId}/reconciliation/2026-13`)).status).toBe(400);

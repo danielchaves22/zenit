@@ -1,4 +1,4 @@
-import { candidateFor, MatchItem, MatchTransaction, rankBankCandidates, signedTransactionAmount } from '../../src/services/bank-reconciliation-matching';
+import { candidateFor, hasConfidentBankMatch, MatchItem, MatchTransaction, rankBankCandidates, signedTransactionAmount } from '../../src/services/bank-reconciliation-matching';
 
 const date = new Date('2026-08-22T00:00:00Z');
 const item = (id: number, amount: string): MatchItem => ({ id, amount, description: 'Padaria', date });
@@ -27,5 +27,27 @@ describe('Bank candidate matching', () => {
     const original = candidateFor([item(1, '-10.00')], [transaction(1, '11.00')], 1);
     expect(original.difference).toBe('1.00');
     expect(candidateFor([item(1, '-10.00')], [transaction(1, '11.00', { updatedAt: new Date('2026-09-01') })], 1).key).not.toBe(original.key);
+  });
+  it('requires corroborating descriptions or confirmed history before skipping AI', () => {
+    const strong = candidateFor([item(1, '-20.00')], [transaction(1, '20.00')], 1);
+    expect(hasConfidentBankMatch([strong])).toBe(true);
+    const unrelated = candidateFor([item(1, '-20.00')], [transaction(1, '20.00', { description: 'Outro nome' })], 1);
+    expect(hasConfidentBankMatch([unrelated])).toBe(false);
+    expect(hasConfidentBankMatch([{ ...unrelated, source: 'HISTORY' }])).toBe(true);
+  });
+  it('keeps duplicate transactions, competing statement rows and limited searches ambiguous', () => {
+    const candidates = rankBankCandidates([item(1, '-20.00')], [transaction(1, '20.00'), transaction(2, '20.00')], 1);
+    expect(hasConfidentBankMatch(candidates)).toBe(false);
+    expect(hasConfidentBankMatch([candidates[0]], [item(2, '-20.00')])).toBe(false);
+    expect(hasConfidentBankMatch([candidates[0]], [], true)).toBe(false);
+  });
+  it('does not treat grouped, pending, distant or mismatched candidates as strong', () => {
+    const choices = [
+      candidateFor([item(1, '-20.00'), item(2, '-10.00')], [transaction(1, '30.00')], 1),
+      candidateFor([item(1, '-20.00')], [transaction(1, '20.00', { status: 'PENDING', dueDate: date })], 1),
+      candidateFor([item(1, '-20.00')], [transaction(1, '20.00', { effectiveDate: new Date('2026-08-25') })], 1),
+      candidateFor([item(1, '-20.00')], [transaction(1, '21.00')], 1)
+    ];
+    expect(choices.every(candidate => !hasConfidentBankMatch([candidate]))).toBe(true);
   });
 });

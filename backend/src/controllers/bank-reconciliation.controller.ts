@@ -31,7 +31,9 @@ function endpoint(action: (context: BankContext, month: string, req: Request) =>
 export const loadBankReconciliation = endpoint((c, m, req) => { const q = paging.parse(req.query); return Service.load(c, m, q.page, q.filter); });
 export const previewBankStatement = endpoint((c, m, req) => Service.preview(c, m, file.parse(req.body).fileBase64));
 export const importBankStatement = endpoint((c, m, req) => { const f = file.parse(req.body); return Service.import(c, m, f.fileBase64, f.fileName); });
-export const suggestBankCandidates = endpoint((c, m, req) => { const input = z.object({ itemIds, useAi: z.boolean().default(false) }).parse(req.body); return Service.candidates(c, m, input.itemIds, input.useAi); });
+export const resetBankReconciliation = endpoint((c, m, req) => { z.object({ confirmed: z.literal(true) }).parse(req.body); return Service.reset(c, m); });
+export const suggestBankCandidates = endpoint((c, m, req) => { const input = z.object({ itemIds, useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidates(c, m, input.itemIds, input.useAi); });
+export const suggestBankCandidatesBatch = endpoint((c, m, req) => { const input = z.object({ itemIds: z.array(id).min(1).max(5).refine(ids => new Set(ids).size === ids.length, 'Itens repetidos.') }).parse(req.body); return Service.candidatesBatch(c, m, input.itemIds); });
 export const confirmBankMatch = endpoint((c, m, req) => Service.confirm(c, m, link.parse(req.body)));
 export const rejectBankMatch = endpoint((c, m, req) => Service.reject(c, m, link.parse(req.body)));
 export const createBankTransaction = endpoint((c, m, req) => Service.create(c, m, z.object({ itemIds,

@@ -12,7 +12,7 @@ let data: BankWorkspace;
 const makeData = (items: BankItem[]): BankWorkspace => ({ account: { id: 1, name: 'Conta teste', isActive: true }, month: '2026-08', session: null, items, page: 1, pageSize: 50, total: items.length,
   summary: { total: items.length, confirmed: 0, pending: items.length, credits: '30', debits: '-20', unmatchedTransactions: items.length, restrictedTransactions: 0 }, imports: [], history: [] });
 const selectAll = () => screen.getByRole('checkbox', { name: 'Marcar ou desmarcar todos os movimentos desta página' });
-const candidate = (i: BankItem) => ({ key: `candidate-${i.id}`, itemIds: [i.id], items: [i], amount: i.amount, difference: '0', score: 100, reason: 'Mesma data e valor', source: 'RULE',
+const candidate = (i: BankItem) => ({ key: `candidate-${i.id}`, feedbackToken: `receipt-${i.id}`, itemIds: [i.id], items: [i], amount: i.amount, difference: '0', score: 100, reason: 'Mesma data e valor', source: 'RULE',
   confidence: { level: 'HIGH', reasons: ['Valor exato', 'Mesma data'] },
   transactions: [{ id: i.id + 100, description: `Lançamento ${i.id}`, amount: i.amount, date: i.date, status: 'COMPLETED', type: i.amount.startsWith('-') ? 'EXPENSE' : 'INCOME', version: '2026-08-22T00:00:00.000Z' }] });
 
@@ -65,7 +65,7 @@ describe('Simplified bank reconciliation', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.getAllByRole('button', { name: 'Revisar vínculo' })).toHaveLength(1);
     expect(screen.getByRole('region', { name: 'Correspondências para Movimento 2' })).toBeInTheDocument();
-    expect(vi.mocked(api.post).mock.calls.find(([url]) => String(url).endsWith('/confirm'))?.[1]).toMatchObject({ itemIds: [1], cacheId: 201 });
+    expect(vi.mocked(api.post).mock.calls.find(([url]) => String(url).endsWith('/confirm'))?.[1]).toMatchObject({ itemIds: [1], cacheId: 201, feedbackToken: 'receipt-1' });
   });
   it('uses combined totals only when explicitly requested', async () => {
     data = makeData([item(1), item(3)]);
@@ -120,7 +120,7 @@ describe('Simplified bank reconciliation', () => {
     let finishAi: (value: any) => void = () => {};
     vi.mocked(api.post).mockImplementation(async (url, body: any, config) => {
       if (body.useAi === 'auto') return new Promise(resolve => { finishAi = resolve; });
-      if (body.useAi === false) return { data: { results: data.items.map(i => ({ itemId: i.id, candidates: [{ ...candidate(i), confidence: { level: 'MEDIUM', reasons: ['Descrições pouco semelhantes'] } }] })) } };
+      if (body.useAi === false) return { data: { results: data.items.map(i => ({ itemId: i.id, candidates: [{ ...candidate(i), confidence: { level: 'MEDIUM_LOW', reasons: ['Datas diferentes'] } }] })) } };
       return defaultPost(url, body, config);
     });
     await open();
@@ -185,5 +185,107 @@ describe('Simplified bank reconciliation', () => {
     await screen.findByText('Sem correspondência encontrada');
     expect(screen.getAllByRole('button', { name: 'Revisar vínculo' })).toHaveLength(1);
     expect(vi.mocked(api.post).mock.calls.filter(([url]) => String(url).endsWith('/suggestions/batch')).map(([, body]: any) => body.itemIds)).toEqual([[1, 3, 5], [3]]);
+  });
+  it('shows four confidence levels and skips AI for medium-high on selection and explicit search', async () => {
+    data = makeData([item(1), item(2), item(3), item(4)]);
+    const levels = ['HIGH', 'MEDIUM_HIGH', 'MEDIUM_LOW', 'LOW'];
+    vi.mocked(api.post).mockImplementation(async (_url, body: any) => ({ data: { results: body.itemIds.map((id: number) => ({ itemId: id,
+      candidates: [{ ...candidate(item(id)), confidence: { level: levels[id - 1], reasons: ['Critérios do teste'] } }] })) } }));
+    await open();
+    for (const label of ['alta', 'média alta', 'média baixa', 'baixa']) await screen.findByText(`Confiabilidade ${label}`);
+    fireEvent.click(screen.getByLabelText('Selecionar Movimento 2 em 22/08/2026'));
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar correspondências' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 500)); });
+    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Não corresponde' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/reject$/), expect.objectContaining({ feedbackToken: 'receipt-2' })));
+  });
+  it('finds possible missing items beyond the first statement page, excludes incomplete searches and does not invoke AI', async () => {
+    const all = Array.from({ length: 53 }, (_, i) => item(i + 1));
+    data = { ...makeData(all.slice(0, 50)), total: 53 };
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (!String(url).endsWith('/missing')) return { data } as any;
+      const batch = all.filter(i => i.id > config?.params?.afterId).slice(0, 5);
+      return { data: { rows: batch.map(i => ({ item: i, result: { itemId: i.id, candidates: [], assessment: i.id === 53 ? 'POSSIBLE_MISSING' : i.id === 52 ? 'INCOMPLETE' : 'CANDIDATES' } })), nextCursor: batch.at(-1)?.id === 53 ? null : batch.at(-1)?.id } } as any;
+    });
+    vi.useFakeTimers();
+    try {
+      await act(async () => { render(<Workspace accountId={1} month="2026-08" onMonthChange={vi.fn()} />); });
+      fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'MISSING' } });
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
+      expect(screen.getByText('Movimento 53')).toBeInTheDocument();
+      expect(screen.queryByText('Movimento 52')).not.toBeInTheDocument();
+      expect(screen.getByText(/1 busca\(s\) incompleta/)).toBeInTheDocument();
+      expect(screen.getByText(/53 movimento\(s\) analisado/)).toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText('Selecionar Movimento 53 em 22/08/2026'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      expect(screen.getByRole('button', { name: 'Registrar faltante' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Buscar manualmente' })).toBeEnabled();
+      expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(0);
+      expect(vi.mocked(api.get).mock.calls.filter(([url]) => String(url).endsWith('/missing'))).toHaveLength(11);
+    } finally { vi.useRealTimers(); }
+  });
+  it('paginates missing results without losing rows at the boundary of a five-row chunk', async () => {
+    const all = Array.from({ length: 54 }, (_, i) => item(i + 1));
+    data = makeData(all.slice(0, 50));
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (!String(url).endsWith('/missing')) return { data } as any;
+      const batch = all.filter(i => i.id > config?.params?.afterId).slice(0, 5);
+      return { data: { rows: batch.map(i => ({ item: i, result: { itemId: i.id, candidates: [], assessment: i.id === 1 ? 'CANDIDATES' : 'POSSIBLE_MISSING' } })), nextCursor: batch.at(-1)?.id === 54 ? null : batch.at(-1)?.id } } as any;
+    });
+    vi.useFakeTimers();
+    try {
+      await act(async () => { render(<Workspace accountId={1} month="2026-08" onMonthChange={vi.fn()} />); });
+      fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'MISSING' } });
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
+      expect(screen.getByText('Movimento 51')).toBeInTheDocument();
+      expect(screen.queryByText('Movimento 52')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Próxima' }));
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+      for (const id of [52, 53, 54]) expect(screen.getByText(`Movimento ${id}`)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Próxima' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'Anterior' }));
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
+      expect(screen.getByText('Movimento 2')).toBeInTheDocument();
+      expect(screen.getByText('Movimento 51')).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
+  }, 15000);
+  it('does not treat failed or incomplete searches as missing and resumes a failed month scan', async () => {
+    let fail = true;
+    vi.mocked(api.get).mockImplementation(async (url) => {
+      if (!String(url).endsWith('/missing')) return { data } as any;
+      if (fail) throw { response: { status: 503, data: { error: 'Busca indisponível' } } };
+      return { data: { rows: [{ item: item(1), result: { itemId: 1, candidates: [], assessment: 'POSSIBLE_MISSING' } }], nextCursor: null } } as any;
+    });
+    await open();
+    fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'MISSING' } });
+    await screen.findByText('Busca indisponível');
+    expect(screen.queryByText('Possível lançamento faltante')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nenhum possível faltante identificado/)).not.toBeInTheDocument();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+    await screen.findByText('Possível lançamento faltante');
+  });
+  it('ignores an interrupted missing scan after leaving the filter', async () => {
+    let finish: (value: any) => void = () => {};
+    let signal: AbortSignal | undefined;
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (!String(url).endsWith('/missing')) return { data } as any;
+      signal = config?.signal as AbortSignal;
+      return new Promise(resolve => { finish = resolve; });
+    });
+    await open();
+    fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'MISSING' } });
+    await waitFor(() => expect(signal).toBeDefined());
+    fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'ALL' } });
+    await screen.findByText('Movimento 1');
+    expect(signal?.aborted).toBe(true);
+    await act(async () => finish({ data: { rows: [{ item: item(53), result: { itemId: 53, candidates: [], assessment: 'POSSIBLE_MISSING' } }], nextCursor: null } }));
+    expect(screen.queryByText('Movimento 53')).not.toBeInTheDocument();
+    expect(screen.queryByText('Possível lançamento faltante')).not.toBeInTheDocument();
   });
 });

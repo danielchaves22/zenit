@@ -132,7 +132,7 @@ import financialAccountMovementRoutes from './financial-account-movement-report.
 import {
   loadBankReconciliation, previewBankStatement, importBankStatement, suggestBankCandidates, suggestBankCandidatesBatch,
   confirmBankMatch, rejectBankMatch, createBankTransaction, undoBankMatch, updateBankMonthStatus,
-  getBankAudit, getBankTransactions, resetBankReconciliation
+  getBankAudit, getBankTransactions, resetBankReconciliation, scanMissingBankItems
 } from '../controllers/bank-reconciliation.controller';
 import rateLimit from 'express-rate-limit';
 
@@ -152,6 +152,7 @@ const bankRuleSuggestionLimit = rateLimit({ windowMs: 60_000, max: 120, standard
   keyGenerator: req => `bank-rules:${req.user.companyId}:${req.user.userId}`,
   message: { error: 'Aguarde um minuto antes de solicitar novas buscas automáticas.' } });
 bankRouter.post('/suggestions/batch', (req, res, next) => (req.body?.useAi === false ? bankRuleSuggestionLimit : bankSuggestionLimit)(req, res, next), suggestBankCandidatesBatch);
+bankRouter.get('/missing', bankRuleSuggestionLimit, scanMissingBankItems);
 bankRouter.post('/confirm', confirmBankMatch);
 bankRouter.post('/reject', rejectBankMatch);
 bankRouter.post('/transactions', createBankTransaction);

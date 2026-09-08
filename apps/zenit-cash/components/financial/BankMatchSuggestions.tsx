@@ -31,8 +31,9 @@ export default function BankMatchSuggestions({ results, items, disabled, onRevie
       {item && <><h3 className="break-words font-semibold">{item.description}</h3><p className="mt-1 text-sm text-gray-400">{bankDate(item.date)} · {bankCurrency(item.amount)}</p></>}
       {result.error && <p role="alert" className="mt-2 text-sm text-red-300">{result.error}</p>}
       {result.aiMessage && <p className="mt-2 text-sm text-gray-400">{result.aiMessage}</p>}
-      {result.limited && <p className="mt-2 text-sm text-amber-300">A busca considerou um conjunto limitado de candidatos próximos. Use a busca manual para ampliar.</p>}
-      {!result.candidates.length && !result.error && <p className="mt-3 text-sm text-gray-400">Nenhuma sugestão disponível. Busque manualmente ou registre o lançamento faltante.</p>}
+      {(result.limited || result.assessment === 'INCOMPLETE') && <p className="mt-2 text-sm text-amber-300">Busca incompleta: há limites na busca ou lançamentos com acesso restrito. Ainda não é possível indicar um possível faltante. Use a busca manual para ampliar.</p>}
+      {result.assessment === 'POSSIBLE_MISSING' && !result.error && <p className="mt-3 text-sm text-orange-300">Possível lançamento faltante: nenhum candidato compatível permanece na busca pelas regras, após considerar suas rejeições. Confira manualmente antes de registrar; o lançamento pode estar fora do período pesquisado.</p>}
+      {!result.candidates.length && !result.error && !result.assessment && <p className="mt-3 text-sm text-gray-400">Nenhuma sugestão disponível. Busque manualmente para conferir.</p>}
       {result.candidates[0] && candidateView(result.candidates[0], result.cacheId)}
       {result.candidates.length > 1 && <details className="mt-3"><summary className="cursor-pointer text-sm text-blue-300">Ver outras {result.candidates.length - 1} sugestão(ões)</summary>{result.candidates.slice(1).map(candidate => candidateView(candidate, result.cacheId))}</details>}
       {item && <div className="mt-3 flex flex-wrap gap-2"><Button variant="outline" disabled={disabled} onClick={() => onManual(item)}>Buscar manualmente</Button><Button variant="outline" disabled={disabled} onClick={() => onCreate(item)}>Registrar faltante</Button></div>}

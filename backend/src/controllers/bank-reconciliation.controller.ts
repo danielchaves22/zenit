@@ -8,7 +8,7 @@ const itemIds = z.array(id).min(1).max(20).refine(ids => new Set(ids).size === i
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const link = z.object({ itemIds, transactions: z.array(z.object({ id, version: z.string().datetime() })).min(1).max(20),
   settlePending: z.boolean().optional(), settlementDate: date.optional(), note: z.string().trim().max(500).optional(),
-  cacheId: id.optional(), candidateKey: z.string().max(64).optional() });
+  cacheId: id.optional(), candidateKey: z.string().max(64).optional(), feedbackToken: z.string().max(12000).optional() });
 const file = z.object({ fileBase64: z.string().min(1).max(6_666_668), fileName: z.string().trim().min(1).max(255) });
 const paging = z.object({ page: z.coerce.number().int().min(1).max(100000).default(1), filter: z.enum(['ALL', 'PENDING', 'CONFIRMED']).default('ALL') });
 
@@ -35,6 +35,7 @@ export const resetBankReconciliation = endpoint((c, m, req) => { z.object({ conf
 export const suggestBankCandidates = endpoint((c, m, req) => { const input = z.object({ itemIds, useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidates(c, m, input.itemIds, input.useAi); });
 export const suggestBankCandidatesBatch = endpoint((c, m, req) => { const input = z.object({ itemIds: z.array(id).min(1).max(5).refine(ids => new Set(ids).size === ids.length, 'Itens repetidos.'),
   useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidatesBatch(c, m, input.itemIds, input.useAi); });
+export const scanMissingBankItems = endpoint((c, m, req) => Service.scanMissing(c, m, z.coerce.number().int().min(0).default(0).parse(req.query.afterId)));
 export const confirmBankMatch = endpoint((c, m, req) => Service.confirm(c, m, link.parse(req.body)));
 export const rejectBankMatch = endpoint((c, m, req) => Service.reject(c, m, link.parse(req.body)));
 export const createBankTransaction = endpoint((c, m, req) => Service.create(c, m, z.object({ itemIds,

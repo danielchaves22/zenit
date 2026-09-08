@@ -687,6 +687,7 @@ model BankMatchDecision {
   itemIds          Json
   transactionIds   Json
   decision         String @db.VarChar(16)
+  feedback         Json?
   userId           Int
   createdAt        DateTime @default(now())
 

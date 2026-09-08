@@ -1,4 +1,4 @@
-import { candidateFor, classifyBankCandidates, hasConfidentBankMatch, MatchItem, MatchTransaction, rankBankCandidates, signedTransactionAmount } from '../../src/services/bank-reconciliation-matching';
+import { assessBankCandidates, candidateFor, classifyBankCandidates, MatchItem, MatchTransaction, rankBankCandidates, shouldUseBankAi, signedTransactionAmount } from '../../src/services/bank-reconciliation-matching';
 
 const date = new Date('2026-08-22T00:00:00Z');
 const item = (id: number, amount: string): MatchItem => ({ id, amount, description: 'Padaria', date });
@@ -28,18 +28,19 @@ describe('Bank candidate matching', () => {
     expect(original.difference).toBe('1.00');
     expect(candidateFor([item(1, '-10.00')], [transaction(1, '11.00', { updatedAt: new Date('2026-09-01') })], 1).key).not.toBe(original.key);
   });
-  it('requires corroborating descriptions or confirmed history before skipping AI', () => {
+  it('skips AI for both high levels and requires equivalent descriptions or history for high', () => {
     const strong = candidateFor([item(1, '-20.00')], [transaction(1, '20.00')], 1);
-    expect(hasConfidentBankMatch([strong])).toBe(true);
+    expect(shouldUseBankAi(classifyBankCandidates([strong]))).toBe(false);
     const unrelated = candidateFor([item(1, '-20.00')], [transaction(1, '20.00', { description: 'Outro nome' })], 1);
-    expect(hasConfidentBankMatch([unrelated])).toBe(false);
-    expect(hasConfidentBankMatch([{ ...unrelated, source: 'HISTORY' }])).toBe(true);
+    expect(classifyBankCandidates([unrelated])[0].confidence?.level).toBe('MEDIUM_HIGH');
+    expect(shouldUseBankAi(classifyBankCandidates([unrelated]))).toBe(false);
+    expect(classifyBankCandidates([{ ...unrelated, source: 'HISTORY' }])[0].confidence?.level).toBe('HIGH');
   });
   it('keeps duplicate transactions, competing statement rows and limited searches ambiguous', () => {
     const candidates = rankBankCandidates([item(1, '-20.00')], [transaction(1, '20.00'), transaction(2, '20.00')], 1);
-    expect(hasConfidentBankMatch(candidates)).toBe(false);
-    expect(hasConfidentBankMatch([candidates[0]], [item(2, '-20.00')])).toBe(false);
-    expect(hasConfidentBankMatch([candidates[0]], [], true)).toBe(false);
+    expect(shouldUseBankAi(classifyBankCandidates(candidates))).toBe(true);
+    expect(shouldUseBankAi(classifyBankCandidates([candidates[0]], [item(2, '-20.00')]))).toBe(true);
+    expect(shouldUseBankAi(classifyBankCandidates([candidates[0]], [], true))).toBe(true);
   });
   it('does not treat grouped, pending, distant or mismatched candidates as strong', () => {
     const choices = [
@@ -48,21 +49,41 @@ describe('Bank candidate matching', () => {
       candidateFor([item(1, '-20.00')], [transaction(1, '20.00', { effectiveDate: new Date('2026-08-25') })], 1),
       candidateFor([item(1, '-20.00')], [transaction(1, '21.00')], 1)
     ];
-    expect(choices.every(candidate => !hasConfidentBankMatch([candidate]))).toBe(true);
+    expect(choices.every(candidate => shouldUseBankAi(classifyBankCandidates([candidate])))).toBe(true);
   });
   it('classifies evidence rather than treating the numeric score or AI source as a probability', () => {
     const strong = candidateFor([item(1, '-20.00')], [transaction(1, '20.00')], 1);
     expect(classifyBankCandidates([strong])[0].confidence?.level).toBe('HIGH');
     const ambiguous = classifyBankCandidates([strong, candidateFor([item(1, '-20.00')], [transaction(2, '20.00')], 1)]);
-    expect(ambiguous.every(c => c.score === 100 && c.confidence?.level === 'MEDIUM')).toBe(true);
-    expect(ambiguous[0].confidence?.reasons).toContain('Há outra correspondência plausível');
+    expect(ambiguous.every(c => c.score === 100 && c.confidence?.level === 'MEDIUM_LOW')).toBe(true);
+    expect(ambiguous[0].confidence?.reasons.join(' ')).toContain('valor repetido em até 3 dias');
     const unrelated = candidateFor([item(1, '-20.00')], [transaction(1, '20.00', { description: 'Outro nome' })], 1);
-    expect(classifyBankCandidates([{ ...unrelated, source: 'AI', score: 112 }])[0].confidence?.level).toBe('MEDIUM');
+    expect(classifyBankCandidates([{ ...unrelated, source: 'AI', score: 112 }])[0].confidence?.level).toBe('MEDIUM_HIGH');
     expect(classifyBankCandidates([{ ...unrelated, source: 'HISTORY', score: 112 }])[0].confidence?.level).toBe('HIGH');
-    expect(classifyBankCandidates([strong], [item(2, '-20.00')])[0].confidence?.level).toBe('MEDIUM');
-    expect(classifyBankCandidates([strong], [], true)[0].confidence?.level).toBe('MEDIUM');
+    expect(classifyBankCandidates([strong], [item(2, '-20.00')])[0].confidence?.level).toBe('MEDIUM_LOW');
+    expect(classifyBankCandidates([strong], [], true)[0].confidence?.level).toBe('MEDIUM_LOW');
     const mismatch = candidateFor([item(1, '-20.00')], [transaction(1, '21.00')], 1);
     expect(classifyBankCandidates([mismatch])[0].confidence).toMatchObject({ level: 'LOW', reasons: expect.arrayContaining(['Valor divergente']) });
+  });
+  it('caps nearby dates even with history and checks duplicates at the inclusive three-day boundary', () => {
+    const base = candidateFor([item(1, '-20.00')], [transaction(1, '20.00')], 1);
+    for (const offset of [-3, -1, 1, 3]) {
+      const date = new Date(`2026-08-${22 + offset}`);
+      const changed = candidateFor([item(1, '-20.00')], [transaction(1, '20.00', { effectiveDate: date })], 1);
+      expect(classifyBankCandidates([{ ...changed, source: 'HISTORY' }])[0].confidence?.level).toBe('MEDIUM_LOW');
+      expect(classifyBankCandidates([base], [{ ...item(2, '-20.00'), date }])[0].confidence?.level).toBe('MEDIUM_LOW');
+    }
+    expect(classifyBankCandidates([base], [{ ...item(2, '-20.00'), date: new Date('2026-08-26') }])[0].confidence?.level).toBe('HIGH');
+    const outside = candidateFor([item(1, '-20.00')], [transaction(2, '20.00', { effectiveDate: new Date('2026-08-26') })], 1);
+    expect(classifyBankCandidates([base, outside])[0].confidence?.level).toBe('HIGH');
+    expect(classifyBankCandidates([candidateFor([{ ...item(1, '-20.00'), description: '  PADÁRIA! ' }], [transaction(1, '20.00')], 1)])[0].confidence?.level).toBe('HIGH');
+  });
+  it('separates missing, incomplete and compatible grouped matches without making empty searches AI eligible', () => {
+    expect(assessBankCandidates([], false)).toBe('POSSIBLE_MISSING');
+    expect(assessBankCandidates([], true)).toBe('INCOMPLETE');
+    expect(shouldUseBankAi([])).toBe(false);
+    expect(assessBankCandidates([candidateFor([item(1, '-20.00')], [transaction(1, '21.00')], 1)], false)).toBe('POSSIBLE_MISSING');
+    expect(assessBankCandidates(rankBankCandidates([item(1, '-30.00')], [transaction(1, '20.00'), transaction(2, '10.00')], 1), false)).toBe('CANDIDATES');
   });
   it('preserves exact-cent triple matches and stable ordering with precomputed values', () => {
     const choices = [transaction(1, '0.10'), transaction(2, '0.20'), transaction(3, '0.30')];

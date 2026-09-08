@@ -10,7 +10,8 @@ import BankMatchReview from './BankMatchReview';
 import BankMatchSuggestions from './BankMatchSuggestions';
 import { BankMovementSearchStatus } from './BankMatchConfidence';
 import { useBankRuleSearch } from '@/hooks/useBankRuleSearch';
-import { BankAudit, BankCandidate, BankItem, BankPreview, BankSearchResult, BankTransaction, BankWorkspace, bankCurrency, bankDate, bankTimestamp, bankTotal } from '@/lib/bank-reconciliation';
+import { useBankMissingSearch } from '@/hooks/useBankMissingSearch';
+import { BankAudit, BankCandidate, BankItem, BankPreview, BankSearchResult, BankTransaction, BankWorkspace, bankCurrency, bankDate, bankNeedsAi, bankTimestamp, bankTotal } from '@/lib/bank-reconciliation';
 
 const fieldClass = 'rounded border border-gray-600 bg-background px-3 py-2 text-sm text-white disabled:opacity-50';
 const panelClass = 'p-0 min-w-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col [&>div]:p-4';
@@ -52,11 +53,15 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const selectAllRef = useRef<HTMLInputElement>(null), searchAbort = useRef<AbortController>();
   const base = `/financial/accounts/${accountId}/reconciliation/${month}`;
   const closed = data?.session?.status === 'COMPLETED';
-  const ruleSearch = useBankRuleSearch(base, data?.items || emptyItems, !!data && !closed && !busy && !loading && tab === 'statement', selected.map(i => i.id));
-  const results = searchAsGroup ? groupResults : selected.flatMap(item => ruleSearch.rows[item.id]?.result ? [ruleSearch.rows[item.id].result!] : []);
+  const missingMode = filter === 'MISSING';
+  const ruleSearch = useBankRuleSearch(base, data?.items || emptyItems, !!data && !closed && !busy && !loading && tab === 'statement' && !missingMode, selected.map(i => i.id));
+  const missingSearch = useBankMissingSearch(base, page, !!data && !busy && !loading && tab === 'statement' && missingMode);
+  const displayedItems = missingMode ? missingSearch.items : data?.items || emptyItems;
+  const searchRows = missingMode ? missingSearch.rows : ruleSearch.rows;
+  const results = searchAsGroup ? groupResults : selected.flatMap(item => searchRows[item.id]?.result ? [searchRows[item.id].result!] : []);
   const autoRefined = useRef(new Set<string>());
   const selectedTotal = bankTotal(selected);
-  const eligibleItems = data?.items.filter(item => !item.activeGroupId) || [];
+  const eligibleItems = displayedItems.filter(item => !item.activeGroupId);
   const allPageSelected = eligibleItems.length > 0 && eligibleItems.every(item => selected.some(s => s.id === item.id));
   const groupAllowed = selected.length > 0 && selected.length <= 20 && new Set(selected.map(item => Math.sign(Number(item.amount)))).size === 1;
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; searchAbort.current?.abort(); }; }, []);
@@ -66,7 +71,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     const requestId = ++loadGeneration.current;
     setLoading(true); setError('');
     try {
-      const response = await api.get<BankWorkspace>(base, { params: { page, filter } });
+      const response = await api.get<BankWorkspace>(base, { params: { page: filter === 'MISSING' ? 1 : page, filter: filter === 'MISSING' ? 'PENDING' : filter } });
       if (alive.current && requestId === loadGeneration.current) setData(response.data);
     } catch (e) { if (alive.current && requestId === loadGeneration.current) setError(errorMessage(e)); }
     finally { if (alive.current && requestId === loadGeneration.current) setLoading(false); }
@@ -112,7 +117,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
       } else {
         for (let offset = 0; offset < selected.length; offset += 5) {
           const batch = selected.slice(offset, offset + 5);
-          const needed = batch.filter(item => ruleSearch.rows[item.id]?.result?.candidates[0]?.confidence?.level !== 'HIGH');
+          const needed = batch.filter(item => !searchRows[item.id]?.result || searchRows[item.id].status === 'error' || bankNeedsAi(searchRows[item.id].result));
           if (!needed.length) { setSearchProgress(offset + batch.length); continue; }
           const response = await api.post<{ results: BankSearchResult[] }>(`${base}/suggestions/batch`, { itemIds: needed.map(i => i.id), useAi: 'auto' }, { signal: abort.signal, timeout: 45000 });
           if (generation.current !== requestId) return;
@@ -122,11 +127,11 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     } catch (e) { if (generation.current === requestId) setSuggestionMessage(errorMessage(e)); }
     finally { if (alive.current && generation.current === requestId) setSuggesting(false); }
   }
-  const focusedRow = selected.length === 1 ? ruleSearch.rows[selected[0].id] : undefined;
+  const focusedRow = selected.length === 1 ? searchRows[selected[0].id] : undefined;
   useEffect(() => {
     if (busy || loading || suggesting || closed || tab !== 'statement' || searchAsGroup || !focusedRow || focusedRow.status !== 'done' || focusedRow.refined) return;
     const best = focusedRow.result?.candidates[0];
-    if (!best || best.confidence?.level === 'HIGH' || autoRefined.current.has(best.key)) return;
+    if (!best || !bankNeedsAi(focusedRow.result) || autoRefined.current.has(best.key)) return;
     const timer = setTimeout(() => { autoRefined.current.add(best.key); void suggest(); }, 400);
     return () => clearTimeout(timer);
     // Selection/refinement is independent of the automatic rule queue.
@@ -136,7 +141,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   async function mutate(path: string, payload: unknown, message: string) {
     generation.current++; searchAbort.current?.abort(); setSuggesting(false);
     setBusy(true); setError('');
-    try { await api.post(`${base}/${path}`, payload); if (!alive.current) return false; ruleSearch.invalidate(); autoRefined.current.clear(); addToast(message); changeSelection([]); await refresh(); return true; }
+    try { await api.post(`${base}/${path}`, payload); if (!alive.current) return false; ruleSearch.invalidate(); missingSearch.invalidate(); if (missingMode) setPage(1); autoRefined.current.clear(); addToast(message); changeSelection([]); await refresh(); return true; }
     catch (e) { if (alive.current) { setError(errorMessage(e)); addToast(errorMessage(e), 'error'); } return false; }
     finally { if (alive.current) setBusy(false); }
   }
@@ -158,11 +163,12 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     setBusy(true); setReviewError('');
     try {
       await api.post(`${base}/confirm`, { itemIds: review.items.map(i => i.id), transactions: review.transactions.map(t => ({ id: t.id, version: t.version })),
-        settlePending, settlementDate: settlePending ? settlementDate : undefined, note, cacheId: review.cacheId, candidateKey: review.candidate?.key });
+        settlePending, settlementDate: settlePending ? settlementDate : undefined, note, cacheId: review.cacheId, candidateKey: review.candidate?.key, feedbackToken: review.candidate?.feedbackToken });
       if (!alive.current) return;
       const linkedItems = new Set(review.items.map(i => i.id)), linkedTransactions = new Set(review.transactions.map(t => t.id));
       setReview(null); setSelected(current => current.filter(i => !linkedItems.has(i.id))); setManual([]); setCreating(false);
       ruleSearch.invalidate(Array.from(linkedItems), Array.from(linkedTransactions)); setGroupResults([]); setSearchAsGroup(false);
+      missingSearch.invalidate(); if (missingMode) setPage(1);
       setTab('statement'); addToast('Correspondência confirmada e salva.'); await refresh();
     } catch (e) { if (alive.current) setReviewError(errorMessage(e)); }
     finally { if (alive.current) setBusy(false); }
@@ -187,7 +193,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">Mês de referência<input aria-label="Mês de referência" type="month" value={month} min="2000-01" max="2200-12" disabled={busy} onChange={e => { if (e.target.value) onMonthChange(e.target.value); }} className={`${fieldClass} ml-2`} /></label>
-        <Button variant="outline" disabled={busy || loading} onClick={() => { changeSelection([]); ruleSearch.invalidate(); autoRefined.current.clear(); void refresh(); }} aria-label="Atualizar conciliação"><RefreshCw size={16} /></Button>
+        <Button variant="outline" disabled={busy || loading} onClick={() => { changeSelection([]); ruleSearch.invalidate(); missingSearch.invalidate(); if (missingMode) setPage(1); autoRefined.current.clear(); void refresh(); }} aria-label="Atualizar conciliação"><RefreshCw size={16} /></Button>
       </div>
     </div>
     {error && <div role="alert" className="rounded-lg border border-red-700 bg-red-950/20 p-4 text-red-300">{error}</div>}
@@ -243,25 +249,31 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
       </Card>}
       {tab === 'statement' && <div className={`grid items-start gap-4 ${selected.length && !closed ? 'lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]' : ''}`}>
         <Card className={`${panelClass} h-[max(42rem,calc(100dvh-23rem))]`}>
-          <div className="mb-4 flex shrink-0 items-center justify-between gap-3"><h2 className="font-semibold">Movimentos do extrato</h2><select aria-label="Filtrar itens do extrato" value={filter} disabled={busy || loading} onChange={e => { changeSelection([]); setFilter(e.target.value); setPage(1); }} className={fieldClass}><option value="ALL">Todos</option><option value="PENDING">Para conferir</option><option value="CONFIRMED">Conciliados</option></select></div>
+          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Movimentos do extrato</h2><select aria-label="Filtrar itens do extrato" value={filter} disabled={busy || loading} onChange={e => { changeSelection([]); setLoading(true); setFilter(e.target.value); setPage(1); }} className={fieldClass}><option value="ALL">Todos</option><option value="PENDING">Para conferir</option><option value="MISSING">Possíveis faltantes</option><option value="CONFIRMED">Conciliados</option></select></div>
           {loading && <p role="status" className="mb-3 text-sm text-gray-400">Carregando…</p>}
-          {!data.items.length && <p className="py-10 text-center text-gray-400">{data.summary.total ? 'Nenhum item neste filtro.' : 'Importe o extrato deste mês para começar.'}</p>}
+          {missingMode && <div className="mb-3 space-y-2 text-xs text-gray-400">
+            <p role="status">{missingSearch.searching ? 'Analisando o mês… ' : ''}{missingSearch.scanned} movimento(s) analisado(s){missingSearch.atEnd ? ' · Busca do mês concluída' : ''}.</p>
+            {!!missingSearch.incomplete && <p className="text-amber-300">{missingSearch.incomplete} busca(s) incompleta(s) não foram classificadas como faltantes. Confira esses movimentos em “Todos”.</p>}
+            {missingSearch.error && <p role="alert" className="text-red-300">{missingSearch.error} <button className="text-blue-300 underline" disabled={busy} onClick={missingSearch.retry}>Tentar novamente</button></p>}
+          </div>}
+          {!displayedItems.length && !loading && (!missingMode || missingSearch.atEnd) && <p className="py-10 text-center text-gray-400">{data.summary.total ? missingMode ? 'Nenhum possível faltante identificado nas buscas concluídas.' : 'Nenhum item neste filtro.' : 'Importe o extrato deste mês para começar.'}</p>}
           <div role="region" aria-label="Lista de movimentos do extrato" tabIndex={0} className="min-h-0 flex-1 overflow-auto overscroll-contain"><table className="w-full text-left text-sm"><thead className="sticky top-0 z-10 bg-surface"><tr className="border-b border-gray-700 text-gray-400"><th className="relative p-2"><span className="sr-only">Selecionar</span>{!closed && <input ref={selectAllRef} type="checkbox" aria-label="Marcar ou desmarcar todos os movimentos desta página" title={allPageSelected ? 'Desmarcar todos desta página' : 'Marcar todos desta página'} checked={allPageSelected} disabled={busy || loading || !eligibleItems.length} onChange={() => changeSelection(allPageSelected ? [] : eligibleItems)} />}</th><th className="p-2">Data e descrição</th><th className="p-2 text-right">Valor</th><th className="p-2">Situação</th></tr></thead>
-            <tbody>{data.items.map(item => <tr key={item.id} className={`border-b border-gray-800 ${selected.some(s => s.id === item.id) ? 'bg-blue-950/30' : ''}`}>
+            <tbody>{displayedItems.map(item => <tr key={item.id} className={`border-b border-gray-800 ${selected.some(s => s.id === item.id) ? 'bg-blue-950/30' : ''}`}>
               <td className="p-2">{!item.activeGroupId && !closed && <input aria-label={`Selecionar ${item.description} em ${bankDate(item.date)}`} type="checkbox" checked={selected.some(s => s.id === item.id)} disabled={busy || loading} onChange={() => toggleItem(item)} />}</td>
               <td className="max-w-md p-2"><p className="break-words">{item.description}</p><p className="mt-1 text-xs text-gray-400">{bankDate(item.date)}</p></td><td className={`whitespace-nowrap p-2 text-right ${Number(item.amount) > 0 ? 'text-emerald-300' : ''}`}>{bankCurrency(item.amount)}</td>
-              <td className="p-2">{item.activeGroupId ? <button className="text-emerald-300 underline" onClick={() => setTab('audit')}>Conciliado</button> : closed ? <span className="text-amber-300">Para conferir</span> : <BankMovementSearchStatus entry={ruleSearch.rows[item.id]} disabled={busy} onRetry={() => ruleSearch.retry(item.id)} />}</td>
+              <td className="p-2">{item.activeGroupId ? <button className="text-emerald-300 underline" onClick={() => setTab('audit')}>Conciliado</button> : closed ? <span className="text-amber-300">Para conferir</span> : <BankMovementSearchStatus entry={searchRows[item.id]} disabled={busy} onRetry={() => ruleSearch.retry(item.id)} />}</td>
             </tr>)}</tbody></table></div>
-          <Pagination page={page} total={data.total} size={50} disabled={busy || loading} onChange={value => { changeSelection([]); setPage(value); }} />
+          {missingMode ? <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-2 text-sm text-gray-400"><span>{displayedItems.length} possível(is) faltante(s) nesta página · Página {page}</span><div className="flex gap-2"><Button variant="outline" disabled={busy || loading || page <= 1} onClick={() => { changeSelection([]); setLoading(true); setPage(page - 1); }}>Anterior</Button><Button variant="outline" disabled={busy || loading || !missingSearch.done || missingSearch.atEnd} onClick={() => { changeSelection([]); setLoading(true); setPage(page + 1); }}>Próxima</Button></div></div>
+            : <Pagination page={page} total={data.total} size={50} disabled={busy || loading} onChange={value => { changeSelection([]); setPage(value); }} />}
         </Card>
         {!!selected.length && !closed && <Card className={`${panelClass} h-[max(42rem,calc(100dvh-23rem))] [&>div]:overflow-y-auto [&>div]:overscroll-contain`}>
           <h2 className="mb-2 font-semibold">Sugestões de correspondência</h2>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm"><span>{selected.length} selecionado(s) · {bankCurrency(selectedTotal)}</span><Button variant="outline" disabled={busy} onClick={() => changeSelection([])}>Desmarcar todos</Button></div>
-          <p className="mb-3 text-sm text-gray-400">{searchAsGroup ? 'A busca considera a soma dos movimentos selecionados.' : 'As regras buscam automaticamente cada movimento. Ao selecionar um único item com correspondência incerta, a IA ajuda na conferência.'} A confiabilidade indica a força dos critérios, não uma garantia de acerto.</p>
+          <p className="mb-3 text-sm text-gray-400">{searchAsGroup ? 'A busca considera a soma dos movimentos selecionados.' : 'As regras buscam automaticamente cada movimento. Ao selecionar um único item de confiabilidade média baixa ou baixa, a IA pode ajudar na conferência.'} A confiabilidade indica a força dos critérios, não uma garantia de acerto.</p>
           {selected.length > 1 && <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={searchAsGroup} disabled={busy || suggesting || !groupAllowed} onChange={e => { setSearchAsGroup(e.target.checked); setGroupResults([]); setSuggestionMessage(''); }} />Buscar pela soma dos selecionados (agrupar)</label>}
           {!groupAllowed && <p className="mb-3 text-sm text-gray-400">Para vincular manualmente ou criar um único lançamento, selecione até 20 movimentos de entrada ou até 20 de saída.</p>}
           <div className="mb-4 flex flex-wrap gap-2"><Button disabled={busy || suggesting || (searchAsGroup && !groupAllowed)} onClick={() => void suggest()}>{suggesting ? `Buscando… ${searchProgress}/${selected.length}` : 'Buscar correspondências'}</Button></div>
-          {!searchAsGroup && selected.some(item => !ruleSearch.rows[item.id] || ['queued', 'searching'].includes(ruleSearch.rows[item.id].status)) && <p role="status" className="mb-3 text-sm text-blue-300">Buscando movimentos selecionados… Você já pode conferir as sugestões disponíveis.</p>}
+          {!searchAsGroup && selected.some(item => !searchRows[item.id] || ['queued', 'searching'].includes(searchRows[item.id].status)) && <p role="status" className="mb-3 text-sm text-blue-300">Buscando movimentos selecionados… Você já pode conferir as sugestões disponíveis.</p>}
           {!results.length && groupAllowed && <div className="mb-3 flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => setTab('transactions')}>Buscar lançamento manualmente</Button><Button variant="outline" disabled={busy} onClick={() => void beginCreate()}>Registrar lançamento faltante</Button></div>}
           {suggestionMessage && <p role="status" className="mb-3 text-sm text-gray-400">{suggestionMessage}</p>}
           <BankMatchSuggestions results={results} items={selected} disabled={busy}
@@ -269,8 +281,9 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
             onCreate={item => { changeSelection([item]); void beginCreate([item]); }}
             onReview={(candidate, cacheId) => { setReviewError(''); setReview({ items: candidate.items, transactions: candidate.transactions, candidate, cacheId }); }}
             onReject={async candidate => { setBusy(true); try {
-              await api.post(`${base}/reject`, { itemIds: candidate.itemIds, transactions: candidate.transactions.map(t => ({ id: t.id, version: t.version })) });
+              await api.post(`${base}/reject`, { itemIds: candidate.itemIds, transactions: candidate.transactions.map(t => ({ id: t.id, version: t.version })), feedbackToken: candidate.feedbackToken });
               generation.current++; searchAbort.current?.abort(); setSuggesting(false); ruleSearch.reject(candidate.key);
+              missingSearch.invalidate(); if (missingMode) setPage(1);
               setGroupResults(current => current.map(result => ({ ...result, candidates: result.candidates.filter(c => c.key !== candidate.key) }))); addToast('Correspondência rejeitada.');
             } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); } }} />
         </Card>}

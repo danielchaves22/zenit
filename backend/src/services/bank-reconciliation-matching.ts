@@ -26,8 +26,13 @@ export interface BankCandidate {
   reason: string;
   source: 'RULE' | 'HISTORY' | 'AI';
   model?: string;
-  confidence?: { level: 'HIGH' | 'MEDIUM' | 'LOW'; reasons: string[] };
+  confidence?: { level: 'HIGH' | 'MEDIUM_HIGH' | 'MEDIUM_LOW' | 'LOW'; reasons: string[] };
+  feedbackToken?: string;
 }
+export const BANK_MATCH_RULE_VERSION = 'bank-match-v2';
+export const BANK_DUPLICATE_DAYS = 3;
+export type BankAssessment = 'CANDIDATES' | 'POSSIBLE_MISSING' | 'INCOMPLETE';
+export interface BankMatchEvidence { duplicateItem: boolean; duplicateTransaction: boolean; incomplete: boolean }
 export const day = (value: Date) => value.toISOString().slice(0, 10);
 export const transactionDay = (t: MatchTransaction) => day(t.status === 'COMPLETED' ? (t.effectiveDate || t.date) : (t.dueDate || t.date));
 export const cents = (value: Prisma.Decimal | string) => new Prisma.Decimal(value).mul(100).toNumber();
@@ -71,43 +76,48 @@ export function candidateFor(items: MatchItem[], transactions: MatchTransaction[
   };
 }
 
-// A score is a ranking signal, not a probability. Skip AI only when independent
-// evidence agrees and neither side has a plausible competing match.
-export function hasConfidentBankMatch(candidates: BankCandidate[], neighbors: MatchItem[] = [], limited = false): boolean {
-  const best = candidates[0];
-  if (limited || !best || cents(best.difference) !== 0 || best.items.length !== 1 || best.transactions.length !== 1) return false;
-  const item = best.items[0], transaction = best.transactions[0];
-  if (transaction.status !== 'COMPLETED' || dayDistance(item.date, transaction.date) > 1) return false;
-  if (similarity(item.description, transaction.description) < 0.6 && best.source !== 'HISTORY') return false;
-  if (candidates.slice(1).some(c => cents(c.difference) === 0 && best.score - c.score < 15)) return false;
-  return !neighbors.some(other => other.id !== item.id && cents(other.amount) === cents(item.amount)
-    && dayDistance(day(other.date), transaction.date) <= 1);
-}
-
-export function classifyBankCandidates(candidates: BankCandidate[], neighbors: MatchItem[] = [], limited = false): BankCandidate[] {
-  return candidates.map(candidate => {
+export const equivalentBankDescription = (a: string, b: string) => !!normalizeDescription(a) && normalizeDescription(a) === normalizeDescription(b);
+// Confidence describes evidence, never a probability or the authority of an AI response.
+export function classifyBankCandidates(candidates: BankCandidate[], neighbors: MatchItem[] = [], limited = false,
+  evidence?: BankMatchEvidence, limit = candidates.length): BankCandidate[] {
+  return candidates.slice(0, limit).map(candidate => {
     const exact = cents(candidate.difference) === 0;
     const distance = Math.max(...candidate.transactions.map(t => Math.min(...candidate.items.map(i => dayDistance(i.date, t.date)))));
     const text = Math.max(...candidate.items.flatMap(i => candidate.transactions.map(t => similarity(i.description, t.description))));
     const history = candidate.source === 'HISTORY';
     const alternatives = candidates.filter(c => c.key !== candidate.key);
-    const competing = alternatives.some(c => cents(c.difference) === 0 && candidate.score - c.score < 15);
+    const competing = alternatives.some(c => cents(c.difference) === 0
+      && c.transactions.some(t => candidate.items.some(i => dayDistance(i.date, t.date) <= BANK_DUPLICATE_DAYS)));
     const duplicate = neighbors.some(other => !candidate.itemIds.includes(other.id) && candidate.items.some(i => cents(other.amount) === cents(i.amount))
-      && candidate.transactions.some(t => dayDistance(day(other.date), t.date) <= 1));
-    const high = hasConfidentBankMatch([candidate, ...alternatives], neighbors, limited);
+      && candidate.items.some(i => dayDistance(day(other.date), i.date) <= BANK_DUPLICATE_DAYS));
+    const grouped = candidate.items.length !== 1 || candidate.transactions.length !== 1;
+    const pending = candidate.transactions.some(t => t.status !== 'COMPLETED');
+    const equivalent = !grouped && equivalentBankDescription(candidate.items[0].description, candidate.transactions[0].description);
+    const ambiguous = competing || duplicate || evidence?.duplicateItem || evidence?.duplicateTransaction;
+    const incomplete = limited || evidence?.incomplete;
+    const strong = exact && distance === 0 && !grouped && !pending && !ambiguous && !incomplete;
     const reasons = [exact ? 'Valor exato' : 'Valor divergente', distance === 0 ? 'Mesma data' : `${distance} dia(s) de diferença`,
-      text >= 0.6 ? 'Descrições compatíveis' : 'Descrições pouco semelhantes'];
+      equivalent ? 'Descrições equivalentes' : 'Descrições diferentes'];
     if (history) reasons.push('Histórico confirmado compatível');
-    if (candidate.items.length > 1 || candidate.transactions.length > 1) reasons.push('Exige conferir o agrupamento');
-    if (candidate.transactions.some(t => t.status !== 'COMPLETED')) reasons.push('Requer liquidação');
-    if (competing || duplicate) reasons.push('Há outra correspondência plausível');
-    if (limited) reasons.push('Busca limitada: podem existir outros candidatos');
-    return { ...candidate, confidence: { level: high ? 'HIGH' : exact && (distance <= 3 || text >= 0.4 || history) ? 'MEDIUM' : 'LOW', reasons } };
+    if (grouped) reasons.push('Exige conferir o agrupamento');
+    if (pending) reasons.push('Requer liquidação');
+    if (ambiguous) reasons.push('Há outra correspondência plausível ou valor repetido em até 3 dias');
+    if (incomplete) reasons.push('Busca limitada: podem existir outros candidatos');
+    if (strong) reasons.push('Sem duplicidade nos dois lados em até 3 dias');
+    return { ...candidate, confidence: { level: strong ? equivalent || history ? 'HIGH' : 'MEDIUM_HIGH'
+      : exact && (distance <= 3 || text >= 0.4 || history) ? 'MEDIUM_LOW' : 'LOW', reasons } };
   });
+}
+export function shouldUseBankAi(candidates: BankCandidate[]): boolean {
+  return !!candidates[0]?.confidence && ['MEDIUM_LOW', 'LOW'].includes(candidates[0].confidence.level);
+}
+export function assessBankCandidates(candidates: BankCandidate[], limited: boolean): BankAssessment {
+  if (limited) return 'INCOMPLETE';
+  return candidates.some(c => cents(c.difference) === 0) ? 'CANDIDATES' : 'POSSIBLE_MISSING';
 }
 
 // Bound the combinatorial search. Manual selection remains available outside these suggestions.
-export function rankBankCandidates(items: MatchItem[], transactions: MatchTransaction[], accountId: number, neighbors: MatchItem[] = []): BankCandidate[] {
+export function rankBankCandidates(items: MatchItem[], transactions: MatchTransaction[], accountId: number, neighbors: MatchItem[] = [], limit = 10): BankCandidate[] {
   const total = sumCents(items.map(i => cents(i.amount)));
   const usable = transactions.filter(t => ['PENDING', 'COMPLETED'].includes(t.status) && Math.sign(signedTransactionAmount(t, accountId)) === Math.sign(total));
   const candidates = usable.map(t => candidateFor(items, [t], accountId));
@@ -133,5 +143,5 @@ export function rankBankCandidates(items: MatchItem[], transactions: MatchTransa
       for (const t of prepared) if (t.amount === combined) candidates.push(candidateFor([...items, other], [t.transaction], accountId));
     }
   }
-  return candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, 10);
+  return candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, limit);
 }

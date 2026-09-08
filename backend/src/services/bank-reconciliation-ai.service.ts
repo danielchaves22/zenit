@@ -7,7 +7,7 @@ import { BankCandidate, MatchItem, day } from './bank-reconciliation-matching';
 import type { BankContext } from './bank-reconciliation.service';
 
 const prisma = new PrismaClient();
-const PROMPT_VERSION = 'bank-match-v1';
+const PROMPT_VERSION = 'bank-match-v2';
 const responseSchema = z.object({ candidateKey: z.string().nullable(), reason: z.string().max(500) });
 type SuggestResult = { candidates: BankCandidate[]; cacheId?: number; message?: string };
 const inFlight = new Map<string, Promise<SuggestResult>>();

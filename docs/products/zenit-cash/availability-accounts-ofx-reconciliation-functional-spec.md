@@ -38,8 +38,14 @@ os demais resultados e remove candidatos que usam itens ou lançamentos já vinc
 **Buscar pela soma dos selecionados** é uma opção explícita para grupos de até 20 itens
 da mesma direção. As ações manuais continuam disponíveis em cada resultado.
 
-No desktop, a lista do extrato e as sugestões têm rolagem própria dentro da altura
-disponível, seguindo a tela de faturas. Os indicadores superiores usam cards compactos.
+No desktop, a lista do extrato e as sugestões têm rolagem própria, seguindo a tela de
+faturas, com altura mínima de 42rem. Em monitores menores a página pode ser rolada até
+a área de trabalho. Os indicadores superiores usam cards compactos.
+
+Ao abrir uma página com movimentos não conciliados, as regras pesquisam cada item em
+lotes de cinco, mostrando espera, busca, resultado ou erro por linha. Os resultados
+ficam somente na memória da tela (até 500 itens, validade de cinco minutos), sem
+persistir buscas automáticas. Mudanças nos vínculos invalidam candidatos afetados.
 
 ## Importação
 
@@ -122,14 +128,46 @@ liquidados também reabrem meses concluídos. Os snapshots e eventos são preser
 O saldo final do extrato é uma referência histórica; não é comparado ao saldo
 atual da conta, que pode conter movimentações posteriores ao mês conciliado.
 
+## Confiabilidade e possíveis faltantes
+
+A classificação apresenta critérios, sem percentuais de acerto:
+
+| Nível | Evidência |
+| --- | --- |
+| Alta | Valor exato, mesma data, descrições equivalentes após normalização ou correspondência conhecida do histórico confirmado |
+| Média alta | Valor exato, mesma data, descrições diferentes e sem equivalência confirmada |
+| Média baixa | Valor exato com data próxima diferente, agrupamento, pendência ou ambiguidade; também pode haver descrição ou histórico relevante em datas mais afastadas |
+| Baixa | Evidência fraca ou valor divergente |
+
+Alta e Média alta exigem candidato 1:1 liquidado, busca sem truncamento e ausência
+de duplicidade/concorrência em ambos os lados nos três dias anteriores e posteriores,
+inclusive a data-limite. A contagem considera registros além das dez sugestões e
+extratos importados de meses vizinhos. Datas diferentes nunca recebem esses dois níveis.
+Histórico exige o par de descrições normalizadas previamente confirmado, não apenas
+palavras em comum. O score serve à ordenação, não representa uma probabilidade.
+
+**Possível lançamento faltante** é uma situação separada da confiabilidade: não há
+candidato de valor compatível na busca por regras, incluindo agrupamentos suportados,
+ou todos os candidatos compatíveis foram rejeitados. Rejeições são aplicadas antes
+do limite de dez sugestões. Limites relevantes de busca, permissões insuficientes e
+falhas não permitem concluir que há um possível faltante. O lançamento ainda pode
+estar fora da janela automática de sete dias antes/depois ou exigir seleção manual.
+
+O filtro **Possíveis faltantes** percorre o mês por cursor, cinco movimentos por
+requisição e sem IA, exibindo resultados progressivamente. Pausa ao reunir uma página
+de 50 resultados; avançar continua a varredura. Retém somente a página atual e cursores
+leves, permitindo voltar por nova leitura. O total analisado e buscas incompletas ficam
+visíveis. Sair do filtro pausa a busca; atualizar a tela ou alterar a conciliação
+invalida a varredura. Buscar manualmente e registrar faltante continuam disponíveis.
+
 ## IA e feedback
 
 O botão único **Buscar correspondências** usa regras e histórico antes da IA.
-A IA é dispensada somente para um candidato 1:1 liquidado, com valor exato, até um
-dia de diferença e descrição semelhante ou histórico confirmado relevante, sem
-concorrentes próximos em nenhum dos lados e sem truncamento da busca. O score serve
-para ordenação, não representa uma probabilidade calibrada. Casos ambíguos consultam
-automaticamente a credencial e o modelo ativos da empresa; sem candidatos a IA não é chamada.
+A busca inicial é somente por regras. Selecionar um único movimento de confiabilidade
+Média baixa ou Baixa permite refinamento automático com a credencial e o modelo ativos
+da empresa; a busca explícita também pode refinar os itens selecionados. Alta e Média
+alta dispensam IA, mesmo com pedido explícito na API. Sem candidatos ou com situação
+de possível faltante a IA não é chamada. A IA pode reordenar, mas não promover o nível.
 Envia somente a seleção, até dez candidatos e até cinco exemplos relevantes
 confirmados na mesma conta e com acesso autorizado. Descrições são dados, nunca
 instruções. A resposta estruturada pode escolher um candidato fornecido ou abster-se;
@@ -140,6 +178,13 @@ recuperáveis. **Não corresponde** grava rejeição daquele par e versão. Alte
 lançamento invalida a versão rejeitada. Desfazer ou invalidar um grupo retira-o dos
 exemplos positivos. Deixar pendente não representa rejeição. Não há fine-tuning nem
 treinamento automático do modelo.
+
+Cada sugestão carrega um comprovante assinado válido por 24 horas, associado ao
+usuário/empresa/conta/mês e às versões do par revisado. Confirmar guarda fonte, modelo
+(quando houver), versão da regra, nível e critérios apresentados no JSON do grupo;
+rejeitar guarda esses dados em `BankMatchDecision.feedback`. O comprovante é validado
+no servidor, não é persistido e independe do cache de IA. Decisões antigas sem esses
+dados continuam válidas; sua confiabilidade original não é reconstruída artificialmente.
 
 O cache inclui conta, empresa, usuário, versões dos candidatos, exemplos,
 configuração do modelo e versão do prompt. Guarda somente o resultado compacto,
@@ -161,7 +206,7 @@ valor e testes de contrato não constituem medição da acurácia do modelo.
 | BankReconciliationGroup / GroupItem | Grupo confirmado e histórico de itens |
 | BankReconciliationTransaction | Referência ao lançamento, snapshot e associação ativa |
 | BankReconciliationEvent | Quem confirmou/desfez e mudanças automáticas |
-| BankMatchDecision | Rejeição ou correção do par revisado |
+| BankMatchDecision | Rejeição ou correção do par revisado e critérios apresentados |
 | BankMatchCache | Sugestões substituíveis com contexto versionado e expiração |
 
 As listagens de movimentos e transações são paginadas no servidor em 50 registros;
@@ -173,13 +218,17 @@ persistentes nem logs completos de prompts por item.
 
 ## Entrega e verificação
 
-Aplicar `backend/prisma/migrations/20260907010000_bank_account_reconciliation` via
-`prisma migrate deploy` antes de publicar o backend/frontend. A aplicação não
-executa essa migração automaticamente durante uma importação.
+Aplicar as migrações `20260907010000_bank_account_reconciliation` e
+`20260907220000_bank_match_feedback`, em `backend/prisma/migrations`, via
+`prisma migrate deploy` antes de publicar o backend/frontend, e gerar o Prisma Client.
+A migração de feedback acrescenta um JSON opcional, sem modificar decisões existentes.
+A aplicação não executa essas migrações automaticamente durante uma importação.
 
 Os testes usam exemplos fictícios e cobrem parsers, agrupamentos, permissões,
 deduplicação entre formatos, rollback financeiro, transferência, concorrência,
-reabertura e contratos da IA. Os quatro arquivos fornecidos no estudo foram
+reabertura, quatro níveis, fronteira de duplicidade, seleção de IA, rejeições além do
+top dez, assinatura/expiração do feedback e filtro de faltantes além da primeira página.
+Os quatro arquivos fornecidos no estudo foram
 verificados localmente; seus dados pessoais não integram os fixtures do repositório.
 
 Para usar uma base descartável sem editar `.env.test`, definir `TEST_DATABASE_URL`.

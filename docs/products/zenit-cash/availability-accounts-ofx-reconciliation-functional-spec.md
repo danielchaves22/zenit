@@ -35,6 +35,20 @@ até 50 por busca; mudar de página ou filtro limpa a seleção. Por padrão cad
 é pesquisado separadamente, em lotes de até cinco que compartilham consultas e histórico.
 O progresso e os resultados são apresentados por movimento. Confirmar um vínculo mantém
 os demais resultados e remove candidatos que usam itens ou lançamentos já vinculados.
+**Conferir selecionados** abre uma revisão lado a lado do melhor candidato de cada
+movimento selecionado, independentemente da confiabilidade. O botão aguarda o fim
+das buscas desses movimentos, incluindo consultas de IA em andamento; falhas exigem
+nova tentativa. O filtro permite Alta, Média alta, Média baixa e Baixa, além das
+situações já existentes. A seleção continua limitada à página atual.
+
+A revisão em lote confirma pares 1:1 já liquidados e com valores exatos. Movimentos
+sem candidato, com diferença, agrupamentos, pendências de liquidação ou disputando
+o mesmo lançamento são apresentados separadamente e continuam para conferência
+individual. A confirmação informa o número de vínculos que serão salvos. Cada par
+preserva seu próprio histórico e feedback. O servidor revalida acesso, versões,
+vínculos ativos e confiabilidade em uma transação: qualquer conflito cancela o lote
+inteiro e exige nova revisão. Essa validação usa somente regras, sem consultar IA.
+
 **Buscar pela soma dos selecionados** é uma opção explícita para grupos de até 20 itens
 da mesma direção. As ações manuais continuam disponíveis em cada resultado.
 
@@ -44,8 +58,19 @@ a área de trabalho. Os indicadores superiores usam cards compactos.
 
 Ao abrir uma página com movimentos não conciliados, as regras pesquisam cada item em
 lotes de cinco, mostrando espera, busca, resultado ou erro por linha. Os resultados
-ficam somente na memória da tela (até 500 itens, validade de cinco minutos), sem
-persistir buscas automáticas. Mudanças nos vínculos invalidam candidatos afetados.
+ficam somente na memória da tela (até 500 itens, validade de cinco minutos verificada
+ao navegar), sem persistir buscas automáticas. Confirmações atualizam o resumo sem
+interromper buscas não afetadas ou reiniciar a lista. São recalculados movimentos
+afetados por candidatos utilizados (inclusive compatíveis fora dos dez exibidos),
+duplicidade, limites da busca ou mudanças no histórico de descrições. Confirmar
+um vínculo não dispara uma consulta à IA para outro item que sobrou selecionado.
+
+Os filtros calculados percorrem o mês progressivamente em lotes de cinco, somente
+por regras. Compartilham um cursor e um índice compacto dos movimentos analisados,
+com no máximo cem resultados completos em memória. Trocar entre os níveis reutiliza
+esse índice; confirmar remove os vinculados e reavalia somente os afetados. O filtro
+pode levar tempo para preencher uma página quando há poucas correspondências do nível
+escolhido. Atualizar explicitamente a conciliação refaz a busca a partir do início.
 
 ## Importação
 
@@ -155,10 +180,12 @@ estar fora da janela automática de sete dias antes/depois ou exigir seleção m
 
 O filtro **Possíveis faltantes** percorre o mês por cursor, cinco movimentos por
 requisição e sem IA, exibindo resultados progressivamente. Pausa ao reunir uma página
-de 50 resultados; avançar continua a varredura. Retém somente a página atual e cursores
-leves, permitindo voltar por nova leitura. O total analisado e buscas incompletas ficam
-visíveis. Sair do filtro pausa a busca; atualizar a tela ou alterar a conciliação
-invalida a varredura. Buscar manualmente e registrar faltante continuam disponíveis.
+de 50 resultados; avançar continua a varredura. Usa o mesmo índice compacto e cache
+limitado dos filtros de confiabilidade, reconsultando resultados completos quando
+saírem desse cache. O total analisado e buscas incompletas ficam visíveis. Sair do
+filtro pausa a busca; confirmações preservam o cursor e atualizam os itens afetados.
+Atualizar explicitamente, importar, reiniciar ou desfazer reinicia a varredura.
+Buscar manualmente e registrar faltante continuam disponíveis.
 
 ## IA e feedback
 
@@ -189,7 +216,10 @@ dados continuam válidas; sua confiabilidade original não é reconstruída arti
 O cache inclui conta, empresa, usuário, versões dos candidatos, exemplos,
 configuração do modelo e versão do prompt. Guarda somente o resultado compacto,
 expira em sete dias e mantém até cem resultados recentes por conta (limpeza em uso).
-Confirmações, importações e desfazimentos invalidam o cache da conta. Chamadas
+Confirmações preservam o cache reutilizável: versões, candidatos e conteúdo dos
+exemplos relevantes mudam sua chave quando necessário. Exemplos de conteúdo idêntico
+são deduplicados, independentemente de seus IDs e datas de atualização. Importações,
+reinícios e desfazimentos invalidam o cache da conta. Chamadas
 simultâneas com o mesmo contexto são agrupadas no processo. A rota limita pedidos
 por empresa/usuário; indisponibilidade da IA mantém a conciliação manual disponível.
 

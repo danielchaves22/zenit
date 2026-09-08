@@ -7,7 +7,7 @@ import { BankCandidate, MatchItem, day } from './bank-reconciliation-matching';
 import type { BankContext } from './bank-reconciliation.service';
 
 const prisma = new PrismaClient();
-const PROMPT_VERSION = 'bank-match-v2';
+const PROMPT_VERSION = 'bank-match-v3';
 const responseSchema = z.object({ candidateKey: z.string().nullable(), reason: z.string().max(500) });
 type SuggestResult = { candidates: BankCandidate[]; cacheId?: number; message?: string };
 const inFlight = new Map<string, Promise<SuggestResult>>();
@@ -23,7 +23,10 @@ export async function suggestBankMatchByAi(params: SuggestParams): Promise<Sugge
   try { credential = await OpenAiIntegrationService.getDecryptedCredential(context.companyId, true); }
   catch { return { candidates, message: 'IA indisponível: confira a integração da empresa. As sugestões por regras continuam disponíveis.' }; }
   const model = resolveOpenAiModel(credential.model);
-  const key = hash(JSON.stringify([PROMPT_VERSION, context, model, credential.updatedAt, params.items, candidates, params.examples]));
+  const exampleData = params.examples.map(e => ({ statement: e.statement.slice(0, 400), transactions: e.transactions.map(t => t.description.slice(0, 250)) }));
+  const confirmedExamples = [...new Map(exampleData.map(e => [JSON.stringify(e), e])).values()].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+  // Repeated confirmations with the same example content do not invalidate an otherwise identical answer.
+  const key = hash(JSON.stringify([PROMPT_VERSION, context, model, credential.updatedAt, params.items, candidates, confirmedExamples]));
   await prisma.bankMatchCache.deleteMany({ where: { accountId: context.accountId, expiresAt: { lt: new Date() } } });
   const cached = await prisma.bankMatchCache.findFirst({ where: { accountId: context.accountId, key, expiresAt: { gt: new Date() } } });
   if (cached) return { ...(cached.result as unknown as { candidates: BankCandidate[]; message?: string }), cacheId: cached.id };
@@ -47,7 +50,7 @@ export async function suggestBankMatchByAi(params: SuggestParams): Promise<Sugge
             items: params.items.map(i => ({ id: i.id, date: day(i.date), amount: i.amount.toString(), description: i.description.slice(0, 300) })),
             candidates: candidates.map(c => ({ key: c.key, itemIds: c.itemIds, amount: c.amount, difference: c.difference,
               transactions: c.transactions.map(t => ({ ...t, description: t.description.slice(0, 300), version: undefined })) })),
-            confirmedExamples: params.examples.map(e => ({ statement: e.statement.slice(0, 400), transactions: e.transactions.map(t => t.description.slice(0, 250)) }))
+            confirmedExamples
           }) }
         ]
       })

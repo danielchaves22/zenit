@@ -37,6 +37,9 @@ export const suggestBankCandidatesBatch = endpoint((c, m, req) => { const input 
   useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidatesBatch(c, m, input.itemIds, input.useAi); });
 export const scanMissingBankItems = endpoint((c, m, req) => Service.scanMissing(c, m, z.coerce.number().int().min(0).default(0).parse(req.query.afterId)));
 export const confirmBankMatch = endpoint((c, m, req) => Service.confirm(c, m, link.parse(req.body)));
+export const confirmBankBatch = endpoint((c, m, req) => Service.confirmBatch(c, m, z.object({ matches: z.array(z.object({
+  itemId: id, transaction: z.object({ id, version: z.string().datetime() }), feedbackToken: z.string().min(1).max(12000)
+})).min(1).max(50) }).parse(req.body).matches));
 export const rejectBankMatch = endpoint((c, m, req) => Service.reject(c, m, link.parse(req.body)));
 export const createBankTransaction = endpoint((c, m, req) => Service.create(c, m, z.object({ itemIds,
   description: z.string().trim().min(1).max(255), categoryId: id.optional(), transferAccountId: id.optional(), effectiveDate: date }).parse(req.body)));

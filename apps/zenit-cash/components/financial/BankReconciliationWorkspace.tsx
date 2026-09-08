@@ -7,11 +7,13 @@ import { Card } from '@/components/ui/Card';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useToast } from '@/components/ui/ToastContext';
 import BankMatchReview from './BankMatchReview';
+import BankBatchReview, { BankBatchSnapshot } from './BankBatchReview';
+import { bankBatchSnapshot } from '@/lib/bank-reconciliation-batch';
 import BankMatchSuggestions from './BankMatchSuggestions';
 import { BankMovementSearchStatus } from './BankMatchConfidence';
 import { useBankRuleSearch } from '@/hooks/useBankRuleSearch';
-import { useBankMissingSearch } from '@/hooks/useBankMissingSearch';
-import { BankAudit, BankCandidate, BankItem, BankPreview, BankSearchResult, BankTransaction, BankWorkspace, bankCurrency, bankDate, bankNeedsAi, bankTimestamp, bankTotal } from '@/lib/bank-reconciliation';
+import { BankComputedFilter, useBankFilteredSearch } from '@/hooks/useBankFilteredSearch';
+import { BankAudit, BankCandidate, BankItem, BankLinkChange, BankPreview, BankSearchResult, BankTransaction, BankWorkspace, bankCurrency, bankDate, bankNeedsAi, bankTimestamp, bankTotal } from '@/lib/bank-reconciliation';
 
 const fieldClass = 'rounded border border-gray-600 bg-background px-3 py-2 text-sm text-white disabled:opacity-50';
 const panelClass = 'p-0 min-w-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col [&>div]:p-4';
@@ -38,6 +40,8 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const [searchProgress, setSearchProgress] = useState(0);
   const [review, setReview] = useState<{ items: BankItem[]; transactions: BankTransaction[]; candidate?: BankCandidate; cacheId?: number } | null>(null);
   const [reviewError, setReviewError] = useState('');
+  const [batchReview, setBatchReview] = useState<BankBatchSnapshot | null>(null), [batchError, setBatchError] = useState('');
+  const [savingLinks, setSavingLinks] = useState(false);
   const [upload, setUpload] = useState<{ fileName: string; fileBase64: string; preview: BankPreview } | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [transactions, setTransactions] = useState<{ items: BankTransaction[]; total: number }>({ items: [], total: 0 });
@@ -53,13 +57,14 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const selectAllRef = useRef<HTMLInputElement>(null), searchAbort = useRef<AbortController>();
   const base = `/financial/accounts/${accountId}/reconciliation/${month}`;
   const closed = data?.session?.status === 'COMPLETED';
-  const missingMode = filter === 'MISSING';
-  const ruleSearch = useBankRuleSearch(base, data?.items || emptyItems, !!data && !closed && !busy && !loading && tab === 'statement' && !missingMode, selected.map(i => i.id));
-  const missingSearch = useBankMissingSearch(base, page, !!data && !busy && !loading && tab === 'statement' && missingMode);
-  const displayedItems = missingMode ? missingSearch.items : data?.items || emptyItems;
-  const searchRows = missingMode ? missingSearch.rows : ruleSearch.rows;
+  const computedMode = ['MISSING', 'HIGH', 'MEDIUM_HIGH', 'MEDIUM_LOW', 'LOW'].includes(filter);
+  const ruleSearch = useBankRuleSearch(base, data?.items || emptyItems, !!data && !closed && (!busy || savingLinks) && !loading && tab === 'statement' && !computedMode, selected.map(i => i.id), `${filter}:${page}`);
+  const filteredSearch = useBankFilteredSearch(base, page, computedMode ? filter as BankComputedFilter : 'MISSING', !!data && !closed && (!busy || savingLinks) && !loading && tab === 'statement' && computedMode);
+  const displayedItems = computedMode ? filteredSearch.items : data?.items || emptyItems;
+  const searchRows = computedMode ? filteredSearch.rows : ruleSearch.rows;
   const results = searchAsGroup ? groupResults : selected.flatMap(item => searchRows[item.id]?.result ? [searchRows[item.id].result!] : []);
   const autoRefined = useRef(new Set<string>());
+  const autoSelectionId = useRef<number | null>(null);
   const selectedTotal = bankTotal(selected);
   const eligibleItems = displayedItems.filter(item => !item.activeGroupId);
   const allPageSelected = eligibleItems.length > 0 && eligibleItems.every(item => selected.some(s => s.id === item.id));
@@ -67,15 +72,15 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; searchAbort.current?.abort(); }; }, []);
   useEffect(() => { if (selectAllRef.current) selectAllRef.current.indeterminate = !allPageSelected && eligibleItems.some(item => selected.some(s => s.id === item.id)); }, [allPageSelected, eligibleItems, selected]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (silent = false) => {
     const requestId = ++loadGeneration.current;
-    setLoading(true); setError('');
+    if (!silent) setLoading(true); setError('');
     try {
-      const response = await api.get<BankWorkspace>(base, { params: { page: filter === 'MISSING' ? 1 : page, filter: filter === 'MISSING' ? 'PENDING' : filter } });
+      const response = await api.get<BankWorkspace>(base, { params: { page: computedMode ? 1 : page, filter: computedMode ? 'PENDING' : filter } });
       if (alive.current && requestId === loadGeneration.current) setData(response.data);
-    } catch (e) { if (alive.current && requestId === loadGeneration.current) setError(errorMessage(e)); }
-    finally { if (alive.current && requestId === loadGeneration.current) setLoading(false); }
-  }, [base, page, filter]);
+    } catch (e) { if (alive.current && requestId === loadGeneration.current) setError(silent ? `Os vínculos foram salvos, mas não foi possível atualizar o resumo. ${errorMessage(e)}` : errorMessage(e)); }
+    finally { if (!silent && alive.current && requestId === loadGeneration.current) setLoading(false); }
+  }, [base, page, filter, computedMode]);
   useEffect(() => { void refresh(); }, [refresh]);
 
   useEffect(() => {
@@ -97,6 +102,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   }, [base, tab, auditPage, data]);
 
   function changeSelection(items: BankItem[]) {
+    autoSelectionId.current = items.length === 1 ? items[0].id : null;
     generation.current++; searchAbort.current?.abort(); setSuggesting(false); setSelected(items); setGroupResults([]); setSuggestionMessage(''); setManual([]); setCreating(false); setSearchAsGroup(false); setSearchProgress(0);
   }
   function toggleItem(item: BankItem) {
@@ -121,7 +127,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
           if (!needed.length) { setSearchProgress(offset + batch.length); continue; }
           const response = await api.post<{ results: BankSearchResult[] }>(`${base}/suggestions/batch`, { itemIds: needed.map(i => i.id), useAi: 'auto' }, { signal: abort.signal, timeout: 45000 });
           if (generation.current !== requestId) return;
-          ruleSearch.storeResults(response.data.results); setSearchProgress(offset + batch.length);
+          ruleSearch.storeResults(response.data.results); filteredSearch.storeResults(response.data.results); setSearchProgress(offset + batch.length);
         }
       }
     } catch (e) { if (generation.current === requestId) setSuggestionMessage(errorMessage(e)); }
@@ -129,21 +135,38 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   }
   const focusedRow = selected.length === 1 ? searchRows[selected[0].id] : undefined;
   useEffect(() => {
-    if (busy || loading || suggesting || closed || tab !== 'statement' || searchAsGroup || !focusedRow || focusedRow.status !== 'done' || focusedRow.refined) return;
+    if (busy || loading || batchReview || suggesting || closed || tab !== 'statement' || searchAsGroup || autoSelectionId.current !== selected[0]?.id || !focusedRow || focusedRow.status !== 'done' || focusedRow.refined) return;
     const best = focusedRow.result?.candidates[0];
     if (!best || !bankNeedsAi(focusedRow.result) || autoRefined.current.has(best.key)) return;
     const timer = setTimeout(() => { autoRefined.current.add(best.key); void suggest(); }, 400);
     return () => clearTimeout(timer);
     // Selection/refinement is independent of the automatic rule queue.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedRow, selected, busy, loading, suggesting, closed, tab, searchAsGroup]);
+  }, [focusedRow, selected, busy, loading, batchReview, suggesting, closed, tab, searchAsGroup]);
+
+  const awaitingAutoAi = selected.length === 1 && autoSelectionId.current === selected[0].id && !searchAsGroup && !!focusedRow && !focusedRow.refined && bankNeedsAi(focusedRow.result) && !autoRefined.current.has(focusedRow.result!.candidates[0].key);
+  const selectedSearchesDone = selected.length > 0 && selected.every(item => searchRows[item.id]?.status === 'done' && !searchRows[item.id]?.result?.error) && !suggesting && !awaitingAutoAi;
+
+  function applyConfirmedChange(change: BankLinkChange) {
+    autoSelectionId.current = null;
+    const linked = new Map(change.items.map(item => [item.id, item]));
+    setData(current => current ? { ...current, items: current.items.map(item => linked.get(item.id) || item) } : current);
+    setSelected(current => current.filter(item => !linked.has(item.id)));
+    ruleSearch.applyChange(change); filteredSearch.applyChange(change);
+    setManual([]); setCreating(false); setGroupResults([]); setSearchAsGroup(false);
+  }
 
   async function mutate(path: string, payload: unknown, message: string) {
     generation.current++; searchAbort.current?.abort(); setSuggesting(false);
-    setBusy(true); setError('');
-    try { await api.post(`${base}/${path}`, payload); if (!alive.current) return false; ruleSearch.invalidate(); missingSearch.invalidate(); if (missingMode) setPage(1); autoRefined.current.clear(); addToast(message); changeSelection([]); await refresh(); return true; }
+    setSavingLinks(path === 'transactions'); setBusy(true); setError('');
+    try {
+      const response = await api.post<{ change?: BankLinkChange }>(`${base}/${path}`, payload); if (!alive.current) return false;
+      if (response.data.change) { applyConfirmedChange(response.data.change); await refresh(true); }
+      else { ruleSearch.invalidate(); filteredSearch.invalidate(); if (computedMode) setPage(1); autoRefined.current.clear(); changeSelection([]); await refresh(); }
+      addToast(message); return true;
+    }
     catch (e) { if (alive.current) { setError(errorMessage(e)); addToast(errorMessage(e), 'error'); } return false; }
-    finally { if (alive.current) setBusy(false); }
+    finally { if (alive.current) { setBusy(false); setSavingLinks(false); } }
   }
   async function readFile(file?: File) {
     if (!file) return;
@@ -160,18 +183,27 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   async function confirmReview(settlePending: boolean, settlementDate: string, note: string) {
     if (!review) return;
     generation.current++; searchAbort.current?.abort(); setSuggesting(false);
-    setBusy(true); setReviewError('');
+    setSavingLinks(true); setBusy(true); setReviewError(''); autoSelectionId.current = null;
     try {
-      await api.post(`${base}/confirm`, { itemIds: review.items.map(i => i.id), transactions: review.transactions.map(t => ({ id: t.id, version: t.version })),
+      const response = await api.post<{ id: number; change: BankLinkChange }>(`${base}/confirm`, { itemIds: review.items.map(i => i.id), transactions: review.transactions.map(t => ({ id: t.id, version: t.version })),
         settlePending, settlementDate: settlePending ? settlementDate : undefined, note, cacheId: review.cacheId, candidateKey: review.candidate?.key, feedbackToken: review.candidate?.feedbackToken });
       if (!alive.current) return;
-      const linkedItems = new Set(review.items.map(i => i.id)), linkedTransactions = new Set(review.transactions.map(t => t.id));
-      setReview(null); setSelected(current => current.filter(i => !linkedItems.has(i.id))); setManual([]); setCreating(false);
-      ruleSearch.invalidate(Array.from(linkedItems), Array.from(linkedTransactions)); setGroupResults([]); setSearchAsGroup(false);
-      missingSearch.invalidate(); if (missingMode) setPage(1);
-      setTab('statement'); addToast('Correspondência confirmada e salva.'); await refresh();
+      applyConfirmedChange(response.data.change); setReview(null);
+      setTab('statement'); addToast('Correspondência confirmada e salva.'); await refresh(true);
     } catch (e) { if (alive.current) setReviewError(errorMessage(e)); }
-    finally { if (alive.current) setBusy(false); }
+    finally { if (alive.current) { setBusy(false); setSavingLinks(false); } }
+  }
+  async function confirmBatch() {
+    if (!batchReview?.candidates.length) return;
+    setSavingLinks(true); setBusy(true); setBatchError(''); autoSelectionId.current = null;
+    try {
+      const response = await api.post<{ confirmed: number; change: BankLinkChange }>(`${base}/confirm/batch`, { matches: batchReview.candidates.map(candidate => ({
+        itemId: candidate.itemIds[0], transaction: { id: candidate.transactions[0].id, version: candidate.transactions[0].version }, feedbackToken: candidate.feedbackToken
+      })) }, { timeout: 60000 });
+      if (!alive.current) return;
+      applyConfirmedChange(response.data.change); setBatchReview(null); addToast(`${response.data.confirmed} vínculo(s) confirmado(s).`); await refresh(true);
+    } catch (e) { if (alive.current) setBatchError(`${errorMessage(e)} Volte à lista e atualize as sugestões antes de revisar novamente.`); }
+    finally { if (alive.current) { setBusy(false); setSavingLinks(false); } }
   }
   async function beginCreate(items = selected) {
     setBusy(true);
@@ -193,7 +225,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">Mês de referência<input aria-label="Mês de referência" type="month" value={month} min="2000-01" max="2200-12" disabled={busy} onChange={e => { if (e.target.value) onMonthChange(e.target.value); }} className={`${fieldClass} ml-2`} /></label>
-        <Button variant="outline" disabled={busy || loading} onClick={() => { changeSelection([]); ruleSearch.invalidate(); missingSearch.invalidate(); if (missingMode) setPage(1); autoRefined.current.clear(); void refresh(); }} aria-label="Atualizar conciliação"><RefreshCw size={16} /></Button>
+        <Button variant="outline" disabled={busy || loading} onClick={() => { changeSelection([]); ruleSearch.invalidate(); filteredSearch.invalidate(); if (computedMode) setPage(1); autoRefined.current.clear(); void refresh(); }} aria-label="Atualizar conciliação"><RefreshCw size={16} /></Button>
       </div>
     </div>
     {error && <div role="alert" className="rounded-lg border border-red-700 bg-red-950/20 p-4 text-red-300">{error}</div>}
@@ -249,21 +281,25 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
       </Card>}
       {tab === 'statement' && <div className={`grid items-start gap-4 ${selected.length && !closed ? 'lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]' : ''}`}>
         <Card className={`${panelClass} h-[max(42rem,calc(100dvh-23rem))]`}>
-          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Movimentos do extrato</h2><select aria-label="Filtrar itens do extrato" value={filter} disabled={busy || loading} onChange={e => { changeSelection([]); setLoading(true); setFilter(e.target.value); setPage(1); }} className={fieldClass}><option value="ALL">Todos</option><option value="PENDING">Para conferir</option><option value="MISSING">Possíveis faltantes</option><option value="CONFIRMED">Conciliados</option></select></div>
-          {loading && <p role="status" className="mb-3 text-sm text-gray-400">Carregando…</p>}
-          {missingMode && <div className="mb-3 space-y-2 text-xs text-gray-400">
-            <p role="status">{missingSearch.searching ? 'Analisando o mês… ' : ''}{missingSearch.scanned} movimento(s) analisado(s){missingSearch.atEnd ? ' · Busca do mês concluída' : ''}.</p>
-            {!!missingSearch.incomplete && <p className="text-amber-300">{missingSearch.incomplete} busca(s) incompleta(s) não foram classificadas como faltantes. Confira esses movimentos em “Todos”.</p>}
-            {missingSearch.error && <p role="alert" className="text-red-300">{missingSearch.error} <button className="text-blue-300 underline" disabled={busy} onClick={missingSearch.retry}>Tentar novamente</button></p>}
+          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Movimentos do extrato</h2><select aria-label="Filtrar itens do extrato" value={filter} disabled={busy || loading} onChange={e => { changeSelection([]); setLoading(true); setFilter(e.target.value); setPage(1); }} className={fieldClass}><option value="ALL">Todos</option><option value="PENDING">Para conferir</option><option value="MISSING">Possíveis faltantes</option><option value="CONFIRMED">Conciliados</option><optgroup label="Confiabilidade"><option value="HIGH">Alta</option><option value="MEDIUM_HIGH">Média alta</option><option value="MEDIUM_LOW">Média baixa</option><option value="LOW">Baixa</option></optgroup></select></div>
+          {!closed && <div className="mb-3 flex shrink-0 flex-wrap items-center gap-3">
+            <Button variant="outline" disabled={busy || loading || !selectedSearchesDone} onClick={() => { setBatchError(''); setBatchReview(bankBatchSnapshot(selected, searchRows)); }}>Conferir selecionados{selected.length ? ` (${selected.length})` : ''}</Button>
+            {!!selected.length && !selectedSearchesDone && <span role="status" className="text-xs text-gray-400">Aguarde a conclusão das buscas dos selecionados. Se houver falha, tente a busca novamente.</span>}
           </div>}
-          {!displayedItems.length && !loading && (!missingMode || missingSearch.atEnd) && <p className="py-10 text-center text-gray-400">{data.summary.total ? missingMode ? 'Nenhum possível faltante identificado nas buscas concluídas.' : 'Nenhum item neste filtro.' : 'Importe o extrato deste mês para começar.'}</p>}
+          {loading && <p role="status" className="mb-3 text-sm text-gray-400">Carregando…</p>}
+          {computedMode && <div className="mb-3 space-y-2 text-xs text-gray-400">
+            <p role="status">{filteredSearch.searching ? 'Analisando o mês… ' : ''}{filteredSearch.scanned} movimento(s) analisado(s){filteredSearch.atEnd ? ' · Busca do mês concluída' : ''}.</p>
+            {!!filteredSearch.incomplete && <p className="text-amber-300">{filteredSearch.incomplete} busca(s) incompleta(s). Esses movimentos não são classificados como faltantes; a confiabilidade disponível ainda pode ser exibida.</p>}
+            {filteredSearch.error && <p role="alert" className="text-red-300">{filteredSearch.error} <button className="text-blue-300 underline" disabled={busy} onClick={filteredSearch.retry}>Tentar novamente</button></p>}
+          </div>}
+          {!displayedItems.length && !loading && (!computedMode || filteredSearch.atEnd) && <p className="py-10 text-center text-gray-400">{data.summary.total ? filter === 'MISSING' ? 'Nenhum possível faltante identificado nas buscas concluídas.' : 'Nenhum item neste filtro.' : 'Importe o extrato deste mês para começar.'}</p>}
           <div role="region" aria-label="Lista de movimentos do extrato" tabIndex={0} className="min-h-0 flex-1 overflow-auto overscroll-contain"><table className="w-full text-left text-sm"><thead className="sticky top-0 z-10 bg-surface"><tr className="border-b border-gray-700 text-gray-400"><th className="relative p-2"><span className="sr-only">Selecionar</span>{!closed && <input ref={selectAllRef} type="checkbox" aria-label="Marcar ou desmarcar todos os movimentos desta página" title={allPageSelected ? 'Desmarcar todos desta página' : 'Marcar todos desta página'} checked={allPageSelected} disabled={busy || loading || !eligibleItems.length} onChange={() => changeSelection(allPageSelected ? [] : eligibleItems)} />}</th><th className="p-2">Data e descrição</th><th className="p-2 text-right">Valor</th><th className="p-2">Situação</th></tr></thead>
             <tbody>{displayedItems.map(item => <tr key={item.id} className={`border-b border-gray-800 ${selected.some(s => s.id === item.id) ? 'bg-blue-950/30' : ''}`}>
               <td className="p-2">{!item.activeGroupId && !closed && <input aria-label={`Selecionar ${item.description} em ${bankDate(item.date)}`} type="checkbox" checked={selected.some(s => s.id === item.id)} disabled={busy || loading} onChange={() => toggleItem(item)} />}</td>
               <td className="max-w-md p-2"><p className="break-words">{item.description}</p><p className="mt-1 text-xs text-gray-400">{bankDate(item.date)}</p></td><td className={`whitespace-nowrap p-2 text-right ${Number(item.amount) > 0 ? 'text-emerald-300' : ''}`}>{bankCurrency(item.amount)}</td>
-              <td className="p-2">{item.activeGroupId ? <button className="text-emerald-300 underline" onClick={() => setTab('audit')}>Conciliado</button> : closed ? <span className="text-amber-300">Para conferir</span> : <BankMovementSearchStatus entry={searchRows[item.id]} disabled={busy} onRetry={() => ruleSearch.retry(item.id)} />}</td>
+              <td className="p-2">{item.activeGroupId ? <button className="text-emerald-300 underline" onClick={() => setTab('audit')}>Conciliado</button> : closed ? <span className="text-amber-300">Para conferir</span> : <BankMovementSearchStatus entry={searchRows[item.id]} disabled={busy} onRetry={() => computedMode ? filteredSearch.recheck([item.id]) : ruleSearch.retry(item.id)} />}</td>
             </tr>)}</tbody></table></div>
-          {missingMode ? <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-2 text-sm text-gray-400"><span>{displayedItems.length} possível(is) faltante(s) nesta página · Página {page}</span><div className="flex gap-2"><Button variant="outline" disabled={busy || loading || page <= 1} onClick={() => { changeSelection([]); setLoading(true); setPage(page - 1); }}>Anterior</Button><Button variant="outline" disabled={busy || loading || !missingSearch.done || missingSearch.atEnd} onClick={() => { changeSelection([]); setLoading(true); setPage(page + 1); }}>Próxima</Button></div></div>
+          {computedMode ? <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-2 text-sm text-gray-400"><span>{displayedItems.length} {filter === 'MISSING' ? 'possível(is) faltante(s)' : 'correspondência(s)'} nesta página · Página {page}</span><div className="flex gap-2"><Button variant="outline" disabled={busy || loading || page <= 1} onClick={() => { changeSelection([]); setLoading(true); setPage(page - 1); }}>Anterior</Button><Button variant="outline" disabled={busy || loading || !filteredSearch.done || (filteredSearch.atEnd && page * 50 >= filteredSearch.totalFound)} onClick={() => { changeSelection([]); setLoading(true); setPage(page + 1); }}>Próxima</Button></div></div>
             : <Pagination page={page} total={data.total} size={50} disabled={busy || loading} onChange={value => { changeSelection([]); setPage(value); }} />}
         </Card>
         {!!selected.length && !closed && <Card className={`${panelClass} h-[max(42rem,calc(100dvh-23rem))] [&>div]:overflow-y-auto [&>div]:overscroll-contain`}>
@@ -283,7 +319,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
             onReject={async candidate => { setBusy(true); try {
               await api.post(`${base}/reject`, { itemIds: candidate.itemIds, transactions: candidate.transactions.map(t => ({ id: t.id, version: t.version })), feedbackToken: candidate.feedbackToken });
               generation.current++; searchAbort.current?.abort(); setSuggesting(false); ruleSearch.reject(candidate.key);
-              missingSearch.invalidate(); if (missingMode) setPage(1);
+              filteredSearch.recheck(candidate.itemIds);
               setGroupResults(current => current.map(result => ({ ...result, candidates: result.candidates.filter(c => c.key !== candidate.key) }))); addToast('Correspondência rejeitada.');
             } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); } }} />
         </Card>}
@@ -327,6 +363,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     </>}
     {!data && loading && <p role="status" className="py-16 text-center">Carregando conciliação…</p>}
     {review && <BankMatchReview items={review.items} transactions={review.transactions} busy={busy} error={reviewError} onClose={() => { if (!busy) setReview(null); }} onConfirm={(settle, date, note) => void confirmReview(settle, date, note)} />}
+    {batchReview && <BankBatchReview snapshot={batchReview} busy={busy} error={batchError} onClose={() => { if (!busy) setBatchReview(null); }} onConfirm={() => void confirmBatch()} />}
     {resetOpen && <ConfirmationModal isOpen title="Reiniciar conciliação deste mês?" message={`Serão apagados os vínculos, o histórico e os movimentos importados de ${month.split('-').reverse().join('/')} da conta ${data?.account.name}. Os arquivos sem uso em outros meses também serão removidos. Os lançamentos financeiros serão mantidos. Esta limpeza não pode ser desfeita; você poderá importar outro extrato.`}
       confirmText="Apagar e reiniciar" loading={busy} onClose={() => { if (!busy) setResetOpen(false); }} onConfirm={async () => {
         if (await mutate('reset', { confirmed: true }, 'Conciliação reiniciada. Selecione o extrato para começar novamente.')) { setResetOpen(false); setUpload(null); setPage(1); setFilter('ALL'); setTab('statement'); }

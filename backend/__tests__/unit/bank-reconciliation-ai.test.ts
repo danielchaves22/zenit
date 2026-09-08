@@ -42,6 +42,16 @@ describe('Bank AI suggestion boundary', () => {
     await suggestBankMatchByAi({ ...params, context: { ...params.context, userId: 2 } });
     expect(global.fetch).toHaveBeenCalledTimes(2);
   });
+  it('reuses identical example content across confirmations but invalidates changed evidence and versions', async () => {
+    const example = { id: 10, statement: 'Mercado', transactions: [{ description: 'Supermercado', version: 'old' }] };
+    await suggestBankMatchByAi({ ...params, examples: [example] });
+    await suggestBankMatchByAi({ ...params, examples: [example, { ...example, id: 11, transactions: [{ description: 'Supermercado', version: 'new' }] }] });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    await suggestBankMatchByAi({ ...params, examples: [{ ...example, statement: 'Outro estabelecimento' }] });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    await suggestBankMatchByAi({ ...params, examples: [example], candidates: [{ ...candidate, transactions: candidate.transactions.map(t => ({ ...t, version: '2026-08-23T00:00:00.000Z' })) }] });
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+  });
   it('rejects an invented transaction candidate and preserves deterministic suggestions', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({ ok: true, json: async () => ({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ candidateKey: 'invented', reason: 'invalid' }) } }] }) });
     const result = await suggestBankMatchByAi(params);

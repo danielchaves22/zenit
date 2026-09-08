@@ -10,6 +10,13 @@ export interface BankCandidate {
   feedbackToken?: string;
 }
 export type BankAssessment = 'CANDIDATES' | 'POSSIBLE_MISSING' | 'INCOMPLETE';
+export type BankConfidenceLevel = NonNullable<BankCandidate['confidence']>['level'];
+export interface BankLinkChange {
+  items: BankItem[];
+  transactions: Array<{ id: number; date: string; amount: string; description: string }>;
+  historyDescriptions: string[];
+  groups: Array<{ id: number; itemIds: number[]; transactionIds: number[] }>;
+}
 export interface BankSearchResult {
   itemId: number;
   candidates: BankCandidate[];
@@ -18,6 +25,7 @@ export interface BankSearchResult {
   limited?: boolean;
   error?: string;
   assessment?: BankAssessment;
+  dependencies?: { itemIds: number[]; transactionIds: number[] };
 }
 export const bankNeedsAi = (result?: BankSearchResult) => !!result && !result.error && result.assessment !== 'POSSIBLE_MISSING'
   && ['MEDIUM_LOW', 'LOW'].includes(result.candidates[0]?.confidence?.level || '');

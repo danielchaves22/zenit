@@ -2,7 +2,7 @@ import { BankStatementItem, FinancialTransaction, Prisma, PrismaClient } from '@
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
 import FinancialTransactionService from './financial-transaction.service';
 import { BankStatement, calendarDate, hash, normalizeDescription, parseBankStatement } from './bank-statement-parser';
-import { BankCandidate, assessBankCandidates, candidateFor, cents, classifyBankCandidates, day, idsKey, money, rankBankCandidates, shouldUseBankAi, signedTransactionAmount, similarity, sumCents, transactionDay } from './bank-reconciliation-matching';
+import { BANK_MATCH_RULE_VERSION, BankCandidate, assessBankCandidates, candidateFor, cents, classifyBankCandidates, day, idsKey, money, rankBankCandidates, shouldUseBankAi, signedTransactionAmount, similarity, sumCents, transactionDay } from './bank-reconciliation-matching';
 import { readBankFeedback, signBankFeedback } from './bank-reconciliation-feedback';
 import { suggestBankMatchByAi } from './bank-reconciliation-ai.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
@@ -20,6 +20,7 @@ export interface BankLinkInput {
   candidateKey?: string;
   feedbackToken?: string;
 }
+export interface BankBulkLinkInput { itemId: number; transaction: { id: number; version: string }; feedbackToken: string }
 const transactionSelect = {
   id: true, description: true, amount: true, date: true, dueDate: true, effectiveDate: true,
   type: true, status: true, fromAccountId: true, toAccountId: true, updatedAt: true
@@ -86,6 +87,19 @@ async function selectedItems(tx: Db, accountId: number, month: string, ids: numb
   if (items.length !== ids.length) throw new Error('Um item já foi conciliado ou não pertence a esta conta e mês. Atualize a tela.');
   if (!individual && new Set(items.map(i => Math.sign(cents(i.amount)))).size !== 1) throw new Error('Agrupe apenas movimentos da mesma direção.');
   return items;
+}
+async function displacedHistoryDescriptions(tx: Db, context: BankContext, accountIds: number[], addedGroups: number) {
+  const groups = await tx.bankReconciliationGroup.findMany({ where: { status: 'CONFIRMED', reconciliation: { accountId: context.accountId },
+    transactions: { every: { active: true, transaction: transactionScope(context, accountIds) } } }, orderBy: { id: 'desc' },
+    skip: Math.max(0, 100 - addedGroups), take: addedGroups, select: { items: { select: { item: { select: { description: true } } } } } });
+  return groups.flatMap(group => group.items.map(row => row.item.description));
+}
+function linkChange(context: BankContext, items: BankStatementItem[], transactions: FinancialTransaction[],
+  groups: Array<{ id: number; itemIds: number[]; transactionIds: number[] }>, displacedDescriptions: string[]) {
+  return { groups, items: items.map(item => ({ id: item.id, date: day(item.date), amount: item.amount.toFixed(2), description: item.description,
+    activeGroupId: groups.find(group => group.itemIds.includes(item.id))?.id })),
+    transactions: transactions.map(t => ({ id: t.id, date: transactionDay(t), amount: money(signedTransactionAmount(t, context.accountId)), description: t.description })),
+    historyDescriptions: [...new Set([...items.map(item => item.description), ...displacedDescriptions])] };
 }
 function decodeFile(fileBase64: string) {
   if (!/^[A-Za-z0-9+/]+={0,2}$/.test(fileBase64) || fileBase64.length % 4 !== 0) throw new Error('Arquivo inválido.');
@@ -250,19 +264,19 @@ export default class BankReconciliationService {
       nextCursor: found.length > 5 ? items[items.length - 1].id : null };
   }
 
-  private static async searchCandidates(context: BankContext, month: string, groups: BankStatementItem[][], accountIds: number[], useAi: boolean | 'auto') {
+  private static async searchCandidates(context: BankContext, month: string, groups: BankStatementItem[][], accountIds: number[], useAi: boolean | 'auto', db: Db = prisma) {
     const items = groups.flat();
     const range = expandRange(items.map(i => i.date), 7);
     const base: Prisma.FinancialTransactionWhereInput = { AND: [transactionScope(context, accountIds), financialDateWhere(range)], bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } };
     const amounts = [...new Set(groups.map(group => money(Math.abs(sumCents(group.map(i => cents(i.amount)))))))];
     const exactLimit = 100 * groups.length, nearbyLimit = 200 * groups.length, neighborLimit = 25 * groups.length;
     const [exact, nearby, neighbors, history, restricted] = await Promise.all([
-      prisma.financialTransaction.findMany({ where: { ...base, amount: { in: amounts } }, select: transactionSelect, orderBy: { id: 'desc' }, take: exactLimit + 1 }),
-      prisma.financialTransaction.findMany({ where: base, select: transactionSelect, orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }], take: nearbyLimit + 1 }),
-      prisma.bankStatementItem.findMany({ where: { accountId: context.accountId, activeGroupId: null, AND: [{ date: range }, { date: monthRange(month) }] }, orderBy: { date: 'asc' }, take: neighborLimit + 1 }),
-      prisma.bankReconciliationGroup.findMany({ where: { status: 'CONFIRMED', reconciliation: { accountId: context.accountId }, transactions: { every: { active: true, transaction: transactionScope(context, accountIds) } } },
+      db.financialTransaction.findMany({ where: { ...base, amount: { in: amounts } }, select: transactionSelect, orderBy: { id: 'desc' }, take: exactLimit + 1 }),
+      db.financialTransaction.findMany({ where: base, select: transactionSelect, orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }], take: nearbyLimit + 1 }),
+      db.bankStatementItem.findMany({ where: { accountId: context.accountId, activeGroupId: null, AND: [{ date: range }, { date: monthRange(month) }] }, orderBy: { date: 'asc' }, take: neighborLimit + 1 }),
+      db.bankReconciliationGroup.findMany({ where: { status: 'CONFIRMED', reconciliation: { accountId: context.accountId }, transactions: { every: { active: true, transaction: transactionScope(context, accountIds) } } },
         include: { items: { include: { item: { select: { description: true, normalizedDescription: true } } } }, transactions: { include: { transaction: { select: transactionSelect } } } }, orderBy: { id: 'desc' }, take: 100 }),
-      prisma.financialTransaction.count({ where: { AND: [transactionScope(context), financialDateWhere(range)], NOT: transactionScope(context, accountIds),
+      db.financialTransaction.count({ where: { AND: [transactionScope(context), financialDateWhere(range)], NOT: transactionScope(context, accountIds),
         bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } } })
     ]);
     const transactions = [...new Map([...exact.slice(0, exactLimit), ...nearby.slice(0, nearbyLimit)].map(t => [t.id, t])).values()];
@@ -278,8 +292,8 @@ export default class BankReconciliationService {
       // Exact counts are independent of the displayed suggestions and include adjacent imported months.
       const duplicateRange = expandRange(group.map(i => i.date), 3);
       const [itemCount, transactionCount] = group.length === 1 ? await Promise.all([
-        prisma.bankStatementItem.count({ where: { accountId: context.accountId, activeGroupId: null, amount: group[0].amount, date: duplicateRange } }),
-        prisma.financialTransaction.count({ where: { AND: [transactionScope(context, accountIds), financialDateWhere(duplicateRange)],
+        db.bankStatementItem.count({ where: { accountId: context.accountId, activeGroupId: null, amount: group[0].amount, date: duplicateRange } }),
+        db.financialTransaction.count({ where: { AND: [transactionScope(context, accountIds), financialDateWhere(duplicateRange)],
           amount: money(Math.abs(target)), ...(target < 0 ? { fromAccountId: context.accountId, type: { in: ['EXPENSE', 'TRANSFER'] } } : { toAccountId: context.accountId, type: { in: ['INCOME', 'TRANSFER'] } }),
           bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } } })
       ]) : [0, 0];
@@ -287,7 +301,7 @@ export default class BankReconciliationService {
         evidence: { duplicateItem: itemCount > 1, duplicateTransaction: transactionCount > 1, incomplete: restricted > 0 },
         candidates: rankBankCandidates(group, localTransactions, context.accountId, localNeighbors.slice(0, 25), Number.MAX_SAFE_INTEGER) };
     }));
-    const decisions = await prisma.bankMatchDecision.findMany({ where: { contextKey: { in: [...new Set(ranked.flatMap(r => r.candidates.map(c => c.key)))] }, decision: 'REJECTED', reconciliation: { accountId: context.accountId } }, select: { contextKey: true } });
+    const decisions = await db.bankMatchDecision.findMany({ where: { contextKey: { in: [...new Set(ranked.flatMap(r => r.candidates.map(c => c.key)))] }, decision: 'REJECTED', reconciliation: { accountId: context.accountId } }, select: { contextKey: true } });
     const rejected = new Set(decisions.map(d => d.contextKey));
     const descriptionPair = (statement: string, transaction: string) => JSON.stringify([normalizeDescription(statement), normalizeDescription(transaction)]);
     const knownPairs = new Set(history.flatMap(g => g.items.length === 1 && g.transactions.length === 1 && g.transactions[0].transaction
@@ -309,6 +323,10 @@ export default class BankReconciliationService {
       // Compatible values precede divergent alternatives, including after the history bonus.
       candidates.sort((a, b) => Number(cents(a.difference) !== 0) - Number(cents(b.difference) !== 0) || b.score - a.score);
       const assessment = assessBankCandidates(candidates, limited);
+      // Include compact dependencies from the full compatible pool, beyond the ten displayed candidates.
+      const compatible = candidates.filter(candidate => cents(candidate.difference) === 0);
+      const dependencies = { itemIds: [...new Set(compatible.flatMap(candidate => candidate.itemIds))],
+        transactionIds: [...new Set(compatible.flatMap(candidate => candidate.transactions.map(transaction => transaction.id)))] };
       candidates = classifyBankCandidates(candidates, neighbors, limited, evidence, 10);
       const confidenceByKey = new Map(candidates.map(c => [c.key, c.confidence]));
       let cacheId: number | undefined, aiMessage: string | undefined;
@@ -321,7 +339,7 @@ export default class BankReconciliationService {
         aiMessage = 'Valor e data conferem sem ambiguidade identificada. A consulta à IA foi dispensada; confira antes de confirmar.';
       }
       candidates = candidates.map(candidate => ({ ...candidate, feedbackToken: signBankFeedback(context, month, candidate) }));
-      return { candidates, cacheId, aiMessage, limited, assessment };
+      return { candidates, cacheId, aiMessage, limited, assessment, dependencies };
     }));
   }
 
@@ -337,7 +355,7 @@ export default class BankReconciliationService {
     const claimed = await tx.bankStatementItem.updateMany({ where: { id: { in: items.map(i => i.id) }, accountId: context.accountId, activeGroupId: null }, data: { activeGroupId: group.id } });
     if (claimed.count !== items.length) throw new Error('Outro usuário conciliou um destes itens. Atualize a tela.');
     await tx.bankReconciliationEvent.create({ data: { reconciliationId, groupId: group.id, userId: context.userId, action: 'CONFIRM', details: { itemIds: items.map(i => i.id), transactionIds: transactions.map(t => t.id) } } });
-    await tx.bankMatchCache.deleteMany({ where: { accountId: context.accountId } });
+    // Cache keys include candidate versions and relevant history. Unrelated answers remain reusable.
     return group;
   }
 
@@ -372,9 +390,52 @@ export default class BankReconciliationService {
           completed.push(await FinancialTransactionService.settleForBankReconciliationTx(tx, t, new Date(calendarDate(input.settlementDate)), context.companyId));
         } else completed.push(t);
       }
+      const displaced = await displacedHistoryDescriptions(tx, context, accountIds, 1);
       const group = await this.linkTx(tx, context, current.id, items, completed, input.note, suggestion);
       await tx.bankMatchDecision.updateMany({ where: { contextKey: candidateFor(items, transactions, context.accountId).key }, data: { decision: 'ACCEPTED', feedback: suggestion, userId: context.userId } });
-      return group;
+      return { ...group, change: linkChange(context, items, [...transactions, ...completed], [{ id: group.id, itemIds: input.itemIds, transactionIds }], displaced) };
+    }, { isolationLevel: 'Serializable', timeout: 30000 });
+  }
+
+  static async confirmBatch(context: BankContext, month: string, input: BankBulkLinkInput[]) {
+    const { accountIds } = await access(context);
+    const itemIds = input.map(row => row.itemId), transactionIds = input.map(row => row.transaction.id);
+    if (!input.length || input.length > 50 || new Set(itemIds).size !== input.length || new Set(transactionIds).size !== input.length) {
+      throw new Error('Selecione até 50 correspondências distintas da página, sem repetir movimentos ou lançamentos.');
+    }
+    return prisma.$transaction(async tx => {
+      await lockAccount(tx, context.accountId, context.companyId);
+      const current = await editableSession(tx, context.accountId, month);
+      const items = await tx.bankStatementItem.findMany({ where: { accountId: context.accountId, date: monthRange(month), id: { in: itemIds }, activeGroupId: null } });
+      const permitted = await tx.financialTransaction.count({ where: { AND: [transactionScope(context, accountIds)], id: { in: transactionIds } } });
+      if (items.length !== input.length || permitted !== input.length) throw new Error('Um item do lote mudou ou está indisponível. Atualize as sugestões antes de confirmar.');
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM "FinancialTransaction" WHERE "companyId" = ${context.companyId} AND id IN (${Prisma.join(transactionIds)}) ORDER BY id FOR UPDATE NOWAIT`);
+      const transactions = await tx.financialTransaction.findMany({ where: { AND: [transactionScope(context, accountIds)], id: { in: transactionIds }, status: 'COMPLETED',
+        bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } } });
+      const reviewed = input.map(row => {
+        const item = items.find(item => item.id === row.itemId), transaction = transactions.find(t => t.id === row.transaction.id);
+        if (!item || !transaction || transaction.updatedAt.toISOString() !== row.transaction.version) throw new Error('Um lançamento do lote mudou. Atualize as sugestões antes de confirmar.');
+        const candidate = candidateFor([item], [transaction], context.accountId);
+        const feedback = readBankFeedback(row.feedbackToken, context, month, candidate.key);
+        if (!feedback.confidence || feedback.ruleVersion !== BANK_MATCH_RULE_VERSION || cents(candidate.difference) !== 0) throw new Error('A sugestão mudou ou tem diferença de valores. Atualize a busca e revise novamente.');
+        return { item, transaction, candidate, feedback };
+      });
+      // Revalidate the entire reviewed snapshot before writing any link. No AI and no partial success.
+      for (let offset = 0; offset < reviewed.length; offset += 5) {
+        const batch = reviewed.slice(offset, offset + 5);
+        const results = await this.searchCandidates(context, month, batch.map(row => [row.item]), accountIds, false, tx);
+        if (results.some((result, index) => result.candidates.find(candidate => candidate.key === batch[index].candidate.key)?.confidence?.level !== batch[index].feedback.confidence.level)) {
+          throw new Error('A confiabilidade de um item do lote mudou. Nenhum vínculo foi salvo; atualize as sugestões e revise novamente.');
+        }
+      }
+      const displaced = await displacedHistoryDescriptions(tx, context, accountIds, reviewed.length);
+      const groups: Array<{ id: number; itemIds: number[]; transactionIds: number[] }> = [];
+      for (const row of reviewed) {
+        const group = await this.linkTx(tx, context, current.id, [row.item], [row.transaction], undefined, json(row.feedback));
+        await tx.bankMatchDecision.updateMany({ where: { contextKey: row.candidate.key }, data: { decision: 'ACCEPTED', feedback: json(row.feedback), userId: context.userId } });
+        groups.push({ id: group.id, itemIds: [row.item.id], transactionIds: [row.transaction.id] });
+      }
+      return { confirmed: groups.length, change: linkChange(context, items, transactions, groups, displaced) };
     }, { isolationLevel: 'Serializable', timeout: 30000 });
   }
 
@@ -399,8 +460,9 @@ export default class BankReconciliationService {
         toAccountId: amount > 0 ? context.accountId : input.transferAccountId,
         categoryId: type === 'TRANSFER' ? undefined : input.categoryId, companyId: context.companyId, createdBy: context.userId
       });
+      const displaced = await displacedHistoryDescriptions(tx, context, accountIds, 1);
       const group = await this.linkTx(tx, context, current.id, items, [created], 'Lançamento criado na conciliação.');
-      return { groupId: group.id, transactionId: created.id };
+      return { groupId: group.id, transactionId: created.id, change: linkChange(context, items, [created], [{ id: group.id, itemIds: input.itemIds, transactionIds: [created.id] }], displaced) };
     }, { isolationLevel: 'Serializable', timeout: 30000 });
   }
 

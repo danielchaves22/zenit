@@ -27,6 +27,10 @@ describe('Bank reconciliation persisted workflow', () => {
     const transactions = await prisma.financialTransaction.findMany({ where: { id: { in: transactionIds } } });
     return Service.confirm(context, month, { itemIds, transactions: transactions.map(t => ({ id: t.id, version: t.updatedAt.toISOString() })), ...extra });
   };
+  const reviewBatch = async () => (await Service.candidatesBatch(context, month, await importedIds(), false)).results.map(result => {
+    const candidate = result.candidates[0];
+    return { itemId: result.itemId, transaction: candidate.transactions[0], feedbackToken: candidate.feedbackToken! };
+  });
   beforeAll(async () => {
     const company = await prisma.company.create({ data: { name: 'Bank reconciliation test', code: Number(`8${String(Date.now()).slice(-7)}`) } });
     companyId = company.id;
@@ -51,6 +55,70 @@ describe('Bank reconciliation persisted workflow', () => {
     await prisma.$disconnect();
   });
 
+  it('confirms a reviewed batch across confidence levels, preserving separate feedback and unrelated AI cache', async () => {
+    await importRows([['22/08/2026', '-20.00', 'high', 'Padaria'], ['22/08/2026', '30.00', 'medium', 'PIX recebido'], ['22/08/2026', '-70.00', 'lower', 'Mercado'], ['22/08/2026', '-150.00', 'low', 'Outro estabelecimento']]);
+    await createExisting('20.00');
+    await createExisting('30.00', { type: 'INCOME', fromAccountId: null, toAccountId: accountId, description: 'Reembolso', categoryId: null });
+    await createExisting('70.00', { description: 'Mercado', effectiveDate: new Date('2026-08-23') });
+    await createExisting('150.00', { description: 'Despesa doméstica', effectiveDate: new Date('2026-08-29') });
+    const batch = await reviewBatch();
+    await prisma.bankMatchCache.create({ data: { accountId, key: `unrelated-${accountId}`, result: {}, expiresAt: new Date('2200-01-01') } });
+    const balance = (await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } })).balance.toFixed(2);
+    const result = await Service.confirmBatch(context, month, batch);
+    expect(result.confirmed).toBe(4); expect(result.change.items).toHaveLength(4); expect(result.change.groups).toHaveLength(4);
+    const groups = await prisma.bankReconciliationGroup.findMany({ where: { reconciliation: { accountId } }, orderBy: { id: 'asc' }, include: { items: true, transactions: true } });
+    expect(groups.map(group => (group.suggestion as any).confidence.level)).toEqual(['HIGH', 'MEDIUM_HIGH', 'MEDIUM_LOW', 'LOW']);
+    expect(groups.every(group => group.items.length === 1 && group.transactions.length === 1)).toBe(true);
+    expect(await prisma.bankMatchCache.count({ where: { accountId } })).toBe(1);
+    expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } })).balance.toFixed(2)).toBe(balance);
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+    await expect(Service.confirmBatch(context, month, batch)).rejects.toThrow('indisponível');
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(4);
+  });
+  it('confirms a full page of fifty separate pairs within one transaction', async () => {
+    await importRows(Array.from({ length: 50 }, (_, i) => ['22/08/2026', String(-(1000 + i)), `item-${i}`, `Compra ${i}`]));
+    for (let i = 0; i < 50; i++) await createExisting(String(1000 + i), { description: `Compra ${i}` });
+    const ids = await importedIds(), batch = [];
+    for (let offset = 0; offset < ids.length; offset += 5) {
+      const results = (await Service.candidatesBatch(context, month, ids.slice(offset, offset + 5), false)).results;
+      batch.push(...results.map(result => ({ itemId: result.itemId, transaction: result.candidates[0].transactions[0], feedbackToken: result.candidates[0].feedbackToken! })));
+    }
+    const started = Date.now();
+    expect((await Service.confirmBatch(context, month, batch)).confirmed).toBe(50);
+    console.info(`Bank batch: 50 pairs confirmed in ${Date.now() - started} ms (isolated test database)`);
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(50);
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+  }, 60000);
+  it('rolls back the entire batch when one reviewed transaction changed', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria'], ['22/08/2026', '-30.00', 'b', 'Mercado']]);
+    await createExisting('20.00'); const second = await createExisting('30.00', { description: 'Mercado' });
+    const batch = await reviewBatch();
+    await prisma.financialTransaction.update({ where: { id: second.id }, data: { description: 'Alterado' } });
+    await expect(Service.confirmBatch(context, month, batch)).rejects.toThrow('mudou');
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
+    expect(await prisma.bankStatementItem.count({ where: { accountId, activeGroupId: { not: null } } })).toBe(0);
+  });
+  it('revalidates confidence without AI before saving any batch links', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria'], ['22/08/2026', '-30.00', 'b', 'Mercado']]);
+    await createExisting('20.00'); await createExisting('30.00', { description: 'Mercado' });
+    const batch = await reviewBatch();
+    await createExisting('30.00', { description: 'Outro lançamento igual' });
+    await expect(Service.confirmBatch(context, month, batch)).rejects.toThrow('Nenhum vínculo foi salvo');
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+  });
+  it('rejects forged receipts, repeated transactions, foreign accounts and completed months in batches', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria'], ['22/08/2026', '-30.00', 'b', 'Mercado']]);
+    await createExisting('20.00'); await createExisting('30.00', { description: 'Mercado' });
+    const batch = await reviewBatch();
+    await expect(Service.confirmBatch(context, month, [{ ...batch[0], feedbackToken: 'forged' }, batch[1]])).rejects.toThrow('expirou');
+    await expect(Service.confirmBatch(context, month, [batch[0], { ...batch[1], transaction: batch[0].transaction }])).rejects.toThrow('repetir');
+    await expect(Service.confirmBatch({ ...context, accountId: otherAccountId }, month, batch)).rejects.toThrow('indisponível');
+    await expect(Service.confirmBatch(context, '2026-09', batch)).rejects.toThrow('indisponível');
+    await prisma.bankReconciliation.update({ where: { accountId_month: { accountId, month } }, data: { status: 'COMPLETED' } });
+    await expect(Service.confirmBatch(context, month, batch)).rejects.toThrow('Reabra');
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
+  });
   it('deduplicates Bradesco CSV/OFX, keeps September rows, and never imports investment balances', async () => {
     const preview = await Service.preview(context, month, bradescoCsv.toString('base64'));
     expect(preview.inMonth).toBe(2); expect(preview.outsideCount).toBe(1);
@@ -393,6 +461,8 @@ describe('Bank reconciliation persisted workflow', () => {
     expect(scan.status).toBe(200);
     expect(scan.body.rows.map((r: any) => r.item.id)).toEqual(ids);
     expect((await request(app).get(`${path}/missing?afterId=-1`)).status).toBe(400);
+    expect((await request(app).get(`${path}/scan`)).body.rows.map((row: any) => row.item.id)).toEqual(ids);
+    expect((await request(app).get(`${path}/scan?afterId=-1`)).status).toBe(400);
     expect(suggestBankMatchByAi).not.toHaveBeenCalled();
     expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids, useAi: 'false' })).status).toBe(400);
     expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: [...ids, ...ids] })).status).toBe(400);
@@ -400,6 +470,11 @@ describe('Bank reconciliation persisted workflow', () => {
     expect((await Service.load(context, month)).summary.total).toBe(1);
     expect(await prisma.bankStatementItem.count({ where: { accountId: otherAccountId } })).toBe(0);
     expect((await request(app).post(`${path}/confirm`).send({ itemIds: [], transactions: [] })).status).toBe(400);
+    const candidate = rulesOnly.body.results[0].candidates[0];
+    const match = { itemId: ids[0], transaction: candidate.transactions[0], feedbackToken: candidate.feedbackToken };
+    expect((await request(app).post(`${path}/confirm/batch`).send({ matches: [] })).status).toBe(400);
+    expect((await request(app).post(`${path}/confirm/batch`).send({ matches: Array.from({ length: 51 }, () => match) })).status).toBe(400);
+    expect((await request(app).post(`${path}/confirm/batch`).send({ matches: [match], accountId: otherAccountId })).body.confirmed).toBe(1);
     expect((await request(app).get(`/financial/accounts/${accountId}/reconciliation/2026-13`)).status).toBe(400);
   });
 });

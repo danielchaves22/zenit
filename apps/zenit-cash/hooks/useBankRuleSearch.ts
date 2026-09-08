@@ -37,7 +37,7 @@ export function useBankRuleSearch(base: string, items: BankItem[], enabled: bool
     const version = epoch.current;
     try {
       while (active.current && !abort.signal.aborted) {
-        const batch = visible.current.filter(item => !item.activeGroupId && !blocked.current.has(item.id) && cache.current.get(item.id)?.status === 'queued')
+        const batch = visible.current.filter(item => !item.activeGroupId && !item.ignoredAt && !blocked.current.has(item.id) && cache.current.get(item.id)?.status === 'queued')
           .sort((a, b) => Number(priority.current.includes(b.id)) - Number(priority.current.includes(a.id))).slice(0, 5);
         if (!batch.length) break;
         const started = Date.now();
@@ -93,7 +93,7 @@ export function useBankRuleSearch(base: string, items: BankItem[], enabled: bool
     if (!enabled) { stop(); publish(); return; }
     const changedView = lastView.current !== viewKey; lastView.current = viewKey;
     for (const item of items) {
-      if (item.activeGroupId || blocked.current.has(item.id)) continue;
+      if (item.activeGroupId || item.ignoredAt || blocked.current.has(item.id)) continue;
       tracked.current.set(item.id, item);
       const previous = cache.current.get(item.id);
       if (!previous || previous.signature !== signature(item) || (changedView && previous.status === 'done' && Date.now() - previous.updatedAt > ttl)) {

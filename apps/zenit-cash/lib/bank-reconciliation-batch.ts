@@ -9,7 +9,8 @@ export function bankBatchSnapshot(items: BankItem[], rows: Record<number, BankRo
   for (const item of items) {
     const entry = rows[item.id], candidate = entry?.result?.candidates[0];
     let reason = '';
-    if (!candidate) reason = 'Nenhuma correspondência encontrada.';
+    if (item.ignoredAt) reason = 'Movimento ignorado.';
+    else if (!candidate) reason = 'Nenhuma correspondência encontrada.';
     else if (entry.status !== 'done' || entry.result?.error) reason = 'A busca ainda não foi concluída.';
     else if (candidate.itemIds.length !== 1 || candidate.transactions.length !== 1) reason = 'Correspondência agrupada: revise os movimentos e lançamentos envolvidos individualmente.';
     else if (candidate.transactions.some(transaction => counts.get(transaction.id)! > 1)) reason = 'O mesmo lançamento foi sugerido para mais de um movimento selecionado.';

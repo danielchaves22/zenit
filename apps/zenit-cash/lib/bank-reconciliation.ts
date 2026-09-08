@@ -1,4 +1,4 @@
-export interface BankItem { id: number; date: string; amount: string; description: string; activeGroupId?: number | null }
+export interface BankItem { id: number; date: string; amount: string; description: string; activeGroupId?: number | null; ignoredAt?: string | null; ignoredBy?: number | null }
 export interface BankTransaction {
   id: number; description: string; amount: string; date: string; effectiveDate?: string | null; dueDate?: string | null;
   status: string; type: string; version: string;
@@ -37,7 +37,7 @@ export interface BankImport {
 export interface BankWorkspace {
   account: { id: number; name: string; isActive: boolean }; month: string; session: BankMonth | null;
   items: BankItem[]; page: number; pageSize: number; total: number;
-  summary: { total: number; pending: number; confirmed: number; credits: string; debits: string; unmatchedTransactions: number; restrictedTransactions: number };
+  summary: { total: number; pending: number; confirmed: number; ignored: number; credits: string; debits: string; unmatchedTransactions: number; restrictedTransactions: number };
   imports: BankImport[]; history: BankMonth[];
 }
 export interface BankPreview {
@@ -51,7 +51,7 @@ export interface BankAuditGroup {
   items: Array<{ item: BankItem }>;
   transactions: Array<{ id: number; restricted?: boolean; originalTransactionId?: number; snapshot?: BankTransaction; transaction?: BankTransaction | null }>;
 }
-export interface BankAudit { groups: BankAuditGroup[]; total: number; page: number; pageSize: number; events: Array<{ id: number; action: string; createdAt: string; userId: number | null }> }
+export interface BankAudit { groups: BankAuditGroup[]; total: number; page: number; pageSize: number; events: Array<{ id: number; action: string; createdAt: string; userId: number | null; details?: { itemId?: number; description?: string } | null }> }
 export const bankCurrency = (amount: string | number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(amount));
 export const bankDate = (value: string) => value.slice(0, 10).split('-').reverse().join('/');
 export const bankTimestamp = (value: string) => new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));

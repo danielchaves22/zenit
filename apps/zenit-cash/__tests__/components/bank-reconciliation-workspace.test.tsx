@@ -10,7 +10,7 @@ vi.mock('next/link', () => ({ default: ({ children, href, ...props }: any) => <a
 const item = (id: number): BankItem => ({ id, date: '2026-08-22', amount: id % 2 ? '-20.00' : '30.00', description: `Movimento ${id}`, activeGroupId: null });
 let data: BankWorkspace;
 const makeData = (items: BankItem[]): BankWorkspace => ({ account: { id: 1, name: 'Conta teste', isActive: true }, month: '2026-08', session: null, items, page: 1, pageSize: 50, total: items.length,
-  summary: { total: items.length, confirmed: 0, pending: items.length, credits: '30', debits: '-20', unmatchedTransactions: items.length, restrictedTransactions: 0 }, imports: [], history: [] });
+  summary: { total: items.length, confirmed: 0, ignored: 0, pending: items.length, credits: '30', debits: '-20', unmatchedTransactions: items.length, restrictedTransactions: 0 }, imports: [], history: [] });
 const selectAll = () => screen.getByRole('checkbox', { name: 'Marcar ou desmarcar todos os movimentos desta página' });
 const candidate = (i: BankItem) => ({ key: `candidate-${i.id}`, feedbackToken: `receipt-${i.id}`, itemIds: [i.id], items: [i], amount: i.amount, difference: '0', score: 100, reason: 'Mesma data e valor', source: 'RULE',
   confidence: { level: 'HIGH', reasons: ['Valor exato', 'Mesma data'] },
@@ -18,10 +18,21 @@ const candidate = (i: BankItem) => ({ key: `candidate-${i.id}`, feedbackToken: `
 
 beforeEach(() => {
   vi.clearAllMocks(); data = makeData([item(1), item(2)]);
-  vi.mocked(api.get).mockImplementation(async () => ({ data }) as any);
+  vi.mocked(api.get).mockImplementation(async (_url, config) => {
+    const filter = config?.params?.filter;
+    const items = data.items.filter(item => filter === 'IGNORED' ? !!item.ignoredAt : filter === 'PENDING' ? !item.activeGroupId && !item.ignoredAt : true);
+    return { data: { ...data, items, total: filter === 'IGNORED' || filter === 'PENDING' ? items.length : data.total } } as any;
+  });
   vi.mocked(api.post).mockImplementation(async (url, body: any) => {
     if (String(url).endsWith('/suggestions/batch')) return { data: { results: body.itemIds.map((id: number) => ({ itemId: id, candidates: [candidate(data.items.find(i => i.id === id)!)], cacheId: id + 200 })) } };
     if (String(url).endsWith('/suggestions')) return { data: { candidates: [candidate(data.items[0])] } };
+    const ignore = String(url).match(/\/items\/(\d+)\/ignored$/);
+    if (ignore) {
+      const updated = { ...data.items.find(item => item.id === Number(ignore[1]))!, ignoredAt: body.ignored ? '2026-09-08T00:00:00.000Z' : null, ignoredBy: body.ignored ? 1 : null };
+      data = { ...data, items: data.items.map(item => item.id === updated.id ? updated : item) };
+      data.summary = { ...data.summary, ignored: data.items.filter(item => item.ignoredAt).length, pending: data.items.filter(item => !item.ignoredAt && !item.activeGroupId).length };
+      return { data: { item: updated, ...(body.ignored ? { change: { items: [updated], transactions: [], historyDescriptions: [], groups: [] } } : {}) } };
+    }
     if (String(url).endsWith('/confirm')) {
       const items = data.items.filter(i => body.itemIds.includes(i.id)).map(i => ({ ...i, activeGroupId: 1 }));
       data = { ...data, items: data.items.map(i => body.itemIds.includes(i.id) ? { ...i, activeGroupId: 1 } : i) };
@@ -42,6 +53,67 @@ beforeEach(() => {
 const open = async () => { render(<Workspace accountId={1} month="2026-08" onMonthChange={vi.fn()} />); await screen.findByText('Conta teste · Seu progresso é salvo a cada confirmação.'); };
 
 describe('Simplified bank reconciliation', () => {
+  it('keeps ignored movements out of rule searches and select-all', async () => {
+    data.items[0] = { ...item(1), ignoredAt: '2026-09-08T00:00:00.000Z', ignoredBy: 1 };
+    data.summary.ignored = 1; data.summary.pending = 1;
+    await open(); await screen.findByText('Ignorado');
+    fireEvent.click(selectAll());
+    expect(screen.queryByRole('checkbox', { name: 'Selecionar Movimento 1 em 22/08/2026' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Selecionar Movimento 2 em 22/08/2026' })).toBeChecked();
+    expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/suggestions\/batch$/), { itemIds: [2], useAi: false }, expect.any(Object));
+    expect(screen.getByRole('button', { name: 'Voltar a conferir Movimento 1 em 22/08/2026' })).toBeEnabled();
+  });
+  it('ignores during an in-flight search without reintroducing its result or rerunning unrelated searches', async () => {
+    let complete: (value: any) => void = () => {};
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    await open(); await screen.findAllByText('Buscando…');
+    fireEvent.click(selectAll());
+    fireEvent.click(screen.getByRole('button', { name: 'Ignorar Movimento 1 em 22/08/2026' }));
+    await screen.findByText('Ignorado');
+    await act(async () => complete({ data: { results: [item(1), item(2)].map(i => ({ itemId: i.id, candidates: [candidate(i)] })) } }));
+    expect(screen.queryByRole('checkbox', { name: 'Selecionar Movimento 1 em 22/08/2026' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Correspondências para Movimento 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Correspondências para Movimento 2' })).toBeInTheDocument();
+    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === false)).toHaveLength(1);
+    expect(vi.mocked(api.post).mock.calls.some(([url]) => String(url).includes('/confirm'))).toBe(false);
+  });
+  it('filters ignored movements, restores them and returns them to pending searches', async () => {
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Ignorar Movimento 1 em 22/08/2026' }));
+    await screen.findByText('Ignorado');
+    fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'PENDING' } });
+    await waitFor(() => expect(screen.queryByText('Movimento 1')).not.toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'IGNORED' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Voltar a conferir Movimento 1 em 22/08/2026' }));
+    await waitFor(() => expect(screen.queryByText('Movimento 1')).not.toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'PENDING' } });
+    await screen.findByRole('checkbox', { name: 'Selecionar Movimento 1 em 22/08/2026' });
+    expect(data.items[0].ignoredAt).toBeNull();
+    expect(data.summary.ignored).toBe(0);
+    expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/items\/1\/ignored$/), { ignored: false });
+  });
+  it('removes ignored rows from the confidence filter without restarting the month scan', async () => {
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (String(url).endsWith('/scan')) return { data: { rows: data.items.map(i => ({ item: i, result: { itemId: i.id, candidates: [candidate(i)], assessment: 'CANDIDATES' } })), nextCursor: null } } as any;
+      return defaultGet(url, config);
+    });
+    await open(); fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'HIGH' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Ignorar Movimento 1 em 22/08/2026' }));
+    await waitFor(() => expect(screen.queryByText('Movimento 1')).not.toBeInTheDocument());
+    expect(screen.getByText('Movimento 2')).toBeInTheDocument();
+    expect(vi.mocked(api.get).mock.calls.filter(([url]) => String(url).endsWith('/scan'))).toHaveLength(1);
+  });
+  it('keeps ignored status visible in completed months and does not offer restoration', async () => {
+    data.items[0] = { ...item(1), ignoredAt: '2026-09-08T00:00:00.000Z' };
+    data.items[1] = { ...item(2), activeGroupId: 7 };
+    data.session = { id: 1, month: '2026-08', status: 'COMPLETED' };
+    await open(); await screen.findByText('Ignorado');
+    expect(screen.queryByRole('button', { name: /Voltar a conferir/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ignorar / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
   it('waits for selected searches, reviews mixed confidence side by side and confirms once', async () => {
     let complete: (value: any) => void = () => {};
     vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));

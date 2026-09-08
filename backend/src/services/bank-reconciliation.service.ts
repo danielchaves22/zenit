@@ -83,8 +83,8 @@ async function editableSession(tx: Db, accountId: number, month: string) {
 async function selectedItems(tx: Db, accountId: number, month: string, ids: number[], individual = false): Promise<BankStatementItem[]> {
   const limit = individual ? 5 : 20;
   if (!ids.length || ids.length > limit || new Set(ids).size !== ids.length) throw new Error(`Selecione de 1 a ${limit} itens distintos.`);
-  const items = await tx.bankStatementItem.findMany({ where: { accountId, id: { in: ids }, date: monthRange(month), activeGroupId: null }, orderBy: { id: 'asc' } });
-  if (items.length !== ids.length) throw new Error('Um item já foi conciliado ou não pertence a esta conta e mês. Atualize a tela.');
+  const items = await tx.bankStatementItem.findMany({ where: { accountId, id: { in: ids }, date: monthRange(month), activeGroupId: null, ignoredAt: null }, orderBy: { id: 'asc' } });
+  if (items.length !== ids.length) throw new Error('Um item já foi conciliado, está ignorado ou não pertence a esta conta e mês. Atualize a tela.');
   if (!individual && new Set(items.map(i => Math.sign(cents(i.amount)))).size !== 1) throw new Error('Agrupe apenas movimentos da mesma direção.');
   return items;
 }
@@ -208,23 +208,43 @@ export default class BankReconciliationService {
     const { account, accountIds } = await access(context);
     const range = monthRange(month);
     const monthWhere = { accountId: context.accountId, date: range };
-    const itemWhere = { ...monthWhere, ...(filter === 'PENDING' ? { activeGroupId: null } : filter === 'CONFIRMED' ? { activeGroupId: { not: null } } : {}) };
+    const itemWhere = { ...monthWhere, ...(filter === 'PENDING' ? { activeGroupId: null, ignoredAt: null } : filter === 'CONFIRMED' ? { activeGroupId: { not: null } } : filter === 'IGNORED' ? { ignoredAt: { not: null } } : {}) };
     const transactionsWhere: Prisma.FinancialTransactionWhereInput = { AND: [transactionScope(context, accountIds), financialDateWhere(range)], status: 'COMPLETED' };
-    const [current, items, total, pending, credits, debits, linked, unmatched, allUnmatched, imports, history] = await Promise.all([
+    const [current, items, total, pending, credits, debits, linked, unmatched, allUnmatched, imports, history, ignored] = await Promise.all([
       prisma.bankReconciliation.findUnique({ where: { accountId_month: { accountId: context.accountId, month } } }),
       prisma.bankStatementItem.findMany({ where: itemWhere, orderBy: [{ date: 'asc' }, { id: 'asc' }], skip: (page - 1) * 50, take: 50 }),
       prisma.bankStatementItem.count({ where: itemWhere }),
-      prisma.bankStatementItem.count({ where: { ...monthWhere, activeGroupId: null } }),
+      prisma.bankStatementItem.count({ where: { ...monthWhere, activeGroupId: null, ignoredAt: null } }),
       prisma.bankStatementItem.aggregate({ where: { ...monthWhere, amount: { gt: 0 } }, _sum: { amount: true }, _count: true }),
       prisma.bankStatementItem.aggregate({ where: { ...monthWhere, amount: { lt: 0 } }, _sum: { amount: true }, _count: true }),
       prisma.bankStatementItem.count({ where: { ...monthWhere, activeGroupId: { not: null } } }),
       prisma.financialTransaction.count({ where: { ...transactionsWhere, bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } } }),
       prisma.financialTransaction.count({ where: { AND: [transactionScope(context), financialDateWhere(range)], status: 'COMPLETED', bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } } }),
       prisma.bankStatementImport.findMany({ where: { accountId: context.accountId, OR: [{ importedForMonth: month }, { items: { some: { item: { date: range } } } }] }, orderBy: { id: 'desc' }, take: 20, select: importSelect }),
-      prisma.bankReconciliation.findMany({ where: { accountId: context.accountId }, orderBy: { month: 'desc' }, take: 120 })
+      prisma.bankReconciliation.findMany({ where: { accountId: context.accountId }, orderBy: { month: 'desc' }, take: 120 }),
+      prisma.bankStatementItem.count({ where: { ...monthWhere, ignoredAt: { not: null } } })
     ]);
     return { account: { id: account.id, name: account.name, isActive: account.isActive }, month, session: current, items, page, pageSize: 50, total,
-      summary: { pending, confirmed: linked, total: credits._count + debits._count, credits: credits._sum.amount?.toFixed(2) || '0.00', debits: debits._sum.amount?.toFixed(2) || '0.00', unmatchedTransactions: allUnmatched, restrictedTransactions: allUnmatched - unmatched }, imports, history };
+      summary: { pending, confirmed: linked, ignored, total: credits._count + debits._count, credits: credits._sum.amount?.toFixed(2) || '0.00', debits: debits._sum.amount?.toFixed(2) || '0.00', unmatchedTransactions: allUnmatched, restrictedTransactions: allUnmatched - unmatched }, imports, history };
+  }
+
+  static async setIgnored(context: BankContext, month: string, itemId: number, ignored: boolean) {
+    await access(context);
+    return prisma.$transaction(async tx => {
+      await lockAccount(tx, context.accountId, context.companyId);
+      const current = await editableSession(tx, context.accountId, month);
+      const item = await tx.bankStatementItem.findFirst({ where: { id: itemId, accountId: context.accountId, date: monthRange(month) } });
+      if (!item) throw new Error('Movimento não encontrado nesta conta e mês.');
+      if (item.activeGroupId) throw new Error('Este movimento já está conciliado. Desfaça o vínculo antes de ignorá-lo.');
+      const changed = !!item.ignoredAt !== ignored;
+      const updated = changed ? await tx.bankStatementItem.update({ where: { id: item.id }, data: {
+        ignoredAt: ignored ? new Date() : null, ignoredBy: ignored ? context.userId : null
+      } }) : item;
+      if (changed) await tx.bankReconciliationEvent.create({ data: { reconciliationId: current.id, userId: context.userId,
+        action: ignored ? 'IGNORE_ITEM' : 'RESTORE_ITEM', details: { itemId, description: item.description.slice(0, 255) } } });
+      // Remove only this movement from pending searches; ignoring is not match feedback for AI.
+      return { item: updated, ...(ignored ? { change: { items: [updated], transactions: [], historyDescriptions: [], groups: [] } } : {}) };
+    }, { isolationLevel: 'Serializable', timeout: 30000 });
   }
 
   static async transactions(context: BankContext, month: string, search = '', page = 1, days = 0, unmatched = true) {
@@ -256,7 +276,7 @@ export default class BankReconciliationService {
 
   static async scanMissing(context: BankContext, month: string, afterId = 0) {
     const { accountIds } = await access(context);
-    const found = await prisma.bankStatementItem.findMany({ where: { accountId: context.accountId, date: monthRange(month), activeGroupId: null, id: { gt: afterId } },
+    const found = await prisma.bankStatementItem.findMany({ where: { accountId: context.accountId, date: monthRange(month), activeGroupId: null, ignoredAt: null, id: { gt: afterId } },
       orderBy: { id: 'asc' }, take: 6 });
     const items = found.slice(0, 5);
     const results = items.length ? await this.searchCandidates(context, month, items.map(item => [item]), accountIds, false) : [];
@@ -273,7 +293,7 @@ export default class BankReconciliationService {
     const [exact, nearby, neighbors, history, restricted] = await Promise.all([
       db.financialTransaction.findMany({ where: { ...base, amount: { in: amounts } }, select: transactionSelect, orderBy: { id: 'desc' }, take: exactLimit + 1 }),
       db.financialTransaction.findMany({ where: base, select: transactionSelect, orderBy: [{ effectiveDate: 'desc' }, { id: 'desc' }], take: nearbyLimit + 1 }),
-      db.bankStatementItem.findMany({ where: { accountId: context.accountId, activeGroupId: null, AND: [{ date: range }, { date: monthRange(month) }] }, orderBy: { date: 'asc' }, take: neighborLimit + 1 }),
+      db.bankStatementItem.findMany({ where: { accountId: context.accountId, activeGroupId: null, ignoredAt: null, AND: [{ date: range }, { date: monthRange(month) }] }, orderBy: { date: 'asc' }, take: neighborLimit + 1 }),
       db.bankReconciliationGroup.findMany({ where: { status: 'CONFIRMED', reconciliation: { accountId: context.accountId }, transactions: { every: { active: true, transaction: transactionScope(context, accountIds) } } },
         include: { items: { include: { item: { select: { description: true, normalizedDescription: true } } } }, transactions: { include: { transaction: { select: transactionSelect } } } }, orderBy: { id: 'desc' }, take: 100 }),
       db.financialTransaction.count({ where: { AND: [transactionScope(context), financialDateWhere(range)], NOT: transactionScope(context, accountIds),
@@ -292,7 +312,7 @@ export default class BankReconciliationService {
       // Exact counts are independent of the displayed suggestions and include adjacent imported months.
       const duplicateRange = expandRange(group.map(i => i.date), 3);
       const [itemCount, transactionCount] = group.length === 1 ? await Promise.all([
-        db.bankStatementItem.count({ where: { accountId: context.accountId, activeGroupId: null, amount: group[0].amount, date: duplicateRange } }),
+        db.bankStatementItem.count({ where: { accountId: context.accountId, activeGroupId: null, ignoredAt: null, amount: group[0].amount, date: duplicateRange } }),
         db.financialTransaction.count({ where: { AND: [transactionScope(context, accountIds), financialDateWhere(duplicateRange)],
           amount: money(Math.abs(target)), ...(target < 0 ? { fromAccountId: context.accountId, type: { in: ['EXPENSE', 'TRANSFER'] } } : { toAccountId: context.accountId, type: { in: ['INCOME', 'TRANSFER'] } }),
           bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } } })
@@ -352,7 +372,7 @@ export default class BankReconciliationService {
       transactions: { create: transactions.map(t => ({ accountId: context.accountId, transactionId: t.id, originalTransactionId: t.id,
         snapshot: json({ id: t.id, description: t.description, amount: t.amount, date: t.date, effectiveDate: t.effectiveDate, type: t.type, status: t.status, fromAccountId: t.fromAccountId, toAccountId: t.toAccountId }) })) }
     } });
-    const claimed = await tx.bankStatementItem.updateMany({ where: { id: { in: items.map(i => i.id) }, accountId: context.accountId, activeGroupId: null }, data: { activeGroupId: group.id } });
+    const claimed = await tx.bankStatementItem.updateMany({ where: { id: { in: items.map(i => i.id) }, accountId: context.accountId, activeGroupId: null, ignoredAt: null }, data: { activeGroupId: group.id } });
     if (claimed.count !== items.length) throw new Error('Outro usuário conciliou um destes itens. Atualize a tela.');
     await tx.bankReconciliationEvent.create({ data: { reconciliationId, groupId: group.id, userId: context.userId, action: 'CONFIRM', details: { itemIds: items.map(i => i.id), transactionIds: transactions.map(t => t.id) } } });
     // Cache keys include candidate versions and relevant history. Unrelated answers remain reusable.
@@ -406,7 +426,7 @@ export default class BankReconciliationService {
     return prisma.$transaction(async tx => {
       await lockAccount(tx, context.accountId, context.companyId);
       const current = await editableSession(tx, context.accountId, month);
-      const items = await tx.bankStatementItem.findMany({ where: { accountId: context.accountId, date: monthRange(month), id: { in: itemIds }, activeGroupId: null } });
+      const items = await tx.bankStatementItem.findMany({ where: { accountId: context.accountId, date: monthRange(month), id: { in: itemIds }, activeGroupId: null, ignoredAt: null } });
       const permitted = await tx.financialTransaction.count({ where: { AND: [transactionScope(context, accountIds)], id: { in: transactionIds } } });
       if (items.length !== input.length || permitted !== input.length) throw new Error('Um item do lote mudou ou está indisponível. Atualize as sugestões antes de confirmar.');
       await tx.$queryRaw(Prisma.sql`SELECT id FROM "FinancialTransaction" WHERE "companyId" = ${context.companyId} AND id IN (${Prisma.join(transactionIds)}) ORDER BY id FOR UPDATE NOWAIT`);
@@ -508,7 +528,7 @@ export default class BankReconciliationService {
       if (status === 'COMPLETED') {
         const where = { accountId: context.accountId, date: monthRange(month) };
         const [total, pending, unmatched] = await Promise.all([
-          tx.bankStatementItem.count({ where }), tx.bankStatementItem.count({ where: { ...where, activeGroupId: null } }),
+          tx.bankStatementItem.count({ where }), tx.bankStatementItem.count({ where: { ...where, activeGroupId: null, ignoredAt: null } }),
           tx.financialTransaction.count({ where: { AND: [transactionScope(context), financialDateWhere(monthRange(month))], status: 'COMPLETED', bankReconciliationLinks: { none: { accountId: context.accountId, active: true } } } })
         ]);
         if (!total || pending || unmatched) throw new Error('Resolva os itens do extrato e os lançamentos liquidados sem vínculo antes de concluir o mês.');

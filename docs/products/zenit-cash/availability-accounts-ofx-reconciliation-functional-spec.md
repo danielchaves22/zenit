@@ -107,6 +107,26 @@ sem duplicar os que pertencem aos meses preservados. Não exige nova migração.
   comum ao CSV não é possível provar identidade individual somente pelo conteúdo.
 - Limites: 5 MB, 5.000 movimentos por arquivo, 20 itens por grupo manual.
 
+## Movimentos ignorados
+
+**Ignorar**, na linha do extrato, marca o movimento como **Ignorado** sem criar ou
+alterar lançamentos financeiros, saldos ou vínculos. Ele permanece em **Todos** e
+no filtro **Ignorados**, mas sai de **Para conferir**, dos filtros de confiabilidade,
+dos possíveis faltantes, da seleção e das buscas, inclusive agrupamentos e duplicidades.
+O indicador **Ignorados** permite conferir a contagem; os valores totais do extrato
+continuam representando o arquivo original.
+
+A ação dispensa o fim da busca daquele movimento e atualiza somente os resultados
+afetados, preservando as demais buscas. **Voltar a conferir** desfaz a decisão e
+atualiza as buscas para considerar novamente o movimento. As duas ações ficam no
+histórico, com usuário, data e identificação do item. Não são feedback positivo ou
+negativo para a IA. Reimportar preserva a decisão; reiniciar a conciliação a apaga.
+
+Um movimento já conciliado precisa ter seu vínculo desfeito antes de ser ignorado.
+Meses concluídos precisam ser reabertos antes de ignorar ou voltar a conferir.
+Ignorados não impedem a conclusão do mês; lançamentos financeiros existentes sem
+vínculo continuam exigindo conferência, mesmo se um movimento do extrato foi ignorado.
+
 ## Correspondências e efeitos financeiros
 
 O motor busca na empresa e conta autorizadas, respeitando as permissões de ambas
@@ -141,7 +161,7 @@ Conflitos concorrentes retornam pedido de atualização da tela.
 
 ## Mês e alterações posteriores
 
-Concluir o mês exige movimentos importados, todos vinculados, e ausência de
+Concluir o mês exige movimentos importados, todos vinculados ou ignorados, e ausência de
 lançamentos liquidados sem vínculo na conferência. O mês concluído pode ser
 reaberto explicitamente. Isso não bloqueia lançamentos retroativos financeiros.
 
@@ -232,7 +252,7 @@ valor e testes de contrato não constituem medição da acurácia do modelo.
 | --- | --- |
 | BankReconciliation | Conta/mês, estado e conclusão |
 | BankStatementImport / ImportItem | Arquivo único, metadados e linhas nele presentes |
-| BankStatementItem | Movimento normalizado, identidade e vínculo ativo |
+| BankStatementItem | Movimento normalizado, identidade, vínculo ativo ou decisão de ignorar |
 | BankReconciliationGroup / GroupItem | Grupo confirmado e histórico de itens |
 | BankReconciliationTransaction | Referência ao lançamento, snapshot e associação ativa |
 | BankReconciliationEvent | Quem confirmou/desfez e mudanças automáticas |
@@ -248,10 +268,13 @@ persistentes nem logs completos de prompts por item.
 
 ## Entrega e verificação
 
-Aplicar as migrações `20260907010000_bank_account_reconciliation` e
-`20260907220000_bank_match_feedback`, em `backend/prisma/migrations`, via
+Aplicar as migrações `20260907010000_bank_account_reconciliation`,
+`20260907220000_bank_match_feedback` e `20260908010000_bank_statement_ignore`, em `backend/prisma/migrations`, via
 `prisma migrate deploy` antes de publicar o backend/frontend, e gerar o Prisma Client.
 A migração de feedback acrescenta um JSON opcional, sem modificar decisões existentes.
+A migração de ignorados acrescenta data e usuário opcionais ao movimento e impede
+que um mesmo item esteja ignorado e vinculado ao mesmo tempo. Itens existentes
+continuam com seu comportamento anterior; não há novas tabelas para buscas.
 A aplicação não executa essas migrações automaticamente durante uma importação.
 
 Os testes usam exemplos fictícios e cobrem parsers, agrupamentos, permissões,

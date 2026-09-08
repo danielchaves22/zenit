@@ -10,7 +10,7 @@ const link = z.object({ itemIds, transactions: z.array(z.object({ id, version: z
   settlePending: z.boolean().optional(), settlementDate: date.optional(), note: z.string().trim().max(500).optional(),
   cacheId: id.optional(), candidateKey: z.string().max(64).optional(), feedbackToken: z.string().max(12000).optional() });
 const file = z.object({ fileBase64: z.string().min(1).max(6_666_668), fileName: z.string().trim().min(1).max(255) });
-const paging = z.object({ page: z.coerce.number().int().min(1).max(100000).default(1), filter: z.enum(['ALL', 'PENDING', 'CONFIRMED']).default('ALL') });
+const paging = z.object({ page: z.coerce.number().int().min(1).max(100000).default(1), filter: z.enum(['ALL', 'PENDING', 'CONFIRMED', 'IGNORED']).default('ALL') });
 
 // Validate each source separately: query/body can never override the authorized path account.
 function endpoint(action: (context: BankContext, month: string, req: Request) => Promise<unknown>) {
@@ -32,6 +32,7 @@ export const loadBankReconciliation = endpoint((c, m, req) => { const q = paging
 export const previewBankStatement = endpoint((c, m, req) => Service.preview(c, m, file.parse(req.body).fileBase64));
 export const importBankStatement = endpoint((c, m, req) => { const f = file.parse(req.body); return Service.import(c, m, f.fileBase64, f.fileName); });
 export const resetBankReconciliation = endpoint((c, m, req) => { z.object({ confirmed: z.literal(true) }).parse(req.body); return Service.reset(c, m); });
+export const updateBankStatementIgnore = endpoint((c, m, req) => Service.setIgnored(c, m, z.coerce.number().int().positive().parse(req.params.itemId), z.object({ ignored: z.boolean() }).parse(req.body).ignored));
 export const suggestBankCandidates = endpoint((c, m, req) => { const input = z.object({ itemIds, useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidates(c, m, input.itemIds, input.useAi); });
 export const suggestBankCandidatesBatch = endpoint((c, m, req) => { const input = z.object({ itemIds: z.array(id).min(1).max(5).refine(ids => new Set(ids).size === ids.length, 'Itens repetidos.'),
   useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidatesBatch(c, m, input.itemIds, input.useAi); });

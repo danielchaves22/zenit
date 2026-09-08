@@ -55,6 +55,85 @@ describe('Bank reconciliation persisted workflow', () => {
     await prisma.$disconnect();
   });
 
+  it('ignores statement evidence without creating financial records or AI feedback, and can complete the month', async () => {
+    await importRows([['22/08/2026', '-20.00', 'ignored', 'Movimento fora do controle']]);
+    const [itemId] = await importedIds();
+    const original = await Service.load(context, month);
+    expect(original.summary.ignored).toBe(0);
+    const result = await Service.setIgnored(context, month, itemId, true);
+    expect(result.item.ignoredAt).toBeInstanceOf(Date); expect(result.item.ignoredBy).toBe(userId);
+    expect(result.change?.transactions).toEqual([]);
+    const ignored = await Service.load(context, month);
+    expect(ignored.summary).toMatchObject({ total: 1, pending: 0, confirmed: 0, ignored: 1, debits: '-20.00' });
+    expect((await Service.load(context, month, 1, 'PENDING')).items).toHaveLength(0);
+    expect((await Service.load(context, month, 1, 'IGNORED')).items.map(item => item.id)).toEqual([itemId]);
+    expect((await Service.scanMissing(context, month)).rows).toEqual([]);
+    await expect(Service.candidates(context, month, [itemId])).rejects.toThrow('ignorado');
+    await expect(Service.create(context, month, { itemIds: [itemId], description: 'Não criar', categoryId, effectiveDate: '2026-08-22' })).rejects.toThrow('ignorado');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
+    expect(await prisma.bankMatchDecision.count({ where: { reconciliation: { accountId } } })).toBe(0);
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+    await Service.setIgnored(context, month, itemId, true);
+    const audit = await Service.audit(context, month);
+    expect(audit.events.filter(event => event.action === 'IGNORE_ITEM')).toHaveLength(1);
+    expect(audit.events.find(event => event.action === 'IGNORE_ITEM')).toMatchObject({ userId, details: { itemId } });
+    await importRows([['22/08/2026', '-20.00', 'ignored', 'Movimento fora do controle']]);
+    expect((await Service.load(context, month)).summary.ignored).toBe(1);
+    expect((await Service.status(context, month, 'COMPLETED')).status).toBe('COMPLETED');
+    await expect(Service.setIgnored(context, month, itemId, false)).rejects.toThrow('Reabra');
+    await Service.status(context, month, 'OPEN');
+    await Service.setIgnored(context, month, itemId, false);
+    expect((await Service.load(context, month)).summary).toMatchObject({ pending: 1, ignored: 0 });
+    expect((await Service.load(context, month)).items[0]).toMatchObject({ ignoredAt: null, ignoredBy: null });
+    expect((await Service.scanMissing(context, month)).rows.map(row => row.item.id)).toEqual([itemId]);
+    expect((await Service.audit(context, month)).events.filter(event => event.action === 'RESTORE_ITEM')).toHaveLength(1);
+    await expect(Service.status(context, month, 'COMPLETED')).rejects.toThrow('Resolva');
+  });
+  it('removes ignored movements from duplicate evidence and restores that evidence when reconsidered', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria'], ['22/08/2026', '-20.00', 'b', 'Outro movimento']]);
+    await createExisting('20.00');
+    const [first, second] = await importedIds();
+    expect((await Service.candidates(context, month, [first], false)).candidates[0].confidence?.level).toBe('MEDIUM_LOW');
+    await Service.setIgnored(context, month, second, true);
+    expect((await Service.candidates(context, month, [first], false)).candidates[0].confidence?.level).toBe('HIGH');
+    await Service.setIgnored(context, month, second, false);
+    expect((await Service.candidates(context, month, [first], false)).candidates[0].confidence?.level).toBe('MEDIUM_LOW');
+  });
+  it('never uses an ignored movement in a grouped match', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria'], ['22/08/2026', '-30.00', 'b', 'Mercado']]);
+    await createExisting('50.00');
+    const [first, second] = await importedIds();
+    expect((await Service.candidates(context, month, [first], false)).candidates.some(candidate => candidate.itemIds.includes(second))).toBe(true);
+    await Service.setIgnored(context, month, second, true);
+    const result = await Service.candidates(context, month, [first], false);
+    expect(result.candidates.every(candidate => !candidate.itemIds.includes(second))).toBe(true);
+    expect(result.assessment).toBe('POSSIBLE_MISSING');
+  });
+  it('blocks ignored items in stale single and batch confirmations and keeps existing transactions unchanged', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria']]);
+    const transaction = await createExisting('20.00');
+    const [itemId] = await importedIds(), batch = await reviewBatch();
+    await Service.setIgnored(context, month, itemId, true);
+    await expect(confirm([itemId], [transaction.id])).rejects.toThrow('ignorado');
+    await expect(Service.confirmBatch(context, month, batch)).rejects.toThrow('indisponível');
+    expect((await Service.load(context, month)).summary).toMatchObject({ pending: 0, ignored: 1, unmatchedTransactions: 1 });
+    await expect(Service.status(context, month, 'COMPLETED')).rejects.toThrow('Resolva');
+    expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } })).balance.toFixed(2)).toBe('1000.00');
+    expect((await prisma.financialTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).updatedAt).toEqual(transaction.updatedAt);
+    await Service.setIgnored(context, month, itemId, false); await confirm([itemId], [transaction.id]);
+    await expect(Service.setIgnored(context, month, itemId, true)).rejects.toThrow('Desfaça');
+  });
+  it('scopes ignore and restore to the authorized account and month, and reset clears ignored decisions', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria']]);
+    const [itemId] = await importedIds();
+    await expect(Service.setIgnored({ ...context, accountId: otherAccountId }, month, itemId, true)).rejects.toThrow('não encontrado');
+    await expect(Service.setIgnored(context, '2026-09', itemId, true)).rejects.toThrow('não encontrado');
+    await expect(Service.setIgnored({ ...context, companyId: companyId + 1 }, month, itemId, true)).rejects.toThrow('Acesso negado');
+    await Service.setIgnored(context, month, itemId, true); await Service.reset(context, month);
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria']]);
+    expect((await Service.load(context, month)).summary).toMatchObject({ ignored: 0, pending: 1 });
+  });
   it('confirms a reviewed batch across confidence levels, preserving separate feedback and unrelated AI cache', async () => {
     await importRows([['22/08/2026', '-20.00', 'high', 'Padaria'], ['22/08/2026', '30.00', 'medium', 'PIX recebido'], ['22/08/2026', '-70.00', 'lower', 'Mercado'], ['22/08/2026', '-150.00', 'low', 'Outro estabelecimento']]);
     await createExisting('20.00');
@@ -453,6 +532,11 @@ describe('Bank reconciliation persisted workflow', () => {
     expect((await request(app).get(path)).body.account.id).toBe(accountId);
     const ids = await importedIds();
     expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids })).body.results[0].itemId).toBe(ids[0]);
+    expect((await request(app).post(`${path}/items/${ids[0]}/ignored`).send({ ignored: 'true' })).status).toBe(400);
+    expect((await request(app).post(`${path}/items/${ids[0]}/ignored`).send({ ignored: true, accountId: otherAccountId })).body.item.ignoredBy).toBe(userId);
+    expect((await request(app).get(`${path}?filter=IGNORED`)).body.items.map((item: any) => item.id)).toEqual(ids);
+    expect((await request(app).get(`${path}?filter=PENDING`)).body.items).toEqual([]);
+    expect((await request(app).post(`${path}/items/${ids[0]}/ignored`).send({ ignored: false })).body.item.ignoredAt).toBeNull();
     await createExisting('20.00'); await createExisting('20.00');
     const rulesOnly = await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids, useAi: false, accountId: otherAccountId });
     expect(rulesOnly.status).toBe(200);

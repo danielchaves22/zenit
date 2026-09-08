@@ -38,7 +38,7 @@ export function useBankFilteredSearch(base: string, page: number, filter: BankCo
     cursor.current = 0; atEnd.current = false; failure.current = ''; publish(); setRevision(value => value + 1);
   }, [publish, stop]);
   const accept = useCallback((item: BankItem, result: BankSearchResult, refined = false) => {
-    if (blocked.current.has(item.id)) return;
+    if (item.ignoredAt || item.activeGroupId || blocked.current.has(item.id)) return;
     const dependency = bankSearchDependency(result);
     // Divergent alternatives other than the first cannot change membership or confidence.
     dependency.candidates = dependency.candidates.filter((candidate, position) => !position || candidate.exact);

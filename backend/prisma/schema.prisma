@@ -601,6 +601,8 @@ model BankStatementItem {
   document              String?
   activeGroupId         Int?
   activeGroup           BankReconciliationGroup? @relation("ActiveBankGroup", fields: [activeGroupId], references: [id], onDelete: SetNull)
+  ignoredAt             DateTime?
+  ignoredBy             Int?
   createdAt             DateTime @default(now())
   imports               BankStatementImportItem[]
   groupHistory          BankReconciliationGroupItem[]

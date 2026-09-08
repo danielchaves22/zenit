@@ -19,7 +19,7 @@ const fieldClass = 'rounded border border-gray-600 bg-background px-3 py-2 text-
 const panelClass = 'p-0 min-w-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col [&>div]:p-4';
 const emptyItems: BankItem[] = [];
 const errorMessage = (error: any) => error.response?.data?.error || error.response?.data?.errors?.[0]?.message || 'Não foi possível concluir a operação.';
-const eventLabels: Record<string, string> = { IMPORT: 'Extrato importado', CONFIRM: 'Correspondência confirmada', UNDO: 'Vínculo desfeito', COMPLETE: 'Mês concluído', REOPEN: 'Mês reaberto', TRANSACTION_CHANGED: 'Lançamento alterado: revisão necessária', NEW_STATEMENT_ITEMS: 'Novos itens: mês reaberto', MONTH_TRANSACTIONS_CHANGED: 'Movimentação do mês alterada: revisão necessária' };
+const eventLabels: Record<string, string> = { IMPORT: 'Extrato importado', CONFIRM: 'Correspondência confirmada', UNDO: 'Vínculo desfeito', COMPLETE: 'Mês concluído', REOPEN: 'Mês reaberto', IGNORE_ITEM: 'Movimento ignorado', RESTORE_ITEM: 'Movimento voltou para conferência', TRANSACTION_CHANGED: 'Lançamento alterado: revisão necessária', NEW_STATEMENT_ITEMS: 'Novos itens: mês reaberto', MONTH_TRANSACTIONS_CHANGED: 'Movimentação do mês alterada: revisão necessária' };
 
 function Pagination({ page, total, size, disabled, onChange }: { page: number; total: number; size: number; disabled?: boolean; onChange: (page: number) => void }) {
   return <div className="mt-4 flex items-center justify-between gap-2 text-sm text-gray-400">
@@ -66,7 +66,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const autoRefined = useRef(new Set<string>());
   const autoSelectionId = useRef<number | null>(null);
   const selectedTotal = bankTotal(selected);
-  const eligibleItems = displayedItems.filter(item => !item.activeGroupId);
+  const eligibleItems = displayedItems.filter(item => !item.activeGroupId && !item.ignoredAt);
   const allPageSelected = eligibleItems.length > 0 && eligibleItems.every(item => selected.some(s => s.id === item.id));
   const groupAllowed = selected.length > 0 && selected.length <= 20 && new Set(selected.map(item => Math.sign(Number(item.amount)))).size === 1;
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; searchAbort.current?.abort(); }; }, []);
@@ -78,7 +78,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     try {
       const response = await api.get<BankWorkspace>(base, { params: { page: computedMode ? 1 : page, filter: computedMode ? 'PENDING' : filter } });
       if (alive.current && requestId === loadGeneration.current) setData(response.data);
-    } catch (e) { if (alive.current && requestId === loadGeneration.current) setError(silent ? `Os vínculos foram salvos, mas não foi possível atualizar o resumo. ${errorMessage(e)}` : errorMessage(e)); }
+    } catch (e) { if (alive.current && requestId === loadGeneration.current) setError(silent ? `A alteração foi salva, mas não foi possível atualizar o resumo. ${errorMessage(e)}` : errorMessage(e)); }
     finally { if (!silent && alive.current && requestId === loadGeneration.current) setLoading(false); }
   }, [base, page, filter, computedMode]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -158,7 +158,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
 
   async function mutate(path: string, payload: unknown, message: string) {
     generation.current++; searchAbort.current?.abort(); setSuggesting(false);
-    setSavingLinks(path === 'transactions'); setBusy(true); setError('');
+    setSavingLinks(path === 'transactions' || (path.endsWith('/ignored') && (payload as { ignored: boolean }).ignored)); setBusy(true); setError('');
     try {
       const response = await api.post<{ change?: BankLinkChange }>(`${base}/${path}`, payload); if (!alive.current) return false;
       if (response.data.change) { applyConfirmedChange(response.data.change); await refresh(true); }
@@ -230,15 +230,15 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     </div>
     {error && <div role="alert" className="rounded-lg border border-red-700 bg-red-950/20 p-4 text-red-300">{error}</div>}
     {data && <>
-      <div className="grid shrink-0 grid-cols-2 gap-2 lg:grid-cols-4">
-        {[['Itens do extrato', data.summary.total], ['Conciliados', data.summary.confirmed], ['Itens para conferir', data.summary.pending], ['Liquidados sem vínculo', data.summary.unmatchedTransactions]].map(([label, value]) =>
+      <div className="grid shrink-0 grid-cols-2 gap-2 lg:grid-cols-5">
+        {[['Itens do extrato', data.summary.total], ['Conciliados', data.summary.confirmed], ['Ignorados', data.summary.ignored ?? 0], ['Itens para conferir', data.summary.pending], ['Liquidados sem vínculo', data.summary.unmatchedTransactions]].map(([label, value]) =>
           <Card key={label} className="p-0"><div className="flex items-center justify-between gap-2 px-3 py-2"><p className="text-xs text-gray-400">{label}</p><p className="text-xl font-semibold text-white">{value}</p></div></Card>)}
       </div>
       {data.summary.restrictedTransactions > 0 && <p role="status" className="rounded border border-amber-700 p-3 text-sm text-amber-300">Há {data.summary.restrictedTransactions} lançamento(s) sem vínculo nesta conta que exigem acesso à outra conta envolvida. Um usuário com esse acesso precisa revisá-los antes da conclusão do mês.</p>}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-700 bg-surface px-3 py-2">
         <p className="text-sm">Entradas no extrato: <strong className="text-emerald-300">{bankCurrency(data.summary.credits)}</strong><span className="mx-3">·</span>Saídas: <strong>{bankCurrency(data.summary.debits)}</strong></p>
         {closed ? <div className="flex items-center gap-3"><span className="flex items-center gap-1 text-emerald-300"><CheckCircle2 size={17} /> Mês concluído</span><Button variant="outline" disabled={busy} onClick={() => void mutate('status', { status: 'OPEN' }, 'Mês reaberto.')}>Reabrir mês</Button></div>
-          : <div className="flex flex-wrap gap-2">{!!data.summary.total && <Button variant="outline" disabled={busy} onClick={() => setResetOpen(true)}>Reiniciar conciliação</Button>}<Button disabled={busy || suggesting || !data.summary.total || !!data.summary.pending || !!data.summary.unmatchedTransactions} title="Todos os itens do extrato e lançamentos liquidados do mês precisam estar vinculados." className="disabled:opacity-40" onClick={() => void mutate('status', { status: 'COMPLETED' }, 'Conciliação do mês concluída.')}>Concluir mês</Button></div>}
+          : <div className="flex flex-wrap gap-2">{!!data.summary.total && <Button variant="outline" disabled={busy} onClick={() => setResetOpen(true)}>Reiniciar conciliação</Button>}<Button disabled={busy || suggesting || !data.summary.total || !!data.summary.pending || !!data.summary.unmatchedTransactions} title="Os movimentos do extrato precisam estar conciliados ou ignorados, e os lançamentos liquidados do mês precisam estar vinculados." className="disabled:opacity-40" onClick={() => void mutate('status', { status: 'COMPLETED' }, 'Conciliação do mês concluída.')}>Concluir mês</Button></div>}
       </div>
       {!closed && !data.summary.total && <Card className="shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-white">Importar extrato da conta</h2><p className="mt-1 text-sm text-gray-400">Nubank ou Bradesco · OFX e CSV · até 5 MB. A importação registra o extrato; os vínculos serão revisados depois.</p></div>
@@ -281,7 +281,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
       </Card>}
       {tab === 'statement' && <div className={`grid items-start gap-4 ${selected.length && !closed ? 'lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]' : ''}`}>
         <Card className={`${panelClass} h-[max(42rem,calc(100dvh-23rem))]`}>
-          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Movimentos do extrato</h2><select aria-label="Filtrar itens do extrato" value={filter} disabled={busy || loading} onChange={e => { changeSelection([]); setLoading(true); setFilter(e.target.value); setPage(1); }} className={fieldClass}><option value="ALL">Todos</option><option value="PENDING">Para conferir</option><option value="MISSING">Possíveis faltantes</option><option value="CONFIRMED">Conciliados</option><optgroup label="Confiabilidade"><option value="HIGH">Alta</option><option value="MEDIUM_HIGH">Média alta</option><option value="MEDIUM_LOW">Média baixa</option><option value="LOW">Baixa</option></optgroup></select></div>
+          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3"><h2 className="font-semibold">Movimentos do extrato</h2><select aria-label="Filtrar itens do extrato" value={filter} disabled={busy || loading} onChange={e => { changeSelection([]); setLoading(true); setFilter(e.target.value); setPage(1); }} className={fieldClass}><option value="ALL">Todos</option><option value="PENDING">Para conferir</option><option value="MISSING">Possíveis faltantes</option><option value="CONFIRMED">Conciliados</option><option value="IGNORED">Ignorados</option><optgroup label="Confiabilidade"><option value="HIGH">Alta</option><option value="MEDIUM_HIGH">Média alta</option><option value="MEDIUM_LOW">Média baixa</option><option value="LOW">Baixa</option></optgroup></select></div>
           {!closed && <div className="mb-3 flex shrink-0 flex-wrap items-center gap-3">
             <Button variant="outline" disabled={busy || loading || !selectedSearchesDone} onClick={() => { setBatchError(''); setBatchReview(bankBatchSnapshot(selected, searchRows)); }}>Conferir selecionados{selected.length ? ` (${selected.length})` : ''}</Button>
             {!!selected.length && !selectedSearchesDone && <span role="status" className="text-xs text-gray-400">Aguarde a conclusão das buscas dos selecionados. Se houver falha, tente a busca novamente.</span>}
@@ -295,9 +295,14 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
           {!displayedItems.length && !loading && (!computedMode || filteredSearch.atEnd) && <p className="py-10 text-center text-gray-400">{data.summary.total ? filter === 'MISSING' ? 'Nenhum possível faltante identificado nas buscas concluídas.' : 'Nenhum item neste filtro.' : 'Importe o extrato deste mês para começar.'}</p>}
           <div role="region" aria-label="Lista de movimentos do extrato" tabIndex={0} className="min-h-0 flex-1 overflow-auto overscroll-contain"><table className="w-full text-left text-sm"><thead className="sticky top-0 z-10 bg-surface"><tr className="border-b border-gray-700 text-gray-400"><th className="relative p-2"><span className="sr-only">Selecionar</span>{!closed && <input ref={selectAllRef} type="checkbox" aria-label="Marcar ou desmarcar todos os movimentos desta página" title={allPageSelected ? 'Desmarcar todos desta página' : 'Marcar todos desta página'} checked={allPageSelected} disabled={busy || loading || !eligibleItems.length} onChange={() => changeSelection(allPageSelected ? [] : eligibleItems)} />}</th><th className="p-2">Data e descrição</th><th className="p-2 text-right">Valor</th><th className="p-2">Situação</th></tr></thead>
             <tbody>{displayedItems.map(item => <tr key={item.id} className={`border-b border-gray-800 ${selected.some(s => s.id === item.id) ? 'bg-blue-950/30' : ''}`}>
-              <td className="p-2">{!item.activeGroupId && !closed && <input aria-label={`Selecionar ${item.description} em ${bankDate(item.date)}`} type="checkbox" checked={selected.some(s => s.id === item.id)} disabled={busy || loading} onChange={() => toggleItem(item)} />}</td>
+              <td className="p-2">{!item.activeGroupId && !item.ignoredAt && !closed && <input aria-label={`Selecionar ${item.description} em ${bankDate(item.date)}`} type="checkbox" checked={selected.some(s => s.id === item.id)} disabled={busy || loading} onChange={() => toggleItem(item)} />}</td>
               <td className="max-w-md p-2"><p className="break-words">{item.description}</p><p className="mt-1 text-xs text-gray-400">{bankDate(item.date)}</p></td><td className={`whitespace-nowrap p-2 text-right ${Number(item.amount) > 0 ? 'text-emerald-300' : ''}`}>{bankCurrency(item.amount)}</td>
-              <td className="p-2">{item.activeGroupId ? <button className="text-emerald-300 underline" onClick={() => setTab('audit')}>Conciliado</button> : closed ? <span className="text-amber-300">Para conferir</span> : <BankMovementSearchStatus entry={searchRows[item.id]} disabled={busy} onRetry={() => computedMode ? filteredSearch.recheck([item.id]) : ruleSearch.retry(item.id)} />}</td>
+              <td className="p-2">{item.ignoredAt ? <span className="text-gray-400">Ignorado</span> : item.activeGroupId ? <button className="text-emerald-300 underline" onClick={() => setTab('audit')}>Conciliado</button> : closed ? <span className="text-amber-300">Para conferir</span> : <BankMovementSearchStatus entry={searchRows[item.id]} disabled={busy} onRetry={() => computedMode ? filteredSearch.recheck([item.id]) : ruleSearch.retry(item.id)} />}
+                {!closed && !item.activeGroupId && <button className="mt-2 block text-xs text-blue-300 underline disabled:opacity-50" disabled={busy || loading}
+                  aria-label={`${item.ignoredAt ? 'Voltar a conferir' : 'Ignorar'} ${item.description} em ${bankDate(item.date)}`}
+                  title={item.ignoredAt ? 'Devolve o movimento às pendências da conciliação.' : 'Retira o movimento das pendências sem criar ou alterar um lançamento financeiro.'}
+                  onClick={() => void mutate(`items/${item.id}/ignored`, { ignored: !item.ignoredAt }, item.ignoredAt ? 'Movimento devolvido para conferência.' : 'Movimento ignorado.')}>{item.ignoredAt ? 'Voltar a conferir' : 'Ignorar'}</button>}
+              </td>
             </tr>)}</tbody></table></div>
           {computedMode ? <div className="mt-4 flex shrink-0 flex-wrap items-center justify-between gap-2 text-sm text-gray-400"><span>{displayedItems.length} {filter === 'MISSING' ? 'possível(is) faltante(s)' : 'correspondência(s)'} nesta página · Página {page}</span><div className="flex gap-2"><Button variant="outline" disabled={busy || loading || page <= 1} onClick={() => { changeSelection([]); setLoading(true); setPage(page - 1); }}>Anterior</Button><Button variant="outline" disabled={busy || loading || !filteredSearch.done || (filteredSearch.atEnd && page * 50 >= filteredSearch.totalFound)} onClick={() => { changeSelection([]); setLoading(true); setPage(page + 1); }}>Próxima</Button></div></div>
             : <Pagination page={page} total={data.total} size={50} disabled={busy || loading} onChange={value => { changeSelection([]); setPage(value); }} />}
@@ -357,7 +362,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
             {undoId === group.id && <form className="mt-3 flex flex-wrap gap-3" onSubmit={async e => { e.preventDefault(); if (await mutate('undo', { groupId: group.id, note: undoNote }, 'Vínculo desfeito. O lançamento foi mantido.')) setUndoId(null); }}><input aria-label="Motivo para desfazer" placeholder="Motivo para desfazer" required maxLength={500} value={undoNote} onChange={e => setUndoNote(e.target.value)} className={`${fieldClass} flex-1`} /><Button disabled={busy} type="submit">Confirmar desfazer</Button><Button disabled={busy} variant="outline" type="button" onClick={() => setUndoId(null)}>Cancelar</Button></form>}
           </div>)}
           {audit && <Pagination page={auditPage} total={audit.total} size={20} disabled={busy} onChange={setAuditPage} />}
-          <details className="mt-5 text-sm"><summary className="cursor-pointer">Atividades recentes do mês</summary>{audit?.events.map(event => <p key={event.id} className="mt-2 text-gray-400">{bankTimestamp(event.createdAt)} · {eventLabels[event.action] || event.action}{event.userId ? ` · Usuário #${event.userId}` : ''}</p>)}</details>
+          <details className="mt-5 text-sm"><summary className="cursor-pointer">Atividades recentes do mês</summary>{audit?.events.map(event => <p key={event.id} className="mt-2 text-gray-400">{bankTimestamp(event.createdAt)} · {eventLabels[event.action] || event.action}{['IGNORE_ITEM', 'RESTORE_ITEM'].includes(event.action) && event.details?.description ? ` · ${event.details.description}` : ''}{event.userId ? ` · Usuário #${event.userId}` : ''}</p>)}</details>
         </Card>
       </div>}
     </>}

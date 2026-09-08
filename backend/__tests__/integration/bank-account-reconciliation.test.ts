@@ -224,17 +224,22 @@ describe('Bank reconciliation persisted workflow', () => {
     expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
     await expect(Service.candidates(context, month, ids)).rejects.toThrow('mesma direção');
   });
-  it('uses AI only for ambiguous items and retains feedback from rule-based confirmations', async () => {
+  it('defaults to rules for every confidence and retains feedback without AI', async () => {
     await importRows([['22/08/2026', '-20.00', 'strong', 'Padaria'], ['22/08/2026', '-30.00', 'uncertain', 'Mercado']]);
     const strong = await createExisting('20.00');
     await createExisting('30.00', { description: 'Mercado' });
     await createExisting('30.00', { description: 'Mercado' });
     const ids = await importedIds();
-    await Service.candidatesBatch(context, month, ids);
+    const rules = await Service.candidatesBatch(context, month, ids);
+    await Service.candidates(context, month, [ids[1]]);
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
+    await confirm([ids[0]], [strong.id], { feedbackToken: rules.results[0].candidates[0].feedbackToken });
+    const group = await prisma.bankReconciliationGroup.findFirstOrThrow({ where: { reconciliation: { accountId } }, include: { items: true, transactions: true } });
+    expect(group.items).toHaveLength(1);
+    expect(group.suggestion).toMatchObject({ source: 'RULE', confidence: { level: 'HIGH' } });
+    await Service.candidatesBatch(context, month, [ids[1]], true);
     expect(suggestBankMatchByAi).toHaveBeenCalledTimes(1);
     expect(jest.mocked(suggestBankMatchByAi).mock.calls[0][0].items.map(i => i.id)).toEqual([ids[1]]);
-    await confirm([ids[0]], [strong.id]);
-    expect((await prisma.bankReconciliationGroup.findFirstOrThrow({ where: { reconciliation: { accountId } }, include: { items: true, transactions: true } })).items).toHaveLength(1);
     await expect(Service.candidatesBatch(context, month, ids)).rejects.toThrow('já foi conciliado');
     expect((await Service.candidatesBatch(context, month, [ids[1]])).results).toHaveLength(1);
   });
@@ -249,16 +254,25 @@ describe('Bank reconciliation persisted workflow', () => {
     expect(await prisma.bankMatchDecision.count({ where: { reconciliation: { accountId } } })).toBe(0);
     expect(await prisma.bankReconciliationGroup.count({ where: { reconciliation: { accountId } } })).toBe(0);
     jest.mocked(suggestBankMatchByAi).mockImplementationOnce(async ({ candidates }) => ({ candidates: [...candidates].reverse().map(c => ({ ...c, source: 'AI', confidence: { level: 'HIGH', reasons: ['AI'] } })), message: 'AI' }));
-    const refined = await Service.candidatesBatch(context, month, ids, 'auto');
+    const refined = await Service.candidatesBatch(context, month, ids, true);
     expect(suggestBankMatchByAi).toHaveBeenCalledTimes(1);
     expect(refined.results[0].candidates.every(c => c.confidence?.level === 'MEDIUM_LOW')).toBe(true);
   });
-  it('skips AI for a unique same-date match with a different description, even when explicitly requested', async () => {
+  it.each([['Café da manhã', 'MEDIUM_HIGH'], ['PIX Comércio 123', 'HIGH']])('uses AI on explicit request for %s without changing confidence', async (description, level) => {
     await importRows([['22/08/2026', '-20.00', 'a', 'PIX Comércio 123']]);
-    await createExisting('20.00', { description: 'Café da manhã' });
+    await createExisting('20.00', { description });
+    await Service.candidates(context, month, await importedIds());
+    expect(suggestBankMatchByAi).not.toHaveBeenCalled();
     const result = await Service.candidates(context, month, await importedIds(), true);
-    expect(result.candidates[0].confidence?.level).toBe('MEDIUM_HIGH');
+    expect(result.candidates[0].confidence?.level).toBe(level);
     expect(result.assessment).toBe('CANDIDATES');
+    expect(suggestBankMatchByAi).toHaveBeenCalledTimes(1);
+  });
+  it('skips AI for missing candidates even on explicit request', async () => {
+    await importRows([['22/08/2026', '-20.00', 'a', 'Padaria']]);
+    const result = await Service.candidates(context, month, await importedIds(), true);
+    expect(result.candidates).toEqual([]);
+    expect(result.assessment).toBe('POSSIBLE_MISSING');
     expect(suggestBankMatchByAi).not.toHaveBeenCalled();
   });
   it('recognizes an exact confirmed description mapping but never promotes a different date', async () => {
@@ -538,6 +552,8 @@ describe('Bank reconciliation persisted workflow', () => {
     expect((await request(app).get(`${path}?filter=PENDING`)).body.items).toEqual([]);
     expect((await request(app).post(`${path}/items/${ids[0]}/ignored`).send({ ignored: false })).body.item.ignoredAt).toBeNull();
     await createExisting('20.00'); await createExisting('20.00');
+    expect((await request(app).post(`${path}/suggestions`).send({ itemIds: ids })).status).toBe(200);
+    expect((await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids })).status).toBe(200);
     const rulesOnly = await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids, useAi: false, accountId: otherAccountId });
     expect(rulesOnly.status).toBe(200);
     expect(rulesOnly.body.results[0].candidates[0].confidence.level).toBe('MEDIUM_LOW');

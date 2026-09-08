@@ -135,7 +135,7 @@ describe('Simplified bank reconciliation', () => {
     expect(calls).toHaveLength(1);
     expect((calls[0][1] as any).matches.map((match: any) => match.itemId)).toEqual([1, 2]);
     expect(screen.getAllByRole('button', { name: 'Conciliado' })).toHaveLength(2);
-    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(0);
+    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => (body.useAi === true || body.useAi === 'auto'))).toHaveLength(0);
   });
   it('keeps a failed batch review open and requires refreshing before another confirmation', async () => {
     const defaultPost = vi.mocked(api.post).getMockImplementation()!;
@@ -162,7 +162,7 @@ describe('Simplified bank reconciliation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar vínculo' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 500)); });
-    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(0);
+    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => (body.useAi === true || body.useAi === 'auto'))).toHaveLength(0);
     expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === false)).toHaveLength(1);
   });
   it('preserves an unrelated in-flight rule search while confirming another movement', async () => {
@@ -217,7 +217,7 @@ describe('Simplified bank reconciliation', () => {
       const calls = vi.mocked(api.post).mock.calls.filter(([url]) => String(url).endsWith('/confirm/batch'));
       expect((calls[0][1] as any).matches.map((match: any) => match.itemId)).toEqual([51, 52, 53]);
       expect(vi.mocked(api.get).mock.calls.filter(([url]) => String(url).endsWith('/scan'))).toHaveLength(11);
-      expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(0);
+      expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => (body.useAi === true || body.useAi === 'auto'))).toHaveLength(0);
       fireEvent.change(screen.getByLabelText('Filtrar itens do extrato'), { target: { value: 'LOW' } });
       await act(async () => {});
       expect(screen.getByText('Movimento 54')).toBeInTheDocument();
@@ -265,7 +265,7 @@ describe('Simplified bank reconciliation', () => {
     await open(); fireEvent.click(selectAll()); fireEvent.click(screen.getByRole('checkbox', { name: 'Buscar pela soma dos selecionados (agrupar)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buscar correspondências' }));
     await screen.findByRole('button', { name: 'Revisar vínculo' });
-    expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/suggestions$/), { itemIds: [1, 3] }, expect.any(Object));
+    expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/\/suggestions$/), { itemIds: [1, 3], useAi: false }, expect.any(Object));
   });
   it('requires reset confirmation and shows the upload panel again only after resetting', async () => {
     await open();
@@ -308,17 +308,23 @@ describe('Simplified bank reconciliation', () => {
     expect(screen.getAllByRole('button', { name: 'Revisar vínculo' })).toHaveLength(2);
     expect(api.post).toHaveBeenCalledTimes(1);
   });
-  it('refines only the selected ambiguous movement while retaining the rule suggestions', async () => {
+  it('requests AI only on click, keeps rules visible and discards the answer after deselection', async () => {
     const defaultPost = vi.mocked(api.post).getMockImplementation()!;
     let finishAi: (value: any) => void = () => {};
     vi.mocked(api.post).mockImplementation(async (url, body: any, config) => {
-      if (body.useAi === 'auto') return new Promise(resolve => { finishAi = resolve; });
+      if (body.useAi === true) return new Promise(resolve => { finishAi = resolve; });
       if (body.useAi === false) return { data: { results: data.items.map(i => ({ itemId: i.id, candidates: [{ ...candidate(i), confidence: { level: 'MEDIUM_LOW', reasons: ['Datas diferentes'] } }] })) } };
       return defaultPost(url, body, config);
     });
     await open();
     fireEvent.click(screen.getByLabelText('Selecionar Movimento 1 em 22/08/2026'));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/batch$/), { itemIds: [1], useAi: 'auto' }, expect.any(Object)));
+    await screen.findByRole('button', { name: 'Revisar vínculo' });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 500)); });
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Conferir selecionados (1)' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Sugerir com IA' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/batch$/), { itemIds: [1], useAi: true }, expect.any(Object)));
+    expect(screen.getByRole('button', { name: 'Consultando IA…' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Conferir selecionados (1)' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Revisar vínculo' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Desmarcar todos' }));
@@ -326,7 +332,43 @@ describe('Simplified bank reconciliation', () => {
     fireEvent.click(selectAll());
     expect(screen.queryByText('Sugestão com apoio da IA')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Revisar vínculo' })).toHaveLength(2);
-    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(1);
+    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === true)).toHaveLength(1);
+  });
+  it.each(['HIGH', 'MEDIUM_HIGH', 'MEDIUM_LOW', 'LOW'])('allows explicit AI for %s and reuses the answer after reselection', async level => {
+    vi.mocked(api.post).mockImplementation(async (_url, body: any) => ({ data: { results: body.itemIds.map((id: number) => ({ itemId: id,
+      candidates: [{ ...candidate(item(id)), source: body.useAi ? 'AI' : 'RULE', confidence: { level, reasons: ['Critérios do teste'] } }], ...(body.useAi ? { cacheId: 500 } : {}) })) } }));
+    await open();
+    fireEvent.click(screen.getByLabelText('Selecionar Movimento 1 em 22/08/2026'));
+    await screen.findByRole('button', { name: 'Revisar vínculo' });
+    fireEvent.click(screen.getByRole('button', { name: 'Buscar correspondências' }));
+    expect(vi.mocked(api.post).mock.calls.every(([, body]: any) => body.useAi === false)).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Sugerir com IA' }));
+    await screen.findByText('Sugestão com apoio da IA');
+    expect(api.post).toHaveBeenLastCalledWith(expect.stringMatching(/batch$/), { itemIds: [1], useAi: true }, expect.any(Object));
+    fireEvent.click(screen.getByRole('button', { name: 'Desmarcar todos' }));
+    fireEvent.click(screen.getByLabelText('Selecionar Movimento 1 em 22/08/2026'));
+    expect(screen.getByText('Sugestão com apoio da IA')).toBeInTheDocument();
+    expect(api.post).toHaveBeenCalledTimes(2);
+  });
+  it('keeps AI disabled while rules are loading or when no candidates were found', async () => {
+    let complete: (value: any) => void = () => {};
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    await open(); fireEvent.click(screen.getByLabelText('Selecionar Movimento 1 em 22/08/2026'));
+    expect(screen.getByRole('button', { name: 'Sugerir com IA' })).toBeDisabled();
+    await act(async () => complete({ data: { results: data.items.map(i => ({ itemId: i.id, candidates: [], assessment: 'POSSIBLE_MISSING' })) } }));
+    expect(screen.getByRole('button', { name: 'Sugerir com IA' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Buscar manualmente' })).toBeEnabled();
+    expect(api.post).toHaveBeenCalledTimes(1);
+  });
+  it('preserves rule suggestions after an AI request fails and allows retrying', async () => {
+    await open(); fireEvent.click(screen.getByLabelText('Selecionar Movimento 1 em 22/08/2026'));
+    await screen.findByRole('button', { name: 'Revisar vínculo' });
+    vi.mocked(api.post).mockRejectedValueOnce({ response: { data: { error: 'IA indisponível no teste' } } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sugerir com IA' }));
+    await screen.findByText('IA indisponível no teste');
+    expect(screen.getByText('Sugestão por regras')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sugerir com IA' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Conferir selecionados (1)' })).toBeEnabled();
   });
   it('distinguishes failed searches from empty results and supports retrying one row', async () => {
     vi.mocked(api.post).mockRejectedValueOnce({ response: { status: 503, data: { error: 'Indisponível' } } });
@@ -390,7 +432,7 @@ describe('Simplified bank reconciliation', () => {
     fireEvent.click(screen.getByLabelText('Selecionar Movimento 2 em 22/08/2026'));
     fireEvent.click(screen.getByRole('button', { name: 'Buscar correspondências' }));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 500)); });
-    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(0);
+    expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => (body.useAi === true || body.useAi === 'auto'))).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Não corresponde' }));
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(expect.stringMatching(/reject$/), expect.objectContaining({ feedbackToken: 'receipt-2' })));
   });
@@ -416,7 +458,7 @@ describe('Simplified bank reconciliation', () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(500); });
       expect(screen.getByRole('button', { name: 'Registrar faltante' })).toBeEnabled();
       expect(screen.getByRole('button', { name: 'Buscar manualmente' })).toBeEnabled();
-      expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => body.useAi === 'auto')).toHaveLength(0);
+      expect(vi.mocked(api.post).mock.calls.filter(([, body]: any) => (body.useAi === true || body.useAi === 'auto'))).toHaveLength(0);
       expect(vi.mocked(api.get).mock.calls.filter(([url]) => String(url).endsWith('/missing'))).toHaveLength(11);
     } finally { vi.useRealTimers(); }
   });

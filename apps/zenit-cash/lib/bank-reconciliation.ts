@@ -27,8 +27,6 @@ export interface BankSearchResult {
   assessment?: BankAssessment;
   dependencies?: { itemIds: number[]; transactionIds: number[] };
 }
-export const bankNeedsAi = (result?: BankSearchResult) => !!result && !result.error && result.assessment !== 'POSSIBLE_MISSING'
-  && ['MEDIUM_LOW', 'LOW'].includes(result.candidates[0]?.confidence?.level || '');
 export interface BankMonth { id: number; month: string; status: 'OPEN' | 'COMPLETED'; completedAt?: string | null }
 export interface BankImport {
   id: number; fileName: string; bank: string; format: string; bankAccount: string | null; createdAt: string;

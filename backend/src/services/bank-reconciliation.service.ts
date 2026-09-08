@@ -261,13 +261,13 @@ export default class BankReconciliationService {
     return { items: items.map(t => ({ ...t, amount: money(signedTransactionAmount(t, context.accountId)), version: t.updatedAt.toISOString() })), total, page, pageSize: 50 };
   }
 
-  static async candidates(context: BankContext, month: string, itemIds: number[], useAi: boolean | 'auto' = 'auto') {
+  static async candidates(context: BankContext, month: string, itemIds: number[], useAi: boolean | 'auto' = false) {
     const { accountIds } = await access(context);
     const items = await selectedItems(prisma, context.accountId, month, itemIds);
     return (await this.searchCandidates(context, month, [items], accountIds, useAi))[0];
   }
 
-  static async candidatesBatch(context: BankContext, month: string, itemIds: number[], useAi: boolean | 'auto' = 'auto') {
+  static async candidatesBatch(context: BankContext, month: string, itemIds: number[], useAi: boolean | 'auto' = false) {
     const { accountIds } = await access(context);
     const items = await selectedItems(prisma, context.accountId, month, itemIds, true);
     const results = await this.searchCandidates(context, month, items.map(item => [item]), accountIds, useAi);
@@ -351,11 +351,11 @@ export default class BankReconciliationService {
       const confidenceByKey = new Map(candidates.map(c => [c.key, c.confidence]));
       let cacheId: number | undefined, aiMessage: string | undefined;
       const needsAi = shouldUseBankAi(candidates);
-      if (assessment !== 'POSSIBLE_MISSING' && useAi !== false && needsAi) {
+      if (candidates.length && assessment !== 'POSSIBLE_MISSING' && (useAi === true || (useAi === 'auto' && needsAi))) {
         const result = await suggestBankMatchByAi({ context, items, candidates, examples });
         // AI can reorder suggestions, but cannot promote their confidence or return stale cached criteria.
         candidates = result.candidates.map(c => ({ ...c, confidence: confidenceByKey.get(c.key) })); cacheId = result.cacheId; aiMessage = result.message;
-      } else if (candidates.length && !needsAi) {
+      } else if (useAi === 'auto' && candidates.length && !needsAi) {
         aiMessage = 'Valor e data conferem sem ambiguidade identificada. A consulta à IA foi dispensada; confira antes de confirmar.';
       }
       candidates = candidates.map(candidate => ({ ...candidate, feedbackToken: signBankFeedback(context, month, candidate) }));

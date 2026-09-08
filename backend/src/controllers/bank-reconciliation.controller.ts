@@ -33,9 +33,9 @@ export const previewBankStatement = endpoint((c, m, req) => Service.preview(c, m
 export const importBankStatement = endpoint((c, m, req) => { const f = file.parse(req.body); return Service.import(c, m, f.fileBase64, f.fileName); });
 export const resetBankReconciliation = endpoint((c, m, req) => { z.object({ confirmed: z.literal(true) }).parse(req.body); return Service.reset(c, m); });
 export const updateBankStatementIgnore = endpoint((c, m, req) => Service.setIgnored(c, m, z.coerce.number().int().positive().parse(req.params.itemId), z.object({ ignored: z.boolean() }).parse(req.body).ignored));
-export const suggestBankCandidates = endpoint((c, m, req) => { const input = z.object({ itemIds, useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidates(c, m, input.itemIds, input.useAi); });
+export const suggestBankCandidates = endpoint((c, m, req) => { const input = z.object({ itemIds, useAi: z.union([z.boolean(), z.literal('auto')]).default(false) }).parse(req.body); return Service.candidates(c, m, input.itemIds, input.useAi); });
 export const suggestBankCandidatesBatch = endpoint((c, m, req) => { const input = z.object({ itemIds: z.array(id).min(1).max(5).refine(ids => new Set(ids).size === ids.length, 'Itens repetidos.'),
-  useAi: z.union([z.boolean(), z.literal('auto')]).default('auto') }).parse(req.body); return Service.candidatesBatch(c, m, input.itemIds, input.useAi); });
+  useAi: z.union([z.boolean(), z.literal('auto')]).default(false) }).parse(req.body); return Service.candidatesBatch(c, m, input.itemIds, input.useAi); });
 export const scanMissingBankItems = endpoint((c, m, req) => Service.scanMissing(c, m, z.coerce.number().int().min(0).default(0).parse(req.query.afterId)));
 export const confirmBankMatch = endpoint((c, m, req) => Service.confirm(c, m, link.parse(req.body)));
 export const confirmBankBatch = endpoint((c, m, req) => Service.confirmBatch(c, m, z.object({ matches: z.array(z.object({

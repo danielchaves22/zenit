@@ -14,7 +14,7 @@ import BankMatchSuggestions from './BankMatchSuggestions';
 import { BankMovementSearchStatus } from './BankMatchConfidence';
 import { useBankRuleSearch } from '@/hooks/useBankRuleSearch';
 import { BankComputedFilter, useBankFilteredSearch } from '@/hooks/useBankFilteredSearch';
-import { BankAudit, BankCandidate, BankItem, BankLinkChange, BankPreview, BankSearchResult, BankTransaction, BankWorkspace, bankCurrency, bankDate, bankNeedsAi, bankTimestamp, bankTotal } from '@/lib/bank-reconciliation';
+import { BankAudit, BankCandidate, BankItem, BankLinkChange, BankPreview, BankSearchResult, BankTransaction, BankWorkspace, bankCurrency, bankDate, bankTimestamp, bankTotal } from '@/lib/bank-reconciliation';
 
 const fieldClass = 'rounded border border-gray-600 bg-background px-3 py-2 text-sm text-white disabled:opacity-50';
 const panelClass = 'p-0 min-w-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col [&>div]:p-4';
@@ -37,6 +37,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const [page, setPage] = useState(1), [filter, setFilter] = useState('ALL');
   const [selected, setSelected] = useState<BankItem[]>([]);
   const [groupResults, setGroupResults] = useState<BankSearchResult[]>([]), [suggesting, setSuggesting] = useState(false);
+  const [usingAi, setUsingAi] = useState(false);
   const [suggestionMessage, setSuggestionMessage] = useState(''), [searchAsGroup, setSearchAsGroup] = useState(false);
   const [searchProgress, setSearchProgress] = useState(0);
   const [review, setReview] = useState<{ items: BankItem[]; transactions: BankTransaction[]; candidate?: BankCandidate; cacheId?: number } | null>(null);
@@ -64,8 +65,6 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const displayedItems = computedMode ? filteredSearch.items : data?.items || emptyItems;
   const searchRows = computedMode ? filteredSearch.rows : ruleSearch.rows;
   const results = searchAsGroup ? groupResults : selected.flatMap(item => searchRows[item.id]?.result ? [searchRows[item.id].result!] : []);
-  const autoRefined = useRef(new Set<string>());
-  const autoSelectionId = useRef<number | null>(null);
   const selectedTotal = bankTotal(selected);
   const eligibleItems = displayedItems.filter(item => !item.activeGroupId && !item.ignoredAt);
   const allPageSelected = eligibleItems.length > 0 && eligibleItems.every(item => selected.some(s => s.id === item.id));
@@ -103,7 +102,6 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   }, [base, tab, auditPage, data]);
 
   function changeSelection(items: BankItem[]) {
-    autoSelectionId.current = items.length === 1 ? items[0].id : null;
     generation.current++; searchAbort.current?.abort(); setSuggesting(false); setSelected(items); setGroupResults([]); setSuggestionMessage(''); setManual([]); setCreating(false); setSearchAsGroup(false); setSearchProgress(0);
   }
   function toggleItem(item: BankItem) {
@@ -111,22 +109,23 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     else if (selected.length < 50) changeSelection([...selected, item]);
     else addToast('Selecione até 50 movimentos por busca.', 'error');
   }
-  async function suggest() {
+  async function suggest(useAi = false) {
+    if (busy || suggesting || closed || !selected.length || (useAi && !canRequestAi)) return;
     const requestId = ++generation.current;
     searchAbort.current?.abort();
     const abort = new AbortController(); searchAbort.current = abort;
-    setSuggesting(true); setSuggestionMessage(''); setGroupResults([]); setSearchProgress(0);
+    setSuggesting(true); setUsingAi(useAi); setSuggestionMessage(''); setGroupResults([]); setSearchProgress(0);
     try {
       if (searchAsGroup) {
-        const response = await api.post(`${base}/suggestions`, { itemIds: selected.map(i => i.id) }, { signal: abort.signal, timeout: 45000 });
+        const response = await api.post(`${base}/suggestions`, { itemIds: selected.map(i => i.id), useAi: false }, { signal: abort.signal, timeout: 45000 });
         if (generation.current !== requestId) return;
         setGroupResults([{ itemId: selected[0].id, ...response.data }]); setSearchProgress(selected.length);
       } else {
         for (let offset = 0; offset < selected.length; offset += 5) {
           const batch = selected.slice(offset, offset + 5);
-          const needed = batch.filter(item => !searchRows[item.id]?.result || searchRows[item.id].status === 'error' || bankNeedsAi(searchRows[item.id].result));
+          const needed = batch.filter(item => useAi || !searchRows[item.id]?.result || searchRows[item.id].status === 'error');
           if (!needed.length) { setSearchProgress(offset + batch.length); continue; }
-          const response = await api.post<{ results: BankSearchResult[] }>(`${base}/suggestions/batch`, { itemIds: needed.map(i => i.id), useAi: 'auto' }, { signal: abort.signal, timeout: 45000 });
+          const response = await api.post<{ results: BankSearchResult[] }>(`${base}/suggestions/batch`, { itemIds: needed.map(i => i.id), useAi }, { signal: abort.signal, timeout: 45000 });
           if (generation.current !== requestId) return;
           ruleSearch.storeResults(response.data.results); filteredSearch.storeResults(response.data.results); setSearchProgress(offset + batch.length);
         }
@@ -135,21 +134,11 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     finally { if (alive.current && generation.current === requestId) setSuggesting(false); }
   }
   const focusedRow = selected.length === 1 ? searchRows[selected[0].id] : undefined;
-  useEffect(() => {
-    if (busy || loading || batchReview || suggesting || closed || tab !== 'statement' || searchAsGroup || autoSelectionId.current !== selected[0]?.id || !focusedRow || focusedRow.status !== 'done' || focusedRow.refined) return;
-    const best = focusedRow.result?.candidates[0];
-    if (!best || !bankNeedsAi(focusedRow.result) || autoRefined.current.has(best.key)) return;
-    const timer = setTimeout(() => { autoRefined.current.add(best.key); void suggest(); }, 400);
-    return () => clearTimeout(timer);
-    // Selection/refinement is independent of the automatic rule queue.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusedRow, selected, busy, loading, batchReview, suggesting, closed, tab, searchAsGroup]);
-
-  const awaitingAutoAi = selected.length === 1 && autoSelectionId.current === selected[0].id && !searchAsGroup && !!focusedRow && !focusedRow.refined && bankNeedsAi(focusedRow.result) && !autoRefined.current.has(focusedRow.result!.candidates[0].key);
-  const selectedSearchesDone = selected.length > 0 && selected.every(item => searchRows[item.id]?.status === 'done' && !searchRows[item.id]?.result?.error) && !suggesting && !awaitingAutoAi;
+  const canRequestAi = !loading && !searchAsGroup && focusedRow?.status === 'done' && !focusedRow.result?.error
+    && focusedRow.result?.assessment !== 'POSSIBLE_MISSING' && !!focusedRow.result?.candidates.length;
+  const selectedSearchesDone = selected.length > 0 && selected.every(item => searchRows[item.id]?.status === 'done' && !searchRows[item.id]?.result?.error) && !suggesting;
 
   function applyConfirmedChange(change: BankLinkChange) {
-    autoSelectionId.current = null;
     const linked = new Map(change.items.map(item => [item.id, item]));
     setData(current => current ? { ...current, items: current.items.map(item => linked.get(item.id) || item) } : current);
     setSelected(current => current.filter(item => !linked.has(item.id)));
@@ -163,7 +152,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     try {
       const response = await api.post<{ change?: BankLinkChange }>(`${base}/${path}`, payload); if (!alive.current) return false;
       if (response.data.change) { applyConfirmedChange(response.data.change); await refresh(true); }
-      else { ruleSearch.invalidate(); filteredSearch.invalidate(); if (computedMode) setPage(1); autoRefined.current.clear(); changeSelection([]); await refresh(); }
+      else { ruleSearch.invalidate(); filteredSearch.invalidate(); if (computedMode) setPage(1); changeSelection([]); await refresh(); }
       addToast(message); return true;
     }
     catch (e) { if (alive.current) { setError(errorMessage(e)); addToast(errorMessage(e), 'error'); } return false; }
@@ -184,7 +173,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   async function confirmReview(settlePending: boolean, settlementDate: string, note: string) {
     if (!review) return;
     generation.current++; searchAbort.current?.abort(); setSuggesting(false);
-    setSavingLinks(true); setBusy(true); setReviewError(''); autoSelectionId.current = null;
+    setSavingLinks(true); setBusy(true); setReviewError('');
     try {
       const response = await api.post<{ id: number; change: BankLinkChange }>(`${base}/confirm`, { itemIds: review.items.map(i => i.id), transactions: review.transactions.map(t => ({ id: t.id, version: t.version })),
         settlePending, settlementDate: settlePending ? settlementDate : undefined, note, cacheId: review.cacheId, candidateKey: review.candidate?.key, feedbackToken: review.candidate?.feedbackToken });
@@ -196,7 +185,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   }
   async function confirmBatch() {
     if (!batchReview?.candidates.length) return;
-    setSavingLinks(true); setBusy(true); setBatchError(''); autoSelectionId.current = null;
+    setSavingLinks(true); setBusy(true); setBatchError('');
     try {
       const response = await api.post<{ confirmed: number; change: BankLinkChange }>(`${base}/confirm/batch`, { matches: batchReview.candidates.map(candidate => ({
         itemId: candidate.itemIds[0], transaction: { id: candidate.transactions[0].id, version: candidate.transactions[0].version }, feedbackToken: candidate.feedbackToken
@@ -226,7 +215,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">Mês de referência<input aria-label="Mês de referência" type="month" value={month} min="2000-01" max="2200-12" disabled={busy} onChange={e => { if (e.target.value) onMonthChange(e.target.value); }} className={`${fieldClass} ml-2`} /></label>
-        <Button variant="outline" disabled={busy || loading} onClick={() => { changeSelection([]); ruleSearch.invalidate(); filteredSearch.invalidate(); if (computedMode) setPage(1); autoRefined.current.clear(); void refresh(); }} aria-label="Atualizar conciliação"><RefreshCw size={16} /></Button>
+        <Button variant="outline" disabled={busy || loading} onClick={() => { changeSelection([]); ruleSearch.invalidate(); filteredSearch.invalidate(); if (computedMode) setPage(1); void refresh(); }} aria-label="Atualizar conciliação"><RefreshCw size={16} /></Button>
       </div>
     </div>
     {error && <div role="alert" className="rounded-lg border border-red-700 bg-red-950/20 p-4 text-red-300">{error}</div>}
@@ -321,14 +310,18 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
           <div className="mb-2 flex shrink-0 items-center gap-2">
             <h2 className="font-semibold">Sugestões de correspondência</h2>
             <InfoModalButton modalTitle="Sobre as sugestões de correspondência" buttonLabel="Ajuda sobre as sugestões de correspondência">
-              <p>{searchAsGroup ? 'A busca considera a soma dos movimentos selecionados.' : 'As regras buscam automaticamente cada movimento. Ao selecionar um único item de confiabilidade média baixa ou baixa, a IA pode ajudar na conferência.'}</p>
+              <p>{searchAsGroup ? 'A busca considera a soma dos movimentos selecionados, usando apenas as regras.' : 'As regras buscam automaticamente cada movimento. Selecionar um item apenas mostra as sugestões disponíveis.'}</p>
+              <p>Se as sugestões não forem adequadas, selecione um único movimento e clique em “Sugerir com IA”. A IA só é consultada após esse clique e avalia os candidatos encontrados, independentemente da confiabilidade. Sem candidatos, use a busca manual.</p>
               <p>A confiabilidade indica a força dos critérios, não uma garantia de acerto.</p>
             </InfoModalButton>
           </div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm"><span>{selected.length} selecionado(s) · {bankCurrency(selectedTotal)}</span><Button variant="outline" disabled={busy} onClick={() => changeSelection([])}>Desmarcar todos</Button></div>
           {selected.length > 1 && <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={searchAsGroup} disabled={busy || suggesting || !groupAllowed} onChange={e => { setSearchAsGroup(e.target.checked); setGroupResults([]); setSuggestionMessage(''); }} />Buscar pela soma dos selecionados (agrupar)</label>}
           {!groupAllowed && <p className="mb-3 text-sm text-gray-400">Para vincular manualmente ou criar um único lançamento, selecione até 20 movimentos de entrada ou até 20 de saída.</p>}
-          <div className="mb-4 flex flex-wrap gap-2"><Button disabled={busy || suggesting || (searchAsGroup && !groupAllowed)} onClick={() => void suggest()}>{suggesting ? `Buscando… ${searchProgress}/${selected.length}` : 'Buscar correspondências'}</Button></div>
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Button disabled={busy || suggesting || (searchAsGroup && !groupAllowed)} onClick={() => void suggest()}>{suggesting && !usingAi ? `Buscando… ${searchProgress}/${selected.length}` : 'Buscar correspondências'}</Button>
+            {selected.length === 1 && <Button variant="outline" disabled={busy || suggesting || !canRequestAi} onClick={() => void suggest(true)}>{suggesting && usingAi ? 'Consultando IA…' : 'Sugerir com IA'}</Button>}
+          </div>
           {!searchAsGroup && selected.some(item => !searchRows[item.id] || ['queued', 'searching'].includes(searchRows[item.id].status)) && <p role="status" className="mb-3 text-sm text-blue-300">Buscando movimentos selecionados… Você já pode conferir as sugestões disponíveis.</p>}
           {!results.length && groupAllowed && <div className="mb-3 flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => setTab('transactions')}>Buscar lançamento manualmente</Button><Button variant="outline" disabled={busy} onClick={() => void beginCreate()}>Registrar lançamento faltante</Button></div>}
           {suggestionMessage && <p role="status" className="mb-3 text-sm text-gray-400">{suggestionMessage}</p>}

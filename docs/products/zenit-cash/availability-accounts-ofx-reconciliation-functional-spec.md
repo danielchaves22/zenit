@@ -209,12 +209,16 @@ Buscar manualmente e registrar faltante continuam disponíveis.
 
 ## IA e feedback
 
-O botão único **Buscar correspondências** usa regras e histórico antes da IA.
-A busca inicial é somente por regras. Selecionar um único movimento de confiabilidade
-Média baixa ou Baixa permite refinamento automático com a credencial e o modelo ativos
-da empresa; a busca explícita também pode refinar os itens selecionados. Alta e Média
-alta dispensam IA, mesmo com pedido explícito na API. Sem candidatos ou com situação
-de possível faltante a IA não é chamada. A IA pode reordenar, mas não promover o nível.
+A busca inicial e **Buscar correspondências**, inclusive pela soma dos selecionados,
+usam somente regras e histórico. Selecionar um movimento mostra os resultados já
+disponíveis, sem consultar IA. **Sugerir com IA** aparece para um único movimento e
+aguarda a conclusão da busca por regras. O clique solicita uma avaliação com a credencial
+e o modelo ativos da empresa, independentemente da confiabilidade, inclusive Alta e
+Média alta. Sem candidatos ou com situação de possível faltante a IA não é chamada;
+a busca manual continua disponível. A IA pode reordenar, mas não promover o nível.
+As rotas de sugestões usam apenas regras quando `useAi` é omitido; o botão envia
+`useAi: true`. Durante a consulta, as sugestões existentes continuam disponíveis e
+**Conferir selecionados** aguarda sua conclusão. Falhas permitem nova tentativa.
 Envia somente a seleção, até dez candidatos e até cinco exemplos relevantes
 confirmados na mesma conta e com acesso autorizado. Descrições são dados, nunca
 instruções. A resposta estruturada pode escolher um candidato fornecido ou abster-se;

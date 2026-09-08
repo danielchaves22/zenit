@@ -5,6 +5,7 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { useToast } from '@/components/ui/ToastContext';
 import BankMatchReview from './BankMatchReview';
 import BankBatchReview, { BankBatchSnapshot } from './BankBatchReview';
@@ -241,7 +242,16 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
           : <div className="flex flex-wrap gap-2">{!!data.summary.total && <Button variant="outline" disabled={busy} onClick={() => setResetOpen(true)}>Reiniciar conciliação</Button>}<Button disabled={busy || suggesting || !data.summary.total || !!data.summary.pending || !!data.summary.unmatchedTransactions} title="Os movimentos do extrato precisam estar conciliados ou ignorados, e os lançamentos liquidados do mês precisam estar vinculados." className="disabled:opacity-40" onClick={() => void mutate('status', { status: 'COMPLETED' }, 'Conciliação do mês concluída.')}>Concluir mês</Button></div>}
       </div>
       {!closed && !data.summary.total && <Card className="shrink-0">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-semibold text-white">Importar extrato da conta</h2><p className="mt-1 text-sm text-gray-400">Nubank ou Bradesco · OFX e CSV · até 5 MB. A importação registra o extrato; os vínculos serão revisados depois.</p></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div>
+          <div className="flex items-center gap-2">
+            <h2 className="font-semibold text-white">Importar extrato da conta</h2>
+            <InfoModalButton modalTitle="Sobre a importação do extrato" buttonLabel="Ajuda sobre a importação do extrato">
+              <p>A importação registra o extrato para conferência. Os vínculos com os lançamentos financeiros serão revisados depois.</p>
+              <p>Nenhum lançamento financeiro é criado ou alterado ao iniciar a conciliação.</p>
+            </InfoModalButton>
+          </div>
+          <p className="mt-1 text-sm text-gray-400">Nubank ou Bradesco · OFX e CSV · até 5 MB.</p>
+        </div>
           <label className={`relative inline-flex cursor-pointer items-center gap-2 rounded border border-gray-600 px-3 py-2 ${busy ? 'opacity-40' : 'hover:border-blue-500'}`}><Upload size={16} /> Selecionar arquivo<input ref={fileRef} aria-label="Selecionar extrato OFX ou CSV" type="file" accept=".ofx,.csv" disabled={busy || !data.account.isActive} onChange={e => void readFile(e.target.files?.[0])} className="sr-only" /></label></div>
         {!data.account.isActive && <p className="mt-3 text-amber-300">Ative a conta para importar novos extratos.</p>}
         {upload && <div className="mt-5 space-y-3 border-t border-gray-700 pt-4">
@@ -308,9 +318,14 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
             : <Pagination page={page} total={data.total} size={50} disabled={busy || loading} onChange={value => { changeSelection([]); setPage(value); }} />}
         </Card>
         {!!selected.length && !closed && <Card className={`${panelClass} h-[max(42rem,calc(100dvh-23rem))] [&>div]:overflow-y-auto [&>div]:overscroll-contain`}>
-          <h2 className="mb-2 font-semibold">Sugestões de correspondência</h2>
+          <div className="mb-2 flex shrink-0 items-center gap-2">
+            <h2 className="font-semibold">Sugestões de correspondência</h2>
+            <InfoModalButton modalTitle="Sobre as sugestões de correspondência" buttonLabel="Ajuda sobre as sugestões de correspondência">
+              <p>{searchAsGroup ? 'A busca considera a soma dos movimentos selecionados.' : 'As regras buscam automaticamente cada movimento. Ao selecionar um único item de confiabilidade média baixa ou baixa, a IA pode ajudar na conferência.'}</p>
+              <p>A confiabilidade indica a força dos critérios, não uma garantia de acerto.</p>
+            </InfoModalButton>
+          </div>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm"><span>{selected.length} selecionado(s) · {bankCurrency(selectedTotal)}</span><Button variant="outline" disabled={busy} onClick={() => changeSelection([])}>Desmarcar todos</Button></div>
-          <p className="mb-3 text-sm text-gray-400">{searchAsGroup ? 'A busca considera a soma dos movimentos selecionados.' : 'As regras buscam automaticamente cada movimento. Ao selecionar um único item de confiabilidade média baixa ou baixa, a IA pode ajudar na conferência.'} A confiabilidade indica a força dos critérios, não uma garantia de acerto.</p>
           {selected.length > 1 && <label className="mb-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={searchAsGroup} disabled={busy || suggesting || !groupAllowed} onChange={e => { setSearchAsGroup(e.target.checked); setGroupResults([]); setSuggestionMessage(''); }} />Buscar pela soma dos selecionados (agrupar)</label>}
           {!groupAllowed && <p className="mb-3 text-sm text-gray-400">Para vincular manualmente ou criar um único lançamento, selecione até 20 movimentos de entrada ou até 20 de saída.</p>}
           <div className="mb-4 flex flex-wrap gap-2"><Button disabled={busy || suggesting || (searchAsGroup && !groupAllowed)} onClick={() => void suggest()}>{suggesting ? `Buscando… ${searchProgress}/${selected.length}` : 'Buscar correspondências'}</Button></div>

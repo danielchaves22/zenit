@@ -68,6 +68,19 @@ enum CreditCardInvoiceSettlementType {
   EXTERNAL
 }
 
+enum CreditCardReconciliationSessionStatus {
+  OPEN
+  COMPLETED
+}
+
+enum CreditCardReconciliationItemResolution {
+  PENDING
+  IMPORTED
+  LINKED_FIXED
+  CONFIRMED_EXISTING
+  IGNORED
+}
+
 enum RecurringFrequency {
   DAILY
   WEEKLY
@@ -444,6 +457,7 @@ model FinancialAccount {
   bankStatementImports  BankStatementImport[]
   bankStatementItems    BankStatementItem[]
   bankMatchCaches       BankMatchCache[]
+  creditCardReconciliationSessions CreditCardReconciliationSession[]
 
   @@unique([name, type, companyId])
   @@index([bankId])
@@ -530,6 +544,7 @@ model FinancialTransaction {
 
   // ✅ ÍNDICES EXISTENTES
   bankReconciliationLinks BankReconciliationTransaction[]
+  creditCardReconciliationLinks CreditCardReconciliationItemTransaction[]
   @@index([companyId])
   @@index([fromAccountId])
   @@index([toAccountId])
@@ -706,6 +721,89 @@ model BankMatchCache {
   expiresAt DateTime
 
   @@index([accountId, expiresAt])
+}
+
+// Credit-card statement files are durable evidence. The session stores the exact
+// bytes and an immutable item snapshot while the preview itself is re-evaluated
+// against current financial transactions whenever the session is loaded.
+model CreditCardReconciliationSession {
+  id             Int                                   @id @default(autoincrement())
+  accountId      Int
+  account        FinancialAccount                      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  referenceYear  Int
+  referenceMonth Int
+  sourceType     FinancialTransactionImportSourceType
+  fileHash       String                                @db.VarChar(64)
+  fileName       String                                @db.VarChar(255)
+  fileData       Bytes
+  statementSnapshot Json
+  parserVersion  Int                                   @default(1)
+  status         CreditCardReconciliationSessionStatus @default(OPEN)
+  revision       Int                                   @default(1)
+  activeMutationToken String?                          @db.Uuid
+  activeMutationAt DateTime?
+  createdBy      Int
+  updatedBy      Int
+  completedAt    DateTime?
+  completedBy    Int?
+  createdAt      DateTime                              @default(now())
+  updatedAt      DateTime                              @updatedAt
+  items          CreditCardReconciliationItem[]
+  events         CreditCardReconciliationEvent[]
+
+  @@unique([accountId, referenceYear, referenceMonth], name: "unique_credit_card_reconciliation_session")
+  @@index([accountId, status])
+  @@index([activeMutationAt])
+}
+
+model CreditCardReconciliationItem {
+  id             Int                                      @id @default(autoincrement())
+  sessionId      Int
+  session        CreditCardReconciliationSession          @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sourceItemId   String                                   @db.VarChar(64)
+  identityKey    String                                   @db.VarChar(64)
+  position       Int
+  snapshot       Json
+  resolution     CreditCardReconciliationItemResolution   @default(PENDING)
+  resolutionData Json?
+  resolvedAt     DateTime?
+  resolvedBy     Int?
+  createdAt      DateTime                                 @default(now())
+  updatedAt      DateTime                                 @updatedAt
+  transactions   CreditCardReconciliationItemTransaction[]
+  events         CreditCardReconciliationEvent[]
+
+  @@unique([sessionId, sourceItemId], name: "unique_credit_card_reconciliation_source_item")
+  @@unique([sessionId, identityKey], name: "unique_credit_card_reconciliation_item_identity")
+  @@index([sessionId, resolution])
+}
+
+model CreditCardReconciliationItemTransaction {
+  id                  Int                             @id @default(autoincrement())
+  itemId              Int
+  item                CreditCardReconciliationItem    @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  transactionId       Int?
+  transaction         FinancialTransaction?           @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  transactionSnapshot Json
+  createdAt           DateTime                        @default(now())
+
+  @@unique([itemId, transactionId], name: "unique_credit_card_reconciliation_item_transaction")
+  @@unique([transactionId], name: "unique_credit_card_reconciliation_transaction_claim")
+}
+
+model CreditCardReconciliationEvent {
+  id        Int                              @id @default(autoincrement())
+  sessionId Int
+  session   CreditCardReconciliationSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  itemId    Int?
+  item      CreditCardReconciliationItem?     @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  userId    Int?
+  action    String                           @db.VarChar(32)
+  details   Json?
+  createdAt DateTime                         @default(now())
+
+  @@index([sessionId, createdAt])
+  @@index([itemId])
 }
 
 model CreditCardInvoice {

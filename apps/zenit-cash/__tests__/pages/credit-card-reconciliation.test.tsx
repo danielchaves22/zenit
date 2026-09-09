@@ -318,6 +318,99 @@ const preview = {
   items: previewItems
 }
 
+const reconciliationSession = {
+  id: 301,
+  accountId: 1,
+  referenceYear: 2026,
+  referenceMonth: 9,
+  sourceType: 'NUBANK_CSV',
+  fileName: 'fatura.csv',
+  fileHash: 'sha256-fatura',
+  status: 'OPEN',
+  revision: 1,
+  createdBy: 11,
+  updatedBy: 11,
+  completedAt: null,
+  completedBy: null,
+  createdAt: '2026-09-09T12:00:00.000Z',
+  updatedAt: '2026-09-09T12:00:00.000Z'
+}
+
+type ItemResolution =
+  | 'PENDING'
+  | 'IMPORTED'
+  | 'LINKED_FIXED'
+  | 'CONFIRMED_EXISTING'
+  | 'IGNORED'
+
+function buildWorkspace({
+  sourcePreview = preview,
+  referenceMonth = sourcePreview.statement.referenceMonth,
+  revision = 1,
+  status = 'OPEN',
+  resolutions = {},
+  transactionIds = {}
+}: {
+  sourcePreview?: any
+  referenceMonth?: number
+  revision?: number
+  status?: 'OPEN' | 'COMPLETED'
+  resolutions?: Record<string, ItemResolution>
+  transactionIds?: Record<string, number[]>
+} = {}) {
+  const items = sourcePreview.items.map((item: any) => {
+    const resolution = resolutions[item.id] || 'PENDING'
+    const terminal = item.status === 'NOT_IMPORTABLE' || resolution !== 'PENDING'
+
+    return {
+      ...item,
+      progress: {
+        itemId: item.id,
+        identityKey: `identity:${item.id}`,
+        resolution,
+        resolutionData: null,
+        terminal,
+        transactionIds: transactionIds[item.id] || [],
+        resolvedAt: resolution === 'PENDING' ? null : '2026-09-09T13:00:00.000Z',
+        resolvedBy: resolution === 'PENDING' ? null : 11
+      }
+    }
+  })
+  const resolutionValues: ItemResolution[] = items.map(
+    (item: any) => item.progress.resolution
+  )
+  const count = (resolution: ItemResolution) =>
+    resolutionValues.filter((value: ItemResolution) => value === resolution).length
+
+  return {
+    session: {
+      ...reconciliationSession,
+      id: referenceMonth === 9 ? 301 : 302,
+      referenceMonth,
+      revision,
+      status,
+      completedAt: status === 'COMPLETED' ? '2026-09-09T14:00:00.000Z' : null,
+      completedBy: status === 'COMPLETED' ? 11 : null
+    },
+    preview: {
+      ...sourcePreview,
+      items
+    },
+    progress: {
+      totalCount: items.length,
+      resolvedCount: items.filter((item: any) => item.progress.terminal).length,
+      pendingCount: items.filter((item: any) => !item.progress.terminal).length,
+      importedCount: count('IMPORTED'),
+      linkedFixedCount: count('LINKED_FIXED'),
+      confirmedExistingCount: count('CONFIRMED_EXISTING'),
+      ignoredCount: count('IGNORED')
+    },
+    events: []
+  }
+}
+
+const openWorkspace = buildWorkspace()
+
 vi.mock('next/router', () => ({
   useRouter: () => ({
     isReady: true,
@@ -433,6 +526,7 @@ async function renderAnalyzedPage({
   }
 
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+  await waitFor(() => expect(fileInput).toBeEnabled())
   await user.upload(fileInput, new File(['date,description,amount'], 'fatura.csv', {
     type: 'text/csv'
   }))
@@ -508,12 +602,18 @@ describe('CreditCardReconciliationPage comparison views', () => {
         return Promise.resolve({ data: targetInvoiceDetail })
       }
 
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({
+          data: { session: null, preview: null, progress: null, events: [] }
+        })
+      }
+
       return Promise.reject(new Error(`Unexpected GET request: ${url}`))
     })
 
     vi.mocked(api.post).mockImplementation((url: string) => {
-      if (url === '/financial/credit-cards/1/reconciliation/preview') {
-        return Promise.resolve({ data: preview })
+      if (url === '/financial/credit-cards/1/reconciliation/sessions') {
+        return Promise.resolve({ data: openWorkspace })
       }
 
       return Promise.reject(new Error(`Unexpected POST request: ${url}`))
@@ -545,10 +645,10 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     vi.stubGlobal('FileReader', ControlledFileReader)
 
-    let resolvePreview: ((value: { data: typeof preview }) => void) | undefined
+    let resolvePreview: ((value: { data: typeof openWorkspace }) => void) | undefined
     let previewRequestBody: Record<string, unknown> | undefined
     vi.mocked(api.post).mockImplementation((url: string, body?: unknown) => {
-      if (url === '/financial/credit-cards/1/reconciliation/preview') {
+      if (url === '/financial/credit-cards/1/reconciliation/sessions') {
         previewRequestBody = body as Record<string, unknown>
         return new Promise((resolve) => {
           resolvePreview = resolve
@@ -562,6 +662,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     render(<CreditCardReconciliationPage />)
     await screen.findByText('Escolher arquivo')
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await waitFor(() => expect(fileInput).toBeEnabled())
     const oldFile = new File(['old'], 'fatura-antiga.csv', { type: 'text/csv' })
     const currentFile = new File(['current'], 'fatura-atual.csv', { type: 'text/csv' })
 
@@ -594,10 +695,129 @@ describe('CreditCardReconciliationPage comparison views', () => {
     })
 
     await act(async () => {
-      resolvePreview?.({ data: preview })
+      resolvePreview?.({ data: openWorkspace })
     })
     await screen.findByText('Mercado no arquivo')
     await waitFor(() => expect(fileInput).toBeEnabled())
+  })
+
+  it('invalida a sessao atrasada quando a referencia automatica passa a estar paga', async () => {
+    const now = new Date()
+    const currentReferenceYear = now.getFullYear()
+    const currentReferenceMonth = now.getMonth() + 1
+    const previousReference = new Date(currentReferenceYear, currentReferenceMonth - 2, 1)
+    const previousReferenceYear = previousReference.getFullYear()
+    const previousReferenceMonth = previousReference.getMonth() + 1
+    const currentKey = `${currentReferenceYear}-${String(currentReferenceMonth).padStart(2, '0')}`
+    const previousKey = `${previousReferenceYear}-${String(previousReferenceMonth).padStart(2, '0')}`
+    const cardWithCycle = {
+      ...card,
+      statementClosingDay: 31,
+      statementDueDay: 31
+    }
+    const paidCurrentInvoice = {
+      ...invoice,
+      id: 201,
+      referenceYear: currentReferenceYear,
+      referenceMonth: currentReferenceMonth,
+      status: 'PAID'
+    }
+    const fallbackInvoice = {
+      ...invoice,
+      id: 202,
+      referenceYear: previousReferenceYear,
+      referenceMonth: previousReferenceMonth,
+      status: 'CLOSED'
+    }
+    const stalePreview = {
+      ...preview,
+      statement: {
+        ...preview.statement,
+        fileName: 'arquivo-da-referencia-removida.csv',
+        referenceYear: currentReferenceYear,
+        referenceMonth: currentReferenceMonth
+      },
+      items: [
+        {
+          ...previewItems[0],
+          id: 'stale-paid-item',
+          sourceDescription: 'Item da referencia paga removida'
+        }
+      ],
+      summary: {
+        ...preview.summary,
+        totalItems: 1,
+        similarCount: 1,
+        pendingCount: 0,
+        importableCount: 1
+      }
+    }
+    const staleWorkspace = buildWorkspace({
+      sourcePreview: stalePreview,
+      referenceMonth: currentReferenceMonth
+    })
+    staleWorkspace.session.referenceYear = currentReferenceYear
+    staleWorkspace.session.fileName = 'arquivo-da-referencia-removida.csv'
+
+    let resolveInvoices!: (value: { data: Array<typeof paidCurrentInvoice> }) => void
+    const invoicesRequest = new Promise<{ data: Array<typeof paidCurrentInvoice> }>((resolve) => {
+      resolveInvoices = resolve
+    })
+    let resolveStaleSession!: (value: { data: typeof staleWorkspace }) => void
+    const staleSessionRequest = new Promise<{ data: typeof staleWorkspace }>((resolve) => {
+      resolveStaleSession = resolve
+    })
+    let resolveFallbackSession!: (value: {
+      data: { session: null; preview: null; progress: null; events: never[] }
+    }) => void
+    const fallbackSessionRequest = new Promise<{
+      data: { session: null; preview: null; progress: null; events: never[] }
+    }>((resolve) => {
+      resolveFallbackSession = resolve
+    })
+    const staleSessionUrl = `/financial/credit-cards/1/reconciliation/sessions/${currentReferenceYear}/${currentReferenceMonth}`
+    const fallbackSessionUrl = `/financial/credit-cards/1/reconciliation/sessions/${previousReferenceYear}/${previousReferenceMonth}`
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [cardWithCycle] })
+      if (url === '/financial/credit-cards/1/invoices') return invoicesRequest
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === staleSessionUrl) return staleSessionRequest
+      if (url === fallbackSessionUrl) return fallbackSessionRequest
+      if (url === '/financial/credit-card-invoices/202') {
+        return Promise.resolve({ data: { ...fallbackInvoice, transactions: [] } })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    render(<CreditCardReconciliationPage />)
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(staleSessionUrl))
+
+    await act(async () => {
+      resolveInvoices({ data: [paidCurrentInvoice, fallbackInvoice] })
+    })
+
+    const targetInvoiceSelect = screen.getByRole('combobox')
+    await waitFor(() => expect(targetInvoiceSelect).toHaveValue(previousKey))
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith(fallbackSessionUrl))
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    expect(fileInput).toBeDisabled()
+
+    await act(async () => {
+      resolveStaleSession({ data: staleWorkspace })
+    })
+    expect(screen.queryByText('Item da referencia paga removida')).not.toBeInTheDocument()
+    expect(fileInput).toBeDisabled()
+
+    await act(async () => {
+      resolveFallbackSession({
+        data: { session: null, preview: null, progress: null, events: [] }
+      })
+    })
+    await waitFor(() => expect(fileInput).toBeEnabled())
+    expect(targetInvoiceSelect).toHaveValue(previousKey)
+    expect(targetInvoiceSelect).not.toHaveValue(currentKey)
+    expect(screen.queryByText('Item da referencia paga removida')).not.toBeInTheDocument()
   })
 
   it('mantem o modo detalhado como padrao e preserva o foco ao alternar a visualizacao', async () => {
@@ -769,7 +989,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     const marketImportCheckbox = within(marketItem).getByRole('checkbox')
     const pendingImportCheckbox = within(pendingItem).getByRole('checkbox')
 
-    expect(within(zenitRegion).queryAllByRole('button')).toHaveLength(0)
+    expect(within(zenitRegion).getAllByRole('button')).toHaveLength(7)
     expect(marketImportCheckbox).not.toBeChecked()
     expect(pendingImportCheckbox).toBeChecked()
 
@@ -864,108 +1084,603 @@ describe('CreditCardReconciliationPage comparison views', () => {
     )
   })
 
-  it.each(['CREATED', 'SKIPPED_DUPLICATE'] as const)(
-    'atualiza as faturas e preserva a fatura alvo apos commit unitario %s',
-    async (resultStatus) => {
-      const invoiceListResponses = [
-        [invoice, previousInvoice],
-        [invoice, previousInvoice]
+  it('atualiza as faturas e preserva a referencia apos commit sem reenviar o arquivo', async () => {
+    const invoiceListResponses = [
+      [invoice, previousInvoice],
+      [invoice, previousInvoice]
+    ]
+    const previousPreview = {
+      ...preview,
+      statement: {
+        ...preview.statement,
+        dueDate: previousInvoice.dueDate,
+        referenceMonth: previousInvoice.referenceMonth
+      }
+    }
+    const previousWorkspace = buildWorkspace({
+      sourcePreview: previousPreview,
+      referenceMonth: 8
+    })
+    const importedWorkspace = {
+      ...buildWorkspace({
+        sourcePreview: previousPreview,
+        referenceMonth: 8,
+        revision: 2,
+        resolutions: { 'bank-pending': 'IMPORTED' }
+      }),
+      commitResult: {
+        statement: previousPreview.statement,
+        summary: {
+          selectedCount: 1,
+          createdCount: 1,
+          linkedFixedCount: 0,
+          skippedDuplicateCount: 0,
+          skippedNotImportableCount: 0,
+          failedCount: 0
+        },
+        results: [
+          {
+            itemId: 'bank-pending',
+            status: 'CREATED',
+            message: 'Lancamento criado',
+            createdTransactionIds: [901]
+          }
+        ]
+      }
+    }
+    let committed = false
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') {
+        return Promise.resolve({ data: invoiceListResponses.shift() || [invoice, previousInvoice] })
+      }
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-card-invoices/102') {
+        return Promise.resolve({ data: previousTargetInvoiceDetail })
+      }
+      if (url.startsWith('/financial/credit-cards/1/reconciliation/sessions/2026/')) {
+        if (url.endsWith('/8') && committed) {
+          return Promise.resolve({ data: importedWorkspace })
+        }
+        return Promise.resolve({
+          data: { session: null, preview: null, progress: null, events: [] }
+        })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards/1/reconciliation/sessions') {
+        return Promise.resolve({ data: previousWorkspace })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/302/commit') {
+        committed = true
+        return Promise.resolve({ data: importedWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    const user = await renderAnalyzedPage({ targetInvoiceKey: '2026-08' })
+    const targetInvoiceSelect = screen.getByRole('option', {
+      name: /08\/2026/
+    }).parentElement as HTMLSelectElement
+    const pendingCard = screen.getByText('Pendente no arquivo').closest('section')
+
+    await user.click(
+      within(pendingCard as HTMLElement).getByRole('button', { name: 'Importar este item' })
+    )
+
+    await waitFor(() => expect(targetInvoiceSelect).toHaveValue('2026-08'))
+    await waitFor(() => {
+      expect(
+        vi.mocked(api.get).mock.calls.filter(
+          ([url]) => url === '/financial/credit-cards/1/invoices'
+        )
+      ).toHaveLength(2)
+    })
+
+    const commitCall = vi.mocked(api.post).mock.calls.find(
+      ([url]) => url === '/financial/credit-cards/1/reconciliation/sessions/302/commit'
+    )
+    expect(commitCall?.[1]).toEqual({
+      expectedRevision: 1,
+      selectedItems: [
+        expect.objectContaining({ itemId: 'bank-pending', action: 'IMPORT' })
       ]
-      vi.mocked(api.get).mockImplementation((url: string) => {
-        if (url === '/financial/credit-cards') {
-          return Promise.resolve({ data: [card] })
-        }
+    })
+    expect(commitCall?.[1]).not.toHaveProperty('fileBase64')
+    expect(await screen.findByText('Importado')).toBeInTheDocument()
+    expect(addToastMock).toHaveBeenCalledWith('Lancamento criado', 'success')
+    expect(
+      vi.mocked(api.get).mock.calls.filter(
+        ([url]) => url === '/financial/credit-cards/1/reconciliation/sessions/2026/8'
+      )
+    ).toHaveLength(1)
+  })
 
-        if (url === '/financial/credit-cards/1/invoices') {
-          return Promise.resolve({
-            data: invoiceListResponses.shift() || [invoice, previousInvoice]
-          })
-        }
-
-        if (url === '/financial/categories') {
-          return Promise.resolve({ data: [category] })
-        }
-
-        if (url === '/financial/credit-card-invoices/101') {
-          return Promise.resolve({ data: targetInvoiceDetail })
-        }
-
-        if (url === '/financial/credit-card-invoices/102') {
-          return Promise.resolve({ data: previousTargetInvoiceDetail })
-        }
-
-        return Promise.reject(new Error(`Unexpected GET request: ${url}`))
-      })
-
-      const previousPreview = {
-        ...preview,
-        statement: {
-          ...preview.statement,
-          dueDate: previousInvoice.dueDate,
-          referenceMonth: previousInvoice.referenceMonth
+  it.each([
+    ['FAILED', 'Falha ao criar o lancamento'],
+    ['SKIPPED_DUPLICATE', 'Duplicidade encontrada; revise a correspondencia']
+  ] as const)(
+    'mantem item pendente e mostra o resultado real quando o commit retorna %s',
+    async (resultStatus, resultMessage) => {
+      const resultWorkspace = {
+        ...buildWorkspace({ revision: 2 }),
+        commitResult: {
+          statement: preview.statement,
+          summary: {
+            selectedCount: 1,
+            createdCount: 0,
+            linkedFixedCount: 0,
+            skippedDuplicateCount: resultStatus === 'SKIPPED_DUPLICATE' ? 1 : 0,
+            skippedNotImportableCount: 0,
+            failedCount: resultStatus === 'FAILED' ? 1 : 0
+          },
+          results: [
+            {
+              itemId: 'bank-pending',
+              status: resultStatus,
+              message: resultMessage,
+              createdTransactionIds: []
+            }
+          ]
         }
       }
       vi.mocked(api.post).mockImplementation((url: string) => {
-        if (url === '/financial/credit-cards/1/reconciliation/preview') {
-          return Promise.resolve({ data: previousPreview })
+        if (url === '/financial/credit-cards/1/reconciliation/sessions') {
+          return Promise.resolve({ data: openWorkspace })
         }
-
-        if (url === '/financial/credit-cards/1/reconciliation/commit') {
-          const created = resultStatus === 'CREATED'
-          return Promise.resolve({
-            data: {
-              summary: {
-                selectedCount: 1,
-                createdCount: created ? 1 : 0,
-                linkedFixedCount: 0,
-                skippedDuplicateCount: created ? 0 : 1,
-                skippedNotImportableCount: 0,
-                failedCount: 0
-              },
-              results: [
-                {
-                  itemId: 'bank-pending',
-                  status: resultStatus,
-                  message: created ? 'Lancamento criado' : 'Duplicidade encontrada',
-                  createdTransactionIds: created ? [901] : []
-                }
-              ]
-            }
-          })
+        if (url === '/financial/credit-cards/1/reconciliation/sessions/301/commit') {
+          return Promise.resolve({ data: resultWorkspace })
         }
-
         return Promise.reject(new Error(`Unexpected POST request: ${url}`))
       })
 
-      const user = await renderAnalyzedPage({ targetInvoiceKey: '2026-08' })
-      const targetInvoiceSelect = screen.getByRole('option', {
-        name: /08\/2026/
-      }).parentElement as HTMLSelectElement
-      const pendingDescription = screen.getByText('Pendente no arquivo')
-      const pendingCard = pendingDescription.closest('section')
-      expect(pendingCard).toBeTruthy()
-
+      const user = await renderAnalyzedPage()
+      const pendingCard = screen.getByText('Pendente no arquivo').closest('section') as HTMLElement
       await user.click(
-        within(pendingCard as HTMLElement).getByRole('button', { name: 'Importar este item' })
+        within(pendingCard).getByRole('button', { name: 'Importar este item' })
       )
 
-      await waitFor(() => {
-        expect(
-          vi.mocked(api.get).mock.calls.filter(
-            ([url]) => url === '/financial/credit-cards/1/invoices'
-          )
-        ).toHaveLength(2)
-      })
-      await waitFor(() => expect(targetInvoiceSelect).toHaveValue('2026-08'))
-
-      const commitCall = vi.mocked(api.post).mock.calls.find(
-        ([url]) => url === '/financial/credit-cards/1/reconciliation/commit'
+      await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(resultMessage, 'error'))
+      expect(addToastMock).not.toHaveBeenCalledWith(
+        expect.stringMatching(/importado|criado e andamento salvo/i),
+        'success'
       )
-      expect(commitCall?.[1]).toMatchObject({
-        targetReferenceYear: 2026,
-        targetReferenceMonth: 8,
-        selectedItems: [expect.objectContaining({ itemId: 'bank-pending' })]
+      const resultRegion = await screen.findByRole('region', {
+        name: 'Resultado do ultimo processamento'
       })
+      expect(within(resultRegion).getByText(resultMessage)).toBeInTheDocument()
+      expect(within(pendingCard).getByRole('checkbox')).toBeChecked()
     }
   )
+
+  it('trata retry de alias fixo ja mapeado como sucesso terminal idempotente', async () => {
+    const resultMessage = 'A alias desta fixa ja estava mapeada'
+    const linkedWorkspace = {
+      ...buildWorkspace({
+        revision: 2,
+        resolutions: { 'bank-fixed': 'LINKED_FIXED' }
+      }),
+      commitResult: {
+        statement: preview.statement,
+        summary: {
+          selectedCount: 1,
+          createdCount: 0,
+          linkedFixedCount: 0,
+          skippedDuplicateCount: 1,
+          skippedNotImportableCount: 0,
+          failedCount: 0
+        },
+        results: [
+          {
+            itemId: 'bank-fixed',
+            status: 'SKIPPED_DUPLICATE',
+            message: resultMessage,
+            createdTransactionIds: []
+          }
+        ]
+      }
+    }
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards/1/reconciliation/sessions') {
+        return Promise.resolve({ data: openWorkspace })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/301/commit') {
+        return Promise.resolve({ data: linkedWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    const user = await renderAnalyzedPage()
+    const fixedCard = screen.getByText('Netflix no arquivo').closest('section') as HTMLElement
+    await user.click(within(fixedCard).getByRole('button', { name: 'Vincular a fixa' }))
+
+    await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(resultMessage, 'success'))
+    expect(addToastMock).not.toHaveBeenCalledWith(resultMessage, 'error')
+    expect(await screen.findByText('Fixa vinculada')).toBeInTheDocument()
+    const resultRegion = screen.getByRole('region', {
+      name: 'Resultado do ultimo processamento'
+    })
+    expect(within(resultRegion).getByText('Fixa ja vinculada')).toBeInTheDocument()
+    expect(within(resultRegion).getByText(resultMessage)).toBeInTheDocument()
+  })
+
+  it('retoma automaticamente o andamento salvo da referencia sem novo upload', async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: openWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    render(<CreditCardReconciliationPage />)
+
+    expect(await screen.findByText('Mercado no arquivo')).toBeInTheDocument()
+    expect(screen.getByText('Em andamento')).toBeInTheDocument()
+    expect(screen.getByText('0/6')).toBeInTheDocument()
+    expect(screen.getByText('Arquivo salvo:').parentElement).toHaveTextContent('fatura.csv')
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('substitui arquivo conflitante somente com confirmacao e protecao de sessao e revisao', async () => {
+    const confirmMock = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirmMock)
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: openWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post)
+      .mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            code: 'SESSION_FILE_CONFLICT',
+            currentSessionId: 301,
+            currentRevision: 1
+          }
+        }
+      })
+      .mockResolvedValueOnce({ data: buildWorkspace({ revision: 2 }) })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Mercado no arquivo')
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await user.upload(fileInput, new File(['new'], 'nova-fatura.csv', { type: 'text/csv' }))
+    await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
+
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(api.post).mock.calls[1]?.[1]).toMatchObject({
+      replace: true,
+      expectedSessionId: 301,
+      expectedRevision: 1,
+      fileName: 'nova-fatura.csv'
+    })
+  })
+
+  it('permite selecionar novamente o mesmo arquivo depois de cancelar a substituicao', async () => {
+    const confirmMock = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    vi.stubGlobal('confirm', confirmMock)
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: openWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    const conflictError = {
+      response: {
+        status: 409,
+        data: {
+          code: 'SESSION_FILE_CONFLICT',
+          currentSessionId: 301,
+          currentRevision: 1
+        }
+      }
+    }
+    vi.mocked(api.post)
+      .mockRejectedValueOnce(conflictError)
+      .mockRejectedValueOnce(conflictError)
+      .mockResolvedValueOnce({ data: buildWorkspace({ revision: 2 }) })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Mercado no arquivo')
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await waitFor(() => expect(fileInput).toBeEnabled())
+    const replacementFile = new File(['new'], 'mesma-fatura.csv', { type: 'text/csv' })
+
+    await user.upload(fileInput, replacementFile)
+    await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(fileInput).toHaveValue(''))
+    expect(screen.getByRole('button', { name: 'Analisar fatura' })).toBeDisabled()
+
+    await user.upload(fileInput, replacementFile)
+    const analyzeButton = screen.getByRole('button', { name: 'Analisar fatura' })
+    await waitFor(() => expect(analyzeButton).toBeEnabled())
+    await user.click(analyzeButton)
+
+    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3))
+    expect(vi.mocked(api.post).mock.calls[2]?.[1]).toMatchObject({
+      replace: true,
+      expectedSessionId: 301,
+      expectedRevision: 1,
+      fileName: 'mesma-fatura.csv'
+    })
+  })
+
+  it('confirma a contraparte visual selecionada como checkpoint persistido', async () => {
+    const confirmedWorkspace = buildWorkspace({
+      revision: 2,
+      resolutions: { 'bank-pending': 'CONFIRMED_EXISTING' },
+      transactionIds: { 'bank-pending': [504] }
+    })
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: openWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url.endsWith('/sessions/301/items/bank-pending/decision')) {
+        return Promise.resolve({ data: confirmedWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Mercado no arquivo')
+    const pendingCard = screen.getByText('Pendente no arquivo').closest('section') as HTMLElement
+    const counterpartOption = within(pendingCard).getByRole('option', {
+      name: /Sem correspondencia no Zenit/
+    })
+    await user.selectOptions(
+      counterpartOption.parentElement as HTMLSelectElement,
+      'transaction:504'
+    )
+    await user.click(
+      within(pendingCard).getByRole('button', {
+        name: 'Confirmar correspondencia existente'
+      })
+    )
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/financial/credit-cards/1/reconciliation/sessions/301/items/bank-pending/decision',
+        {
+          expectedRevision: 1,
+          decision: 'CONFIRM_EXISTING',
+          transactionIds: [504]
+        }
+      )
+    })
+    expect(await screen.findByText('Existente confirmado')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+    const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
+    const zenitRegion = screen.getByRole('region', { name: 'Lançamentos da fatura no Zenit' })
+    await user.click(getFileSelectionButton(fileRegion, 'bank-market', /Mercado no arquivo/))
+    expect(within(getZenitItem(zenitRegion, 'transaction:504')).getByRole('button')).toBeDisabled()
+    expect(within(getZenitItem(zenitRegion, 'transaction:501')).getByRole('button')).toBeEnabled()
+  })
+
+  it('ignora e restaura item sem recoloca-lo na selecao de importacao', async () => {
+    const ignoredWorkspace = buildWorkspace({
+      revision: 2,
+      resolutions: { 'bank-pending': 'IGNORED' }
+    })
+    const restoredWorkspace = buildWorkspace({ revision: 3 })
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: openWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockImplementation((_url: string, body?: any) => {
+      return Promise.resolve({
+        data: body?.decision === 'IGNORE' ? ignoredWorkspace : restoredWorkspace
+      })
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    const pendingCard = (await screen.findByText('Pendente no arquivo')).closest('section') as HTMLElement
+    await user.click(within(pendingCard).getByRole('button', { name: 'Ignorar' }))
+
+    await screen.findByText('Ignorado')
+    const pendingCheckbox = within(pendingCard).getByRole('checkbox')
+    expect(pendingCheckbox).not.toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Selecionar pendentes' }))
+    expect(pendingCheckbox).not.toBeChecked()
+    await user.click(within(pendingCard).getByRole('button', { name: 'Voltar a conferir' }))
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenLastCalledWith(
+        '/financial/credit-cards/1/reconciliation/sessions/301/items/bank-pending/decision',
+        { expectedRevision: 2, decision: 'RESTORE' }
+      )
+    })
+  })
+
+  it('conclui, reabre e reinicia mantendo claro o que nao sera desfeito', async () => {
+    const allResolved = Object.fromEntries(
+      previewItems.map((item) => [item.id, 'IGNORED' as const])
+    )
+    const readyWorkspace = buildWorkspace({ resolutions: allResolved })
+    const completedWorkspace = buildWorkspace({
+      resolutions: allResolved,
+      revision: 2,
+      status: 'COMPLETED'
+    })
+    const reopenedWorkspace = buildWorkspace({ resolutions: allResolved, revision: 3 })
+    const confirmMock = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirmMock)
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: readyWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockImplementation((url: string, body?: any) => {
+      if (url.endsWith('/status')) {
+        return Promise.resolve({
+          data: body.status === 'COMPLETED' ? completedWorkspace : reopenedWorkspace
+        })
+      }
+      if (url.endsWith('/reset')) {
+        return Promise.resolve({ data: { reset: true, referenceYear: 2026, referenceMonth: 9 } })
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Mercado no arquivo')
+    await user.click(screen.getByRole('button', { name: 'Concluir' }))
+    expect(await screen.findByText('Concluida')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reabrir' }))
+    expect(await screen.findByText('Em andamento')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reiniciar' }))
+
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.stringMatching(/lancamentos financeiros.*vinculos a transacoes fixas/i)
+    )
+    await waitFor(() => {
+      expect(api.post).toHaveBeenLastCalledWith(
+        '/financial/credit-cards/1/reconciliation/sessions/301/reset',
+        { expectedRevision: 3, confirmed: true }
+      )
+    })
+    expect(screen.queryByText('Mercado no arquivo')).not.toBeInTheDocument()
+  })
+
+  it('trata nao importavel como informativo terminal sem oferecer decisao de ignorar', async () => {
+    const informationalPreview = {
+      ...preview,
+      summary: {
+        ...preview.summary,
+        pendingCount: 0,
+        notImportableCount: 1,
+        importableCount: preview.summary.importableCount - 1
+      },
+      items: preview.items.map((item) =>
+        item.id === 'bank-pending'
+          ? {
+              ...item,
+              status: 'NOT_IMPORTABLE',
+              reason: 'NON_IMPORTABLE',
+              canImport: false,
+              nonImportableReason: 'Linha informativa do arquivo'
+            }
+          : item
+      )
+    }
+    const informationalWorkspace = buildWorkspace({ sourcePreview: informationalPreview })
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: informationalWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    render(<CreditCardReconciliationPage />)
+    const informationalCard = (await screen.findByText('Pendente no arquivo')).closest(
+      'section'
+    ) as HTMLElement
+
+    expect(within(informationalCard).getByText('Nao importavel')).toBeInTheDocument()
+    expect(within(informationalCard).getByRole('checkbox')).toBeDisabled()
+    expect(within(informationalCard).queryByRole('button', { name: 'Ignorar' })).not.toBeInTheDocument()
+    expect(screen.getByText('1/6')).toBeInTheDocument()
+  })
+
+  it('lista vencidas pela data e exclui referencias pagas do seletor', async () => {
+    const secondOverdueInvoice = {
+      ...previousInvoice,
+      id: 103,
+      referenceMonth: 7,
+      dueDate: '2026-07-17T12:00:00.000Z',
+      status: 'CLOSED'
+    }
+    const paidInvoice = {
+      ...previousInvoice,
+      id: 104,
+      referenceMonth: 6,
+      dueDate: '2026-06-17T12:00:00.000Z',
+      status: 'PAID'
+    }
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') {
+        return Promise.resolve({
+          data: [invoice, previousInvoice, secondOverdueInvoice, paidInvoice]
+        })
+      }
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url.startsWith('/financial/credit-cards/1/reconciliation/sessions/')) {
+        return Promise.resolve({ data: { session: null, preview: null, progress: null, events: [] } })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Escolher arquivo')
+    expect(await screen.findByRole('option', { name: /08\/2026.*Vencida/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /07\/2026.*Vencida/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /06\/2026/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /Paga/ })).not.toBeInTheDocument()
+  })
 })

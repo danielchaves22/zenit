@@ -931,7 +931,7 @@ export default class FixedTransactionService {
     rangeStart: Date;
     rangeEnd: Date;
     accessibleAccountIds?: number[];
-  }): Promise<FixedTemplateWithRelations[]> {
+  }, existingTx?: Prisma.TransactionClient): Promise<FixedTemplateWithRelations[]> {
     const { companyId, rangeStart, rangeEnd, accessibleAccountIds } = params;
 
     const accountRestriction = accessibleAccountIds && accessibleAccountIds.length > 0
@@ -948,7 +948,7 @@ export default class FixedTransactionService {
           }
       : {};
 
-    return prisma.recurringTransaction.findMany({
+    return (existingTx ?? prisma).recurringTransaction.findMany({
       where: {
         companyId,
         isActive: true,

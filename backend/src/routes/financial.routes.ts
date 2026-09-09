@@ -40,8 +40,14 @@ import {
   reopenCreditCardInvoiceSchema
 } from '../validators/credit-card-invoice.validator';
 import {
+  commitCreditCardReconciliationSessionSchema,
   commitCreditCardReconciliationSchema,
-  previewCreditCardReconciliationSchema
+  decideCreditCardReconciliationItemSchema,
+  getCreditCardReconciliationSessionSchema,
+  previewCreditCardReconciliationSchema,
+  resetCreditCardReconciliationSessionSchema,
+  startCreditCardReconciliationSessionSchema,
+  updateCreditCardReconciliationSessionStatusSchema
 } from '../validators/credit-card-reconciliation.validator';
 import {
   createFixedTransactionSchema,
@@ -128,8 +134,14 @@ import {
   updateVariableProjectionPreference
 } from '../controllers/user-variable-projection-preference.controller';
 import {
+  commitCreditCardReconciliationSession,
   commitCreditCardReconciliation,
-  previewCreditCardReconciliation
+  decideCreditCardReconciliationItem,
+  getCreditCardReconciliationSession,
+  previewCreditCardReconciliation,
+  resetCreditCardReconciliationSession,
+  startCreditCardReconciliationSession,
+  updateCreditCardReconciliationSessionStatus
 } from '../controllers/credit-card-reconciliation.controller';
 import financialAccountMovementRoutes from './financial-account-movement-report.routes';
 import {
@@ -203,8 +215,14 @@ router.post(
   materializeCreditCardFixedTransactions
 );
 router.get('/credit-cards/:accountId/invoices/projected/:projectionKey', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(getProjectedCreditCardInvoiceSchema), getProjectedCreditCardInvoice);
-router.post('/credit-cards/:accountId/reconciliation/preview', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(previewCreditCardReconciliationSchema), previewCreditCardReconciliation);
-router.post('/credit-cards/:accountId/reconciliation/commit', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(commitCreditCardReconciliationSchema), commitCreditCardReconciliation);
+router.post('/credit-cards/:accountId/reconciliation/preview', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(previewCreditCardReconciliationSchema, { source: ['body', 'params'] }), previewCreditCardReconciliation);
+router.post('/credit-cards/:accountId/reconciliation/commit', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(commitCreditCardReconciliationSchema, { source: ['body', 'params'] }), commitCreditCardReconciliation);
+router.post('/credit-cards/:accountId/reconciliation/sessions', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(startCreditCardReconciliationSessionSchema, { source: ['body', 'params'] }), startCreditCardReconciliationSession);
+router.get('/credit-cards/:accountId/reconciliation/sessions/:referenceYear/:referenceMonth', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(getCreditCardReconciliationSessionSchema, { source: 'params' }), getCreditCardReconciliationSession);
+router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/commit', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(commitCreditCardReconciliationSessionSchema, { source: ['body', 'params'] }), commitCreditCardReconciliationSession);
+router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/items/:itemId/decision', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(decideCreditCardReconciliationItemSchema, { source: ['body', 'params'] }), decideCreditCardReconciliationItem);
+router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/status', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(updateCreditCardReconciliationSessionStatusSchema, { source: ['body', 'params'] }), updateCreditCardReconciliationSessionStatus);
+router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/reset', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(resetCreditCardReconciliationSessionSchema, { source: ['body', 'params'] }), resetCreditCardReconciliationSession);
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
 router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
 router.post('/credit-card-invoices/:id/reopen', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(reopenCreditCardInvoiceSchema), reopenCreditCardInvoice);

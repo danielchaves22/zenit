@@ -31,7 +31,7 @@ import {
   getCreditCardReconciliationSourceType
 } from '@/utils/banks';
 import { downloadCsvFile } from '@/utils/csv';
-import { getInvoiceDisplayStatusLabel } from '@/utils/creditCards';
+import { getInvoiceDisplayStatus, getInvoiceDisplayStatusLabel } from '@/utils/creditCards';
 import { formatCalendarDate } from '@/utils/financialStatus';
 
 type ReconciliationItemStatus = 'OK' | 'SIMILAR' | 'PENDING' | 'NOT_IMPORTABLE';
@@ -159,6 +159,21 @@ interface ReconciliationPreviewItem {
     reason: string | null;
   };
   matchedTransactions: ReconciliationMatchedTransaction[];
+  progress?: {
+    itemId: string;
+    identityKey: string;
+    resolution:
+      | 'PENDING'
+      | 'IMPORTED'
+      | 'LINKED_FIXED'
+      | 'CONFIRMED_EXISTING'
+      | 'IGNORED';
+    resolutionData?: Record<string, unknown> | null;
+    terminal?: boolean;
+    transactionIds?: number[];
+    resolvedAt?: string | null;
+    resolvedBy?: number | null;
+  } | null;
 }
 
 interface ReconciliationPreview {
@@ -188,6 +203,7 @@ interface ReconciliationPreview {
 }
 
 interface ReconciliationCommitResult {
+  statement: ReconciliationPreview['statement'];
   summary: {
     selectedCount: number;
     createdCount: number;
@@ -207,6 +223,55 @@ interface ReconciliationCommitResult {
     message: string;
     createdTransactionIds: number[];
   }>;
+}
+
+type ReconciliationSessionStatus = 'OPEN' | 'COMPLETED';
+type ReconciliationItemResolution = NonNullable<
+  ReconciliationPreviewItem['progress']
+>['resolution'];
+
+interface ReconciliationSession {
+  id: number;
+  accountId: number;
+  referenceYear: number;
+  referenceMonth: number;
+  sourceType: CreditCardReconciliationSourceType;
+  fileName: string;
+  fileHash: string;
+  parserVersion?: number | null;
+  status: ReconciliationSessionStatus;
+  revision: number;
+  createdBy: number;
+  updatedBy?: number | null;
+  completedAt?: string | null;
+  completedBy?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ReconciliationProgress {
+  totalCount: number;
+  resolvedCount: number;
+  pendingCount: number;
+  importedCount: number;
+  linkedFixedCount: number;
+  confirmedExistingCount: number;
+  ignoredCount: number;
+}
+
+interface ReconciliationWorkspace {
+  session: ReconciliationSession | null;
+  preview: ReconciliationPreview | null;
+  progress: ReconciliationProgress | null;
+  events: Array<{
+    id: number;
+    itemId?: string | null;
+    userId?: number | null;
+    action: string;
+    details?: Record<string, unknown> | null;
+    createdAt: string;
+  }>;
+  commitResult?: ReconciliationCommitResult | null;
 }
 
 type ReconciliationCommitAction = 'IMPORT' | 'LINK_FIXED';
@@ -315,6 +380,62 @@ function getStatusClasses(status: ReconciliationItemStatus) {
   }
 
   return 'border-gray-600 bg-gray-800 text-gray-300';
+}
+
+function getResolutionLabel(resolution: ReconciliationItemResolution) {
+  switch (resolution) {
+    case 'IMPORTED':
+      return 'Importado';
+    case 'LINKED_FIXED':
+      return 'Fixa vinculada';
+    case 'CONFIRMED_EXISTING':
+      return 'Existente confirmado';
+    case 'IGNORED':
+      return 'Ignorado';
+    default:
+      return 'A conferir';
+  }
+}
+
+function getCommitResultStatusLabel(
+  status: ReconciliationCommitResult['results'][number]['status']
+) {
+  switch (status) {
+    case 'CREATED':
+      return 'Criado';
+    case 'LINKED_FIXED':
+      return 'Vinculado a fixa';
+    case 'SKIPPED_DUPLICATE':
+      return 'Duplicidade encontrada';
+    case 'SKIPPED_NOT_IMPORTABLE':
+      return 'Nao importavel';
+    default:
+      return 'Falhou';
+  }
+}
+
+function isSuccessfulCommitStatus(
+  status: ReconciliationCommitResult['results'][number]['status']
+) {
+  return status === 'CREATED' || status === 'LINKED_FIXED';
+}
+
+function isSuccessfulCommitResult(
+  result: ReconciliationCommitResult['results'][number],
+  resultPreview: ReconciliationPreview | null
+) {
+  if (isSuccessfulCommitStatus(result.status)) {
+    return true;
+  }
+
+  return Boolean(
+    result.status === 'SKIPPED_DUPLICATE' &&
+      resultPreview?.items.some(
+        (item) =>
+          item.id === result.itemId &&
+          getItemResolution(item) === 'LINKED_FIXED'
+      )
+  );
 }
 
 function getReasonLabel(item: ReconciliationPreviewItem) {
@@ -469,8 +590,15 @@ function buildTargetInvoiceOptions(
   );
 
   const addOption = (option: TargetInvoiceOption) => {
+    if (option.status === 'PAID') {
+      return;
+    }
+
     if (!optionsByKey.has(option.key)) {
-      optionsByKey.set(option.key, option);
+      optionsByKey.set(option.key, {
+        ...option,
+        status: getInvoiceDisplayStatus(option.status, option.dueDate)
+      });
     }
   };
 
@@ -579,7 +707,56 @@ function getTargetInvoiceOptionLabel(option: TargetInvoiceOption) {
 }
 
 function isManuallyImportable(item: ReconciliationPreviewItem) {
-  return item.canImport && item.status !== 'OK';
+  return (
+    item.canImport &&
+    item.status !== 'OK' &&
+    (!item.progress || item.progress.resolution === 'PENDING')
+  );
+}
+
+function getItemResolution(item: ReconciliationPreviewItem): ReconciliationItemResolution {
+  if (item.progress?.resolution) {
+    return item.progress.resolution;
+  }
+
+  // Match classification is only a suggestion. Resolution advances exclusively
+  // when the persisted workspace contains an explicit human checkpoint.
+  return 'PENDING';
+}
+
+function canIgnoreItem(item: ReconciliationPreviewItem) {
+  return (
+    item.status !== 'NOT_IMPORTABLE' &&
+    item.canImport &&
+    getItemResolution(item) === 'PENDING'
+  );
+}
+
+function buildProgressFromPreview(preview: ReconciliationPreview | null): ReconciliationProgress | null {
+  if (!preview) {
+    return null;
+  }
+
+  const resolutions = preview.items.map(getItemResolution);
+  const count = (resolution: ReconciliationItemResolution) =>
+    resolutions.filter((value) => value === resolution).length;
+  const resolvedCount = preview.items.filter(
+    (item) =>
+      item.progress?.terminal ||
+      item.status === 'NOT_IMPORTABLE' ||
+      getItemResolution(item) !== 'PENDING'
+  ).length;
+  const pendingCount = resolutions.length - resolvedCount;
+
+  return {
+    totalCount: resolutions.length,
+    resolvedCount,
+    pendingCount,
+    importedCount: count('IMPORTED'),
+    linkedFixedCount: count('LINKED_FIXED'),
+    confirmedExistingCount: count('CONFIRMED_EXISTING'),
+    ignoredCount: count('IGNORED')
+  };
 }
 
 function getProjectedFixedMatches(item: ReconciliationPreviewItem) {
@@ -603,6 +780,7 @@ function getUniqueProjectedFixedTemplateId(item: ReconciliationPreviewItem) {
 function canLinkToFixed(item: ReconciliationPreviewItem) {
   return (
     item.canImport &&
+    getItemResolution(item) === 'PENDING' &&
     item.status === 'SIMILAR' &&
     item.kind === 'PURCHASE' &&
     !item.installmentNumber &&
@@ -789,15 +967,6 @@ function buildItemDrafts(items: ReconciliationPreviewItem[]) {
   }, {});
 }
 
-function parseAmountToCents(value: string | number) {
-  const numericValue = Number(value || 0);
-  return Number.isFinite(numericValue) ? Math.round(numericValue * 100) : 0;
-}
-
-function centsToDecimalString(value: number) {
-  return (value / 100).toFixed(2);
-}
-
 function hasAnyFileExtension(fileName: string, extensions: string[]) {
   const normalizedFileName = fileName.toLowerCase();
 
@@ -825,112 +994,6 @@ function isCsvStatementFile(file: File) {
     fileType === 'application/vnd.ms-excel' ||
     fileType === 'application/octet-stream'
   );
-}
-
-function buildPreviewSummary(items: ReconciliationPreviewItem[]): ReconciliationPreview['summary'] {
-  const okItems = items.filter((item) => item.status === 'OK');
-  const similarItems = items.filter((item) => item.status === 'SIMILAR');
-  const pendingItems = items.filter((item) => item.status === 'PENDING');
-  const notImportableItems = items.filter((item) => item.status === 'NOT_IMPORTABLE');
-  const importableItems = items.filter((item) => item.canImport);
-
-  const sumItems = (entries: ReconciliationPreviewItem[]) =>
-    centsToDecimalString(
-      entries.reduce((sum, entry) => sum + parseAmountToCents(entry.signedAmount), 0)
-    );
-
-  return {
-    totalItems: items.length,
-    okCount: okItems.length,
-    similarCount: similarItems.length,
-    pendingCount: pendingItems.length,
-    notImportableCount: notImportableItems.length,
-    importableCount: importableItems.length,
-    importableAmount: sumItems(importableItems),
-    okAmount: sumItems(okItems),
-    similarAmount: sumItems(similarItems),
-    pendingAmount: sumItems(pendingItems),
-    notImportableAmount: sumItems(notImportableItems)
-  };
-}
-
-function resolveCreatedTransactionId(
-  item: ReconciliationPreviewItem,
-  createdTransactionIds: number[]
-) {
-  if (createdTransactionIds.length === 0) {
-    return null;
-  }
-
-  if (item.installmentNumber && createdTransactionIds.length >= item.installmentNumber) {
-    return createdTransactionIds[item.installmentNumber - 1] ?? createdTransactionIds[0] ?? null;
-  }
-
-  return createdTransactionIds[0] ?? null;
-}
-
-function buildCreatedMatchTransaction(params: {
-  preview: ReconciliationPreview;
-  item: ReconciliationPreviewItem;
-  description: string;
-  createdTransactionIds: number[];
-}): ReconciliationMatchedTransaction[] {
-  const createdTransactionId = resolveCreatedTransactionId(
-    params.item,
-    params.createdTransactionIds
-  );
-
-  return [
-    {
-      matchKey: createdTransactionId
-        ? `transaction:${createdTransactionId}`
-        : `transaction:created:${params.item.id}`,
-      matchSource: 'TRANSACTION',
-      id: createdTransactionId,
-      fixedTemplateId: null,
-      occurrenceKey: null,
-      description: params.description,
-      amount: params.item.amount,
-      date: params.item.purchaseDate || params.preview.statement.dueDate,
-      status: 'COMPLETED',
-      installmentNumber: params.item.installmentNumber,
-      totalInstallments: params.item.totalInstallments,
-      purchaseGroupId: null,
-      invoiceReference: formatReference(
-        params.preview.statement.referenceMonth,
-        params.preview.statement.referenceYear
-      ),
-      invoiceStatus: null
-    }
-  ];
-}
-
-function buildFallbackMatchTransaction(params: {
-  preview: ReconciliationPreview;
-  item: ReconciliationPreviewItem;
-  description: string;
-}): ReconciliationMatchedTransaction[] {
-  return [
-    {
-      matchKey: `transaction:existing:${params.item.id}`,
-      matchSource: 'TRANSACTION',
-      id: null,
-      fixedTemplateId: null,
-      occurrenceKey: null,
-      description: params.description,
-      amount: params.item.amount,
-      date: params.item.purchaseDate || params.preview.statement.dueDate,
-      status: 'COMPLETED',
-      installmentNumber: params.item.installmentNumber,
-      totalInstallments: params.item.totalInstallments,
-      purchaseGroupId: null,
-      invoiceReference: formatReference(
-        params.preview.statement.referenceMonth,
-        params.preview.statement.referenceYear
-      ),
-      invoiceStatus: null
-    }
-  ];
 }
 
 function readFileAsDataUrl(file: File) {
@@ -967,22 +1030,32 @@ interface CreditCardReconciliationSideBySideProps {
   selectedItemSet: Set<string>;
   focusedPreviewItemId: string | null;
   highlightedSystemTransactionRowIds: Set<string>;
+  resolvedSystemTransactionIds: Set<number>;
   focusedMatchOutsideTargetCount: number;
   focusedMatchUnresolvedCount: number;
   focusedMatchHasIdentityCollision: boolean;
+  focusedSelectedSystemTransactionKey: string;
+  sessionStatus: ReconciliationSessionStatus;
   targetInvoiceDetailLoading: boolean;
   targetInvoiceDetailAvailable: boolean;
   targetInvoiceDetailError: string | null;
   selectedTargetInvoice: TargetInvoiceOption | null;
   commitLoading: boolean;
   committingItemIds: string[];
+  decisionItemIds: string[];
+  sessionActionLoading: boolean;
+  sessionTargetReady: boolean;
   mobilePanel: ReconciliationMobilePanel;
   itemRefs: React.MutableRefObject<Record<string, HTMLButtonElement | null>>;
   systemTransactionRefs: React.MutableRefObject<Record<string, HTMLLIElement | null>>;
   comparisonStatusRef: React.MutableRefObject<HTMLDivElement | null>;
   onMobilePanelChange: (panel: ReconciliationMobilePanel) => void;
   onSelectPreviewItem: (itemId: string) => void;
+  onSelectSystemTransaction: (itemId: string, transactionKey: string) => void;
   onToggleImportSelection: (itemId: string, checked: boolean) => void;
+  onConfirmExisting: (itemId: string, transactionId: number) => void;
+  onIgnore: (itemId: string) => void;
+  onRestore: (itemId: string) => void;
   onRetryTargetInvoiceDetail: () => void;
 }
 
@@ -995,22 +1068,32 @@ function CreditCardReconciliationSideBySide({
   selectedItemSet,
   focusedPreviewItemId,
   highlightedSystemTransactionRowIds,
+  resolvedSystemTransactionIds,
   focusedMatchOutsideTargetCount,
   focusedMatchUnresolvedCount,
   focusedMatchHasIdentityCollision,
+  focusedSelectedSystemTransactionKey,
+  sessionStatus,
   targetInvoiceDetailLoading,
   targetInvoiceDetailAvailable,
   targetInvoiceDetailError,
   selectedTargetInvoice,
   commitLoading,
   committingItemIds,
+  decisionItemIds,
+  sessionActionLoading,
+  sessionTargetReady,
   mobilePanel,
   itemRefs,
   systemTransactionRefs,
   comparisonStatusRef,
   onMobilePanelChange,
   onSelectPreviewItem,
+  onSelectSystemTransaction,
   onToggleImportSelection,
+  onConfirmExisting,
+  onIgnore,
+  onRestore,
   onRetryTargetInvoiceDetail
 }: CreditCardReconciliationSideBySideProps) {
   const focusedItem = focusedPreviewItemId
@@ -1019,6 +1102,19 @@ function CreditCardReconciliationSideBySide({
   const highlightedRows = rows.filter((row) =>
     highlightedSystemTransactionRowIds.has(row.rowId)
   );
+  const selectedSystemRow = focusedSelectedSystemTransactionKey
+    ? rows.find((row) => row.transactionKey === focusedSelectedSystemTransactionKey) || null
+    : null;
+  const focusedResolution = focusedItem ? getItemResolution(focusedItem) : null;
+  const focusedDecisionLoading = focusedItem
+    ? decisionItemIds.includes(focusedItem.id)
+    : false;
+  const mutationInFlight =
+    !sessionTargetReady ||
+    commitLoading ||
+    committingItemIds.length > 0 ||
+    decisionItemIds.length > 0 ||
+    sessionActionLoading;
   const focusedItemOutsideFilter = focusedItem
     ? !filteredItemIds.has(focusedItem.id)
     : false;
@@ -1156,7 +1252,11 @@ function CreditCardReconciliationSideBySide({
                           type="checkbox"
                           aria-label={`Selecionar item ${item.sequence} para importação`}
                           checked={selectedItemSet.has(item.id)}
-                          disabled={!selectable || commitLoading || itemCommitLoading}
+                          disabled={
+                            !selectable ||
+                            mutationInFlight ||
+                            sessionStatus === 'COMPLETED'
+                          }
                           onChange={(event) =>
                             onToggleImportSelection(item.id, event.target.checked)
                           }
@@ -1185,6 +1285,11 @@ function CreditCardReconciliationSideBySide({
                                 <span className="rounded-full border border-gray-700 px-2 py-0.5 text-[11px] text-gray-300">
                                   {getSectionLabel(item.sourceSection)}
                                 </span>
+                                {getItemResolution(item) !== 'PENDING' && (
+                                  <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-200">
+                                    {getResolutionLabel(getItemResolution(item))}
+                                  </span>
+                                )}
                                 {isOutsideFilter && (
                                   <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
                                     Fora do filtro atual
@@ -1313,6 +1418,43 @@ function CreditCardReconciliationSideBySide({
                   </span>
                 )}
             </div>
+            {focusedItem && sessionStatus === 'OPEN' && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {focusedResolution === 'PENDING' &&
+                  focusedItem.status !== 'NOT_IMPORTABLE' &&
+                  selectedSystemRow?.transaction.id && (
+                  <Button
+                    variant="accent"
+                    onClick={() =>
+                      onConfirmExisting(focusedItem.id, selectedSystemRow.transaction.id as number)
+                    }
+                    disabled={mutationInFlight || focusedDecisionLoading}
+                  >
+                    {focusedDecisionLoading
+                      ? 'Salvando...'
+                      : 'Confirmar correspondencia existente'}
+                  </Button>
+                )}
+                {canIgnoreItem(focusedItem) && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onIgnore(focusedItem.id)}
+                    disabled={mutationInFlight || focusedDecisionLoading}
+                  >
+                    {focusedDecisionLoading ? 'Salvando...' : 'Ignorar item'}
+                  </Button>
+                )}
+                {focusedResolution === 'IGNORED' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => onRestore(focusedItem.id)}
+                    disabled={mutationInFlight || focusedDecisionLoading}
+                  >
+                    {focusedDecisionLoading ? 'Salvando...' : 'Voltar a conferir'}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
 
           <div
@@ -1350,6 +1492,11 @@ function CreditCardReconciliationSideBySide({
                   const isExternalSettlement = Boolean(
                     transaction.isExternalCreditCardSettlement
                   );
+                  const isAlreadyClaimed = Boolean(
+                    transaction.id && resolvedSystemTransactionIds.has(transaction.id)
+                  );
+                  const canSelect =
+                    Boolean(focusedItem) && !isExternalSettlement && !isAlreadyClaimed;
 
                   return (
                     <li
@@ -1368,7 +1515,23 @@ function CreditCardReconciliationSideBySide({
                           : 'border-gray-700 bg-[#11161d]'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        aria-pressed={
+                          focusedSelectedSystemTransactionKey === transactionKey
+                        }
+                        disabled={
+                          !canSelect ||
+                          mutationInFlight ||
+                          sessionStatus === 'COMPLETED'
+                        }
+                        onClick={() => {
+                          if (focusedItem) {
+                            onSelectSystemTransaction(focusedItem.id, transactionKey);
+                          }
+                        }}
+                        className="flex w-full items-start justify-between gap-3 text-left disabled:cursor-default"
+                      >
                         <div className="min-w-0">
                           <div className="font-medium text-white">{transaction.description}</div>
                           <div className="mt-1 text-sm text-gray-400">
@@ -1387,6 +1550,11 @@ function CreditCardReconciliationSideBySide({
                             {isExternalSettlement && (
                               <span className="rounded-full border border-gray-600 bg-gray-500/10 px-2 py-0.5 text-[11px] font-medium text-gray-300">
                                 Liquidada fora do sistema
+                              </span>
+                            )}
+                            {isAlreadyClaimed && (
+                              <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-200">
+                                Ja utilizado nesta conciliacao
                               </span>
                             )}
                             {hasIdentityCollision && (
@@ -1412,7 +1580,7 @@ function CreditCardReconciliationSideBySide({
                         <div className="shrink-0 text-sm font-semibold text-white">
                           {formatCurrency(transaction.amount)}
                         </div>
-                      </div>
+                      </button>
                     </li>
                   );
                 })}
@@ -1442,6 +1610,14 @@ function CreditCardReconciliationPageInner() {
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileBase64, setFileBase64] = useState('');
+  const [session, setSession] = useState<ReconciliationSession | null>(null);
+  const [sessionProgress, setSessionProgress] = useState<ReconciliationProgress | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
+  const [sessionReadyTargetKey, setSessionReadyTargetKey] = useState('');
+  const [sessionActionLoading, setSessionActionLoading] = useState<
+    'START' | 'STATUS' | 'RESET' | null
+  >(null);
+  const [decisionItemIds, setDecisionItemIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<ReconciliationPreview | null>(null);
   const [commitResult, setCommitResult] = useState<ReconciliationCommitResult | null>(null);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
@@ -1466,9 +1642,11 @@ function CreditCardReconciliationPageInner() {
   const commitInFlightItemIdsRef = useRef<Set<string>>(new Set());
   const batchCommitInFlightRef = useRef(false);
   const targetInvoiceDetailRequestIdRef = useRef(0);
+  const sessionRequestIdRef = useRef(0);
   const selectedTargetInvoiceKeyRef = useRef(selectedTargetInvoiceKey);
   const fileReadRequestIdRef = useRef(0);
   const previewRequestIdRef = useRef(0);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const comparisonItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const systemTransactionRefs = useRef<Record<string, HTMLLIElement | null>>({});
   const comparisonStatusRef = useRef<HTMLDivElement | null>(null);
@@ -1570,6 +1748,21 @@ function CreditCardReconciliationPageInner() {
       });
       return keys;
     }, new Set<string>());
+  }, [preview]);
+  const resolvedSystemTransactionIds = useMemo(() => {
+    if (!preview) {
+      return new Set<number>();
+    }
+
+    return preview.items.reduce((transactionIds, item) => {
+      if (getItemResolution(item) !== 'PENDING') {
+        item.progress?.transactionIds?.forEach((transactionId) =>
+          transactionIds.add(transactionId)
+        );
+      }
+
+      return transactionIds;
+    }, new Set<number>());
   }, [preview]);
 
   const previewItemSystemMatchResolutions = useMemo(() => {
@@ -1688,8 +1881,32 @@ function CreditCardReconciliationPageInner() {
       }
     );
   }, [itemDrafts, selectedItems]);
+  const displayedSessionProgress = useMemo(
+    () => sessionProgress || buildProgressFromPreview(preview),
+    [preview, sessionProgress]
+  );
+  const sessionCompleted = session?.status === 'COMPLETED';
   const hasPendingSingleCommit = committingItemIds.length > 0;
-  const fileSelectionDisabled = previewLoading || commitLoading || hasPendingSingleCommit;
+  const hasDecisionInFlight = decisionItemIds.length > 0;
+  const selectedSessionTargetKey = selectedTargetInvoice
+    ? `${accountId}:${selectedTargetInvoice.key}`
+    : '';
+  const sessionTargetReady = Boolean(
+    selectedTargetInvoice &&
+      !sessionLoading &&
+      sessionReadyTargetKey === selectedSessionTargetKey
+  );
+  const fileSelectionDisabled =
+    invoicesLoading ||
+    !selectedTargetInvoice ||
+    previewLoading ||
+    commitLoading ||
+    hasPendingSingleCommit ||
+    hasDecisionInFlight ||
+    sessionLoading ||
+    !sessionTargetReady ||
+    sessionActionLoading !== null ||
+    sessionCompleted;
 
   useEffect(() => {
     if (!router.isReady || Number.isNaN(accountId)) {
@@ -1704,7 +1921,7 @@ function CreditCardReconciliationPageInner() {
   useEffect(() => {
     if (targetInvoiceOptions.length === 0) {
       if (selectedTargetInvoiceKey) {
-        setSelectedTargetInvoiceKey('');
+        transitionToTargetInvoice('');
       }
       return;
     }
@@ -1713,7 +1930,7 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
-    setSelectedTargetInvoiceKey(targetInvoiceOptions[0]!.key);
+    transitionToTargetInvoice(targetInvoiceOptions[0]!.key);
   }, [selectedTargetInvoiceKey, targetInvoiceOptions]);
 
   useEffect(() => {
@@ -1731,6 +1948,24 @@ function CreditCardReconciliationPageInner() {
 
     void fetchTargetInvoiceDetail(selectedTargetInvoice);
   }, [accountId, router.isReady, selectedTargetInvoice]);
+
+  useEffect(() => {
+    if (!router.isReady || Number.isNaN(accountId) || !selectedTargetInvoice) {
+      sessionRequestIdRef.current += 1;
+      fileReadRequestIdRef.current += 1;
+      setSession(null);
+      setSessionProgress(null);
+      setSessionLoading(false);
+      setSessionReadyTargetKey('');
+      setFileName(null);
+      setFileBase64('');
+      setPreview(null);
+      setCommitResult(null);
+      return;
+    }
+
+    void fetchReconciliationSession(selectedTargetInvoice);
+  }, [accountId, router.isReady, selectedTargetInvoiceKey]);
 
   useEffect(() => {
     setLocalSystemSelections({});
@@ -1929,10 +2164,133 @@ function CreditCardReconciliationPageInner() {
   function applyDefaultSelection(nextPreview: ReconciliationPreview) {
     setSelectedItemIds(
       nextPreview.items
-        .filter((item) => item.status === 'PENDING' && item.canImport)
+        .filter(
+          (item) =>
+            item.status === 'PENDING' &&
+            item.canImport &&
+            getItemResolution(item) === 'PENDING'
+        )
         .map((item) => item.id)
     );
     setItemDrafts(buildItemDrafts(nextPreview.items));
+  }
+
+  function applyWorkspace(
+    workspace: ReconciliationWorkspace,
+    options: { resetTransient?: boolean } = {}
+  ) {
+    const nextPreview = workspace.preview;
+
+    sessionRequestIdRef.current += 1;
+    fileReadRequestIdRef.current += 1;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setSessionLoading(false);
+    setSession(workspace.session);
+    setSessionProgress(workspace.progress);
+    setPreview(nextPreview);
+    setCommitResult(workspace.commitResult || null);
+    setFileName(workspace.session?.fileName || nextPreview?.statement.fileName || null);
+    setFileBase64('');
+
+    if (!nextPreview) {
+      setItemDrafts({});
+      setSelectedItemIds([]);
+      setFocusedPreviewItemId(null);
+      return;
+    }
+
+    if (options.resetTransient) {
+      setStatusFilter('ALL');
+      setFocusedPreviewItemId(null);
+      setReconciliationMobilePanel('FILE');
+      applyDefaultSelection(nextPreview);
+      return;
+    }
+
+    const nextItemsById = new Map(nextPreview.items.map((item) => [item.id, item]));
+    setItemDrafts((current) => ({
+      ...buildItemDrafts(nextPreview.items),
+      ...Object.fromEntries(
+        Object.entries(current).filter(([itemId]) => nextItemsById.has(itemId))
+      )
+    }));
+    setSelectedItemIds((current) =>
+      current.filter((itemId) => {
+        const item = nextItemsById.get(itemId);
+        return Boolean(item && isManuallyImportable(item));
+      })
+    );
+  }
+
+  function clearWorkspace() {
+    sessionRequestIdRef.current += 1;
+    fileReadRequestIdRef.current += 1;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setSessionLoading(false);
+    setSession(null);
+    setSessionProgress(null);
+    setPreview(null);
+    setCommitResult(null);
+    setFileName(null);
+    setFileBase64('');
+    setItemDrafts({});
+    setSelectedItemIds([]);
+    setFocusedPreviewItemId(null);
+    setLocalSystemSelections({});
+  }
+
+  async function fetchReconciliationSession(invoice: TargetInvoiceOption) {
+    const requestId = sessionRequestIdRef.current + 1;
+    sessionRequestIdRef.current = requestId;
+    setSessionLoading(true);
+    setSessionReadyTargetKey('');
+
+    try {
+      const response = await api.get(
+        `/financial/credit-cards/${accountId}/reconciliation/sessions/${invoice.referenceYear}/${invoice.referenceMonth}`
+      );
+
+      if (
+        sessionRequestIdRef.current !== requestId ||
+        selectedTargetInvoiceKeyRef.current !== invoice.key
+      ) {
+        return;
+      }
+
+      const workspace = response.data as ReconciliationWorkspace;
+      if (!workspace?.session || !workspace.preview) {
+        clearWorkspace();
+        setSessionReadyTargetKey(`${accountId}:${invoice.key}`);
+        return;
+      }
+
+      applyWorkspace(workspace, { resetTransient: true });
+      setSessionReadyTargetKey(`${accountId}:${invoice.key}`);
+    } catch (error: any) {
+      if (
+        sessionRequestIdRef.current !== requestId ||
+        selectedTargetInvoiceKeyRef.current !== invoice.key
+      ) {
+        return;
+      }
+
+      clearWorkspace();
+      if (error.response?.status !== 404 && error.response) {
+        addToast(
+          error.response?.data?.error || 'Erro ao carregar o andamento da conciliacao',
+          'error'
+        );
+      }
+      setSessionReadyTargetKey(`${accountId}:${invoice.key}`);
+    } finally {
+      if (sessionRequestIdRef.current === requestId) {
+        setSessionLoading(false);
+      }
+    }
   }
 
   async function runPreview() {
@@ -1951,22 +2309,63 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
+    if (!sessionTargetReady) {
+      addToast('Aguarde o carregamento do andamento desta referencia', 'error');
+      return;
+    }
+
     const requestId = previewRequestIdRef.current + 1;
     previewRequestIdRef.current = requestId;
     const targetInvoiceKey = selectedTargetInvoice.key;
     setPreviewLoading(true);
+    setSessionActionLoading('START');
 
     try {
-      const response = await api.post(
-        `/financial/credit-cards/${accountId}/reconciliation/preview`,
-        {
+      const start = (
+        replace = false,
+        expectedSessionId?: number,
+        expectedRevision?: number
+      ) =>
+        api.post(`/financial/credit-cards/${accountId}/reconciliation/sessions`, {
           sourceType: reconciliationSourceType,
           targetReferenceYear: selectedTargetInvoice.referenceYear,
           targetReferenceMonth: selectedTargetInvoice.referenceMonth,
           fileBase64,
-          fileName
+          fileName,
+          ...(replace ? { replace: true, expectedSessionId, expectedRevision } : {})
+        });
+
+      let response;
+      try {
+        response = await start();
+      } catch (error: any) {
+        if (error.response?.data?.code !== 'SESSION_FILE_CONFLICT') {
+          throw error;
         }
-      );
+
+        const replace = window.confirm(
+          'Ja existe uma conciliacao em andamento para esta referencia com outro arquivo. Deseja substituir o arquivo e reiniciar a conferencia?'
+        );
+        if (!replace) {
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+          setFileName(session?.fileName || null);
+          setFileBase64('');
+          return;
+        }
+
+        const expectedSessionId =
+          error.response?.data?.currentSessionId ?? session?.id;
+        const expectedRevision =
+          error.response?.data?.currentRevision ?? session?.revision;
+        if (!expectedSessionId || expectedRevision === undefined) {
+          await fetchReconciliationSession(selectedTargetInvoice);
+          throw new Error('A conciliacao mudou. Atualize a tela e tente novamente.');
+        }
+
+        response = await start(true, expectedSessionId, expectedRevision);
+      }
 
       if (
         previewRequestIdRef.current !== requestId ||
@@ -1975,12 +2374,7 @@ function CreditCardReconciliationPageInner() {
         return;
       }
 
-      setPreview(response.data);
-      setCommitResult(null);
-      setStatusFilter('ALL');
-      setFocusedPreviewItemId(null);
-      setReconciliationMobilePanel('FILE');
-      applyDefaultSelection(response.data);
+      applyWorkspace(response.data as ReconciliationWorkspace, { resetTransient: true });
       await fetchTargetInvoiceDetail(selectedTargetInvoice);
     } catch (error: any) {
       if (
@@ -1988,43 +2382,15 @@ function CreditCardReconciliationPageInner() {
         selectedTargetInvoiceKeyRef.current === targetInvoiceKey
       ) {
         addToast(error.response?.data?.error || 'Erro ao analisar fatura', 'error');
+        if (error.response?.data?.code === 'REVISION_CONFLICT') {
+          await fetchReconciliationSession(selectedTargetInvoice);
+        }
       }
     } finally {
       if (previewRequestIdRef.current === requestId) {
         setPreviewLoading(false);
+        setSessionActionLoading(null);
       }
-    }
-  }
-
-  async function refreshPreviewSilently() {
-    if (!fileBase64 || !fileName || !reconciliationSourceType || !selectedTargetInvoice) {
-      return;
-    }
-
-    const response = await api.post(
-      `/financial/credit-cards/${accountId}/reconciliation/preview`,
-      {
-        sourceType: reconciliationSourceType,
-        targetReferenceYear: selectedTargetInvoice.referenceYear,
-        targetReferenceMonth: selectedTargetInvoice.referenceMonth,
-        fileBase64,
-        fileName
-      }
-    );
-
-    setPreview(response.data);
-    applyDefaultSelection(response.data);
-  }
-
-  async function refreshPreviewAfterCommit() {
-    try {
-      await refreshPreviewSilently();
-    } catch (error: any) {
-      addToast(
-        error.response?.data?.error ||
-          'Os itens foram processados, mas não foi possível atualizar a conferência. Analise a fatura novamente.',
-        'error'
-      );
     }
   }
 
@@ -2050,12 +2416,14 @@ function CreditCardReconciliationPageInner() {
     setPreviewLoading(false);
     setFileName(nextFile.name);
     setFileBase64('');
-    setPreview(null);
     setCommitResult(null);
-    setItemDrafts({});
-    setSelectedItemIds([]);
-    setFocusedPreviewItemId(null);
-    setReconciliationMobilePanel('FILE');
+    if (!session) {
+      setPreview(null);
+      setItemDrafts({});
+      setSelectedItemIds([]);
+      setFocusedPreviewItemId(null);
+      setReconciliationMobilePanel('FILE');
+    }
 
     try {
       const nextFileBase64 = await readFileAsDataUrl(nextFile);
@@ -2067,29 +2435,48 @@ function CreditCardReconciliationPageInner() {
       setFileBase64(nextFileBase64);
     } catch (error: any) {
       if (fileReadRequestIdRef.current === fileReadRequestId) {
-        setFileName(null);
+        setFileName(session?.fileName || null);
         setFileBase64('');
         addToast(error.message || 'Erro ao ler arquivo', 'error');
       }
     }
   }
 
-  function handleTargetInvoiceChange(nextTargetInvoiceKey: string) {
+  function transitionToTargetInvoice(nextTargetInvoiceKey: string) {
     if (nextTargetInvoiceKey === selectedTargetInvoiceKey) {
       return;
     }
 
     selectedTargetInvoiceKeyRef.current = nextTargetInvoiceKey;
     previewRequestIdRef.current += 1;
+    sessionRequestIdRef.current += 1;
+    targetInvoiceDetailRequestIdRef.current += 1;
+    fileReadRequestIdRef.current += 1;
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     setPreviewLoading(false);
+    setSessionLoading(false);
+    setSessionReadyTargetKey('');
     setSelectedTargetInvoiceKey(nextTargetInvoiceKey);
+    setTargetInvoiceDetail(null);
+    setTargetInvoiceDetailLoading(false);
     setTargetInvoiceDetailError(null);
+    setSession(null);
+    setSessionProgress(null);
+    setFileName(null);
+    setFileBase64('');
     setPreview(null);
     setCommitResult(null);
     setItemDrafts({});
     setSelectedItemIds([]);
     setFocusedPreviewItemId(null);
+    setLocalSystemSelections({});
     setReconciliationMobilePanel('FILE');
+  }
+
+  function handleTargetInvoiceChange(nextTargetInvoiceKey: string) {
+    transitionToTargetInvoice(nextTargetInvoiceKey);
   }
 
   function handleLocalSystemSelectionChange(itemId: string, transactionKey: string) {
@@ -2150,7 +2537,7 @@ function CreditCardReconciliationPageInner() {
 
     setSelectedItemIds(
       preview.items
-        .filter((item) => item.status === 'PENDING' && item.canImport)
+        .filter((item) => item.status === 'PENDING' && isManuallyImportable(item))
         .map((item) => item.id)
     );
   }
@@ -2304,83 +2691,26 @@ function CreditCardReconciliationPageInner() {
     });
   }
 
-  function applySingleItemCommitLocally(
-    selectedItem: ReconciliationCommitSelection,
-    result: ReconciliationCommitResult['results'][number]
-  ) {
-    if (result.status === 'FAILED') {
-      return;
-    }
-
-    setPreview((currentPreview) => {
-      if (!currentPreview) {
-        return currentPreview;
-      }
-
-      const nextItems = currentPreview.items.map((item) => {
-        if (item.id !== selectedItem.itemId) {
-          return item;
-        }
-
-        if (result.status === 'SKIPPED_NOT_IMPORTABLE') {
-          return {
-            ...item,
-            status: 'NOT_IMPORTABLE' as const,
-            reason: 'NON_IMPORTABLE' as const,
-            canImport: false,
-            nonImportableReason: result.message
-          };
-        }
-
-        const projectedFixedMatches = getProjectedFixedMatches(item);
-        const isFixedLinkAction = selectedItem.action === 'LINK_FIXED';
-        const matchedTransactions = result.status === 'CREATED'
-          ? buildCreatedMatchTransaction({
-              preview: currentPreview,
-              item,
-              description: selectedItem.description || item.sourceDescription,
-              createdTransactionIds: result.createdTransactionIds
-            })
-          : projectedFixedMatches.length > 0
-            ? projectedFixedMatches
-            : isFixedLinkAction
-              ? item.matchedTransactions
-              : item.matchedTransactions.length > 0
-                ? item.matchedTransactions
-                : buildFallbackMatchTransaction({
-                    preview: currentPreview,
-                    item,
-                    description: selectedItem.description || item.sourceDescription
-                  });
-
-        return {
-          ...item,
-          status: 'OK' as const,
-          reason: (
-            result.status === 'LINKED_FIXED' || isFixedLinkAction ? 'MAPPED_FIXED' : 'EXACT'
-          ) as ReconciliationReason,
-          canImport: false,
-          nonImportableReason: null,
-          matchedTransactions
-        };
-      });
-
-      return {
-        ...currentPreview,
-        items: nextItems,
-        summary: buildPreviewSummary(nextItems)
-      };
-    });
-
-    setSelectedItemIds((current) => current.filter((itemId) => itemId !== selectedItem.itemId));
-  }
-
   async function commitItems(
     itemIds: string[],
     action: ReconciliationCommitAction = 'IMPORT'
   ) {
-    if (!preview || !fileBase64 || !fileName || !reconciliationSourceType || !selectedTargetInvoice) {
+    if (!preview || !session || !selectedTargetInvoice) {
       addToast('Analise a fatura antes de processar os itens', 'error');
+      return;
+    }
+
+    if (!sessionTargetReady) {
+      addToast('Aguarde o carregamento do andamento desta referencia', 'error');
+      return;
+    }
+
+    if (session.status === 'COMPLETED') {
+      addToast('Reabra a conciliacao antes de alterar os itens', 'error');
+      return;
+    }
+
+    if (sessionActionLoading !== null) {
       return;
     }
 
@@ -2417,73 +2747,71 @@ function CreditCardReconciliationPageInner() {
 
     try {
       const response = await api.post(
-        `/financial/credit-cards/${accountId}/reconciliation/commit`,
+        `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/commit`,
         {
-          sourceType: reconciliationSourceType,
-          targetReferenceYear: selectedTargetInvoice.referenceYear,
-          targetReferenceMonth: selectedTargetInvoice.referenceMonth,
-          fileBase64,
-          fileName,
+          expectedRevision: session.revision,
           selectedItems
         }
       );
 
-      setCommitResult(response.data);
+      const workspace = response.data as ReconciliationWorkspace;
+      const nextCommitResult = workspace.commitResult;
+      applyWorkspace(workspace);
 
-      if (isSingleItemCommit) {
-        const result = response.data.results[0];
+      if (!nextCommitResult) {
+        addToast(
+          'O processamento terminou sem o resultado detalhado. Atualize a conciliacao antes de continuar.',
+          'error'
+        );
+      } else if (isSingleItemCommit) {
+        const itemResult = nextCommitResult.results.find(
+          (result) => result.itemId === itemIds[0]
+        );
 
-        if (result) {
-          if (result.status === 'FAILED') {
-            addToast(
-              result.message ||
-                (action === 'LINK_FIXED'
-                  ? 'Erro ao vincular item a fixa recorrente'
-                  : 'Erro ao importar lancamento'),
-              'error'
-            );
-          } else {
-            addToast(
-              result.message ||
-                (action === 'LINK_FIXED'
-                  ? 'Descricao vinculada a fixa recorrente'
-                  : 'Lancamento processado na conciliacao'),
-              'success'
-            );
-            applySingleItemCommitLocally(selectedItems[0]!, result);
-            if (result.status === 'CREATED') {
-              await fetchInvoices({ preserveCurrentOnError: true });
-            } else if (result.status === 'SKIPPED_DUPLICATE') {
-              await Promise.all([
-                refreshPreviewAfterCommit(),
-                fetchInvoices({ preserveCurrentOnError: true })
-              ]);
-            }
-          }
+        if (!itemResult) {
+          addToast('O backend nao informou o resultado deste item', 'error');
+        } else {
+          addToast(
+            itemResult.message,
+            isSuccessfulCommitResult(itemResult, workspace.preview) ? 'success' : 'error'
+          );
         }
       } else {
-        addToast(
-          action === 'LINK_FIXED'
-            ? `${response.data.summary.linkedFixedCount} vinculo(s) com fixa recorrente salvo(s)`
-            : `${response.data.summary.createdCount} lancamento(s) criado(s) na conciliacao`,
-          'success'
-        );
-        await refreshPreviewAfterCommit();
-        if (
-          response.data.summary.createdCount > 0 ||
-          response.data.summary.skippedDuplicateCount > 0
-        ) {
-          await fetchInvoices({ preserveCurrentOnError: true });
+        const unresolvedDuplicateCount = nextCommitResult.results.filter(
+          (result) =>
+            result.status === 'SKIPPED_DUPLICATE' &&
+            !isSuccessfulCommitResult(result, workspace.preview)
+        ).length;
+        const idempotentFixedCount = nextCommitResult.results.filter(
+          (result) =>
+            result.status === 'SKIPPED_DUPLICATE' &&
+            isSuccessfulCommitResult(result, workspace.preview)
+        ).length;
+
+        if (nextCommitResult.summary.failedCount > 0 || unresolvedDuplicateCount > 0) {
+          addToast(
+            `Processamento concluido com ${nextCommitResult.summary.failedCount} falha(s) e ${unresolvedDuplicateCount} duplicidade(s) pendente(s). Revise o resultado por item.`,
+            'error'
+          );
+        } else {
+          addToast(
+            `${nextCommitResult.summary.createdCount} lancamento(s) criado(s) e ${nextCommitResult.summary.linkedFixedCount + idempotentFixedCount} vinculo(s) com fixa salvo(s).`,
+            'success'
+          );
         }
       }
+      await fetchInvoices({ preserveCurrentOnError: true });
     } catch (error: any) {
       addToast(
         error.response?.data?.error ||
           (action === 'LINK_FIXED'
             ? 'Erro ao vincular item a fixa recorrente'
-            : 'Erro ao importar lancamentos'),
+          : 'Erro ao importar lancamentos'),
         'error'
       );
+      if (error.response?.data?.code === 'REVISION_CONFLICT') {
+        await fetchReconciliationSession(selectedTargetInvoice);
+      }
     } finally {
       if (isSingleItemCommit) {
         itemIds.forEach((itemId) => commitInFlightItemIdsRef.current.delete(itemId));
@@ -2494,6 +2822,137 @@ function CreditCardReconciliationPageInner() {
         batchCommitInFlightRef.current = false;
         setCommitLoading(false);
       }
+    }
+  }
+
+  async function updateItemDecision(
+    itemId: string,
+    decision: 'CONFIRM_EXISTING' | 'IGNORE' | 'RESTORE',
+    transactionIds?: number[]
+  ) {
+    if (!session || !selectedTargetInvoice) {
+      addToast('Carregue uma conciliacao antes de salvar a decisao', 'error');
+      return;
+    }
+
+    if (!sessionTargetReady) {
+      addToast('Aguarde o carregamento do andamento desta referencia', 'error');
+      return;
+    }
+
+    if (session.status === 'COMPLETED') {
+      addToast('Reabra a conciliacao antes de alterar os itens', 'error');
+      return;
+    }
+
+    if (decision === 'CONFIRM_EXISTING' && !transactionIds?.length) {
+      addToast('Selecione um lancamento existente do Zenit para confirmar', 'error');
+      return;
+    }
+
+    if (
+      decisionItemIds.length > 0 ||
+      commitLoading ||
+      hasPendingSingleCommit ||
+      sessionActionLoading !== null
+    ) {
+      return;
+    }
+
+    setDecisionItemIds((current) => Array.from(new Set([...current, itemId])));
+    try {
+      const response = await api.post(
+        `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/items/${encodeURIComponent(itemId)}/decision`,
+        {
+          expectedRevision: session.revision,
+          decision,
+          ...(transactionIds?.length ? { transactionIds } : {})
+        }
+      );
+      applyWorkspace(response.data as ReconciliationWorkspace);
+
+      if (decision === 'CONFIRM_EXISTING') {
+        addToast('Correspondencia existente confirmada e andamento salvo', 'success');
+      } else if (decision === 'IGNORE') {
+        addToast('Item ignorado e andamento salvo', 'success');
+      } else {
+        addToast('Item voltou para conferencia', 'success');
+      }
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao salvar a decisao do item', 'error');
+      if (error.response?.data?.code === 'REVISION_CONFLICT') {
+        await fetchReconciliationSession(selectedTargetInvoice);
+      }
+    } finally {
+      setDecisionItemIds((current) => current.filter((currentId) => currentId !== itemId));
+    }
+  }
+
+  async function updateSessionStatus(status: ReconciliationSessionStatus) {
+    if (!session || !selectedTargetInvoice) {
+      return;
+    }
+
+    if (!sessionTargetReady) {
+      addToast('Aguarde o carregamento do andamento desta referencia', 'error');
+      return;
+    }
+
+    setSessionActionLoading('STATUS');
+    try {
+      const response = await api.post(
+        `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/status`,
+        { expectedRevision: session.revision, status }
+      );
+      applyWorkspace(response.data as ReconciliationWorkspace);
+      addToast(
+        status === 'COMPLETED'
+          ? 'Conciliacao concluida com sucesso'
+          : 'Conciliacao reaberta para ajustes',
+        'success'
+      );
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao atualizar a conciliacao', 'error');
+      if (error.response?.data?.code === 'REVISION_CONFLICT') {
+        await fetchReconciliationSession(selectedTargetInvoice);
+      }
+    } finally {
+      setSessionActionLoading(null);
+    }
+  }
+
+  async function resetSession() {
+    if (!session || !selectedTargetInvoice) {
+      return;
+    }
+
+    if (!sessionTargetReady) {
+      addToast('Aguarde o carregamento do andamento desta referencia', 'error');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Reiniciar esta conciliacao? O arquivo salvo e os checkpoints de andamento serao removidos. Os lancamentos financeiros ja criados e os vinculos a transacoes fixas ja efetivados serao preservados.'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setSessionActionLoading('RESET');
+    try {
+      await api.post(
+        `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/reset`,
+        { expectedRevision: session.revision, confirmed: true }
+      );
+      clearWorkspace();
+      addToast('Conciliacao reiniciada', 'success');
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao reiniciar a conciliacao', 'error');
+      if (error.response?.data?.code === 'REVISION_CONFLICT') {
+        await fetchReconciliationSession(selectedTargetInvoice);
+      }
+    } finally {
+      setSessionActionLoading(null);
     }
   }
 
@@ -2592,6 +3051,7 @@ function CreditCardReconciliationPageInner() {
                       <Upload size={14} />
                       Escolher arquivo
                       <input
+                        ref={fileInputRef}
                         type="file"
                         accept={sourceConfig.accept}
                         onChange={handleFileChange}
@@ -2627,9 +3087,12 @@ function CreditCardReconciliationPageInner() {
                       onChange={(event) => handleTargetInvoiceChange(event.target.value)}
                       disabled={
                         invoicesLoading ||
+                        sessionLoading ||
                         previewLoading ||
                         commitLoading ||
                         hasPendingSingleCommit ||
+                        hasDecisionInFlight ||
+                        sessionActionLoading !== null ||
                         targetInvoiceOptions.length === 0
                       }
                       className="w-full rounded border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-50"
@@ -2655,9 +3118,13 @@ function CreditCardReconciliationPageInner() {
                     onClick={() => void runPreview()}
                     disabled={
                       !fileBase64 ||
+                      !sessionTargetReady ||
                       previewLoading ||
                       commitLoading ||
                       hasPendingSingleCommit ||
+                      hasDecisionInFlight ||
+                      sessionLoading ||
+                      sessionCompleted ||
                       invoicesLoading ||
                       !selectedTargetInvoice
                     }
@@ -2694,6 +3161,122 @@ function CreditCardReconciliationPageInner() {
               </div>
             </div>
           </Card>
+
+          {sessionLoading && selectedTargetInvoice && (
+            <Card>
+              <div className="flex items-center gap-3 text-sm text-gray-300">
+                <RefreshCw size={16} className="animate-spin text-accent" />
+                Carregando o andamento salvo desta referencia...
+              </div>
+            </Card>
+          )}
+
+          {session && displayedSessionProgress && (
+            <Card>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                        session.status === 'COMPLETED'
+                          ? 'border-green-500/40 bg-green-500/10 text-green-200'
+                          : 'border-blue-500/40 bg-blue-500/10 text-blue-200'
+                      }`}
+                    >
+                      {session.status === 'COMPLETED' ? 'Concluida' : 'Em andamento'}
+                    </span>
+                    <span className="text-sm text-gray-400">
+                      Arquivo salvo: <span className="text-gray-200">{session.fileName}</span>
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 xl:grid-cols-6">
+                    <div>
+                      <span className="block text-gray-500">Resolvidos</span>
+                      <span className="font-semibold text-white">
+                        {displayedSessionProgress.resolvedCount}/{displayedSessionProgress.totalCount}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-gray-500">Pendentes</span>
+                      <span className="font-semibold text-blue-200">
+                        {displayedSessionProgress.pendingCount}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-gray-500">Importados</span>
+                      <span className="font-semibold text-green-200">
+                        {displayedSessionProgress.importedCount}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-gray-500">Fixas</span>
+                      <span className="font-semibold text-sky-200">
+                        {displayedSessionProgress.linkedFixedCount}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-gray-500">Existentes</span>
+                      <span className="font-semibold text-green-200">
+                        {displayedSessionProgress.confirmedExistingCount}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-gray-500">Ignorados</span>
+                      <span className="font-semibold text-gray-300">
+                        {displayedSessionProgress.ignoredCount}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {session.status === 'COMPLETED' ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => void updateSessionStatus('OPEN')}
+                      disabled={sessionActionLoading !== null || !sessionTargetReady}
+                    >
+                      {sessionActionLoading === 'STATUS' ? 'Reabrindo...' : 'Reabrir'}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="accent"
+                      onClick={() => void updateSessionStatus('COMPLETED')}
+                      disabled={
+                        sessionActionLoading !== null ||
+                        !sessionTargetReady ||
+                        commitLoading ||
+                        hasPendingSingleCommit ||
+                        hasDecisionInFlight ||
+                        displayedSessionProgress.pendingCount > 0
+                      }
+                    >
+                      {sessionActionLoading === 'STATUS' ? 'Concluindo...' : 'Concluir'}
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => void resetSession()}
+                    disabled={
+                      session.status === 'COMPLETED' ||
+                      !sessionTargetReady ||
+                      sessionActionLoading !== null ||
+                      commitLoading ||
+                      hasPendingSingleCommit ||
+                      hasDecisionInFlight
+                    }
+                  >
+                    {sessionActionLoading === 'RESET' ? 'Reiniciando...' : 'Reiniciar'}
+                  </Button>
+                </div>
+              </div>
+              {session.status === 'OPEN' && displayedSessionProgress.pendingCount > 0 && (
+                <p className="mt-3 text-sm text-gray-400">
+                  Resolva ou ignore os itens pendentes antes de concluir a conciliacao.
+                </p>
+              )}
+            </Card>
+          )}
 
           {preview && (
             <>
@@ -2736,7 +3319,7 @@ function CreditCardReconciliationPageInner() {
                 </Card>
                 <Card>
                   <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                    Ja conciliados
+                    Correspondencias encontradas
                   </div>
                   <div className="mt-2 text-xl font-semibold text-green-200">
                     {preview.summary.okCount}
@@ -2806,21 +3389,21 @@ function CreditCardReconciliationPageInner() {
                     <Button
                       variant="outline"
                       onClick={handleSelectPending}
-                      disabled={commitLoading}
+                      disabled={commitLoading || hasDecisionInFlight || sessionCompleted}
                     >
                       Selecionar pendentes
                     </Button>
                     <Button
                       variant="outline"
                       onClick={handleSelectVisibleImportable}
-                      disabled={commitLoading}
+                      disabled={commitLoading || hasDecisionInFlight || sessionCompleted}
                     >
                       Selecionar visiveis
                     </Button>
                     <Button
                       variant="outline"
                       onClick={() => setSelectedItemIds([])}
-                      disabled={commitLoading}
+                      disabled={commitLoading || hasDecisionInFlight || sessionCompleted}
                     >
                       Limpar selecao
                     </Button>
@@ -2828,8 +3411,12 @@ function CreditCardReconciliationPageInner() {
                       variant="accent"
                       onClick={() => void commitItems(selectedItemIds)}
                       disabled={
+                        !sessionTargetReady ||
                         commitLoading ||
                         hasPendingSingleCommit ||
+                        hasDecisionInFlight ||
+                        sessionActionLoading !== null ||
+                        sessionCompleted ||
                         categoriesLoading ||
                         selectedItemIds.length === 0 ||
                         selectedDraftIssues.missingDescriptionCount > 0 ||
@@ -2891,22 +3478,38 @@ function CreditCardReconciliationPageInner() {
                   selectedItemSet={selectedItemSet}
                   focusedPreviewItemId={focusedPreviewItemId}
                   highlightedSystemTransactionRowIds={focusedMatchResolution.rowIds}
+                  resolvedSystemTransactionIds={resolvedSystemTransactionIds}
                   focusedMatchOutsideTargetCount={focusedMatchResolution.outsideTargetCount}
                   focusedMatchUnresolvedCount={focusedMatchResolution.unresolvedCount}
                   focusedMatchHasIdentityCollision={focusedMatchResolution.hasIdentityCollision}
+                  focusedSelectedSystemTransactionKey={
+                    focusedPreviewItemId
+                      ? localSystemSelections[focusedPreviewItemId] || ''
+                      : ''
+                  }
+                  sessionStatus={session?.status || 'OPEN'}
                   targetInvoiceDetailLoading={targetInvoiceDetailLoading}
                   targetInvoiceDetailAvailable={Boolean(targetInvoiceDetail)}
                   targetInvoiceDetailError={targetInvoiceDetailError}
                   selectedTargetInvoice={selectedTargetInvoice}
                   commitLoading={commitLoading}
                   committingItemIds={committingItemIds}
+                  decisionItemIds={decisionItemIds}
+                  sessionActionLoading={sessionActionLoading !== null}
+                  sessionTargetReady={sessionTargetReady}
                   mobilePanel={reconciliationMobilePanel}
                   itemRefs={comparisonItemRefs}
                   systemTransactionRefs={systemTransactionRefs}
                   comparisonStatusRef={comparisonStatusRef}
                   onMobilePanelChange={setReconciliationMobilePanel}
                   onSelectPreviewItem={handlePreviewItemFocus}
+                  onSelectSystemTransaction={handleLocalSystemSelectionChange}
                   onToggleImportSelection={handleToggleSelection}
+                  onConfirmExisting={(itemId, transactionId) =>
+                    void updateItemDecision(itemId, 'CONFIRM_EXISTING', [transactionId])
+                  }
+                  onIgnore={(itemId) => void updateItemDecision(itemId, 'IGNORE')}
+                  onRestore={(itemId) => void updateItemDecision(itemId, 'RESTORE')}
                   onRetryTargetInvoiceDetail={() => {
                     if (selectedTargetInvoice) {
                       void fetchTargetInvoiceDetail(selectedTargetInvoice);
@@ -2918,11 +3521,13 @@ function CreditCardReconciliationPageInner() {
                 {filteredItems.map((item) => {
                   const selectable = isManuallyImportable(item);
                   const linkableToFixed = canLinkToFixed(item);
+                  const resolution = getItemResolution(item);
                   const draft = getItemDraft(item);
                   const suggestionSourceLabel = getSuggestionSourceLabel(
                     item.categorySuggestion.source
                   );
                   const itemCommitLoading = committingItemIds.includes(item.id);
+                  const itemDecisionLoading = decisionItemIds.includes(item.id);
                   const missingDescription = selectable && !draft.description.trim();
                   const missingCategory = selectable && !draft.categoryId;
                   const localSelectionKey = localSystemSelections[item.id] || '';
@@ -2934,15 +3539,23 @@ function CreditCardReconciliationPageInner() {
                       .filter(([entryItemId]) => entryItemId !== item.id)
                       .map(([, transactionKey]) => transactionKey)
                   );
-                  const availableSystemTransactions =
-                    item.matchedTransactions.length > 0
-                      ? []
-                      : targetInvoiceTransactions.filter((transaction) => {
+                  const itemMatchedTransactionAliases = new Set(
+                    item.matchedTransactions.flatMap(getMatchedTransactionSystemAliases)
+                  );
+                  const availableSystemTransactions = targetInvoiceTransactions.filter(
+                    (transaction) => {
                           if (transaction.isExternalCreditCardSettlement) {
                             return false;
                           }
 
                           const transactionKey = getSystemInvoiceTransactionKey(transaction);
+
+                          if (
+                            transaction.id &&
+                            resolvedSystemTransactionIds.has(transaction.id)
+                          ) {
+                            return false;
+                          }
 
                           if (transactionKey === localSelectionKey) {
                             return true;
@@ -2951,13 +3564,17 @@ function CreditCardReconciliationPageInner() {
                           if (
                             getSystemInvoiceTransactionAliases(transaction).some((alias) =>
                               previewMatchedTransactionKeys.has(alias)
+                            ) &&
+                            !getSystemInvoiceTransactionAliases(transaction).some((alias) =>
+                              itemMatchedTransactionAliases.has(alias)
                             )
                           ) {
                             return false;
                           }
 
                           return !otherLocalSelectionKeys.has(transactionKey);
-                        });
+                    }
+                  );
                   const bankDateLabel = item.purchaseDate
                     ? formatCalendarDate(item.purchaseDate)
                     : `Referencia ${formatReference(
@@ -2977,7 +3594,13 @@ function CreditCardReconciliationPageInner() {
                               <input
                                 type="checkbox"
                                 checked={selectedItemSet.has(item.id)}
-                                disabled={!selectable || commitLoading || itemCommitLoading}
+                                disabled={
+                                  !selectable ||
+                                  commitLoading ||
+                                  itemCommitLoading ||
+                                  hasDecisionInFlight ||
+                                  sessionCompleted
+                                }
                                 onChange={(event) =>
                                   handleToggleSelection(item.id, event.target.checked)
                                 }
@@ -2996,6 +3619,11 @@ function CreditCardReconciliationPageInner() {
                                   <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
                                     {getSectionLabel(item.sourceSection)}
                                   </span>
+                                  {resolution !== 'PENDING' && (
+                                    <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-xs text-violet-200">
+                                      {getResolutionLabel(resolution)}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="mt-2 text-base font-semibold text-white">
                                   {item.sourceDescription}
@@ -3021,8 +3649,12 @@ function CreditCardReconciliationPageInner() {
                                     variant="outline"
                                     onClick={() => void commitItems([item.id], 'LINK_FIXED')}
                                     disabled={
+                                      !sessionTargetReady ||
                                       commitLoading ||
                                       hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
                                       itemCommitLoading
                                     }
                                     className="flex items-center gap-2 text-sm"
@@ -3038,8 +3670,12 @@ function CreditCardReconciliationPageInner() {
                                     variant="outline"
                                     onClick={() => void commitItems([item.id])}
                                     disabled={
+                                      !sessionTargetReady ||
                                       commitLoading ||
                                       hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
                                       categoriesLoading ||
                                       itemCommitLoading ||
                                       missingDescription ||
@@ -3051,6 +3687,43 @@ function CreditCardReconciliationPageInner() {
                                       <RefreshCw size={14} className="animate-spin" />
                                     )}
                                     {itemCommitLoading ? 'Importando...' : 'Importar este item'}
+                                  </Button>
+                                )}
+                                {canIgnoreItem(item) && (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => void updateItemDecision(item.id, 'IGNORE')}
+                                    disabled={
+                                      !sessionTargetReady ||
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
+                                      itemCommitLoading ||
+                                      itemDecisionLoading
+                                    }
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    {itemDecisionLoading ? 'Salvando...' : 'Ignorar'}
+                                  </Button>
+                                )}
+                                {resolution === 'IGNORED' && (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => void updateItemDecision(item.id, 'RESTORE')}
+                                    disabled={
+                                      !sessionTargetReady ||
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
+                                      itemDecisionLoading
+                                    }
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    {itemDecisionLoading ? 'Salvando...' : 'Voltar a conferir'}
                                   </Button>
                                 )}
                               </div>
@@ -3316,7 +3989,7 @@ function CreditCardReconciliationPageInner() {
                               </div>
                             )}
 
-                            {item.matchedTransactions.length === 0 &&
+                            {resolution === 'PENDING' &&
                               item.status !== 'NOT_IMPORTABLE' && (
                               <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
                                 <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
@@ -3328,6 +4001,7 @@ function CreditCardReconciliationPageInner() {
                                     handleLocalSystemSelectionChange(item.id, event.target.value)
                                   }
                                   disabled={
+                                    !sessionTargetReady ||
                                     targetInvoiceDetailLoading ||
                                     (!selectedSystemTransaction &&
                                       availableSystemTransactions.length === 0)
@@ -3361,9 +4035,34 @@ function CreditCardReconciliationPageInner() {
                                     );
                                   })}
                                 </select>
+                                {selectedSystemTransaction?.id && (
+                                  <Button
+                                    variant="accent"
+                                    onClick={() =>
+                                      void updateItemDecision(item.id, 'CONFIRM_EXISTING', [
+                                        selectedSystemTransaction.id as number
+                                      ])
+                                    }
+                                    disabled={
+                                      !sessionTargetReady ||
+                                      targetInvoiceDetailLoading ||
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
+                                      itemDecisionLoading
+                                    }
+                                    className="mt-3"
+                                  >
+                                    {itemDecisionLoading
+                                      ? 'Salvando...'
+                                      : 'Confirmar correspondencia existente'}
+                                  </Button>
+                                )}
                                 <div className="mt-2 text-sm text-gray-400">
-                                  Comparacao visual apenas. O vinculo efetivo continua sendo
-                                  definido pela conciliacao.
+                                  Selecione a contraparte correta e confirme para gravar este
+                                  checkpoint no andamento da conciliacao.
                                 </div>
                               </div>
                             )}
@@ -3386,67 +4085,64 @@ function CreditCardReconciliationPageInner() {
 
               {commitResult && (
                 <Card>
-                  <div className="flex items-center gap-2 text-lg font-semibold text-white">
-                    <CheckCircle2 size={18} className="text-green-300" />
-                    Resultado do processamento
-                  </div>
-                  <div className="mt-4 grid gap-3 md:grid-cols-5">
-                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                        Selecionados
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-white">
-                        {commitResult.summary.selectedCount}
-                      </div>
+                  <div
+                    role="region"
+                    aria-label="Resultado do ultimo processamento"
+                  >
+                    <div className="flex items-center gap-2 text-lg font-semibold text-white">
+                      <CheckCircle2 size={18} className="text-accent" />
+                      Resultado do ultimo processamento
                     </div>
-                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                        Criados
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-green-200">
-                        {commitResult.summary.createdCount}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                        Vinculados a fixas
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-sky-200">
-                        {commitResult.summary.linkedFixedCount}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                        Duplicados ignorados
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-amber-200">
-                        {commitResult.summary.skippedDuplicateCount}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
-                      <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
-                        Falhas
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-red-200">
-                        {commitResult.summary.failedCount}
-                      </div>
-                    </div>
-                  </div>
-
-                  {commitResult.results.length > 0 && (
-                    <div className="mt-4 space-y-2">
-                      {commitResult.results.map((result) => (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">
+                      {[
+                        ['Selecionados', commitResult.summary.selectedCount],
+                        ['Criados', commitResult.summary.createdCount],
+                        ['Fixas vinculadas', commitResult.summary.linkedFixedCount],
+                        ['Duplicidades', commitResult.summary.skippedDuplicateCount],
+                        ['Nao importaveis', commitResult.summary.skippedNotImportableCount],
+                        ['Falhas', commitResult.summary.failedCount]
+                      ].map(([label, value]) => (
                         <div
-                          key={`${result.itemId}-${result.status}`}
-                          className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3 text-sm text-gray-300"
+                          key={String(label)}
+                          className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3"
                         >
-                          <span className="font-medium text-white">{result.itemId}</span>: {result.message}
+                          <div className="text-xs uppercase tracking-[0.14em] text-gray-500">
+                            {label}
+                          </div>
+                          <div className="mt-1 text-lg font-semibold text-white">{value}</div>
                         </div>
                       ))}
                     </div>
-                  )}
+                    <div className="mt-4 space-y-2">
+                      {commitResult.results.map((result) => {
+                        const successful = isSuccessfulCommitResult(result, preview);
+
+                        return (
+                          <div
+                            key={`${result.itemId}-${result.status}`}
+                            className={`rounded-lg border px-4 py-3 text-sm ${
+                              successful
+                                ? 'border-green-500/30 bg-green-500/10 text-green-100'
+                                : 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+                            }`}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold">{result.itemId}</span>
+                              <span className="rounded-full border border-current/30 px-2 py-0.5 text-xs">
+                                {result.status === 'SKIPPED_DUPLICATE' && successful
+                                  ? 'Fixa ja vinculada'
+                                  : getCommitResultStatusLabel(result.status)}
+                              </span>
+                            </div>
+                            <div className="mt-1">{result.message}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </Card>
               )}
+
             </>
           )}
         </div>

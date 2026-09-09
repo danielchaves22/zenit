@@ -21,6 +21,7 @@ import {
 import { getBankIconPath } from '../catalogs/bank-catalog';
 
 const prisma = new PrismaClient();
+const CREDIT_CARD_RECONCILIATION_MUTATION_TTL_MS = 10 * 60 * 1000;
 
 function formatInvoiceLabel(referenceMonth: number, referenceYear: number) {
   return `${String(referenceMonth).padStart(2, '0')}/${referenceYear}`;
@@ -1646,6 +1647,24 @@ export default class CreditCardInvoiceService {
 
       if (invoiceIsPaid) {
         throw new Error('Fatura ja esta paga');
+      }
+
+      const activeReconciliation = await tx.creditCardReconciliationSession.findFirst({
+        where: {
+          accountId: invoice.accountId,
+          referenceYear: invoice.referenceYear,
+          referenceMonth: invoice.referenceMonth,
+          activeMutationToken: { not: null },
+          activeMutationAt: {
+            gt: new Date(Date.now() - CREDIT_CARD_RECONCILIATION_MUTATION_TTL_MS)
+          }
+        },
+        select: { id: true }
+      });
+      if (activeReconciliation) {
+        throw new Error(
+          'A conciliacao desta fatura esta em processamento. Aguarde a operacao terminar antes de pagar.'
+        );
       }
 
       const aggregate = await tx.financialTransaction.aggregate({

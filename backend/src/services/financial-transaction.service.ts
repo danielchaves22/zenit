@@ -27,6 +27,9 @@ import { randomUUID } from 'crypto';
 
 const prisma = new PrismaClient();
 type PurchaseScope = 'SINGLE' | 'FUTURE' | 'PURCHASE';
+type TransactionExecutionOptions = {
+  deferPostCommitEffects?: boolean;
+};
 type TransactionListDateField = 'dueDate' | 'date' | 'effectiveDate' | 'createdAt';
 type CreditCardInvoiceReferenceInput = CreditCardInvoiceReference & {
   accountId: number;
@@ -231,7 +234,7 @@ export default class FinancialTransactionService {
     allowMissingAccount?: boolean;
     creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
     creditCardInvoiceAnchorInstallmentNumber?: number | null;
-  }): Promise<FinancialTransaction | FinancialTransaction[]> {
+  }, existingTx?: Prisma.TransactionClient, options?: TransactionExecutionOptions): Promise<FinancialTransaction | FinancialTransaction[]> {
     const installmentCount = data.installmentCount && data.installmentCount > 0
       ? data.installmentCount
       : 1;
@@ -241,7 +244,7 @@ export default class FinancialTransactionService {
     }
 
     const fromAccount = data.fromAccountId
-      ? await prisma.financialAccount.findUnique({
+      ? await (existingTx ?? prisma).financialAccount.findUnique({
           where: { id: data.fromAccountId }
         })
       : null;
@@ -267,7 +270,13 @@ export default class FinancialTransactionService {
         throw new Error('Cartão de crédito sem fechamento e vencimento configurados');
       }
 
-      return this.createCreditCardExpenseInstallments(data, fromAccount, installmentCount);
+      return this.createCreditCardExpenseInstallments(
+        data,
+        fromAccount,
+        installmentCount,
+        existingTx,
+        options
+      );
     }
 
     const repeatTimes = data.repeatTimes && data.repeatTimes > 0 ? data.repeatTimes : 1;
@@ -297,7 +306,7 @@ export default class FinancialTransactionService {
       baseData.installmentNumber = i + 1;
       baseData.totalInstallments = repeatTimes;
 
-      const tx = await this.createSingleTransaction({ ...baseData });
+      const tx = await this.createSingleTransaction({ ...baseData }, existingTx, options);
       transactions.push(tx);
     }
 
@@ -372,7 +381,9 @@ export default class FinancialTransactionService {
       statementClosingDay: number | null;
       statementDueDay: number | null;
     },
-    installmentCount: number
+    installmentCount: number,
+    existingTx?: Prisma.TransactionClient,
+    options?: TransactionExecutionOptions
   ): Promise<FinancialTransaction | FinancialTransaction[]> {
     const purchaseGroupId = randomUUID();
     const purchaseDate = new Date(data.date);
@@ -430,11 +441,15 @@ export default class FinancialTransactionService {
           ...invoiceReference,
           accountId: cardAccount.id,
           allowExternalSettlement:
-            isImportedCreditCardPurchase &&
-            invoiceReference.dueDate.getTime() < today.getTime(),
-          allowPaidInvoiceSettlement: isImportedCreditCardPurchase
+            explicitInvoiceReference?.allowExternalSettlement ??
+            (
+              isImportedCreditCardPurchase &&
+              invoiceReference.dueDate.getTime() < today.getTime()
+            ),
+          allowPaidInvoiceSettlement:
+            explicitInvoiceReference?.allowPaidInvoiceSettlement ?? isImportedCreditCardPurchase
         }
-      });
+      }, existingTx, options);
 
       transactions.push(transaction);
     }
@@ -472,7 +487,7 @@ export default class FinancialTransactionService {
     occurrenceKey?: string | null;
     allowMissingAccount?: boolean;
     creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
-  }): Promise<FinancialTransaction> {
+  }, existingTx?: Prisma.TransactionClient, options?: TransactionExecutionOptions): Promise<FinancialTransaction> {
 
     const startTime = Date.now();
     const transactionId = `txn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -499,13 +514,29 @@ export default class FinancialTransactionService {
       throw new Error('Transaction amount must be positive');
     }
 
+    if (existingTx) {
+      return this.executeTransactionWithFullLocking(
+        data,
+        parsedAmount,
+        transactionId,
+        startTime,
+        existingTx,
+        options
+      );
+    }
+
     // âœ… CRITICAL: Maximum 3 retry attempts for deadlocks
     const maxRetries = 3;
     let retryCount = 0;
 
     while (retryCount < maxRetries) {
       try {
-        return await this.executeTransactionWithFullLocking(data, parsedAmount, transactionId, startTime);
+        return await this.executeTransactionWithFullLocking(
+          data,
+          parsedAmount,
+          transactionId,
+          startTime
+        );
       } catch (error: any) {
         // âœ… CRITICAL: Retry only on deadlock/serialization failures
         if ((error.code === 'P2034' || error.message.includes('deadlock') || error.message.includes('serialization')) && retryCount < maxRetries - 1) {
@@ -548,7 +579,8 @@ export default class FinancialTransactionService {
     parsedAmount: any,
     transactionId: string,
     startTime: number,
-    existingTx?: Prisma.TransactionClient
+    existingTx?: Prisma.TransactionClient,
+    options?: TransactionExecutionOptions
   ): Promise<FinancialTransaction> {
     
     const execute = async (tx: Prisma.TransactionClient) => {
@@ -682,19 +714,21 @@ export default class FinancialTransactionService {
         await this.syncCreditCardInvoiceTx(tx, creditCardInvoiceId);
       }
       
-      // âœ… CRITICAL: Success audit log
-      logger.info('Financial transaction completed successfully', {
-        transactionId,
-        dbTransactionId: transaction.id,
-        type: data.type,
-        amount: parsedAmount.toString(),
-        duration: Date.now() - startTime,
-        accountsAffected: accountsToLock.length
-      });
+      if (!options?.deferPostCommitEffects) {
+        // For ordinary and pre-existing external-transaction callers, retain
+        // the historical behavior. Session reconciliation explicitly defers
+        // these non-transactional effects until its outer COMMIT succeeds.
+        logger.info('Financial transaction completed successfully', {
+          transactionId,
+          dbTransactionId: transaction.id,
+          type: data.type,
+          amount: parsedAmount.toString(),
+          duration: Date.now() - startTime,
+          accountsAffected: accountsToLock.length
+        });
 
-      // âœ… CRITICAL: Invalidate relevant caches
-      const affectedAccountIds = accountsToLock;
-      await this.invalidateFinancialCaches(data.companyId, affectedAccountIds);
+        await this.invalidateFinancialCaches(data.companyId, accountsToLock);
+      }
       
       return transaction;
       
@@ -705,6 +739,38 @@ export default class FinancialTransactionService {
       timeout: 30000, // 30 seconds timeout
       maxWait: 10000   // 10 seconds max wait for transaction slot
     });
+  }
+
+  static async publishDeferredCommitEffects(params: {
+    companyId: number;
+    accountIds: number[];
+    transactionIds: number[];
+    operation: string;
+  }): Promise<void> {
+    if (params.transactionIds.length === 0) {
+      return;
+    }
+
+    const accountIds = Array.from(new Set(params.accountIds));
+    logger.info('Financial transactions committed after external transaction', {
+      operation: params.operation,
+      companyId: params.companyId,
+      accountIds,
+      transactionIds: params.transactionIds
+    });
+
+    try {
+      await this.invalidateFinancialCaches(params.companyId, accountIds);
+    } catch (error: any) {
+      // The database COMMIT already succeeded. Cache invalidation is best
+      // effort and must not turn a durable success into an apparent failure.
+      logger.warn('Failed to invalidate financial caches after committed transaction', {
+        operation: params.operation,
+        companyId: params.companyId,
+        accountIds,
+        error: error?.message || String(error)
+      });
+    }
   }
 
   /** Reuse financial validation and balances inside the reconciliation's atomic commit. */
@@ -963,7 +1029,7 @@ export default class FinancialTransactionService {
     return (
       invoice.status === CreditCardInvoiceStatus.PAID ||
       invoice.paymentTransaction?.status === TransactionStatus.COMPLETED ||
-      invoice.settlementType === CreditCardInvoiceSettlementType.EXTERNAL
+      invoice.settlementType !== null
     );
   }
 
@@ -1008,9 +1074,9 @@ export default class FinancialTransactionService {
     });
 
     const invoiceStatus = resolveCreditCardInvoiceStatus(reference.closingDate, false);
-    const allowExternalSettlement = Boolean(reference.allowExternalSettlement);
+    const allowExternalSettlement = reference.allowExternalSettlement ?? false;
     const allowPaidInvoiceSettlement =
-      Boolean(reference.allowPaidInvoiceSettlement) || allowExternalSettlement;
+      reference.allowPaidInvoiceSettlement ?? allowExternalSettlement;
     const invoiceIsPaid = this.isCreditCardInvoicePaid(existingInvoice);
     if (invoiceIsPaid && !allowPaidInvoiceSettlement) {
       throw new Error('A fatura selecionada ja esta paga. Escolha uma fatura aberta ou altere a data da compra.');

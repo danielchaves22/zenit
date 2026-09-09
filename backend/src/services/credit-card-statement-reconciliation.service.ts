@@ -215,6 +215,16 @@ export type ReconciliationCommitResult = {
   }>;
 };
 
+export class CreditCardReconciliationItemCommitError extends Error {
+  readonly itemId: string;
+
+  constructor(itemId: string, message: string) {
+    super(message);
+    this.name = 'CreditCardReconciliationItemCommitError';
+    this.itemId = itemId;
+  }
+}
+
 function normalizePdfText(value: string): string {
   return value.replace(/\u0000/g, '').replace(/\u00a0/g, ' ');
 }
@@ -414,6 +424,7 @@ async function loadFixedDescriptionAliases(params: {
   companyId: number;
   sourceType: CreditCardReconciliationSourceType;
   items: ParsedStatementItem[];
+  existingTx?: Prisma.TransactionClient;
 }): Promise<FixedDescriptionAliasMap> {
   const normalizedDescriptions = Array.from(
     new Set(
@@ -428,7 +439,7 @@ async function loadFixedDescriptionAliases(params: {
     return new Map();
   }
 
-  const aliases = await prisma.creditCardRecurringDescriptionAlias.findMany({
+  const aliases = await (params.existingTx ?? prisma).creditCardRecurringDescriptionAlias.findMany({
     where: {
       companyId: params.companyId,
       accountId: params.accountId,
@@ -455,6 +466,7 @@ async function saveFixedDescriptionAlias(params: {
   sourceType: CreditCardReconciliationSourceType;
   fixedTemplateId: number;
   sourceDescription: string;
+  existingTx?: Prisma.TransactionClient;
 }) {
   const normalizedSourceDescription = normalizeFixedDescriptionAlias(params.sourceDescription);
 
@@ -462,7 +474,7 @@ async function saveFixedDescriptionAlias(params: {
     throw new Error('Descricao da fatura invalida para vinculo com fixa');
   }
 
-  await prisma.creditCardRecurringDescriptionAlias.upsert({
+  await (params.existingTx ?? prisma).creditCardRecurringDescriptionAlias.upsert({
     where: {
       unique_credit_card_recurring_description_alias: {
         accountId: params.accountId,
@@ -1939,16 +1951,19 @@ async function loadCandidateTransactions(params: {
   items: ParsedStatementItem[];
   targetReferenceYear: number;
   targetReferenceMonth: number;
+  existingTx?: Prisma.TransactionClient;
 }) {
+  const db = params.existingTx ?? prisma;
   const { minDate, maxDate } = buildDateWindow(params.items);
   const [targetInvoiceCandidates, materializedTransactions, projectedFixedCandidates] = await Promise.all([
     loadTargetInvoiceCandidates({
       accountId: params.accountId,
       companyId: params.companyId,
       referenceYear: params.targetReferenceYear,
-      referenceMonth: params.targetReferenceMonth
+      referenceMonth: params.targetReferenceMonth,
+      existingTx: params.existingTx
     }),
-    prisma.financialTransaction.findMany({
+    db.financialTransaction.findMany({
       where: {
         companyId: params.companyId,
         fromAccountId: params.accountId,
@@ -1991,7 +2006,8 @@ async function loadCandidateTransactions(params: {
       accountId: params.accountId,
       companyId: params.companyId,
       minDate,
-      maxDate
+      maxDate,
+      existingTx: params.existingTx
     })
   ]);
 
@@ -2065,7 +2081,53 @@ async function loadTargetInvoiceCandidates(params: {
   companyId: number;
   referenceYear: number;
   referenceMonth: number;
+  existingTx?: Prisma.TransactionClient;
 }) {
+  if (params.existingTx) {
+    const invoice = await params.existingTx.creditCardInvoice.findFirst({
+      where: {
+        accountId: params.accountId,
+        account: { companyId: params.companyId },
+        referenceYear: params.referenceYear,
+        referenceMonth: params.referenceMonth
+      },
+      select: {
+        id: true,
+        referenceYear: true,
+        referenceMonth: true,
+        status: true,
+        dueDate: true,
+        transactions: {
+          where: {
+            type: TransactionType.EXPENSE,
+            status: { not: TransactionStatus.CANCELED }
+          },
+          select: {
+            id: true,
+            description: true,
+            amount: true,
+            date: true,
+            installmentNumber: true,
+            totalInstallments: true,
+            status: true,
+            purchaseGroupId: true,
+            importSourceType: true,
+            importSourceDescription: true,
+            occurrenceKey: true
+          }
+        }
+      }
+    });
+
+    if (!invoice) {
+      return [] as ExistingTransactionCandidate[];
+    }
+
+    return invoice.transactions.map((transaction) =>
+      mapInvoiceTransactionToCandidate({ transaction, invoice })
+    );
+  }
+
   const invoice = await prisma.creditCardInvoice.findFirst({
     where: {
       accountId: params.accountId,
@@ -2111,7 +2173,9 @@ async function loadProjectedFixedCandidates(params: {
   companyId: number;
   minDate: Date;
   maxDate: Date;
+  existingTx?: Prisma.TransactionClient;
 }) {
+  const db = params.existingTx ?? prisma;
   const rangeStart = new Date(
     params.minDate.getFullYear(),
     params.minDate.getMonth(),
@@ -2136,7 +2200,7 @@ async function loadProjectedFixedCandidates(params: {
     rangeStart,
     rangeEnd,
     accessibleAccountIds: [params.accountId]
-  });
+  }, params.existingTx);
 
   const startCursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1, 12, 0, 0, 0);
   const endCursor = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1, 12, 0, 0, 0);
@@ -2204,7 +2268,7 @@ async function loadProjectedFixedCandidates(params: {
     return [] as ExistingTransactionCandidate[];
   }
 
-  const existingOccurrences = await prisma.financialTransaction.findMany({
+  const existingOccurrences = await db.financialTransaction.findMany({
     where: {
       companyId: params.companyId,
       occurrenceKey: {
@@ -2247,8 +2311,12 @@ async function loadProjectedFixedCandidates(params: {
     }));
 }
 
-async function ensureCreditCardAccount(accountId: number, companyId: number) {
-  const account = await prisma.financialAccount.findFirst({
+async function ensureCreditCardAccount(
+  accountId: number,
+  companyId: number,
+  existingTx?: Prisma.TransactionClient
+) {
+  const account = await (existingTx ?? prisma).financialAccount.findFirst({
     where: {
       id: accountId,
       companyId,
@@ -2453,6 +2521,7 @@ export default class CreditCardStatementReconciliationService {
     targetReferenceMonth: number;
     fileBase64: string;
     fileName?: string | null;
+    categorySuggestionsByItemId?: Record<string, CreditCardReconciliationCategorySuggestion>;
   }): Promise<ReconciliationPreviewResult> {
     const account = await ensureCreditCardAccount(params.accountId, params.companyId);
 
@@ -2477,20 +2546,22 @@ export default class CreditCardStatementReconciliationService {
         targetReferenceYear: statement.referenceYear,
         targetReferenceMonth: statement.referenceMonth
       }),
-      CreditCardReconciliationCategorySuggestionService.suggestForItems({
-        companyId: params.companyId,
-        accountId: params.accountId,
-        items: statement.items.map((item) => ({
-          id: item.id,
-          kind: item.kind,
-          amount: item.amount,
-          installmentNumber: item.installmentNumber,
-          totalInstallments: item.totalInstallments,
-          sourceDescription: item.sourceDescription,
-          sourceSection: item.sourceSection,
-          canImport: item.canImport
-        }))
-      }),
+      params.categorySuggestionsByItemId
+        ? Promise.resolve(new Map(Object.entries(params.categorySuggestionsByItemId)))
+        : CreditCardReconciliationCategorySuggestionService.suggestForItems({
+            companyId: params.companyId,
+            accountId: params.accountId,
+            items: statement.items.map((item) => ({
+              id: item.id,
+              kind: item.kind,
+              amount: item.amount,
+              installmentNumber: item.installmentNumber,
+              totalInstallments: item.totalInstallments,
+              sourceDescription: item.sourceDescription,
+              sourceSection: item.sourceSection,
+              canImport: item.canImport
+            }))
+          }),
       loadFixedDescriptionAliases({
         accountId: params.accountId,
         companyId: params.companyId,
@@ -2529,6 +2600,10 @@ export default class CreditCardStatementReconciliationService {
     targetReferenceMonth: number;
     fileBase64: string;
     fileName?: string | null;
+    allowExternalSettlement?: boolean;
+    allowPaidInvoiceSettlement?: boolean;
+    existingTx?: Prisma.TransactionClient;
+    deferPostCommitEffects?: boolean;
     selectedItems: Array<{
       itemId: string;
       action?: 'IMPORT' | 'LINK_FIXED';
@@ -2536,7 +2611,11 @@ export default class CreditCardStatementReconciliationService {
       categoryId?: number;
     }>;
   }): Promise<ReconciliationCommitResult> {
-    const account = await ensureCreditCardAccount(params.accountId, params.companyId);
+    const account = await ensureCreditCardAccount(
+      params.accountId,
+      params.companyId,
+      params.existingTx
+    );
 
     if (params.sourceType !== account.reconciliationSourceType) {
       throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
@@ -2569,13 +2648,15 @@ export default class CreditCardStatementReconciliationService {
       companyId: params.companyId,
       items: statement.items,
       targetReferenceYear: statement.referenceYear,
-      targetReferenceMonth: statement.referenceMonth
+      targetReferenceMonth: statement.referenceMonth,
+      existingTx: params.existingTx
     });
     const fixedDescriptionAliases = await loadFixedDescriptionAliases({
       accountId: params.accountId,
       companyId: params.companyId,
       sourceType: params.sourceType,
-      items: statement.items
+      items: statement.items,
+      existingTx: params.existingTx
     });
 
     for (const itemId of selectedItemIds) {
@@ -2660,7 +2741,8 @@ export default class CreditCardStatementReconciliationService {
           userId: params.userId,
           sourceType: params.sourceType,
           fixedTemplateId: fixedTemplateIds[0]!,
-          sourceDescription: item.sourceDescription
+          sourceDescription: item.sourceDescription,
+          existingTx: params.existingTx
         });
         fixedDescriptionAliases.set(normalizedSourceDescription, fixedTemplateIds[0]!);
 
@@ -2730,8 +2812,14 @@ export default class CreditCardStatementReconciliationService {
           companyId: params.companyId,
           createdBy: params.userId,
           installmentCount: item.totalInstallments ?? 1,
-          creditCardInvoiceReference: importedStatementInvoiceReference,
+          creditCardInvoiceReference: {
+            ...importedStatementInvoiceReference,
+            allowExternalSettlement: params.allowExternalSettlement,
+            allowPaidInvoiceSettlement: params.allowPaidInvoiceSettlement
+          },
           creditCardInvoiceAnchorInstallmentNumber: item.installmentNumber ?? 1
+        }, params.existingTx, {
+          deferPostCommitEffects: params.deferPostCommitEffects
         });
         const createdTransactions = normalizeCreatedTransactions(created);
 
@@ -2765,6 +2853,13 @@ export default class CreditCardStatementReconciliationService {
           createdTransactionIds: createdTransactions.map((transaction) => transaction.id)
         });
       } catch (error: any) {
+        if (params.existingTx) {
+          const message = error?.message || 'Falha inesperada ao criar o lancamento';
+          throw new CreditCardReconciliationItemCommitError(
+            item.id,
+            `Falha ao processar "${item.sourceDescription}": ${message}`
+          );
+        }
         results.push({
           itemId,
           status: 'FAILED',

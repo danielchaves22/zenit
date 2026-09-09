@@ -5,9 +5,11 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Columns2,
   Download,
   FileSearch,
   RefreshCw,
+  Rows3,
   Upload
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -45,6 +47,8 @@ type ReconciliationReason =
   | 'NO_MATCH';
 type ReconciliationFilter = 'ALL' | ReconciliationItemStatus;
 type ReconciliationSuggestionSource = 'RULE' | 'HISTORY' | 'AI';
+type ReconciliationViewMode = 'DETAILED' | 'SIDE_BY_SIDE';
+type ReconciliationMobilePanel = 'ZENIT' | 'FILE';
 
 interface CreditCardAccount {
   id: number;
@@ -92,6 +96,7 @@ interface ReconciliationInvoiceSystemTransaction {
   isProjected?: boolean;
   isFixedProjection?: boolean;
   fixedTemplateId?: number | null;
+  occurrenceKey?: string | null;
   category?: {
     id: number;
     name: string;
@@ -613,8 +618,13 @@ function getSystemInvoiceTransactionKey(transaction: ReconciliationInvoiceSystem
     return `transaction:${transaction.id}`;
   }
 
-  if (transaction.fixedTemplateId !== null && transaction.fixedTemplateId !== undefined) {
-    return `fixed:${transaction.fixedTemplateId}`;
+  if (
+    transaction.isFixedProjection &&
+    transaction.fixedTemplateId !== null &&
+    transaction.fixedTemplateId !== undefined &&
+    transaction.occurrenceKey
+  ) {
+    return `projected-fixed:${transaction.fixedTemplateId}:${transaction.occurrenceKey}`;
   }
 
   return `projection:${transaction.description}:${transaction.amount}:${
@@ -629,12 +639,53 @@ function getMatchedTransactionSystemKey(transaction: ReconciliationMatchedTransa
 
   if (
     transaction.matchSource === 'PROJECTED_FIXED' &&
-    transaction.fixedTemplateId !== null
+    transaction.fixedTemplateId !== null &&
+    transaction.occurrenceKey
   ) {
-    return `fixed:${transaction.fixedTemplateId}`;
+    return `projected-fixed:${transaction.fixedTemplateId}:${transaction.occurrenceKey}`;
   }
 
   return null;
+}
+
+function getSystemInvoiceTransactionAliases(
+  transaction: ReconciliationInvoiceSystemTransaction
+) {
+  const aliases: string[] = [];
+
+  if (transaction.id !== null) {
+    aliases.push(`transaction:${transaction.id}`);
+  }
+
+  if (transaction.occurrenceKey) {
+    aliases.push(`occurrence:${transaction.occurrenceKey}`);
+  }
+
+  if (
+    transaction.isFixedProjection &&
+    transaction.fixedTemplateId !== null &&
+    transaction.fixedTemplateId !== undefined &&
+    transaction.occurrenceKey
+  ) {
+    aliases.push(`projected-fixed:${transaction.fixedTemplateId}:${transaction.occurrenceKey}`);
+  }
+
+  return Array.from(new Set(aliases));
+}
+
+function getMatchedTransactionSystemAliases(transaction: ReconciliationMatchedTransaction) {
+  const aliases: string[] = [];
+  const transactionKey = getMatchedTransactionSystemKey(transaction);
+
+  if (transactionKey) {
+    aliases.push(transactionKey);
+  }
+
+  if (transaction.occurrenceKey) {
+    aliases.push(`occurrence:${transaction.occurrenceKey}`);
+  }
+
+  return Array.from(new Set(aliases));
 }
 
 function getSystemTransactionDateLabel(transaction: ReconciliationInvoiceSystemTransaction) {
@@ -823,6 +874,413 @@ function readFileAsDataUrl(file: File) {
   });
 }
 
+interface SystemInvoiceTransactionRow {
+  rowId: string;
+  transactionKey: string;
+  aliases: string[];
+  transaction: ReconciliationInvoiceSystemTransaction;
+}
+
+interface CreditCardReconciliationSideBySideProps {
+  preview: ReconciliationPreview;
+  rows: SystemInvoiceTransactionRow[];
+  identityCollisionRowIds: Set<string>;
+  items: ReconciliationPreviewItem[];
+  filteredItemIds: Set<string>;
+  selectedItemSet: Set<string>;
+  focusedRowId: string | null;
+  focusedPreviewItemIds: Set<string>;
+  targetInvoiceDetailLoading: boolean;
+  targetInvoiceDetailAvailable: boolean;
+  targetInvoiceDetailError: string | null;
+  selectedTargetInvoice: TargetInvoiceOption | null;
+  commitLoading: boolean;
+  committingItemIds: string[];
+  mobilePanel: ReconciliationMobilePanel;
+  itemRefs: React.MutableRefObject<Record<string, HTMLLIElement | null>>;
+  systemTransactionRefs: React.MutableRefObject<Record<string, HTMLButtonElement | null>>;
+  comparisonStatusRef: React.MutableRefObject<HTMLDivElement | null>;
+  onMobilePanelChange: (panel: ReconciliationMobilePanel) => void;
+  onSelectSystemTransaction: (rowId: string) => void;
+  onToggleImportSelection: (itemId: string, checked: boolean) => void;
+  onRetryTargetInvoiceDetail: () => void;
+}
+
+function CreditCardReconciliationSideBySide({
+  preview,
+  rows,
+  identityCollisionRowIds,
+  items,
+  filteredItemIds,
+  selectedItemSet,
+  focusedRowId,
+  focusedPreviewItemIds,
+  targetInvoiceDetailLoading,
+  targetInvoiceDetailAvailable,
+  targetInvoiceDetailError,
+  selectedTargetInvoice,
+  commitLoading,
+  committingItemIds,
+  mobilePanel,
+  itemRefs,
+  systemTransactionRefs,
+  comparisonStatusRef,
+  onMobilePanelChange,
+  onSelectSystemTransaction,
+  onToggleImportSelection,
+  onRetryTargetInvoiceDetail
+}: CreditCardReconciliationSideBySideProps) {
+  const focusedItems = preview.items.filter((item) => focusedPreviewItemIds.has(item.id));
+  const focusedItemsOutsideFilter = focusedItems.filter((item) => !filteredItemIds.has(item.id));
+  const focusedRowHasIdentityCollision = focusedRowId
+    ? identityCollisionRowIds.has(focusedRowId)
+    : false;
+
+  return (
+    <div className="space-y-3">
+      <div
+        role="group"
+        aria-label="Painel da comparação"
+        className="grid grid-cols-2 rounded-xl border border-gray-700 bg-[#11161d] p-1 lg:hidden"
+      >
+        <button
+          type="button"
+          aria-pressed={mobilePanel === 'ZENIT'}
+          onClick={() => onMobilePanelChange('ZENIT')}
+          className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            mobilePanel === 'ZENIT'
+              ? 'bg-accent text-white'
+              : 'text-gray-300 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          Zenit
+        </button>
+        <button
+          type="button"
+          aria-pressed={mobilePanel === 'FILE'}
+          onClick={() => onMobilePanelChange('FILE')}
+          className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            mobilePanel === 'FILE'
+              ? 'bg-accent text-white'
+              : 'text-gray-300 hover:bg-white/5 hover:text-white'
+          }`}
+        >
+          Fatura
+        </button>
+      </div>
+
+      <div className="grid h-[clamp(32rem,68vh,46rem)] min-h-0 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <section
+          className={`${mobilePanel === 'ZENIT' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-gray-700 bg-surface shadow-md lg:flex`}
+        >
+          <div className="shrink-0 border-b border-gray-700 bg-surface px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-white">Lançamentos da fatura no Zenit</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  Selecione um lançamento para localizar sua possível correspondência.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+                {rows.length}
+              </span>
+            </div>
+          </div>
+
+          <div
+            role="region"
+            aria-label="Lançamentos da fatura no Zenit"
+            tabIndex={0}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3"
+          >
+            {targetInvoiceDetailLoading ? (
+              <div className="space-y-2" aria-label="Carregando lançamentos do Zenit">
+                {[0, 1, 2, 3].map((index) => (
+                  <div key={index} className="h-24 animate-pulse rounded-lg bg-[#1b212c]" />
+                ))}
+              </div>
+            ) : targetInvoiceDetailError ? (
+              <div
+                role="alert"
+                className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-5 text-sm text-red-200"
+              >
+                <div>{targetInvoiceDetailError}</div>
+                <button
+                  type="button"
+                  onClick={onRetryTargetInvoiceDetail}
+                  className="mt-3 rounded-lg border border-red-400/50 px-3 py-1.5 font-medium text-red-100 transition-colors hover:bg-red-500/10"
+                >
+                  Tentar novamente
+                </button>
+              </div>
+            ) : rows.length > 0 ? (
+              <div className="space-y-2">
+                {rows.map(({ rowId, transaction }) => {
+                  const isSelected = focusedRowId === rowId;
+                  const hasIdentityCollision = identityCollisionRowIds.has(rowId);
+                  const isExternalSettlement = Boolean(
+                    transaction.isExternalCreditCardSettlement
+                  );
+
+                  return (
+                    <button
+                      key={rowId}
+                      ref={(node) => {
+                        systemTransactionRefs.current[rowId] = node;
+                      }}
+                      type="button"
+                      aria-pressed={isSelected}
+                      disabled={isExternalSettlement}
+                      onClick={() => onSelectSystemTransaction(rowId)}
+                      className={`w-full rounded-lg border px-4 py-3 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-accent/60 ${
+                        isSelected
+                          ? 'border-accent bg-accent/10'
+                          : 'border-gray-700 bg-[#11161d] hover:border-gray-500 hover:bg-[#151b24]'
+                      } ${
+                        isExternalSettlement
+                          ? 'cursor-not-allowed opacity-60'
+                          : 'cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium text-white">{transaction.description}</div>
+                          <div className="mt-1 text-sm text-gray-400">
+                            {getSystemTransactionDateLabel(transaction)} • parcela{' '}
+                            {formatInstallmentLabel(
+                              transaction.installmentNumber ?? null,
+                              transaction.totalInstallments ?? null
+                            )}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-sm font-semibold text-white">
+                          {formatCurrency(transaction.amount)}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {transaction.isFixedProjection && (
+                          <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
+                            Fixa projetada
+                          </span>
+                        )}
+                        {isExternalSettlement && (
+                          <span className="rounded-full border border-gray-600 bg-gray-500/10 px-2 py-0.5 text-[11px] font-medium text-gray-300">
+                            Liquidada fora do sistema
+                          </span>
+                        )}
+                        {hasIdentityCollision && (
+                          <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-200">
+                            Identidade duplicada
+                          </span>
+                        )}
+                        {transaction.category && (
+                          <span
+                            className="rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
+                            style={{ backgroundColor: transaction.category.color }}
+                          >
+                            {transaction.category.name}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-8 text-center text-sm text-gray-400">
+                {targetInvoiceDetailAvailable
+                  ? 'A fatura selecionada não possui lançamentos no Zenit.'
+                  : 'Os lançamentos da fatura selecionada não estão disponíveis para comparação.'}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section
+          className={`${mobilePanel === 'FILE' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-gray-700 bg-surface shadow-md lg:flex`}
+        >
+          <div className="shrink-0 border-b border-gray-700 bg-surface px-4 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-semibold text-white">Itens do arquivo da fatura</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  {selectedTargetInvoice
+                    ? `Arquivo comparado com a fatura ${formatReference(
+                        selectedTargetInvoice.referenceMonth,
+                        selectedTargetInvoice.referenceYear
+                      )}.`
+                    : 'Arquivo da fatura selecionada.'}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+                {items.length}
+              </span>
+            </div>
+
+            <div
+              ref={comparisonStatusRef}
+              role="status"
+              aria-live="polite"
+              tabIndex={-1}
+              className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+                focusedRowId === null
+                  ? 'border-gray-700 bg-[#11161d] text-gray-400'
+                  : focusedRowHasIdentityCollision
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                  : focusedItems.length === 0
+                    ? 'border-gray-700 bg-[#11161d] text-gray-300'
+                    : focusedItems.length > 1
+                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                      : focusedItems[0]!.status === 'OK'
+                        ? 'border-green-500/40 bg-green-500/10 text-green-200'
+                        : 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+              }`}
+            >
+              {focusedRowId === null
+                ? 'Selecione um lançamento do Zenit para comparar.'
+                : focusedRowHasIdentityCollision
+                  ? 'Há mais de um lançamento do Zenit com a mesma identidade. Nenhuma correspondência foi destacada automaticamente.'
+                : focusedItems.length === 0
+                  ? 'Nenhuma correspondência foi encontrada no arquivo para este lançamento.'
+                  : focusedItems.length > 1
+                    ? `Mais de uma correspondência foi encontrada. Revise os ${focusedItems.length} itens destacados.`
+                    : focusedItems[0]!.status === 'OK'
+                      ? 'Correspondência encontrada e classificada como OK.'
+                      : `Possível correspondência destacada. ${getReasonLabel(focusedItems[0]!)}`}
+              {focusedItemsOutsideFilter.length > 0 && (
+                <span className="block pt-1 text-xs">
+                  {focusedItemsOutsideFilter.length === 1
+                    ? 'O item está fora do filtro atual e foi exibido para a comparação.'
+                    : 'Os itens estão fora do filtro atual e foram exibidos para a comparação.'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div
+            role="region"
+            aria-label="Itens do arquivo da fatura"
+            tabIndex={0}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3"
+          >
+            {items.length > 0 ? (
+              <ul aria-label="Itens analisados do arquivo da fatura" className="space-y-2">
+                {items.map((item) => {
+                  const selectable = isManuallyImportable(item);
+                  const itemCommitLoading = committingItemIds.includes(item.id);
+                  const isHighlighted = focusedPreviewItemIds.has(item.id);
+                  const isAmbiguousHighlight = isHighlighted && focusedItems.length > 1;
+                  const isOutsideFilter = !filteredItemIds.has(item.id);
+                  const bankDateLabel = item.purchaseDate
+                    ? formatCalendarDate(item.purchaseDate)
+                    : `Referência ${formatReference(
+                        preview.statement.referenceMonth,
+                        preview.statement.referenceYear
+                      )}`;
+
+                  return (
+                    <li
+                      key={item.id}
+                      ref={(node) => {
+                        itemRefs.current[item.id] = node;
+                      }}
+                      tabIndex={0}
+                      data-reconciliation-item-id={item.id}
+                      data-reconciliation-highlighted={isHighlighted}
+                      className={`rounded-lg border px-4 py-3 transition-colors ${
+                        isHighlighted
+                          ? isAmbiguousHighlight || item.status !== 'OK'
+                            ? 'border-amber-400/70 bg-amber-500/10 ring-1 ring-amber-400/30'
+                            : 'border-green-400/70 bg-green-500/10 ring-1 ring-green-400/30'
+                          : 'border-gray-700 bg-[#11161d]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <input
+                            type="checkbox"
+                            aria-label={`Selecionar item ${item.sequence} para importação`}
+                            checked={selectedItemSet.has(item.id)}
+                            disabled={!selectable || commitLoading || itemCommitLoading}
+                            onChange={(event) =>
+                              onToggleImportSelection(item.id, event.target.checked)
+                            }
+                            className="mt-1 h-4 w-4 shrink-0 rounded border-gray-600 bg-background text-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs uppercase tracking-[0.16em] text-gray-500">
+                                Item {item.sequence}
+                              </span>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusClasses(item.status)}`}
+                              >
+                                {getStatusLabel(item.status)}
+                              </span>
+                              <span className="rounded-full border border-gray-700 px-2 py-0.5 text-[11px] text-gray-300">
+                                {getSectionLabel(item.sourceSection)}
+                              </span>
+                              {isOutsideFilter && (
+                                <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                                  Fora do filtro atual
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-2 font-medium text-white">
+                              {item.sourceDescription}
+                            </div>
+                            <div className="mt-1 text-sm text-gray-400">
+                              {bankDateLabel} • parcela{' '}
+                              {formatInstallmentLabel(
+                                item.installmentNumber,
+                                item.totalInstallments
+                              )}
+                              {item.cardSuffix ? ` • cartão final ${item.cardSuffix}` : ''}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-400">
+                              {getReasonLabel(item)}
+                            </div>
+                            {isHighlighted && (
+                              <span className="sr-only">
+                                Correspondência destacada para o lançamento selecionado.
+                              </span>
+                            )}
+                            {item.nonImportableReason && (
+                              <div className="mt-1 text-sm text-amber-300">
+                                {item.nonImportableReason}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <div className="font-semibold text-white">
+                            {formatCurrency(item.amount)}
+                          </div>
+                          {itemCommitLoading && (
+                            <div className="mt-1 flex items-center justify-end gap-1 text-xs text-gray-400">
+                              <RefreshCw size={12} className="animate-spin" />
+                              Processando
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-8 text-center text-sm text-gray-400">
+                Nenhum item encontrado para o filtro atual.
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function CreditCardReconciliationPageInner() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -848,9 +1306,23 @@ function CreditCardReconciliationPageInner() {
   const [targetInvoiceDetail, setTargetInvoiceDetail] =
     useState<ReconciliationTargetInvoiceDetail | null>(null);
   const [targetInvoiceDetailLoading, setTargetInvoiceDetailLoading] = useState(false);
+  const [targetInvoiceDetailError, setTargetInvoiceDetailError] = useState<string | null>(null);
   const [localSystemSelections, setLocalSystemSelections] = useState<Record<string, string>>({});
+  const [reconciliationViewMode, setReconciliationViewMode] =
+    useState<ReconciliationViewMode>('DETAILED');
+  const [focusedSystemTransactionRowId, setFocusedSystemTransactionRowId] =
+    useState<string | null>(null);
+  const [reconciliationMobilePanel, setReconciliationMobilePanel] =
+    useState<ReconciliationMobilePanel>('ZENIT');
   const commitInFlightItemIdsRef = useRef<Set<string>>(new Set());
   const batchCommitInFlightRef = useRef(false);
+  const targetInvoiceDetailRequestIdRef = useRef(0);
+  const selectedTargetInvoiceKeyRef = useRef(selectedTargetInvoiceKey);
+  const fileReadRequestIdRef = useRef(0);
+  const previewRequestIdRef = useRef(0);
+  const comparisonItemRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const systemTransactionRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const comparisonStatusRef = useRef<HTMLDivElement | null>(null);
 
   const reconciliationSourceType = useMemo(
     () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
@@ -872,16 +1344,72 @@ function CreditCardReconciliationPageInner() {
     () => targetInvoiceDetail?.transactions || [],
     [targetInvoiceDetail]
   );
-  const targetInvoiceTransactionsByKey = useMemo(
-    () =>
-      new Map(
-        targetInvoiceTransactions.map((transaction) => [
-          getSystemInvoiceTransactionKey(transaction),
+  const targetInvoiceTransactionRows = useMemo<SystemInvoiceTransactionRow[]>(
+    () => {
+      const keyOccurrences = new Map<string, number>();
+
+      return targetInvoiceTransactions.map((transaction) => {
+        const transactionKey = getSystemInvoiceTransactionKey(transaction);
+        const keyOccurrence = (keyOccurrences.get(transactionKey) || 0) + 1;
+        keyOccurrences.set(transactionKey, keyOccurrence);
+
+        return {
+          rowId:
+            keyOccurrence === 1
+              ? transactionKey
+              : `${transactionKey}:duplicate:${keyOccurrence}`,
+          transactionKey,
+          aliases: getSystemInvoiceTransactionAliases(transaction),
           transaction
-        ])
-      ),
+        };
+      });
+    },
     [targetInvoiceTransactions]
   );
+  const targetInvoiceTransactionsByKey = useMemo(() => {
+    const transactionsByKey = new Map<string, ReconciliationInvoiceSystemTransaction>();
+    const duplicateKeys = new Set<string>();
+
+    targetInvoiceTransactions.forEach((transaction) => {
+      const transactionKey = getSystemInvoiceTransactionKey(transaction);
+
+      if (transactionsByKey.has(transactionKey)) {
+        transactionsByKey.delete(transactionKey);
+        duplicateKeys.add(transactionKey);
+        return;
+      }
+
+      if (!duplicateKeys.has(transactionKey)) {
+        transactionsByKey.set(transactionKey, transaction);
+      }
+    });
+
+    return transactionsByKey;
+  }, [targetInvoiceTransactions]);
+  const targetInvoiceRowIdsByIdentityKey = useMemo(() => {
+    const rowIdsByIdentityKey = new Map<string, Set<string>>();
+
+    targetInvoiceTransactionRows.forEach((row) => {
+      new Set([row.transactionKey, ...row.aliases]).forEach((identityKey) => {
+        const rowIds = rowIdsByIdentityKey.get(identityKey) || new Set<string>();
+        rowIds.add(row.rowId);
+        rowIdsByIdentityKey.set(identityKey, rowIds);
+      });
+    });
+
+    return rowIdsByIdentityKey;
+  }, [targetInvoiceTransactionRows]);
+  const identityCollisionRowIds = useMemo(() => {
+    const collisionRowIds = new Set<string>();
+
+    targetInvoiceRowIdsByIdentityKey.forEach((rowIds) => {
+      if (rowIds.size > 1) {
+        rowIds.forEach((rowId) => collisionRowIds.add(rowId));
+      }
+    });
+
+    return collisionRowIds;
+  }, [targetInvoiceRowIdsByIdentityKey]);
   const previewMatchedTransactionKeys = useMemo(() => {
     if (!preview) {
       return new Set<string>();
@@ -889,15 +1417,73 @@ function CreditCardReconciliationPageInner() {
 
     return preview.items.reduce((keys, item) => {
       item.matchedTransactions.forEach((transaction) => {
-        const transactionKey = getMatchedTransactionSystemKey(transaction);
-
-        if (transactionKey) {
-          keys.add(transactionKey);
-        }
+        getMatchedTransactionSystemAliases(transaction).forEach((alias) => keys.add(alias));
       });
       return keys;
     }, new Set<string>());
   }, [preview]);
+
+  const previewItemIdsBySystemTransactionKey = useMemo(() => {
+    const itemIdsByKey = new Map<string, Set<string>>();
+
+    if (!preview) {
+      return itemIdsByKey;
+    }
+
+    const addRelation = (key: string, itemId: string) => {
+      const itemIds = itemIdsByKey.get(key) || new Set<string>();
+      itemIds.add(itemId);
+      itemIdsByKey.set(key, itemIds);
+    };
+
+    preview.items.forEach((item) => {
+      item.matchedTransactions.forEach((transaction) => {
+        getMatchedTransactionSystemAliases(transaction).forEach((alias) => {
+          addRelation(alias, item.id);
+        });
+      });
+
+      const localSelectionKey = localSystemSelections[item.id];
+      if (localSelectionKey) {
+        addRelation(localSelectionKey, item.id);
+      }
+    });
+
+    return itemIdsByKey;
+  }, [localSystemSelections, preview]);
+
+  const focusedSystemTransactionRow = useMemo(
+    () =>
+      targetInvoiceTransactionRows.find(
+        (row) => row.rowId === focusedSystemTransactionRowId
+      ) || null,
+    [focusedSystemTransactionRowId, targetInvoiceTransactionRows]
+  );
+
+  const focusedPreviewItemIds = useMemo(() => {
+    if (
+      !focusedSystemTransactionRow ||
+      identityCollisionRowIds.has(focusedSystemTransactionRow.rowId)
+    ) {
+      return new Set<string>();
+    }
+
+    const itemIds = new Set<string>();
+    const keys = new Set([
+      focusedSystemTransactionRow.transactionKey,
+      ...focusedSystemTransactionRow.aliases
+    ]);
+
+    keys.forEach((key) => {
+      previewItemIdsBySystemTransactionKey.get(key)?.forEach((itemId) => itemIds.add(itemId));
+    });
+
+    return itemIds;
+  }, [
+    focusedSystemTransactionRow,
+    identityCollisionRowIds,
+    previewItemIdsBySystemTransactionKey
+  ]);
 
   const filteredItems = useMemo(() => {
     if (!preview) {
@@ -910,6 +1496,21 @@ function CreditCardReconciliationPageInner() {
 
     return preview.items.filter((item) => item.status === statusFilter);
   }, [preview, statusFilter]);
+
+  const filteredItemIds = useMemo(
+    () => new Set(filteredItems.map((item) => item.id)),
+    [filteredItems]
+  );
+
+  const sideBySideItems = useMemo(() => {
+    if (!preview) {
+      return [];
+    }
+
+    return preview.items.filter(
+      (item) => filteredItemIds.has(item.id) || focusedPreviewItemIds.has(item.id)
+    );
+  }, [filteredItemIds, focusedPreviewItemIds, preview]);
 
   const selectedItemSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
 
@@ -953,6 +1554,7 @@ function CreditCardReconciliationPageInner() {
     );
   }, [itemDrafts, selectedItems]);
   const hasPendingSingleCommit = committingItemIds.length > 0;
+  const fileSelectionDisabled = previewLoading || commitLoading || hasPendingSingleCommit;
 
   useEffect(() => {
     if (!router.isReady || Number.isNaN(accountId)) {
@@ -980,8 +1582,15 @@ function CreditCardReconciliationPageInner() {
   }, [selectedTargetInvoiceKey, targetInvoiceOptions]);
 
   useEffect(() => {
+    selectedTargetInvoiceKeyRef.current = selectedTargetInvoiceKey;
+  }, [selectedTargetInvoiceKey]);
+
+  useEffect(() => {
     if (!router.isReady || Number.isNaN(accountId) || !selectedTargetInvoice) {
+      targetInvoiceDetailRequestIdRef.current += 1;
       setTargetInvoiceDetail(null);
+      setTargetInvoiceDetailLoading(false);
+      setTargetInvoiceDetailError(null);
       return;
     }
 
@@ -1012,6 +1621,65 @@ function CreditCardReconciliationPageInner() {
       return changed ? Object.fromEntries(nextEntries) : current;
     });
   }, [targetInvoiceTransactionsByKey]);
+
+  useEffect(() => {
+    if (
+      focusedSystemTransactionRowId &&
+      !targetInvoiceTransactionRows.some(
+        (row) => row.rowId === focusedSystemTransactionRowId
+      )
+    ) {
+      setFocusedSystemTransactionRowId(null);
+    }
+  }, [focusedSystemTransactionRowId, targetInvoiceTransactionRows]);
+
+  useEffect(() => {
+    if (
+      reconciliationViewMode !== 'SIDE_BY_SIDE' ||
+      !focusedSystemTransactionRowId
+    ) {
+      return;
+    }
+
+    const firstMatchedItemId = preview?.items.find((item) =>
+      focusedPreviewItemIds.has(item.id)
+    )?.id;
+
+    const scrollTimer = window.setTimeout(() => {
+      systemTransactionRefs.current[focusedSystemTransactionRowId]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest'
+      });
+
+      if (firstMatchedItemId) {
+        comparisonItemRefs.current[firstMatchedItemId]?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'nearest'
+        });
+      }
+
+      const isMobileComparison =
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(max-width: 1023px)').matches;
+
+      if (isMobileComparison && reconciliationMobilePanel === 'FILE') {
+        const focusTarget = firstMatchedItemId
+          ? comparisonItemRefs.current[firstMatchedItemId]
+          : comparisonStatusRef.current;
+        focusTarget?.focus({ preventScroll: true });
+      }
+    }, 0);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [
+    focusedPreviewItemIds,
+    focusedSystemTransactionRowId,
+    preview,
+    reconciliationMobilePanel,
+    reconciliationViewMode
+  ]);
 
   async function fetchCard() {
     setLoadingCard(true);
@@ -1054,14 +1722,16 @@ function CreditCardReconciliationPageInner() {
     }
   }
 
-  async function fetchInvoices() {
+  async function fetchInvoices(options: { preserveCurrentOnError?: boolean } = {}) {
     setInvoicesLoading(true);
 
     try {
       const response = await api.get(`/financial/credit-cards/${accountId}/invoices`);
       setInvoices(response.data || []);
     } catch (error: any) {
-      setInvoices([]);
+      if (!options.preserveCurrentOnError) {
+        setInvoices([]);
+      }
       addToast(error.response?.data?.error || 'Erro ao carregar referencias de fatura', 'error');
     } finally {
       setInvoicesLoading(false);
@@ -1069,15 +1739,25 @@ function CreditCardReconciliationPageInner() {
   }
 
   async function fetchTargetInvoiceDetail(invoice: TargetInvoiceOption) {
+    if (selectedTargetInvoiceKeyRef.current !== invoice.key) {
+      return;
+    }
+
+    const requestId = targetInvoiceDetailRequestIdRef.current + 1;
+    targetInvoiceDetailRequestIdRef.current = requestId;
     const canLoadProjected = invoice.isProjected && Boolean(invoice.projectionKey);
     const canLoadReal = invoice.invoiceId !== null;
 
     if (!canLoadProjected && !canLoadReal) {
-      setTargetInvoiceDetail(null);
-      setTargetInvoiceDetailLoading(false);
+      if (targetInvoiceDetailRequestIdRef.current === requestId) {
+        setTargetInvoiceDetail(null);
+        setTargetInvoiceDetailLoading(false);
+        setTargetInvoiceDetailError(null);
+      }
       return;
     }
 
+    setTargetInvoiceDetailError(null);
     setTargetInvoiceDetailLoading(true);
 
     try {
@@ -1086,15 +1766,33 @@ function CreditCardReconciliationPageInner() {
             `/financial/credit-cards/${accountId}/invoices/projected/${invoice.projectionKey}`
           )
         : await api.get(`/financial/credit-card-invoices/${invoice.invoiceId}`);
-      setTargetInvoiceDetail(response.data);
+      if (
+        targetInvoiceDetailRequestIdRef.current === requestId &&
+        selectedTargetInvoiceKeyRef.current === invoice.key
+      ) {
+        setTargetInvoiceDetail(response.data);
+      }
     } catch (error: any) {
-      setTargetInvoiceDetail(null);
-      addToast(
-        error.response?.data?.error || 'Erro ao carregar itens da fatura selecionada',
-        'error'
-      );
+      if (
+        targetInvoiceDetailRequestIdRef.current === requestId &&
+        selectedTargetInvoiceKeyRef.current === invoice.key
+      ) {
+        setTargetInvoiceDetail(null);
+        const message =
+          error.response?.data?.error || 'Erro ao carregar itens da fatura selecionada';
+        setTargetInvoiceDetailError(message);
+        addToast(
+          message,
+          'error'
+        );
+      }
     } finally {
-      setTargetInvoiceDetailLoading(false);
+      if (
+        targetInvoiceDetailRequestIdRef.current === requestId &&
+        selectedTargetInvoiceKeyRef.current === invoice.key
+      ) {
+        setTargetInvoiceDetailLoading(false);
+      }
     }
   }
 
@@ -1123,6 +1821,9 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
+    const requestId = previewRequestIdRef.current + 1;
+    previewRequestIdRef.current = requestId;
+    const targetInvoiceKey = selectedTargetInvoice.key;
     setPreviewLoading(true);
 
     try {
@@ -1137,14 +1838,31 @@ function CreditCardReconciliationPageInner() {
         }
       );
 
+      if (
+        previewRequestIdRef.current !== requestId ||
+        selectedTargetInvoiceKeyRef.current !== targetInvoiceKey
+      ) {
+        return;
+      }
+
       setPreview(response.data);
       setCommitResult(null);
       setStatusFilter('ALL');
+      setFocusedSystemTransactionRowId(null);
+      setReconciliationMobilePanel('ZENIT');
       applyDefaultSelection(response.data);
+      await fetchTargetInvoiceDetail(selectedTargetInvoice);
     } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao analisar fatura', 'error');
+      if (
+        previewRequestIdRef.current === requestId &&
+        selectedTargetInvoiceKeyRef.current === targetInvoiceKey
+      ) {
+        addToast(error.response?.data?.error || 'Erro ao analisar fatura', 'error');
+      }
     } finally {
-      setPreviewLoading(false);
+      if (previewRequestIdRef.current === requestId) {
+        setPreviewLoading(false);
+      }
     }
   }
 
@@ -1168,6 +1886,18 @@ function CreditCardReconciliationPageInner() {
     applyDefaultSelection(response.data);
   }
 
+  async function refreshPreviewAfterCommit() {
+    try {
+      await refreshPreviewSilently();
+    } catch (error: any) {
+      addToast(
+        error.response?.data?.error ||
+          'Os itens foram processados, mas não foi possível atualizar a conferência. Analise a fatura novamente.',
+        'error'
+      );
+    }
+  }
+
   async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const nextFile = event.target.files?.[0];
 
@@ -1184,16 +1914,33 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
+    const fileReadRequestId = fileReadRequestIdRef.current + 1;
+    fileReadRequestIdRef.current = fileReadRequestId;
+    previewRequestIdRef.current += 1;
+    setPreviewLoading(false);
+    setFileName(nextFile.name);
+    setFileBase64('');
+    setPreview(null);
+    setCommitResult(null);
+    setItemDrafts({});
+    setSelectedItemIds([]);
+    setFocusedSystemTransactionRowId(null);
+    setReconciliationMobilePanel('ZENIT');
+
     try {
       const nextFileBase64 = await readFileAsDataUrl(nextFile);
-      setFileName(nextFile.name);
+
+      if (fileReadRequestIdRef.current !== fileReadRequestId) {
+        return;
+      }
+
       setFileBase64(nextFileBase64);
-      setPreview(null);
-      setCommitResult(null);
-      setItemDrafts({});
-      setSelectedItemIds([]);
     } catch (error: any) {
-      addToast(error.message || 'Erro ao ler arquivo', 'error');
+      if (fileReadRequestIdRef.current === fileReadRequestId) {
+        setFileName(null);
+        setFileBase64('');
+        addToast(error.message || 'Erro ao ler arquivo', 'error');
+      }
     }
   }
 
@@ -1202,11 +1949,17 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
+    selectedTargetInvoiceKeyRef.current = nextTargetInvoiceKey;
+    previewRequestIdRef.current += 1;
+    setPreviewLoading(false);
     setSelectedTargetInvoiceKey(nextTargetInvoiceKey);
+    setTargetInvoiceDetailError(null);
     setPreview(null);
     setCommitResult(null);
     setItemDrafts({});
     setSelectedItemIds([]);
+    setFocusedSystemTransactionRowId(null);
+    setReconciliationMobilePanel('ZENIT');
   }
 
   function handleLocalSystemSelectionChange(itemId: string, transactionKey: string) {
@@ -1230,6 +1983,16 @@ function CreditCardReconciliationPageInner() {
         [itemId]: transactionKey
       };
     });
+  }
+
+  function handleSystemTransactionFocus(rowId: string) {
+    if (focusedSystemTransactionRowId === rowId) {
+      setFocusedSystemTransactionRowId(null);
+      return;
+    }
+
+    setFocusedSystemTransactionRowId(rowId);
+    setReconciliationMobilePanel('FILE');
   }
 
   function handleToggleSelection(itemId: string, checked: boolean) {
@@ -1444,11 +2207,13 @@ function CreditCardReconciliationPageInner() {
             ? projectedFixedMatches
             : isFixedLinkAction
               ? item.matchedTransactions
-              : buildFallbackMatchTransaction({
-                preview: currentPreview,
-                item,
-                description: selectedItem.description || item.sourceDescription
-              });
+              : item.matchedTransactions.length > 0
+                ? item.matchedTransactions
+                : buildFallbackMatchTransaction({
+                    preview: currentPreview,
+                    item,
+                    description: selectedItem.description || item.sourceDescription
+                  });
 
         return {
           ...item,
@@ -1548,6 +2313,14 @@ function CreditCardReconciliationPageInner() {
               'success'
             );
             applySingleItemCommitLocally(selectedItems[0]!, result);
+            if (result.status === 'CREATED') {
+              await fetchInvoices({ preserveCurrentOnError: true });
+            } else if (result.status === 'SKIPPED_DUPLICATE') {
+              await Promise.all([
+                refreshPreviewAfterCommit(),
+                fetchInvoices({ preserveCurrentOnError: true })
+              ]);
+            }
           }
         }
       } else {
@@ -1557,7 +2330,13 @@ function CreditCardReconciliationPageInner() {
             : `${response.data.summary.createdCount} lancamento(s) criado(s) na conciliacao`,
           'success'
         );
-        await refreshPreviewSilently();
+        await refreshPreviewAfterCommit();
+        if (
+          response.data.summary.createdCount > 0 ||
+          response.data.summary.skippedDuplicateCount > 0
+        ) {
+          await fetchInvoices({ preserveCurrentOnError: true });
+        }
       }
     } catch (error: any) {
       addToast(
@@ -1665,13 +2444,20 @@ function CreditCardReconciliationPageInner() {
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-hover">
+                    <label
+                      className={`inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors ${
+                        fileSelectionDisabled
+                          ? 'cursor-not-allowed opacity-60'
+                          : 'cursor-pointer hover:bg-accent-hover'
+                      }`}
+                    >
                       <Upload size={14} />
                       Escolher arquivo
                       <input
                         type="file"
                         accept={sourceConfig.accept}
                         onChange={handleFileChange}
+                        disabled={fileSelectionDisabled}
                         className="hidden"
                       />
                     </label>
@@ -1701,7 +2487,13 @@ function CreditCardReconciliationPageInner() {
                     <select
                       value={selectedTargetInvoiceKey}
                       onChange={(event) => handleTargetInvoiceChange(event.target.value)}
-                      disabled={invoicesLoading || targetInvoiceOptions.length === 0}
+                      disabled={
+                        invoicesLoading ||
+                        previewLoading ||
+                        commitLoading ||
+                        hasPendingSingleCommit ||
+                        targetInvoiceOptions.length === 0
+                      }
                       className="w-full rounded border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {targetInvoiceOptions.length === 0 ? (
@@ -1726,6 +2518,8 @@ function CreditCardReconciliationPageInner() {
                     disabled={
                       !fileBase64 ||
                       previewLoading ||
+                      commitLoading ||
+                      hasPendingSingleCommit ||
                       invoicesLoading ||
                       !selectedTargetInvoice
                     }
@@ -1828,6 +2622,40 @@ function CreditCardReconciliationPageInner() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <div
+                      role="group"
+                      aria-label="Modo de visualização da conciliação"
+                      className="flex rounded-lg border border-gray-700 bg-[#11161d] p-1"
+                    >
+                      <button
+                        type="button"
+                        aria-label="Visualização detalhada"
+                        aria-pressed={reconciliationViewMode === 'DETAILED'}
+                        onClick={() => setReconciliationViewMode('DETAILED')}
+                        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          reconciliationViewMode === 'DETAILED'
+                            ? 'bg-accent text-white'
+                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                        }`}
+                      >
+                        <Rows3 size={16} />
+                        Detalhada
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Visualização lado a lado"
+                        aria-pressed={reconciliationViewMode === 'SIDE_BY_SIDE'}
+                        onClick={() => setReconciliationViewMode('SIDE_BY_SIDE')}
+                        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          reconciliationViewMode === 'SIDE_BY_SIDE'
+                            ? 'bg-accent text-white'
+                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                        }`}
+                      >
+                        <Columns2 size={16} />
+                        Lado a lado
+                      </button>
+                    </div>
                     <Button
                       variant="outline"
                       onClick={handleExportPreviewCsv}
@@ -1915,6 +2743,36 @@ function CreditCardReconciliationPageInner() {
                 </div>
               </Card>
 
+              {reconciliationViewMode === 'SIDE_BY_SIDE' ? (
+                <CreditCardReconciliationSideBySide
+                  preview={preview}
+                  rows={targetInvoiceTransactionRows}
+                  identityCollisionRowIds={identityCollisionRowIds}
+                  items={sideBySideItems}
+                  filteredItemIds={filteredItemIds}
+                  selectedItemSet={selectedItemSet}
+                  focusedRowId={focusedSystemTransactionRowId}
+                  focusedPreviewItemIds={focusedPreviewItemIds}
+                  targetInvoiceDetailLoading={targetInvoiceDetailLoading}
+                  targetInvoiceDetailAvailable={Boolean(targetInvoiceDetail)}
+                  targetInvoiceDetailError={targetInvoiceDetailError}
+                  selectedTargetInvoice={selectedTargetInvoice}
+                  commitLoading={commitLoading}
+                  committingItemIds={committingItemIds}
+                  mobilePanel={reconciliationMobilePanel}
+                  itemRefs={comparisonItemRefs}
+                  systemTransactionRefs={systemTransactionRefs}
+                  comparisonStatusRef={comparisonStatusRef}
+                  onMobilePanelChange={setReconciliationMobilePanel}
+                  onSelectSystemTransaction={handleSystemTransactionFocus}
+                  onToggleImportSelection={handleToggleSelection}
+                  onRetryTargetInvoiceDetail={() => {
+                    if (selectedTargetInvoice) {
+                      void fetchTargetInvoiceDetail(selectedTargetInvoice);
+                    }
+                  }}
+                />
+              ) : (
               <div className="space-y-4">
                 {filteredItems.map((item) => {
                   const selectable = isManuallyImportable(item);
@@ -1949,7 +2807,11 @@ function CreditCardReconciliationPageInner() {
                             return true;
                           }
 
-                          if (previewMatchedTransactionKeys.has(transactionKey)) {
+                          if (
+                            getSystemInvoiceTransactionAliases(transaction).some((alias) =>
+                              previewMatchedTransactionKeys.has(alias)
+                            )
+                          ) {
                             return false;
                           }
 
@@ -2379,6 +3241,7 @@ function CreditCardReconciliationPageInner() {
                   </Card>
                 )}
               </div>
+              )}
 
               {commitResult && (
                 <Card>

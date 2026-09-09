@@ -108,6 +108,20 @@ const targetInvoiceDetail = {
       category
     },
     {
+      id: 505,
+      description: 'Assinatura alternativa no Zenit',
+      amount: '59.90',
+      installmentNumber: null,
+      totalInstallments: null,
+      date: '2026-09-04T12:00:00.000Z',
+      dueDate: invoice.dueDate,
+      isExternalCreditCardSettlement: false,
+      isProjected: false,
+      isFixedProjection: false,
+      fixedTemplateId: null,
+      category
+    },
+    {
       id: null,
       description: 'Netflix fixa no Zenit',
       amount: '39.90',
@@ -250,7 +264,10 @@ const previewItems = [
     sequence: 3,
     description: 'Assinatura ambigua A no arquivo',
     amount: '59.90',
-    matches: [matchedTransaction(503, 'Assinatura ambigua no Zenit', '59.90')]
+    matches: [
+      matchedTransaction(503, 'Assinatura ambigua no Zenit', '59.90'),
+      matchedTransaction(505, 'Assinatura alternativa no Zenit', '59.90')
+    ]
   }),
   previewItem({
     id: 'bank-ambiguous-b',
@@ -445,6 +462,23 @@ function getFileItem(region: HTMLElement, itemId: string) {
   return item as HTMLElement
 }
 
+function getFileSelectionButton(region: HTMLElement, itemId: string, name: RegExp) {
+  const item = getFileItem(region, itemId)
+  const button = within(item).getByRole('button', { name })
+  const checkbox = within(item).getByRole('checkbox')
+
+  expect(button).not.toContainElement(checkbox)
+  return button
+}
+
+function getZenitItem(region: HTMLElement, transactionKey: string) {
+  const item = region.querySelector(
+    `[data-reconciliation-transaction-key="${transactionKey}"]`
+  )
+  expect(item).toBeTruthy()
+  return item as HTMLElement
+}
+
 function expectRegionToHaveOwnScroll(region: HTMLElement) {
   expect(region.className).toContain('min-h-0')
   expect(region.className).toMatch(/overflow-(?:auto|y-auto|y-scroll)/)
@@ -583,9 +617,18 @@ describe('CreditCardReconciliationPage comparison views', () => {
     const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
     expectRegionToHaveOwnScroll(zenitRegion)
     expectRegionToHaveOwnScroll(fileRegion)
+    expect(
+      fileRegion.compareDocumentPosition(zenitRegion) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
 
-    await user.click(within(zenitRegion).getByRole('button', { name: /Mercado no Zenit/ }))
-    expect(getFileItem(fileRegion, 'bank-market')).toHaveAttribute(
+    const marketFileButton = getFileSelectionButton(
+      fileRegion,
+      'bank-market',
+      /Mercado no arquivo/
+    )
+    await user.click(marketFileButton)
+    expect(marketFileButton).toHaveAttribute('aria-pressed', 'true')
+    expect(getZenitItem(zenitRegion, 'transaction:501')).toHaveAttribute(
       'data-reconciliation-highlighted',
       'true'
     )
@@ -601,36 +644,141 @@ describe('CreditCardReconciliationPage comparison views', () => {
       name: 'Itens do arquivo da fatura'
     })
     expect(
-      within(restoredZenitRegion).getByRole('button', { name: /Mercado no Zenit/ })
+      getFileSelectionButton(restoredFileRegion, 'bank-market', /Mercado no arquivo/)
     ).toHaveAttribute('aria-pressed', 'true')
-    expect(getFileItem(restoredFileRegion, 'bank-market')).toHaveAttribute(
+    expect(getZenitItem(restoredZenitRegion, 'transaction:501')).toHaveAttribute(
       'data-reconciliation-highlighted',
       'true'
     )
   })
 
+  it('mantem o painel mobile no Zenit enquanto o detalhe carrega e destaca ao concluir', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 1023px)',
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(() => false)
+      }))
+    )
+
+    let resolveTargetInvoiceDetail:
+      | ((value: { data: typeof targetInvoiceDetail }) => void)
+      | undefined
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') {
+        return Promise.resolve({ data: [card] })
+      }
+
+      if (url === '/financial/credit-cards/1/invoices') {
+        return Promise.resolve({ data: [invoice] })
+      }
+
+      if (url === '/financial/categories') {
+        return Promise.resolve({ data: [category] })
+      }
+
+      if (url === '/financial/credit-card-invoices/101') {
+        return new Promise((resolve) => {
+          resolveTargetInvoiceDetail = resolve
+        })
+      }
+
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    const user = await renderAnalyzedPage()
+    await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+
+    const panelTabs = screen.getByRole('group', { name: 'Painel da comparação' })
+    const fileTab = within(panelTabs).getByRole('button', { name: 'Fatura' })
+    const zenitTab = within(panelTabs).getByRole('button', { name: 'Zenit' })
+    const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
+
+    expect(fileTab).toHaveAttribute('aria-pressed', 'true')
+    await user.click(
+      getFileSelectionButton(fileRegion, 'bank-market', /Mercado no arquivo/)
+    )
+
+    expect(zenitTab).toHaveAttribute('aria-pressed', 'true')
+    expect(fileTab).toHaveAttribute('aria-pressed', 'false')
+    expect(
+      screen.getByLabelText('Carregando lançamentos do Zenit')
+    ).toBeInTheDocument()
+    const comparisonStatus = screen.getByRole('status')
+    expect(comparisonStatus).toHaveTextContent(
+      'Carregando os lançamentos do Zenit para localizar a correspondência.'
+    )
+    expect(comparisonStatus).not.toHaveTextContent(
+      'Nenhuma correspondência foi encontrada no Zenit para este item.'
+    )
+
+    await act(async () => {
+      resolveTargetInvoiceDetail?.({ data: targetInvoiceDetail })
+    })
+
+    const zenitRegion = screen.getByRole('region', {
+      name: 'Lançamentos da fatura no Zenit'
+    })
+    await waitFor(() =>
+      expect(getZenitItem(zenitRegion, 'transaction:501')).toHaveAttribute(
+        'data-reconciliation-highlighted',
+        'true'
+      )
+    )
+    expect(zenitTab).toHaveAttribute('aria-pressed', 'true')
+    expect(comparisonStatus).not.toHaveTextContent(
+      'Nenhuma correspondência foi encontrada no Zenit para este item.'
+    )
+  })
+
+  it('mantem os lancamentos Zenit fora da sequencia normal de Tab', async () => {
+    const { zenitRegion } = await openSideBySideView()
+    const zenitItems = Array.from(
+      zenitRegion.querySelectorAll('[data-reconciliation-transaction-key]')
+    )
+
+    expect(zenitItems.length).toBeGreaterThan(0)
+    zenitItems.forEach((item) => {
+      expect(item).toHaveAttribute('tabindex', '-1')
+    })
+  })
+
   it('mantem selecao unica, move o destaque e nao altera os itens marcados para importar', async () => {
     const { user, zenitRegion, fileRegion } = await openSideBySideView()
-    const marketButton = within(zenitRegion).getByRole('button', { name: /Mercado no Zenit/ })
-    const gasButton = within(zenitRegion).getByRole('button', { name: /Posto no Zenit/ })
-    const unmatchedButton = within(zenitRegion).getByRole('button', {
-      name: /Sem correspondencia no Zenit/
-    })
     const marketItem = getFileItem(fileRegion, 'bank-market')
-    const gasItem = getFileItem(fileRegion, 'bank-gas')
     const pendingItem = getFileItem(fileRegion, 'bank-pending')
+    const marketButton = getFileSelectionButton(
+      fileRegion,
+      'bank-market',
+      /Mercado no arquivo/
+    )
+    const gasButton = getFileSelectionButton(fileRegion, 'bank-gas', /Posto no arquivo/)
+    const unmatchedButton = getFileSelectionButton(
+      fileRegion,
+      'bank-pending',
+      /Pendente no arquivo/
+    )
+    const marketZenitItem = getZenitItem(zenitRegion, 'transaction:501')
+    const gasZenitItem = getZenitItem(zenitRegion, 'transaction:502')
     const marketImportCheckbox = within(marketItem).getByRole('checkbox')
     const pendingImportCheckbox = within(pendingItem).getByRole('checkbox')
 
+    expect(within(zenitRegion).queryAllByRole('button')).toHaveLength(0)
     expect(marketImportCheckbox).not.toBeChecked()
     expect(pendingImportCheckbox).toBeChecked()
 
     await user.click(marketButton)
 
     expect(marketButton).toHaveAttribute('aria-pressed', 'true')
-    expect(marketItem).toHaveAttribute('data-reconciliation-highlighted', 'true')
+    expect(marketZenitItem).toHaveAttribute('data-reconciliation-highlighted', 'true')
     await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled())
-    expect(scrollIntoViewMock.mock.contexts).toContain(marketItem)
+    expect(scrollIntoViewMock.mock.contexts).toContain(marketZenitItem)
     expect(marketImportCheckbox).not.toBeChecked()
     expect(pendingImportCheckbox).toBeChecked()
 
@@ -639,16 +787,16 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     expect(marketButton).toHaveAttribute('aria-pressed', 'false')
     expect(gasButton).toHaveAttribute('aria-pressed', 'true')
-    expect(marketItem).toHaveAttribute('data-reconciliation-highlighted', 'false')
-    expect(gasItem).toHaveAttribute('data-reconciliation-highlighted', 'true')
-    await waitFor(() => expect(scrollIntoViewMock.mock.contexts).toContain(gasItem))
+    expect(marketZenitItem).toHaveAttribute('data-reconciliation-highlighted', 'false')
+    expect(gasZenitItem).toHaveAttribute('data-reconciliation-highlighted', 'true')
+    await waitFor(() => expect(scrollIntoViewMock.mock.contexts).toContain(gasZenitItem))
 
     await user.click(unmatchedButton)
 
     expect(gasButton).toHaveAttribute('aria-pressed', 'false')
     expect(unmatchedButton).toHaveAttribute('aria-pressed', 'true')
     expect(
-      fileRegion.querySelectorAll('[data-reconciliation-highlighted="true"]')
+      zenitRegion.querySelectorAll('[data-reconciliation-highlighted="true"]')
     ).toHaveLength(0)
     expect(marketImportCheckbox).not.toBeChecked()
     expect(pendingImportCheckbox).toBeChecked()
@@ -657,54 +805,63 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
   it('destaca todas as correspondencias ambiguas e reconhece fixa projetada', async () => {
     const { user, zenitRegion, fileRegion } = await openSideBySideView()
-    const ambiguousButton = within(zenitRegion).getByRole('button', {
-      name: /Assinatura ambigua no Zenit/
-    })
+    const ambiguousButton = getFileSelectionButton(
+      fileRegion,
+      'bank-ambiguous-a',
+      /Assinatura ambigua A no arquivo/
+    )
+    const ambiguousZenitItem = getZenitItem(zenitRegion, 'transaction:503')
+    const alternativeZenitItem = getZenitItem(zenitRegion, 'transaction:505')
 
     await user.click(ambiguousButton)
 
     expect(ambiguousButton).toHaveAttribute('aria-pressed', 'true')
-    expect(getFileItem(fileRegion, 'bank-ambiguous-a')).toHaveAttribute(
+    expect(ambiguousZenitItem).toHaveAttribute(
       'data-reconciliation-highlighted',
       'true'
     )
-    expect(getFileItem(fileRegion, 'bank-ambiguous-b')).toHaveAttribute(
+    expect(alternativeZenitItem).toHaveAttribute(
       'data-reconciliation-highlighted',
       'true'
     )
     expect(
-      screen.getByText(/mais de uma correspond.ncia|m.ltiplas correspond.ncias/i)
-    ).toBeInTheDocument()
+      screen.getAllByText(/mais de uma correspond.ncia|m.ltiplas correspond.ncias/i)
+    ).not.toHaveLength(0)
 
     scrollIntoViewMock.mockClear()
-    const fixedButton = within(zenitRegion).getByRole('button', { name: /Netflix fixa no Zenit/ })
+    const fixedButton = getFileSelectionButton(
+      fileRegion,
+      'bank-fixed',
+      /Netflix no arquivo/
+    )
     await user.click(fixedButton)
 
-    const fixedItem = getFileItem(fileRegion, 'bank-fixed')
+    const fixedZenitItem = getZenitItem(
+      zenitRegion,
+      'projected-fixed:77:77:2026-09'
+    )
+    const futureFixedZenitItem = getZenitItem(
+      zenitRegion,
+      'projected-fixed:77:77:2026-10'
+    )
     expect(ambiguousButton).toHaveAttribute('aria-pressed', 'false')
     expect(fixedButton).toHaveAttribute('aria-pressed', 'true')
-    expect(getFileItem(fileRegion, 'bank-ambiguous-a')).toHaveAttribute(
+    expect(ambiguousZenitItem).toHaveAttribute(
       'data-reconciliation-highlighted',
       'false'
     )
-    expect(getFileItem(fileRegion, 'bank-ambiguous-b')).toHaveAttribute(
+    expect(alternativeZenitItem).toHaveAttribute(
       'data-reconciliation-highlighted',
       'false'
     )
-    expect(fixedItem).toHaveAttribute('data-reconciliation-highlighted', 'true')
-    await waitFor(() => expect(scrollIntoViewMock.mock.contexts).toContain(fixedItem))
-
-    const futureFixedButton = within(zenitRegion).getByRole('button', {
-      name: /Netflix fixa futura no Zenit/
-    })
-    await user.click(futureFixedButton)
-
-    expect(fixedButton).toHaveAttribute('aria-pressed', 'false')
-    expect(futureFixedButton).toHaveAttribute('aria-pressed', 'true')
-    expect(fixedItem).toHaveAttribute('data-reconciliation-highlighted', 'false')
-    expect(
-      fileRegion.querySelectorAll('[data-reconciliation-highlighted="true"]')
-    ).toHaveLength(0)
+    expect(fixedZenitItem).toHaveAttribute('data-reconciliation-highlighted', 'true')
+    expect(futureFixedZenitItem).toHaveAttribute(
+      'data-reconciliation-highlighted',
+      'false'
+    )
+    await waitFor(() =>
+      expect(scrollIntoViewMock.mock.contexts).toContain(fixedZenitItem)
+    )
   })
 
   it.each(['CREATED', 'SKIPPED_DUPLICATE'] as const)(

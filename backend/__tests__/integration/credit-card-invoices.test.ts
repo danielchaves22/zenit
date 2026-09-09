@@ -14,6 +14,10 @@ import {
   resolveCreditCardInvoiceReference
 } from '../../src/utils/credit-card';
 import FinancialTransactionService from '../../src/services/financial-transaction.service';
+import CreditCardInvoiceService from '../../src/services/credit-card-invoice.service';
+import FixedTransactionService, {
+  buildOccurrenceKeyValue
+} from '../../src/services/fixed-transaction.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -125,6 +129,46 @@ describe('Credit card invoices', () => {
     };
   };
 
+  const createFixedCardTemplate = async (
+    cardId: number,
+    occurrenceDate: Date,
+    overrides?: {
+      description?: string;
+      amount?: number;
+      isActive?: boolean;
+      startDate?: Date;
+      endDate?: Date | null;
+    }
+  ) => {
+    const startDate = overrides?.startDate ?? new Date(
+      occurrenceDate.getFullYear(),
+      occurrenceDate.getMonth(),
+      1,
+      0,
+      0,
+      0,
+      0
+    );
+
+    return prisma.recurringTransaction.create({
+      data: {
+        description: overrides?.description ?? `Fixa Cartao ${Date.now()}`,
+        amount: overrides?.amount ?? 50,
+        type: 'EXPENSE',
+        frequency: 'MONTHLY',
+        dayOfMonth: null,
+        startDate,
+        endDate: overrides?.endDate,
+        nextDueDate: occurrenceDate,
+        isActive: overrides?.isActive ?? true,
+        fromAccountId: cardId,
+        categoryId: expenseCategoryId,
+        companyId,
+        createdBy: userId
+      }
+    });
+  };
+
   beforeAll(async () => {
     const companyCode = Number(`7${String(Date.now()).slice(-7)}`);
 
@@ -226,6 +270,7 @@ describe('Credit card invoices', () => {
     await prisma.userFinancialAccountAccess.deleteMany({ where: { companyId } });
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.creditCardInvoice.deleteMany({ where: { account: { companyId } } });
+    await prisma.recurringTransaction.deleteMany({ where: { companyId } });
     await prisma.financialTag.deleteMany({ where: { companyId } });
     await prisma.financialCategory.deleteMany({ where: { companyId } });
     await prisma.financialAccount.deleteMany({ where: { companyId } });
@@ -256,6 +301,7 @@ describe('Credit card invoices', () => {
     await prisma.userFinancialAccountAccess.deleteMany({ where: { companyId } });
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.creditCardInvoice.deleteMany({ where: { account: { companyId } } });
+    await prisma.recurringTransaction.deleteMany({ where: { companyId } });
     await prisma.financialTag.deleteMany({ where: { companyId } });
     await prisma.financialCategory.deleteMany({ where: { companyId } });
     await prisma.financialAccount.deleteMany({ where: { companyId } });
@@ -1689,5 +1735,722 @@ describe('Credit card invoices', () => {
     expect(block.pendingOccurrences).toHaveLength(1);
     expect(block.pendingOccurrences[0].templateId).toBe(fixedResponse.body.id);
     expect(block.pendingOccurrences[0].description).toBe('Assinatura pendente fechada');
+  });
+
+  it('materializes a fixed card occurrence into a real closed invoice without a manual override', async () => {
+    const card = await createCreditCardAccount();
+    const occurrenceDate = buildMonthDate(-1, 10);
+    const fixed = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa automatica em fatura fechada'
+    });
+
+    const result = await FixedTransactionService.materializeOccurrence({
+      templateId: fixed.id,
+      occurrenceDate,
+      companyId,
+      userId
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.transaction.occurrenceKey).toBe(
+      buildOccurrenceKeyValue(fixed.id, occurrenceDate)
+    );
+    expect(result.transaction.creditCardInvoice?.status).toBe('CLOSED');
+    expect(result.transaction.creditCardInvoice?.referenceYear).toBe(occurrenceDate.getFullYear());
+    expect(result.transaction.creditCardInvoice?.referenceMonth).toBe(occurrenceDate.getMonth() + 1);
+  });
+
+  it('previews and idempotently repairs a closed competence without a persisted invoice', async () => {
+    const card = await createCreditCardAccount();
+    const occurrenceDate = buildMonthDate(-1, 10);
+    const referenceYear = occurrenceDate.getFullYear();
+    const referenceMonth = occurrenceDate.getMonth() + 1;
+    const fixed = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa pendente para reparo',
+      amount: 73.45
+    });
+    const endpoint = `/api/financial/credit-cards/${card.id}/invoices/${referenceYear}/${referenceMonth}/fixed-materialization`;
+
+    const preview = await request(app)
+      .get(endpoint)
+      .set(authHeaders());
+
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      accountId: card.id,
+      invoiceId: null,
+      referenceYear,
+      referenceMonth,
+      status: 'CLOSED',
+      canMaterialize: true,
+      reason: 'READY',
+      expectedCount: 1,
+      materializedCount: 0,
+      ignoredCount: 0,
+      missingCount: 1
+    });
+    expect(preview.body.missingOccurrences[0].occurrenceKey).toBe(
+      buildOccurrenceKeyValue(fixed.id, occurrenceDate)
+    );
+
+    const repaired = await request(app)
+      .post(endpoint)
+      .set(authHeaders());
+
+    expect(repaired.status).toBe(200);
+    expect(repaired.body).toMatchObject({
+      status: 'CLOSED',
+      canMaterialize: false,
+      reason: 'NOTHING_TO_MATERIALIZE',
+      expectedCount: 1,
+      materializedCount: 1,
+      missingCount: 0,
+      attemptedCount: 1,
+      createdCount: 1,
+      failedCount: 0,
+      errors: []
+    });
+    expect(repaired.body.invoiceId).toEqual(expect.any(Number));
+    expect(repaired.body.materializedOccurrences[0]).toMatchObject({
+      templateId: fixed.id,
+      transactionStatus: 'COMPLETED',
+      matchedBy: 'OCCURRENCE_KEY',
+      isIgnored: false
+    });
+
+    const repeated = await request(app)
+      .post(endpoint)
+      .set(authHeaders());
+
+    expect(repeated.status).toBe(200);
+    expect(repeated.body).toMatchObject({
+      missingCount: 0,
+      attemptedCount: 0,
+      createdCount: 0,
+      failedCount: 0
+    });
+
+    const stored = await prisma.financialTransaction.findMany({
+      where: {
+        companyId,
+        occurrenceKey: buildOccurrenceKeyValue(fixed.id, occurrenceDate)
+      }
+    });
+    expect(stored).toHaveLength(1);
+    expect(stored[0].createdBy).toBe(userId);
+  });
+
+  it('counts ignored and unequivocal legacy occurrences as already materialized', async () => {
+    const card = await createCreditCardAccount();
+    const occurrenceDate = buildMonthDate(-1, 10);
+    const referenceYear = occurrenceDate.getFullYear();
+    const referenceMonth = occurrenceDate.getMonth() + 1;
+    const reference = resolveCreditCardInvoiceReference(occurrenceDate, 10, 15);
+    const invoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear,
+        referenceMonth,
+        closingDate: reference.closingDate,
+        dueDate: reference.dueDate,
+        status: 'CLOSED',
+        totalAmount: 0
+      }
+    });
+    const ignoredTemplate = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa ignorada historica',
+      isActive: false,
+      endDate: new Date(
+        occurrenceDate.getFullYear(),
+        occurrenceDate.getMonth(),
+        occurrenceDate.getDate() + 1,
+        23,
+        59,
+        59,
+        999
+      )
+    });
+    const legacyTemplate = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa legada sem chave'
+    });
+
+    await prisma.financialTransaction.create({
+      data: {
+        description: ignoredTemplate.description,
+        amount: ignoredTemplate.amount,
+        date: occurrenceDate,
+        dueDate: reference.dueDate,
+        effectiveDate: occurrenceDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        creditCardInvoiceId: invoice.id,
+        companyId,
+        createdBy: userId,
+        recurringTransactionId: ignoredTemplate.id,
+        occurrenceKey: buildOccurrenceKeyValue(ignoredTemplate.id, occurrenceDate),
+        archivedAt: new Date(),
+        archivedBy: userId
+      }
+    });
+    await prisma.financialTransaction.create({
+      data: {
+        description: legacyTemplate.description,
+        amount: legacyTemplate.amount,
+        date: occurrenceDate,
+        dueDate: reference.dueDate,
+        effectiveDate: occurrenceDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        creditCardInvoiceId: invoice.id,
+        companyId,
+        createdBy: userId,
+        recurringTransactionId: legacyTemplate.id,
+        occurrenceKey: null
+      }
+    });
+
+    const endpoint = `/api/financial/credit-cards/${card.id}/invoices/${referenceYear}/${referenceMonth}/fixed-materialization`;
+    const preview = await request(app)
+      .get(endpoint)
+      .set(authHeaders());
+
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      status: 'CLOSED',
+      canMaterialize: false,
+      reason: 'NOTHING_TO_MATERIALIZE',
+      expectedCount: 2,
+      materializedCount: 2,
+      ignoredCount: 1,
+      missingCount: 0
+    });
+    expect(preview.body.materializedOccurrences).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        templateId: ignoredTemplate.id,
+        isIgnored: true,
+        matchedBy: 'OCCURRENCE_KEY'
+      }),
+      expect.objectContaining({
+        templateId: legacyTemplate.id,
+        isIgnored: false,
+        matchedBy: 'LEGACY_RECURRING_COMPETENCE'
+      })
+    ]));
+
+    const repeated = await request(app)
+      .post(endpoint)
+      .set(authHeaders());
+    expect(repeated.status).toBe(200);
+    expect(repeated.body).toMatchObject({
+      attemptedCount: 0,
+      createdCount: 0,
+      failedCount: 0,
+      materializedCount: 2,
+      missingCount: 0
+    });
+  });
+
+  it('reports misplaced exact keys and ambiguous legacy rows without duplicating a mixed repair', async () => {
+    const card = await createCreditCardAccount();
+    const occurrenceDate = buildMonthDate(-1, 10);
+    const reference = resolveCreditCardInvoiceReference(occurrenceDate, 10, 15);
+    const wrongOccurrenceDate = buildMonthDate(-2, 10);
+    const wrongReference = resolveCreditCardInvoiceReference(wrongOccurrenceDate, 10, 15);
+    const targetInvoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear: reference.referenceYear,
+        referenceMonth: reference.referenceMonth,
+        closingDate: reference.closingDate,
+        dueDate: reference.dueDate,
+        status: 'CLOSED',
+        totalAmount: 0
+      }
+    });
+    const wrongInvoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear: wrongReference.referenceYear,
+        referenceMonth: wrongReference.referenceMonth,
+        closingDate: wrongReference.closingDate,
+        dueDate: wrongReference.dueDate,
+        status: 'CLOSED',
+        totalAmount: 0
+      }
+    });
+    const looseExact = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa com chave solta',
+      amount: 10
+    });
+    const wrongExact = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa na competencia errada',
+      amount: 20
+    });
+    const ambiguousLegacy = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa legada ambigua',
+      amount: 30
+    });
+    const missing = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa realmente ausente',
+      amount: 40
+    });
+    const createStoredOccurrence = (data: {
+      templateId: number;
+      description: string;
+      amount: number;
+      occurrenceKey: string | null;
+      invoiceId?: number;
+    }) => prisma.financialTransaction.create({
+      data: {
+        description: data.description,
+        amount: data.amount,
+        date: occurrenceDate,
+        dueDate: reference.dueDate,
+        effectiveDate: occurrenceDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        creditCardInvoiceId: data.invoiceId,
+        companyId,
+        createdBy: userId,
+        recurringTransactionId: data.templateId,
+        occurrenceKey: data.occurrenceKey
+      }
+    });
+
+    const looseTransaction = await createStoredOccurrence({
+      templateId: looseExact.id,
+      description: looseExact.description,
+      amount: 10,
+      occurrenceKey: buildOccurrenceKeyValue(looseExact.id, occurrenceDate)
+    });
+    const wrongTransaction = await createStoredOccurrence({
+      templateId: wrongExact.id,
+      description: wrongExact.description,
+      amount: 20,
+      occurrenceKey: buildOccurrenceKeyValue(wrongExact.id, occurrenceDate),
+      invoiceId: wrongInvoice.id
+    });
+    const ambiguousTransactions = await Promise.all([
+      createStoredOccurrence({
+        templateId: ambiguousLegacy.id,
+        description: `${ambiguousLegacy.description} 1`,
+        amount: 30,
+        occurrenceKey: null,
+        invoiceId: targetInvoice.id
+      }),
+      createStoredOccurrence({
+        templateId: ambiguousLegacy.id,
+        description: `${ambiguousLegacy.description} 2`,
+        amount: 30,
+        occurrenceKey: null,
+        invoiceId: targetInvoice.id
+      })
+    ]);
+    const endpoint = `/api/financial/credit-cards/${card.id}/invoices/${reference.referenceYear}/${reference.referenceMonth}/fixed-materialization`;
+
+    const preview = await request(app).get(endpoint).set(authHeaders());
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      expectedCount: 4,
+      materializedCount: 3,
+      missingCount: 1,
+      inconsistencyCount: 3,
+      canMaterialize: true
+    });
+    expect(preview.body.missingOccurrences[0].templateId).toBe(missing.id);
+    expect(preview.body.inconsistentOccurrences).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        templateId: looseExact.id,
+        issue: 'OCCURRENCE_KEY_WITHOUT_INVOICE',
+        transactionIds: [looseTransaction.id]
+      }),
+      expect.objectContaining({
+        templateId: wrongExact.id,
+        issue: 'OCCURRENCE_KEY_WRONG_INVOICE',
+        transactionIds: [wrongTransaction.id]
+      }),
+      expect.objectContaining({
+        templateId: ambiguousLegacy.id,
+        issue: 'AMBIGUOUS_LEGACY_OCCURRENCES',
+        transactionIds: ambiguousTransactions
+          .map((transaction) => transaction.id)
+          .sort((left, right) => left - right)
+      })
+    ]));
+
+    const looseRetry = await FixedTransactionService.materializeOccurrence({
+      templateId: looseExact.id,
+      occurrenceDate,
+      companyId,
+      userId
+    });
+    const ambiguousRetry = await FixedTransactionService.materializeOccurrence({
+      templateId: ambiguousLegacy.id,
+      occurrenceDate,
+      companyId,
+      userId
+    });
+    expect(looseRetry.created).toBe(false);
+    expect(ambiguousRetry.created).toBe(false);
+
+    const repaired = await request(app).post(endpoint).set(authHeaders());
+    expect(repaired.status).toBe(200);
+    expect(repaired.body).toMatchObject({
+      attemptedCount: 1,
+      createdCount: 1,
+      failedCount: 0,
+      expectedCount: 4,
+      materializedCount: 4,
+      missingCount: 0,
+      inconsistencyCount: 3
+    });
+    expect(
+      await prisma.financialTransaction.count({
+        where: {
+          companyId,
+          recurringTransactionId: { in: [looseExact.id, wrongExact.id, ambiguousLegacy.id] }
+        }
+      })
+    ).toBe(4);
+    expect(
+      await prisma.financialTransaction.count({
+        where: {
+          companyId,
+          occurrenceKey: buildOccurrenceKeyValue(missing.id, occurrenceDate)
+        }
+      })
+    ).toBe(1);
+
+    const storedTargetInvoice = await prisma.creditCardInvoice.findUnique({
+      where: { id: targetInvoice.id }
+    });
+    const storedCard = await prisma.financialAccount.findUnique({
+      where: { id: card.id }
+    });
+    expect(Number(storedTargetInvoice?.totalAmount)).toBeCloseTo(100, 5);
+    expect(Number(storedCard?.balance)).toBeCloseTo(-40, 5);
+  });
+
+  it('excludes an inactive template without an explicit end date from historical expectations', async () => {
+    const card = await createCreditCardAccount();
+    const occurrenceDate = buildMonthDate(-1, 10);
+    await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa inativa sem historico delimitado',
+      isActive: false,
+      endDate: null
+    });
+    const endpoint = `/api/financial/credit-cards/${card.id}/invoices/${occurrenceDate.getFullYear()}/${occurrenceDate.getMonth() + 1}/fixed-materialization`;
+
+    const preview = await request(app).get(endpoint).set(authHeaders());
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      expectedCount: 0,
+      materializedCount: 0,
+      missingCount: 0,
+      excludedUnboundedInactiveTemplateCount: 1,
+      canMaterialize: false,
+      reason: 'NOTHING_TO_MATERIALIZE'
+    });
+    expect(preview.body.warnings).toHaveLength(1);
+    expect(preview.body.warnings[0]).toMatch(/nao ha historico suficiente/i);
+  });
+
+  it('suppresses a legacy fixed occurrence from invoice projections and allows payment at the persisted total', async () => {
+    const cycle = buildCurrentCardCycleConfig();
+    const card = await createCreditCardAccount({
+      statementClosingDay: cycle.closingDay,
+      statementDueDay: cycle.dueDay
+    });
+    const occurrenceDate = cycle.currentInvoiceReference.closingDate;
+    const fixed = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa legada ja lancada',
+      amount: 42.75
+    });
+    const invoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear: cycle.currentInvoiceReference.referenceYear,
+        referenceMonth: cycle.currentInvoiceReference.referenceMonth,
+        closingDate: cycle.currentInvoiceReference.closingDate,
+        dueDate: cycle.currentInvoiceReference.dueDate,
+        status: 'OPEN',
+        totalAmount: 42.75
+      }
+    });
+
+    await prisma.financialTransaction.create({
+      data: {
+        description: fixed.description,
+        amount: fixed.amount,
+        date: occurrenceDate,
+        dueDate: cycle.currentInvoiceReference.dueDate,
+        effectiveDate: occurrenceDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        creditCardInvoiceId: invoice.id,
+        companyId,
+        createdBy: userId,
+        recurringTransactionId: fixed.id,
+        occurrenceKey: null
+      }
+    });
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+    expect(invoicesResponse.status).toBe(200);
+    const listedInvoice = invoicesResponse.body.find((item: any) => item.id === invoice.id);
+    expect(listedInvoice).toMatchObject({
+      id: invoice.id,
+      itemCount: 1,
+      fixedItemCount: 0,
+      hasProjectedTransactions: false
+    });
+    expect(Number(listedInvoice.itemsSubtotal)).toBeCloseTo(42.75, 5);
+    expect(Number(listedInvoice.fixedSubtotal)).toBe(0);
+    expect(Number(listedInvoice.totalAmount)).toBeCloseTo(42.75, 5);
+
+    const detailResponse = await request(app)
+      .get(`/api/financial/credit-card-invoices/${invoice.id}`)
+      .set(authHeaders());
+    expect(detailResponse.status).toBe(200);
+    expect(detailResponse.body.transactions).toHaveLength(1);
+    expect(detailResponse.body.fixedItemCount).toBe(0);
+    expect(detailResponse.body.hasProjectedTransactions).toBe(false);
+    expect(Number(detailResponse.body.totalAmount)).toBeCloseTo(42.75, 5);
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${invoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        paymentDate: new Date().toISOString()
+      });
+    expect(paymentResponse.status).toBe(200);
+    expect(paymentResponse.body.status).toBe('PAID');
+    expect(Number(paymentResponse.body.paymentTransaction.amount)).toBeCloseTo(42.75, 5);
+  });
+
+  it('calculates and commits invoice payment only after concurrent card writes release the account lock', async () => {
+    const card = await createCreditCardAccount();
+    const occurrenceDate = buildMonthDate(-1, 10);
+    const reference = resolveCreditCardInvoiceReference(occurrenceDate, 10, 15);
+    const invoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear: reference.referenceYear,
+        referenceMonth: reference.referenceMonth,
+        closingDate: reference.closingDate,
+        dueDate: reference.dueDate,
+        status: 'CLOSED',
+        totalAmount: 100
+      }
+    });
+    const fixed = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa concorrente ao pagamento',
+      amount: 50
+    });
+
+    await prisma.financialTransaction.create({
+      data: {
+        description: 'Compra base antes do pagamento',
+        amount: 100,
+        date: occurrenceDate,
+        dueDate: reference.dueDate,
+        effectiveDate: occurrenceDate,
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        creditCardInvoiceId: invoice.id,
+        companyId,
+        createdBy: userId
+      }
+    });
+
+    let signalCardLocked!: () => void;
+    let releaseCardLock!: () => void;
+    const cardLocked = new Promise<void>((resolve) => {
+      signalCardLocked = resolve;
+    });
+    const releaseLock = new Promise<void>((resolve) => {
+      releaseCardLock = resolve;
+    });
+    const concurrentCardWrite = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT id
+        FROM "FinancialAccount"
+        WHERE id = ${card.id}
+        FOR UPDATE
+      `;
+      signalCardLocked();
+      await releaseLock;
+      await tx.financialTransaction.create({
+        data: {
+          description: fixed.description,
+          amount: fixed.amount,
+          date: occurrenceDate,
+          dueDate: reference.dueDate,
+          effectiveDate: occurrenceDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: card.id,
+          categoryId: expenseCategoryId,
+          creditCardInvoiceId: invoice.id,
+          companyId,
+          createdBy: userId,
+          recurringTransactionId: fixed.id,
+          occurrenceKey: buildOccurrenceKeyValue(fixed.id, occurrenceDate)
+        }
+      });
+      await tx.creditCardInvoice.update({
+        where: { id: invoice.id },
+        data: { totalAmount: 150 }
+      });
+    }, {
+      timeout: 10000
+    });
+
+    await cardLocked;
+    let paymentSettled = false;
+    const payment = CreditCardInvoiceService.payInvoice({
+      invoiceId: invoice.id,
+      fromAccountId: payerAccountId,
+      paymentDate: new Date(),
+      companyId,
+      userId
+    }).finally(() => {
+      paymentSettled = true;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(paymentSettled).toBe(false);
+    releaseCardLock();
+    await concurrentCardWrite;
+
+    const paidInvoice = await payment;
+    expect(paidInvoice?.status).toBe('PAID');
+    expect(Number(paidInvoice?.totalAmount)).toBeCloseTo(150, 5);
+    expect(Number(paidInvoice?.paymentTransaction?.amount)).toBeCloseTo(150, 5);
+    expect(
+      await prisma.financialTransaction.count({
+        where: {
+          companyId,
+          creditCardInvoiceId: invoice.id,
+          type: 'EXPENSE'
+        }
+      })
+    ).toBe(2);
+  });
+
+  it('reports an inactive card as ineligible and refuses historical repair', async () => {
+    const card = await createCreditCardAccount();
+    const occurrenceDate = buildMonthDate(-1, 10);
+    const fixed = await createFixedCardTemplate(card.id, occurrenceDate, {
+      description: 'Fixa de cartao inativo'
+    });
+    await prisma.financialAccount.update({
+      where: { id: card.id },
+      data: { isActive: false }
+    });
+    const endpoint = `/api/financial/credit-cards/${card.id}/invoices/${occurrenceDate.getFullYear()}/${occurrenceDate.getMonth() + 1}/fixed-materialization`;
+
+    const preview = await request(app)
+      .get(endpoint)
+      .set(authHeaders());
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({
+      status: 'CLOSED',
+      canMaterialize: false,
+      reason: 'ACCOUNT_INACTIVE',
+      expectedCount: 1,
+      missingCount: 1
+    });
+
+    const repair = await request(app)
+      .post(endpoint)
+      .set(authHeaders());
+    expect(repair.status).toBe(400);
+    expect(repair.body.error).toMatch(/cartao de credito esta inativo/i);
+    expect(
+      await prisma.financialTransaction.count({
+        where: {
+          companyId,
+          occurrenceKey: buildOccurrenceKeyValue(fixed.id, occurrenceDate)
+        }
+      })
+    ).toBe(0);
+  });
+
+  it('refuses repair when the exact competence is open or paid', async () => {
+    const card = await createCreditCardAccount();
+    const historicalDate = buildMonthDate(-2, 10);
+    await createFixedCardTemplate(card.id, historicalDate, {
+      description: 'Fixa protegida por status'
+    });
+
+    const openDate = buildMonthDate(1, 10);
+    const openYear = openDate.getFullYear();
+    const openMonth = openDate.getMonth() + 1;
+    const openEndpoint = `/api/financial/credit-cards/${card.id}/invoices/${openYear}/${openMonth}/fixed-materialization`;
+    const openPreview = await request(app)
+      .get(openEndpoint)
+      .set(authHeaders());
+    expect(openPreview.status).toBe(200);
+    expect(openPreview.body).toMatchObject({
+      status: 'OPEN',
+      canMaterialize: false,
+      reason: 'INVOICE_OPEN',
+      missingCount: 1
+    });
+
+    const openRepair = await request(app)
+      .post(openEndpoint)
+      .set(authHeaders());
+    expect(openRepair.status).toBe(400);
+    expect(openRepair.body.error).toMatch(/fatura ainda esta aberta/i);
+
+    const paidDate = buildMonthDate(-1, 10);
+    const paidReference = resolveCreditCardInvoiceReference(paidDate, 10, 15);
+    await prisma.creditCardInvoice.create({
+      data: {
+        accountId: card.id,
+        referenceYear: paidDate.getFullYear(),
+        referenceMonth: paidDate.getMonth() + 1,
+        closingDate: paidReference.closingDate,
+        dueDate: paidReference.dueDate,
+        status: 'PAID',
+        settlementType: 'EXTERNAL',
+        settledAt: paidReference.dueDate,
+        totalAmount: 0
+      }
+    });
+    const paidEndpoint = `/api/financial/credit-cards/${card.id}/invoices/${paidDate.getFullYear()}/${paidDate.getMonth() + 1}/fixed-materialization`;
+    const paidPreview = await request(app)
+      .get(paidEndpoint)
+      .set(authHeaders());
+    expect(paidPreview.status).toBe(200);
+    expect(paidPreview.body).toMatchObject({
+      status: 'PAID',
+      canMaterialize: false,
+      reason: 'INVOICE_PAID',
+      missingCount: 1
+    });
+
+    const paidRepair = await request(app)
+      .post(paidEndpoint)
+      .set(authHeaders());
+    expect(paidRepair.status).toBe(400);
+    expect(paidRepair.body.error).toMatch(/fatura ja esta paga/i);
+
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
   });
 });

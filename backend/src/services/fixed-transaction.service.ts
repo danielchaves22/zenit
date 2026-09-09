@@ -9,6 +9,10 @@
 } from '@prisma/client';
 import { parseDecimal } from '../utils/money';
 import { logger } from '../utils/logger';
+import {
+  CreditCardInvoiceReference,
+  resolveCreditCardInvoiceReference
+} from '../utils/credit-card';
 
 const prisma = new PrismaClient();
 
@@ -40,6 +44,10 @@ export type FixedProjectedOccurrence = {
   template: FixedTemplateWithRelations;
   occurrenceDate: Date;
   occurrenceKey: string;
+};
+
+export type FixedMaterializationInvoiceReference = CreditCardInvoiceReference & {
+  accountId: number;
 };
 
 type FixedAccountSelection = {
@@ -178,6 +186,7 @@ const materializedOccurrenceInclude = {
   creditCardInvoice: {
     select: {
       id: true,
+      accountId: true,
       referenceYear: true,
       referenceMonth: true,
       dueDate: true,
@@ -197,6 +206,75 @@ async function findMaterializedOccurrence(companyId: number, occurrenceKey: stri
     },
     include: materializedOccurrenceInclude
   });
+}
+
+async function findLegacyCreditCardOccurrences(params: {
+  companyId: number;
+  templateId: number;
+  accountId: number;
+  referenceYear: number;
+  referenceMonth: number;
+}) {
+  const monthStart = new Date(
+    params.referenceYear,
+    params.referenceMonth - 1,
+    1,
+    0,
+    0,
+    0,
+    0
+  );
+  const monthEnd = new Date(
+    params.referenceYear,
+    params.referenceMonth,
+    0,
+    23,
+    59,
+    59,
+    999
+  );
+
+  return prisma.financialTransaction.findMany({
+    where: {
+      companyId: params.companyId,
+      occurrenceKey: null,
+      recurringTransactionId: params.templateId,
+      fromAccountId: params.accountId,
+      type: TransactionType.EXPENSE,
+      OR: [
+        {
+          creditCardInvoice: {
+            is: {
+              accountId: params.accountId,
+              referenceYear: params.referenceYear,
+              referenceMonth: params.referenceMonth
+            }
+          }
+        },
+        {
+          creditCardInvoiceId: null,
+          date: {
+            gte: monthStart,
+            lte: monthEnd
+          }
+        }
+      ]
+    },
+    include: materializedOccurrenceInclude,
+    orderBy: { id: 'asc' }
+  });
+}
+
+function isOccurrenceLinkedToInvoiceReference(
+  occurrence: Awaited<ReturnType<typeof findMaterializedOccurrence>>,
+  reference: FixedMaterializationInvoiceReference
+): boolean {
+  return Boolean(
+    occurrence?.creditCardInvoice &&
+    occurrence.creditCardInvoice.accountId === reference.accountId &&
+    occurrence.creditCardInvoice.referenceYear === reference.referenceYear &&
+    occurrence.creditCardInvoice.referenceMonth === reference.referenceMonth
+  );
 }
 
 function isMaterializationConcurrencyError(error: any): boolean {
@@ -1007,6 +1085,8 @@ export default class FixedTransactionService {
     userId: number;
     enforceProjectionCutoff?: boolean;
     referenceDate?: Date;
+    creditCardInvoiceReference?: FixedMaterializationInvoiceReference;
+    allowInactiveTemplate?: boolean;
   }): Promise<{ transaction: any; created: boolean }> {
     const { templateId, companyId, userId } = params;
     const requestedOccurrenceDate = startOfDay(params.occurrenceDate);
@@ -1045,7 +1125,23 @@ export default class FixedTransactionService {
       throw new Error('Template de transacao fixa nao encontrado');
     }
 
-    const occurrenceDate = resolveOccurrenceDateForReference(template, requestedOccurrenceDate);
+    const isCreditCardFixedExpense = isCreditCardFixedExpenseTemplate(template);
+    const explicitInvoiceReference = params.creditCardInvoiceReference;
+
+    if (explicitInvoiceReference && !isCreditCardFixedExpense) {
+      throw new Error('Referencia de fatura so pode ser usada em fixa de cartao de credito');
+    }
+
+    if (
+      explicitInvoiceReference &&
+      explicitInvoiceReference.accountId !== template.fromAccountId
+    ) {
+      throw new Error('Referencia de fatura nao pertence ao cartao da transacao fixa');
+    }
+
+    const occurrenceDate = explicitInvoiceReference
+      ? startOfDay(explicitInvoiceReference.closingDate)
+      : resolveOccurrenceDateForReference(template, requestedOccurrenceDate);
 
     if (params.enforceProjectionCutoff) {
       this.ensureManualProjectionOccurrenceAllowed(
@@ -1054,7 +1150,7 @@ export default class FixedTransactionService {
       );
     }
 
-    if (!template.isActive) {
+    if (!template.isActive && !params.allowInactiveTemplate) {
       throw new Error('Template de transacao fixa inativo');
     }
 
@@ -1066,38 +1162,91 @@ export default class FixedTransactionService {
       throw new Error('Ocorrencia posterior ao fim do template');
     }
 
-    ensureFixedScheduleConfiguration({
-      type: template.type,
-      dayOfMonth: template.dayOfMonth,
-      fromAccount: template.fromAccount
-        ? {
-            id: template.fromAccount.id,
-            type: template.fromAccount.type ?? undefined,
-            statementClosingDay: template.fromAccount.statementClosingDay,
-            statementDueDay: template.fromAccount.statementDueDay
-          }
-        : null,
-      toAccount: template.toAccount
-        ? {
-            id: template.toAccount.id,
-            type: template.toAccount.type ?? undefined,
-            statementClosingDay: template.toAccount.statementClosingDay,
-            statementDueDay: template.toAccount.statementDueDay
-          }
-        : null
-    });
+    if (!explicitInvoiceReference) {
+      ensureFixedScheduleConfiguration({
+        type: template.type,
+        dayOfMonth: template.dayOfMonth,
+        fromAccount: template.fromAccount
+          ? {
+              id: template.fromAccount.id,
+              type: template.fromAccount.type ?? undefined,
+              statementClosingDay: template.fromAccount.statementClosingDay,
+              statementDueDay: template.fromAccount.statementDueDay
+            }
+          : null,
+        toAccount: template.toAccount
+          ? {
+              id: template.toAccount.id,
+              type: template.toAccount.type ?? undefined,
+              statementClosingDay: template.toAccount.statementClosingDay,
+              statementDueDay: template.toAccount.statementDueDay
+            }
+          : null
+      });
+    }
 
     const occurrenceKey = buildOccurrenceKeyValue(template.id, occurrenceDate);
+    const targetInvoiceReference: FixedMaterializationInvoiceReference | null =
+      isCreditCardFixedExpense
+        ? {
+            ...(explicitInvoiceReference ?? resolveCreditCardInvoiceReference(
+              occurrenceDate,
+              template.fromAccount?.statementClosingDay as number,
+              template.fromAccount?.statementDueDay as number
+            )),
+            accountId: template.fromAccountId as number
+          }
+        : null;
 
     const existing = await findMaterializedOccurrence(companyId, occurrenceKey);
 
     if (existing) {
+      if (
+        targetInvoiceReference &&
+        !isOccurrenceLinkedToInvoiceReference(existing, targetInvoiceReference)
+      ) {
+        logger.warn('Fixed occurrence key exists outside the expected invoice', {
+          companyId,
+          templateId: template.id,
+          occurrenceKey,
+          transactionId: existing.id,
+          expectedAccountId: targetInvoiceReference.accountId,
+          expectedReferenceYear: targetInvoiceReference.referenceYear,
+          expectedReferenceMonth: targetInvoiceReference.referenceMonth,
+          actualInvoice: existing.creditCardInvoice
+        });
+      }
+
       return { transaction: existing, created: false };
+    }
+
+    if (targetInvoiceReference) {
+      const legacyOccurrences = await findLegacyCreditCardOccurrences({
+        companyId,
+        templateId: template.id,
+        accountId: targetInvoiceReference.accountId,
+        referenceYear: targetInvoiceReference.referenceYear,
+        referenceMonth: targetInvoiceReference.referenceMonth
+      });
+
+      if (legacyOccurrences.length > 1) {
+        logger.warn('Ambiguous legacy fixed transaction occurrences found', {
+          companyId,
+          templateId: template.id,
+          accountId: targetInvoiceReference.accountId,
+          referenceYear: targetInvoiceReference.referenceYear,
+          referenceMonth: targetInvoiceReference.referenceMonth,
+          transactionIds: legacyOccurrences.map((occurrence) => occurrence.id)
+        });
+      }
+
+      if (legacyOccurrences.length >= 1) {
+        return { transaction: legacyOccurrences[0], created: false };
+      }
     }
 
     try {
       const { default: FinancialTransactionService } = await import('./financial-transaction.service');
-      const isCreditCardFixedExpense = isCreditCardFixedExpenseTemplate(template);
       const resolvedAccounts = await resolveMaterializationAccountIds({
         companyId,
         type: template.type,
@@ -1121,7 +1270,8 @@ export default class FixedTransactionService {
         createdBy: userId,
         recurringTransactionId: template.id,
         occurrenceKey,
-        allowMissingAccount: true
+        allowMissingAccount: true,
+        creditCardInvoiceReference: targetInvoiceReference ?? undefined
       });
 
       if (Array.isArray(createdResult)) {
@@ -1148,6 +1298,22 @@ export default class FixedTransactionService {
         const duplicated = await waitForMaterializedOccurrence(companyId, occurrenceKey);
 
         if (duplicated) {
+          if (
+            targetInvoiceReference &&
+            !isOccurrenceLinkedToInvoiceReference(duplicated, targetInvoiceReference)
+          ) {
+            logger.warn('Concurrent fixed occurrence key was created outside the expected invoice', {
+              companyId,
+              templateId: template.id,
+              occurrenceKey,
+              transactionId: duplicated.id,
+              expectedAccountId: targetInvoiceReference.accountId,
+              expectedReferenceYear: targetInvoiceReference.referenceYear,
+              expectedReferenceMonth: targetInvoiceReference.referenceMonth,
+              actualInvoice: duplicated.creditCardInvoice
+            });
+          }
+
           return { transaction: duplicated, created: false };
         }
       }

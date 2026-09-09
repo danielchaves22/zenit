@@ -13,6 +13,35 @@ const prisma = new PrismaClient();
 
 const FIXED_MATERIALIZER_JOB = 'fixed-transaction-materializer';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function scopeJobRunToCompany<TRun extends {
+  status: string;
+  errorMessage: string | null;
+  errorDetails: Prisma.JsonValue | null;
+}>(run: TRun, companyId: number) {
+  const companyErrorDetails = Array.isArray(run.errorDetails)
+    ? run.errorDetails.filter(
+        (detail) => isRecord(detail) && detail.companyId === companyId
+      )
+    : [];
+
+  return {
+    ...run,
+    // Job runs aggregate every company. Never expose an unscoped backend message or stack
+    // through a tenant-scoped overview.
+    errorMessage: run.status === 'FAILED'
+      ? 'A execucao global falhou. Detalhes tecnicos globais nao sao exibidos neste painel.'
+      : null,
+    errorDetails: companyErrorDetails.length > 0 ? companyErrorDetails : null,
+    companyErrorDetailCount: companyErrorDetails.length,
+    countsScope: 'GLOBAL' as const,
+    errorDetailsScope: 'COMPANY' as const
+  };
+}
+
 function buildProjectionWindow(now: Date = new Date()) {
   return Array.from({ length: 10 }, (_, index) => {
     const referenceBase = new Date(now.getFullYear(), now.getMonth() + index, 1, 12, 0, 0, 0);
@@ -295,7 +324,8 @@ export default class SystemOperationsService {
       this.listCreditCardInvoiceProjectionBlocks(companyId),
       this.listCreditCardConfigurationIssues(companyId)
     ]);
-    const latestRun = recentRuns[0] || null;
+    const companyScopedRecentRuns = recentRuns.map((run) => scopeJobRunToCompany(run, companyId));
+    const latestRun = companyScopedRecentRuns[0] || null;
     const jobHealth = getJobHealth(latestRun);
 
     return {
@@ -309,11 +339,11 @@ export default class SystemOperationsService {
         {
           name: FIXED_MATERIALIZER_JOB,
           displayName: 'Materializacao diaria de transacoes fixas',
-          schedule: 'Startup e depois de hora em hora, no maximo uma execucao por dia',
+          schedule: 'Startup e depois de hora em hora; no maximo uma execucao diaria por processo',
           healthStatus: jobHealth.status,
           healthMessage: jobHealth.message,
           latestRun,
-          recentRuns
+          recentRuns: companyScopedRecentRuns
         }
       ],
       issues: {

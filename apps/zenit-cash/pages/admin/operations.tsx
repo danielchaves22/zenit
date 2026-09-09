@@ -4,6 +4,8 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   CreditCard,
   RefreshCw,
@@ -22,6 +24,16 @@ import { getInvoiceReferenceLabel } from '@/utils/creditCards';
 
 type HealthStatus = 'OK' | 'WARNING' | 'ERROR';
 
+type MaterializationErrorDetail = {
+  templateId?: number | null;
+  companyId?: number | null;
+  error?: string | null;
+};
+
+type JobRunErrorDetails =
+  | MaterializationErrorDetail[]
+  | null;
+
 type JobRun = {
   id: number;
   status: string;
@@ -30,6 +42,11 @@ type JobRun = {
   processedCount: number;
   createdCount: number;
   failedCount: number;
+  errorMessage?: string | null;
+  errorDetails?: JobRunErrorDetails;
+  companyErrorDetailCount?: number;
+  countsScope?: 'GLOBAL';
+  errorDetailsScope?: 'COMPANY';
 };
 
 type JobOverview = {
@@ -130,10 +147,90 @@ function formatDuration(value?: number | null) {
   return value < 1000 ? `${value} ms` : `${(value / 1000).toFixed(1)} s`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function isMaterializationErrorDetail(value: unknown): value is MaterializationErrorDetail {
+  return (
+    isRecord(value) &&
+    (typeof value.templateId === 'number' ||
+      typeof value.companyId === 'number' ||
+      typeof value.error === 'string')
+  );
+}
+
+function hasJobRunDetails(run: JobRun): boolean {
+  return (
+    run.failedCount > 0 ||
+    run.status === 'FAILED' ||
+    run.status === 'PARTIAL' ||
+    Boolean(readText(run.errorMessage)) ||
+    (run.errorDetails !== null && run.errorDetails !== undefined)
+  );
+}
+
+function JobRunDetails({ run }: { run: JobRun }) {
+  const generalMessage = readText(run.errorMessage);
+  const itemErrors = Array.isArray(run.errorDetails)
+    ? run.errorDetails.filter(isMaterializationErrorDetail)
+    : [];
+  const hasReadableDetails = Boolean(generalMessage || itemErrors.length > 0);
+
+  return (
+    <div className="rounded-lg border border-gray-700 bg-[#0f1419] p-4 text-sm text-gray-300">
+      <div className="font-medium text-white">Detalhes da execução</div>
+
+      {generalMessage && (
+        <div className="mt-3 rounded border border-red-800/60 bg-red-950/30 p-3">
+          <div className="text-xs font-medium uppercase tracking-wide text-red-300">Erro geral</div>
+          <p className="mt-1 whitespace-pre-wrap break-words text-red-100">{generalMessage}</p>
+        </div>
+      )}
+
+      {itemErrors.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {itemErrors.map((detail, index) => {
+            const context = [
+              typeof detail.templateId === 'number' ? `Template ${detail.templateId}` : null,
+              typeof detail.companyId === 'number' ? `Empresa ${detail.companyId}` : null
+            ].filter(Boolean).join(' - ');
+
+            return (
+              <li
+                key={`${detail.templateId ?? 'template'}-${detail.companyId ?? 'company'}-${index}`}
+                className="rounded border border-amber-800/60 bg-amber-950/20 p-3"
+              >
+                <div className="text-xs font-medium uppercase tracking-wide text-amber-300">
+                  {context || `Falha ${index + 1}`}
+                </div>
+                <p className="mt-1 whitespace-pre-wrap break-words text-amber-100">
+                  {readText(detail.error) || 'Falha registrada sem mensagem detalhada.'}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {!hasReadableDetails && (
+        <p className="mt-2 text-gray-400">
+          Não há falhas detalhadas desta empresa para esta execução global.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function OperationsPage() {
   const { addToast } = useToast();
   const [overview, setOverview] = useState<OperationsOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedRunIds, setExpandedRunIds] = useState<Set<number>>(() => new Set());
 
   const projectionBlocks = overview?.issues.creditCardInvoiceProjectionBlocks || [];
   const configurationIssues = overview?.issues.creditCardConfigurationIssues || [];
@@ -182,6 +279,20 @@ export default function OperationsPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function toggleRunDetails(runId: number) {
+    setExpandedRunIds((current) => {
+      const next = new Set(current);
+
+      if (next.has(runId)) {
+        next.delete(runId);
+      } else {
+        next.add(runId);
+      }
+
+      return next;
+    });
   }
 
   return (
@@ -242,6 +353,10 @@ export default function OperationsPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-white">Jobs</h2>
                   <p className="text-sm text-gray-400">Ultimas execucoes registradas pelo backend.</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Status e contadores são globais. Os detalhes exibem somente falhas da empresa atual;
+                    rastreamentos técnicos globais ficam restritos.
+                  </p>
                 </div>
                 {firstJob && (
                   <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${statusTone(firstJob.healthStatus)}`}>
@@ -259,9 +374,9 @@ export default function OperationsPage() {
                       <th className="px-3 py-2">Status</th>
                       <th className="px-3 py-2">Inicio</th>
                       <th className="px-3 py-2">Duracao</th>
-                      <th className="px-3 py-2">Processados</th>
-                      <th className="px-3 py-2">Criados</th>
-                      <th className="px-3 py-2">Falhas</th>
+                      <th className="px-3 py-2">Processados (global)</th>
+                      <th className="px-3 py-2">Criados (global)</th>
+                      <th className="px-3 py-2">Falhas (global)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -272,24 +387,61 @@ export default function OperationsPage() {
                         </td>
                       </tr>
                     ) : firstJob?.recentRuns.length ? (
-                      firstJob.recentRuns.map((run) => (
-                        <tr key={run.id} className="border-t border-gray-700 text-sm text-gray-300">
-                          <td className="px-3 py-3">
-                            <div className="font-medium text-white">{firstJob.displayName}</div>
-                            <div className="mt-1 text-xs text-gray-500">{firstJob.schedule}</div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className={`rounded-full border px-2 py-1 text-xs font-medium ${statusTone(run.status)}`}>
-                              {run.status}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3">{formatDateTime(run.startedAt)}</td>
-                          <td className="px-3 py-3">{formatDuration(run.durationMs)}</td>
-                          <td className="px-3 py-3">{run.processedCount}</td>
-                          <td className="px-3 py-3">{run.createdCount}</td>
-                          <td className="px-3 py-3">{run.failedCount}</td>
-                        </tr>
-                      ))
+                      firstJob.recentRuns.map((run) => {
+                        const isExpanded = expandedRunIds.has(run.id);
+                        const detailsId = `job-run-details-${run.id}`;
+
+                        return (
+                          <React.Fragment key={run.id}>
+                            <tr className="border-t border-gray-700 text-sm text-gray-300">
+                              <td className="px-3 py-3">
+                                <div className="font-medium text-white">{firstJob.displayName}</div>
+                                <div className="mt-1 text-xs text-gray-500">{firstJob.schedule}</div>
+                              </td>
+                              <td className="px-3 py-3">
+                                <span className={`rounded-full border px-2 py-1 text-xs font-medium ${statusTone(run.status)}`}>
+                                  {run.status}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3">{formatDateTime(run.startedAt)}</td>
+                              <td className="px-3 py-3">{formatDuration(run.durationMs)}</td>
+                              <td className="px-3 py-3">{run.processedCount}</td>
+                              <td className="px-3 py-3">{run.createdCount}</td>
+                              <td className="px-3 py-3">
+                                <div>{run.failedCount}</div>
+                                {run.companyErrorDetailCount !== undefined && (
+                                  <div className="mt-1 text-xs text-gray-500">
+                                    {run.companyErrorDetailCount} detalhada(s) nesta empresa
+                                  </div>
+                                )}
+                                {hasJobRunDetails(run) && (
+                                  <button
+                                    type="button"
+                                    className="mt-2 inline-flex items-center gap-1 whitespace-nowrap text-left text-xs font-medium text-blue-300 hover:text-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                                    aria-expanded={isExpanded}
+                                    aria-controls={detailsId}
+                                    onClick={() => toggleRunDetails(run.id)}
+                                  >
+                                    {isExpanded ? (
+                                      <ChevronUp size={14} aria-hidden="true" />
+                                    ) : (
+                                      <ChevronDown size={14} aria-hidden="true" />
+                                    )}
+                                    {isExpanded ? 'Ocultar detalhes da execução' : 'Ver detalhes da execução'}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr id={detailsId} className="border-t border-gray-800">
+                                <td colSpan={7} className="px-3 pb-4 pt-2">
+                                  <JobRunDetails run={run} />
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
                     ) : (
                       <tr>
                         <td colSpan={7} className="px-3 py-6 text-sm text-gray-400">

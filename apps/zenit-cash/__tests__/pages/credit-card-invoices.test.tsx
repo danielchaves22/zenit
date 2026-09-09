@@ -99,7 +99,23 @@ vi.mock('@/components/ui/Card', () => ({
 }))
 
 vi.mock('@/components/ui/Modal', () => ({
-  Modal: () => null
+  Modal: ({
+    isOpen,
+    title,
+    children,
+    footer
+  }: {
+    isOpen: boolean
+    title: string
+    children: ReactNode
+    footer?: ReactNode
+  }) => isOpen ? (
+    <div role="dialog" aria-label={title}>
+      <h2>{title}</h2>
+      {children}
+      {footer}
+    </div>
+  ) : null
 }))
 
 vi.mock('@/components/ui/ConfirmationModal', () => ({
@@ -207,5 +223,242 @@ describe('CreditCardInvoicesPage', () => {
         ([url]) => url === '/financial/credit-card-invoices/101'
       )
     ).toHaveLength(1)
+  })
+
+  it('verifica e corrige parcialmente as fixas ausentes preservando a fatura selecionada', async () => {
+    const user = userEvent.setup()
+    const endpoint = '/financial/credit-cards/1/invoices/2026/9/fixed-materialization'
+    const closedInvoice = {
+      ...invoice,
+      status: 'CLOSED',
+      fixedItemCount: 2,
+      fixedSubtotal: '304.37',
+      totalAmount: '754.37',
+      hasProjectedTransactions: true
+    }
+    const closedInvoiceDetail = {
+      ...invoiceDetail,
+      ...closedInvoice,
+      transactions: [
+        ...invoiceDetail.transactions,
+        {
+          id: null,
+          description: 'Tênis Cibele',
+          amount: '220.00',
+          date: '2026-09-10',
+          isProjected: true,
+          isFixedProjection: true,
+          fixedTemplateId: 197,
+          category: null
+        },
+        {
+          id: null,
+          description: 'Seguro Residencial Caixa',
+          amount: '84.37',
+          date: '2026-09-10',
+          isProjected: true,
+          isFixedProjection: true,
+          fixedTemplateId: 198,
+          category: null
+        }
+      ]
+    }
+    const inspection = {
+      accountId: 1,
+      invoiceId: 101,
+      referenceYear: 2026,
+      referenceMonth: 9,
+      status: 'CLOSED',
+      canMaterialize: true,
+      reason: null,
+      expectedCount: 3,
+      materializedCount: 1,
+      ignoredCount: 1,
+      missingCount: 2,
+      inconsistencyCount: 1,
+      excludedUnboundedInactiveTemplateCount: 1,
+      warnings: [
+        'Um template inativo sem data final foi excluído por falta de histórico suficiente.'
+      ],
+      missingOccurrences: [
+        {
+          templateId: 197,
+          description: 'Tênis Cibele',
+          amount: '220.00',
+          occurrenceKey: '197:2026-09',
+          occurrenceDate: '2026-09-10'
+        },
+        {
+          templateId: 198,
+          description: 'Seguro Residencial Caixa',
+          amount: '84.37',
+          occurrenceKey: '198:2026-09',
+          occurrenceDate: '2026-09-10'
+        }
+      ],
+      materializedOccurrences: [],
+      inconsistentOccurrences: [
+        {
+          templateId: 196,
+          description: 'Fixa já existente em outra fatura',
+          amount: '35.00',
+          occurrenceKey: '196:2026-09',
+          occurrenceDate: '2026-09-10',
+          issue: 'OCCURRENCE_KEY_WRONG_INVOICE',
+          transactionIds: [901],
+          message: 'A ocorrência está vinculada a outra competência.'
+        }
+      ]
+    }
+    const partialResult = {
+      ...inspection,
+      materializedCount: 2,
+      missingCount: 1,
+      missingOccurrences: [inspection.missingOccurrences[1]],
+      attemptedCount: 2,
+      createdCount: 1,
+      failedCount: 1,
+      errors: [
+        {
+          templateId: 198,
+          description: 'Seguro Residencial Caixa',
+          error: 'Categoria financeira incompatível'
+        }
+      ]
+    }
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') {
+        return Promise.resolve({ data: [card] })
+      }
+
+      if (url === '/financial/credit-cards/1/invoices?includePaid=false') {
+        return Promise.resolve({ data: [closedInvoice] })
+      }
+
+      if (url === '/financial/accounts') {
+        return Promise.resolve({ data: [] })
+      }
+
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: closedInvoiceDetail })
+      }
+
+      if (url === endpoint) {
+        return Promise.resolve({ data: inspection })
+      }
+
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockResolvedValue({ data: partialResult })
+
+    render(<CreditCardInvoicesPage />)
+
+    const repairButton = await screen.findByRole('button', {
+      name: 'Corrigir materialização'
+    })
+    await user.click(repairButton)
+
+    expect(api.get).toHaveBeenCalledWith(endpoint)
+    expect(
+      await screen.findByRole('dialog', {
+        name: 'Materialização das fixas — Fatura 09/2026'
+      })
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Tênis Cibele').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Seguro Residencial Caixa').length).toBeGreaterThan(0)
+    expect(screen.getByText(/estado atual dos templates fixos/i)).toBeInTheDocument()
+    expect(screen.getByText('Materializadas (inclui ignoradas)')).toBeInTheDocument()
+    expect(screen.getByText('Inconsistências')).toBeInTheDocument()
+    expect(screen.getByText('Avisos da verificação')).toBeInTheDocument()
+    expect(screen.getByText(/template foi excluído.*não será materializado/i)).toBeInTheDocument()
+    expect(screen.getByText('Inconsistências encontradas')).toBeInTheDocument()
+    expect(screen.getByText('Fixa já existente em outra fatura')).toBeInTheDocument()
+    expect(screen.getByText('Ocorrência vinculada a outra fatura')).toBeInTheDocument()
+    expect(screen.getByText(/não serão corrigidos nem duplicados/i)).toBeInTheDocument()
+    expect(screen.getByText('Transações relacionadas: 901')).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Materializar 2 itens faltantes' })
+    )
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(endpoint)
+    })
+    expect(await screen.findByText('Falhas da última tentativa')).toBeInTheDocument()
+    expect(screen.getByText('Categoria financeira incompatível')).toBeInTheDocument()
+    expect(addToastMock).toHaveBeenCalledWith(
+      'Correção parcial: 1 criada(s) e 1 falha(s)',
+      'error'
+    )
+
+    await waitFor(() => {
+      expect(
+        vi.mocked(api.get).mock.calls.filter(
+          ([url]) => url === '/financial/credit-cards/1/invoices?includePaid=false'
+        )
+      ).toHaveLength(2)
+    })
+    expect(replaceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.objectContaining({ invoiceKey: 'invoice:101' })
+      }),
+      undefined,
+      { shallow: true }
+    )
+  })
+
+  it('explica por que um cartão inativo não pode receber o reparo', async () => {
+    const user = userEvent.setup()
+    const endpoint = '/financial/credit-cards/1/invoices/2026/9/fixed-materialization'
+    const closedInvoice = { ...invoice, status: 'CLOSED' }
+    const report = {
+      accountId: 1,
+      invoiceId: 101,
+      referenceYear: 2026,
+      referenceMonth: 9,
+      status: 'CLOSED',
+      canMaterialize: false,
+      reason: 'ACCOUNT_INACTIVE',
+      expectedCount: 1,
+      materializedCount: 0,
+      ignoredCount: 0,
+      missingCount: 1,
+      inconsistencyCount: 0,
+      excludedUnboundedInactiveTemplateCount: 0,
+      warnings: [],
+      missingOccurrences: [
+        {
+          templateId: 197,
+          description: 'Fixa histórica',
+          amount: '50.00',
+          occurrenceKey: '197:2026-09',
+          occurrenceDate: '2026-09-10'
+        }
+      ],
+      materializedOccurrences: [],
+      inconsistentOccurrences: []
+    }
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices?includePaid=false') {
+        return Promise.resolve({ data: [closedInvoice] })
+      }
+      if (url === '/financial/accounts') return Promise.resolve({ data: [] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: { ...invoiceDetail, ...closedInvoice } })
+      }
+      if (url === endpoint) return Promise.resolve({ data: report })
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    render(<CreditCardInvoicesPage />)
+    await user.click(await screen.findByRole('button', { name: 'Verificar fixas' }))
+
+    expect(
+      await screen.findByText('Este cartão está inativo e não pode receber novas materializações.')
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Materializar 1 item faltante/ })).not.toBeInTheDocument()
   })
 })

@@ -7,6 +7,7 @@ import {
   CreditCard,
   Download,
   Edit2,
+  RefreshCw,
   Maximize,
   Minimize,
   Receipt,
@@ -121,6 +122,70 @@ interface CreditCardInvoiceDetail extends CreditCardInvoiceListItem {
   paymentTransaction?: PaymentTransaction | null;
 }
 
+interface FixedMaterializationOccurrence {
+  templateId: number;
+  description: string;
+  amount: string;
+  occurrenceKey: string;
+  occurrenceDate: string;
+}
+
+interface MaterializedFixedOccurrence extends FixedMaterializationOccurrence {
+  transactionId?: number | null;
+  isIgnored: boolean;
+  archivedAt?: string | null;
+}
+
+type FixedMaterializationIssue =
+  | 'OCCURRENCE_KEY_WITHOUT_INVOICE'
+  | 'OCCURRENCE_KEY_WRONG_INVOICE'
+  | 'AMBIGUOUS_LEGACY_OCCURRENCES'
+  | 'DUPLICATE_EXACT_AND_LEGACY_OCCURRENCES';
+
+interface FixedMaterializationInconsistency extends FixedMaterializationOccurrence {
+  issue: FixedMaterializationIssue;
+  transactionIds: number[];
+  message: string;
+}
+
+interface FixedMaterializationError {
+  templateId: number;
+  description?: string;
+  occurrenceKey?: string;
+  error: string;
+}
+
+type FixedMaterializationReason =
+  | 'READY'
+  | 'INVOICE_OPEN'
+  | 'INVOICE_PAID'
+  | 'ACCOUNT_INACTIVE'
+  | 'NOTHING_TO_MATERIALIZE';
+
+interface FixedMaterializationReport {
+  accountId: number;
+  invoiceId: number | null;
+  referenceYear: number;
+  referenceMonth: number;
+  status: 'OPEN' | 'CLOSED' | 'PAID';
+  canMaterialize: boolean;
+  reason: FixedMaterializationReason;
+  expectedCount: number;
+  materializedCount: number;
+  ignoredCount: number;
+  missingCount: number;
+  inconsistencyCount: number;
+  excludedUnboundedInactiveTemplateCount: number;
+  warnings: string[];
+  missingOccurrences: FixedMaterializationOccurrence[];
+  materializedOccurrences: MaterializedFixedOccurrence[];
+  inconsistentOccurrences: FixedMaterializationInconsistency[];
+  attemptedCount?: number;
+  createdCount?: number;
+  failedCount?: number;
+  errors?: FixedMaterializationError[];
+}
+
 interface FinancialAccount {
   id: number;
   name: string;
@@ -133,6 +198,36 @@ function formatCurrency(value: string | number) {
     style: 'currency',
     currency: 'BRL'
   }).format(Number(value || 0));
+}
+
+function getFixedMaterializationReasonMessage(reason?: FixedMaterializationReason | null) {
+  switch (reason) {
+    case 'INVOICE_OPEN':
+      return 'A fatura ainda está aberta e será materializada automaticamente no fechamento.';
+    case 'INVOICE_PAID':
+      return 'Faturas pagas não podem receber novas materializações.';
+    case 'ACCOUNT_INACTIVE':
+      return 'Este cartão está inativo e não pode receber novas materializações.';
+    case 'NOTHING_TO_MATERIALIZE':
+      return 'Todas as ocorrências fixas esperadas já estão materializadas ou ignoradas.';
+    case 'READY':
+      return null;
+    default:
+      return reason || 'Esta fatura não permite materialização manual.';
+  }
+}
+
+function getFixedMaterializationIssueLabel(issue: FixedMaterializationIssue) {
+  switch (issue) {
+    case 'OCCURRENCE_KEY_WITHOUT_INVOICE':
+      return 'Ocorrência sem fatura vinculada';
+    case 'OCCURRENCE_KEY_WRONG_INVOICE':
+      return 'Ocorrência vinculada a outra fatura';
+    case 'AMBIGUOUS_LEGACY_OCCURRENCES':
+      return 'Múltiplas ocorrências legadas';
+    case 'DUPLICATE_EXACT_AND_LEGACY_OCCURRENCES':
+      return 'Ocorrências exata e legada duplicadas';
+  }
 }
 
 function compareInvoicesAscending(a: CreditCardInvoiceListItem, b: CreditCardInvoiceListItem) {
@@ -220,6 +315,11 @@ function InvoicesPageInner() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [paying, setPaying] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isFixedMaterializationModalOpen, setIsFixedMaterializationModalOpen] = useState(false);
+  const [fixedMaterializationLoading, setFixedMaterializationLoading] = useState(false);
+  const [fixedMaterializationSubmitting, setFixedMaterializationSubmitting] = useState(false);
+  const [fixedMaterializationReport, setFixedMaterializationReport] = useState<FixedMaterializationReport | null>(null);
+  const [fixedMaterializationError, setFixedMaterializationError] = useState<string | null>(null);
   const [isInvoiceDetailExpanded, setIsInvoiceDetailExpanded] = useState(false);
   const [showPaidInvoices, setShowPaidInvoices] = useState(false);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
@@ -259,6 +359,9 @@ function InvoicesPageInner() {
     invoiceDetail.settlementType === 'TRANSFER' &&
     !invoiceHasExternalSettlements &&
     invoiceDetail.paymentTransaction?.id
+  );
+  const canInspectFixedMaterialization = Boolean(
+    invoiceDetail && invoiceDetail.status === 'CLOSED'
   );
   const reconciliationSourceType = useMemo(
     () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
@@ -374,7 +477,10 @@ function InvoicesPageInner() {
     });
   }, [isInvoiceDetailExpanded, selectedInvoiceKey, visibleInvoices]);
 
-  async function fetchPageData() {
+  async function fetchPageData(preferredInvoiceReference?: {
+    referenceYear: number;
+    referenceMonth: number;
+  }) {
     setLoading(true);
 
     try {
@@ -408,6 +514,33 @@ function InvoicesPageInner() {
         ...prev,
         fromAccountId: prev.fromAccountId || nextPayerAccounts[0]?.id?.toString() || ''
       }));
+
+      if (preferredInvoiceReference) {
+        const preferredInvoice = nextInvoices.find(
+          (invoice: CreditCardInvoiceListItem) =>
+            invoice.referenceYear === preferredInvoiceReference.referenceYear &&
+            invoice.referenceMonth === preferredInvoiceReference.referenceMonth
+        );
+
+        if (preferredInvoice) {
+          const preferredInvoiceKey = getInvoiceSelectionKey(preferredInvoice);
+          internalInvoiceSelectionRef.current = preferredInvoiceKey;
+          setSelectedInvoiceKey(preferredInvoiceKey);
+
+          await router.replace(
+            {
+              pathname: router.pathname,
+              query: {
+                ...router.query,
+                accountId,
+                invoiceKey: preferredInvoiceKey
+              }
+            },
+            undefined,
+            { shallow: true }
+          );
+        }
+      }
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao carregar faturas do cartão', 'error');
     } finally {
@@ -545,6 +678,87 @@ function InvoicesPageInner() {
     } catch (error) {
       addToast('Erro ao exportar CSV da fatura', 'error');
     }
+  }
+
+  function getFixedMaterializationEndpoint(referenceYear: number, referenceMonth: number) {
+    return `/financial/credit-cards/${accountId}/invoices/${referenceYear}/${referenceMonth}/fixed-materialization`;
+  }
+
+  async function handleOpenFixedMaterialization() {
+    if (!invoiceDetail || invoiceDetail.status !== 'CLOSED') {
+      return;
+    }
+
+    const { referenceYear, referenceMonth } = invoiceDetail;
+    setIsFixedMaterializationModalOpen(true);
+    setFixedMaterializationReport(null);
+    setFixedMaterializationError(null);
+    setFixedMaterializationLoading(true);
+
+    try {
+      const response = await api.get(
+        getFixedMaterializationEndpoint(referenceYear, referenceMonth)
+      );
+      setFixedMaterializationReport(response.data);
+    } catch (error: any) {
+      const message =
+        error.response?.data?.error || 'Erro ao verificar a materialização das fixas';
+      setFixedMaterializationError(message);
+      addToast(message, 'error');
+    } finally {
+      setFixedMaterializationLoading(false);
+    }
+  }
+
+  async function handleMaterializeMissingFixed() {
+    if (!fixedMaterializationReport || !fixedMaterializationReport.canMaterialize) {
+      return;
+    }
+
+    const { referenceYear, referenceMonth } = fixedMaterializationReport;
+    setFixedMaterializationSubmitting(true);
+    setFixedMaterializationError(null);
+
+    try {
+      const response = await api.post(
+        getFixedMaterializationEndpoint(referenceYear, referenceMonth)
+      );
+      const report = response.data as FixedMaterializationReport;
+      setFixedMaterializationReport(report);
+
+      if ((report.failedCount || 0) > 0) {
+        addToast(
+          `Correção parcial: ${report.createdCount || 0} criada(s) e ${report.failedCount} falha(s)`,
+          'error'
+        );
+      } else if ((report.createdCount || 0) > 0) {
+        addToast(
+          `${report.createdCount} item(ns) fixo(s) materializado(s) com sucesso`,
+          'success'
+        );
+      } else {
+        addToast('Nenhum item fixo pendente para materializar', 'success');
+      }
+
+      await fetchPageData({ referenceYear, referenceMonth });
+    } catch (error: any) {
+      const message =
+        error.response?.data?.error || 'Erro ao corrigir a materialização das fixas';
+      setFixedMaterializationError(message);
+      addToast(message, 'error');
+    } finally {
+      setFixedMaterializationSubmitting(false);
+    }
+  }
+
+  function handleCloseFixedMaterializationModal() {
+    if (fixedMaterializationLoading || fixedMaterializationSubmitting) {
+      return;
+    }
+
+    setIsFixedMaterializationModalOpen(false);
+    setFixedMaterializationReport(null);
+    setFixedMaterializationError(null);
   }
 
   return (
@@ -1008,6 +1222,23 @@ function InvoicesPageInner() {
                                 <Download size={16} />
                                 Exportar CSV
                               </Button>
+                              {canInspectFixedMaterialization && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => void handleOpenFixedMaterialization()}
+                                  disabled={fixedMaterializationLoading || fixedMaterializationSubmitting}
+                                  className="flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <RefreshCw
+                                    size={16}
+                                    className={fixedMaterializationLoading ? 'animate-spin' : ''}
+                                  />
+                                  {invoiceDetail.hasProjectedTransactions
+                                    ? 'Corrigir materialização'
+                                    : 'Verificar fixas'}
+                                </Button>
+                              )}
                               {canReopenSelectedInvoice && (
                                 <Button
                                   type="button"
@@ -1152,12 +1383,22 @@ function InvoicesPageInner() {
                             )}
                           </div>
                         ) : invoiceDetail.isProjected || invoiceDetail.hasProjectedTransactions ? (
-                          <div className="rounded-xl border border-blue-700/50 bg-blue-900/10 p-4">
+                          <div
+                            className={`rounded-xl border p-4 ${
+                              invoiceDetail.status === 'CLOSED'
+                                ? 'border-amber-700/50 bg-amber-900/10'
+                                : 'border-blue-700/50 bg-blue-900/10'
+                            }`}
+                          >
                             <div className="text-sm font-medium text-white">
-                              Visualização projetada
+                              {invoiceDetail.status === 'CLOSED'
+                                ? 'Materialização incompleta'
+                                : 'Visualização projetada'}
                             </div>
                             <div className="mt-2 text-sm text-gray-300">
-                              Esta fatura inclui despesas fixas projetadas e fica somente para consulta até a materialização no fechamento.
+                              {invoiceDetail.status === 'CLOSED'
+                                ? 'Esta fatura já fechou e ainda possui despesas fixas projetadas. Use “Corrigir materialização” para verificar e criar somente os itens ausentes.'
+                                : 'Esta fatura inclui despesas fixas projetadas e fica somente para consulta até a materialização no fechamento.'}
                             </div>
                           </div>
                         ) : false && (
@@ -1323,6 +1564,236 @@ function InvoicesPageInner() {
                 </div>
               </Card>
             </div>
+
+            <Modal
+              isOpen={isFixedMaterializationModalOpen}
+              onClose={handleCloseFixedMaterializationModal}
+              title={`Materialização das fixas — Fatura ${getInvoiceReferenceLabel(
+                fixedMaterializationReport?.referenceYear || invoiceDetail?.referenceYear || 0,
+                fixedMaterializationReport?.referenceMonth || invoiceDetail?.referenceMonth || 0
+              )}`}
+              loading={fixedMaterializationLoading || fixedMaterializationSubmitting}
+              footer={
+                <div className="flex flex-wrap justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={handleCloseFixedMaterializationModal}
+                    disabled={fixedMaterializationLoading || fixedMaterializationSubmitting}
+                  >
+                    Fechar
+                  </Button>
+                  {fixedMaterializationReport?.canMaterialize &&
+                    fixedMaterializationReport.missingCount > 0 && (
+                      <Button
+                        variant="accent"
+                        onClick={() => void handleMaterializeMissingFixed()}
+                        disabled={fixedMaterializationSubmitting || fixedMaterializationLoading}
+                        className="flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          size={16}
+                          className={fixedMaterializationSubmitting ? 'animate-spin' : ''}
+                        />
+                        Materializar {fixedMaterializationReport.missingCount}{' '}
+                        {fixedMaterializationReport.missingCount === 1
+                          ? 'item faltante'
+                          : 'itens faltantes'}
+                      </Button>
+                    )}
+                </div>
+              }
+            >
+              {fixedMaterializationLoading ? (
+                <div className="space-y-3" aria-label="Verificando materialização das fixas">
+                  <div className="h-16 animate-pulse rounded-lg bg-[#1b212c]" />
+                  <div className="h-24 animate-pulse rounded-lg bg-[#1b212c]" />
+                </div>
+              ) : !fixedMaterializationReport ? (
+                <div className="rounded-lg border border-red-700/60 bg-red-900/10 p-4 text-sm text-red-200">
+                  {fixedMaterializationError ||
+                    'Não foi possível carregar a verificação das transações fixas.'}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-700 bg-[#11161d] p-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-wide text-gray-400">
+                        Situação da fatura
+                      </div>
+                      <div className="mt-1 text-sm text-gray-300">
+                        {getInvoiceReferenceLabel(
+                          fixedMaterializationReport.referenceYear,
+                          fixedMaterializationReport.referenceMonth
+                        )}
+                      </div>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${getInvoiceDisplayStatusClasses(
+                        getInvoiceDisplayStatus(fixedMaterializationReport.status)
+                      )}`}
+                    >
+                      {getInvoiceDisplayStatusLabel(
+                        getInvoiceDisplayStatus(fixedMaterializationReport.status)
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
+                    {[
+                      ['Esperadas', fixedMaterializationReport.expectedCount],
+                      ['Materializadas (inclui ignoradas)', fixedMaterializationReport.materializedCount],
+                      ['Ignoradas', fixedMaterializationReport.ignoredCount],
+                      ['Ausentes', fixedMaterializationReport.missingCount],
+                      ['Inconsistências', fixedMaterializationReport.inconsistencyCount]
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-gray-700 bg-[#11161d] p-3">
+                        <div className="text-xs uppercase tracking-wide text-gray-400">{label}</div>
+                        <div className="mt-1 text-lg font-semibold text-white">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-lg border border-blue-700/50 bg-blue-900/10 p-3 text-xs leading-relaxed text-blue-200">
+                    Esta verificação usa o estado atual dos templates fixos. Alterações ou
+                    exclusões históricas podem não ser reconstruídas integralmente.
+                  </div>
+
+                  {fixedMaterializationReport.warnings.length > 0 && (
+                    <div className="rounded-lg border border-amber-700/60 bg-amber-900/10 p-3 text-sm text-amber-100">
+                      <div className="font-medium">Avisos da verificação</div>
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-relaxed text-amber-200">
+                        {fixedMaterializationReport.warnings.map((warning, index) => (
+                          <li key={`${warning}-${index}`}>{warning}</li>
+                        ))}
+                      </ul>
+                      {fixedMaterializationReport.excludedUnboundedInactiveTemplateCount > 0 && (
+                        <p className="mt-2 text-xs leading-relaxed text-amber-200">
+                          {fixedMaterializationReport.excludedUnboundedInactiveTemplateCount}{' '}
+                          {fixedMaterializationReport.excludedUnboundedInactiveTemplateCount === 1
+                            ? 'template foi excluído'
+                            : 'templates foram excluídos'}{' '}
+                          da expectativa histórica e{' '}
+                          {fixedMaterializationReport.excludedUnboundedInactiveTemplateCount === 1
+                            ? 'não será materializado'
+                            : 'não serão materializados'}{' '}
+                          por esta correção.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {fixedMaterializationReport.inconsistentOccurrences.length > 0 && (
+                    <div className="rounded-lg border border-orange-700/60 bg-orange-900/10 p-3">
+                      <div className="text-sm font-medium text-orange-100">
+                        Inconsistências encontradas
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-orange-200">
+                        Estes registros já existem, mas a vinculação precisa de análise. Eles não
+                        são considerados ausentes e não serão corrigidos nem duplicados por esta ação.
+                      </p>
+                      <div className="mt-2 max-h-44 space-y-2 overflow-y-auto pr-1">
+                        {fixedMaterializationReport.inconsistentOccurrences.map((occurrence) => (
+                          <div
+                            key={`${occurrence.occurrenceKey}-${occurrence.issue}`}
+                            className="rounded border border-orange-900/60 bg-[#11161d] p-2 text-xs"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-medium text-white">{occurrence.description}</div>
+                                <div className="mt-0.5 text-orange-200">
+                                  {getFixedMaterializationIssueLabel(occurrence.issue)}
+                                </div>
+                              </div>
+                              <div className="shrink-0 text-gray-300">
+                                {formatCurrency(occurrence.amount)}
+                              </div>
+                            </div>
+                            <p className="mt-1 leading-relaxed text-gray-300">{occurrence.message}</p>
+                            {occurrence.transactionIds.length > 0 && (
+                              <div className="mt-1 text-gray-500">
+                                Transações relacionadas: {occurrence.transactionIds.join(', ')}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {fixedMaterializationError && (
+                    <div className="rounded-lg border border-red-700/60 bg-red-900/10 p-3 text-sm text-red-200">
+                      {fixedMaterializationError}
+                    </div>
+                  )}
+
+                  {fixedMaterializationReport.errors &&
+                    fixedMaterializationReport.errors.length > 0 && (
+                      <div
+                        className="rounded-lg border border-red-700/60 bg-red-900/10 p-3"
+                        role="alert"
+                      >
+                        <div className="text-sm font-medium text-red-200">
+                          Falhas da última tentativa
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {fixedMaterializationReport.errors.map((item) => (
+                            <div
+                              key={item.occurrenceKey || `${item.templateId}-${item.description || 'erro'}`}
+                              className="rounded border border-red-900/60 bg-[#11161d] p-2 text-xs"
+                            >
+                              <div className="font-medium text-white">
+                                {item.description || `Template ${item.templateId}`}
+                              </div>
+                              <div className="mt-1 text-red-200">{item.error}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                  {fixedMaterializationReport.missingCount === 0 &&
+                  fixedMaterializationReport.inconsistencyCount === 0 &&
+                  fixedMaterializationReport.warnings.length === 0 ? (
+                    <div className="rounded-lg border border-green-700/60 bg-green-900/10 p-3 text-sm text-green-200">
+                      Todas as ocorrências fixas esperadas já estão materializadas ou ignoradas.
+                    </div>
+                  ) : fixedMaterializationReport.missingCount === 0 ? (
+                    <div className="rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
+                      Não há itens ausentes seguros para materializar. Os avisos e inconsistências
+                      acima permanecem somente para análise e não serão alterados por esta ação.
+                    </div>
+                  ) : !fixedMaterializationReport.canMaterialize ? (
+                    <div className="rounded-lg border border-amber-700/60 bg-amber-900/10 p-3 text-sm text-amber-200">
+                      {getFixedMaterializationReasonMessage(fixedMaterializationReport.reason)}
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="mb-2 text-sm font-medium text-white">
+                        Itens que ainda serão materializados
+                      </div>
+                      <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                        {fixedMaterializationReport.missingOccurrences.map((occurrence) => (
+                          <div
+                            key={occurrence.occurrenceKey}
+                            className="rounded-lg border border-amber-800/60 bg-amber-900/10 p-3"
+                          >
+                            <div className="flex items-start justify-between gap-3 text-sm">
+                              <div className="font-medium text-white">{occurrence.description}</div>
+                              <div className="shrink-0 text-gray-200">
+                                {formatCurrency(occurrence.amount)}
+                              </div>
+                            </div>
+                            <div className="mt-1 text-xs text-gray-400">
+                              Ocorrência {formatCalendarDate(occurrence.occurrenceDate)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </Modal>
 
             <Modal
               isOpen={Boolean(isPaymentModalOpen && canPaySelectedInvoice)}

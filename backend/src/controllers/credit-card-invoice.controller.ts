@@ -114,6 +114,61 @@ export async function getProjectedCreditCardInvoice(req: Request, res: Response)
   }
 }
 
+export async function getCreditCardFixedMaterialization(req: Request, res: Response) {
+  try {
+    const { companyId } = getUserContext(req);
+    const accountId = Number(req.params.accountId);
+    const referenceYear = Number(req.params.referenceYear);
+    const referenceMonth = Number(req.params.referenceMonth);
+
+    const preview = await CreditCardInvoiceService.getFixedMaterializationPreview({
+      accountId,
+      referenceYear,
+      referenceMonth,
+      companyId
+    });
+
+    if (!preview) {
+      return res.status(404).json({ error: 'Cartão de crédito não encontrado' });
+    }
+
+    return res.status(200).json(preview);
+  } catch (error: any) {
+    logger.error('Erro ao verificar materialização de fixas da fatura:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao verificar materialização de fixas da fatura'
+    });
+  }
+}
+
+export async function materializeCreditCardFixedTransactions(req: Request, res: Response) {
+  try {
+    const { companyId, userId } = getUserContext(req);
+    const accountId = Number(req.params.accountId);
+    const referenceYear = Number(req.params.referenceYear);
+    const referenceMonth = Number(req.params.referenceMonth);
+
+    const result = await CreditCardInvoiceService.materializeMissingFixedOccurrences({
+      accountId,
+      referenceYear,
+      referenceMonth,
+      companyId,
+      userId
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: 'Cartão de crédito não encontrado' });
+    }
+
+    return res.status(200).json(result);
+  } catch (error: any) {
+    logger.error('Erro ao corrigir materialização de fixas da fatura:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao corrigir materialização de fixas da fatura'
+    });
+  }
+}
+
 export async function payCreditCardInvoice(req: Request, res: Response) {
   try {
     const { companyId, userId, role } = getUserContext(req);

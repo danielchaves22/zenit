@@ -112,11 +112,13 @@ export function CurrencyInput({
     const formatted = formatCurrency(cents);
 
     // Calcular nova posição do cursor
-    // Se o valor anterior era zero (0,00), posicionar no final
+    // A digitação monetária acontece da direita para a esquerda. Quando a
+    // edição termina no fim do texto (inclusive após substituir uma seleção
+    // completa), o cursor também precisa permanecer no fim do valor formatado.
     const wasZero = parseCurrency(displayValue) === 0;
+    const isCursorAtEnd = cursorPosition >= inputValue.length;
     
-    if (wasZero) {
-      // Se estava zerado, cursor vai para o final
+    if (wasZero || isCursorAtEnd) {
       return {
         formatted,
         newCursorPosition: formatted.length

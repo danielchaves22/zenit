@@ -8,8 +8,12 @@ import {
 } from '@prisma/client';
 import { CreditCardInvoiceSettlementType } from '@prisma/client';
 import FinancialTransactionService from './financial-transaction.service';
-import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
+import FixedTransactionService, {
+  buildOccurrenceKeyValue,
+  FixedMaterializationInvoiceReference
+} from './fixed-transaction.service';
 import {
+  buildCreditCardInvoiceReferenceForMonth,
   getDerivedInvoiceStatus,
   resolveCreditCardInvoiceReference,
   resolveCreditCardInvoiceStatus
@@ -108,6 +112,7 @@ type CardAccountWithConfig = {
   accountNumber: string | null;
   creditLimit: Prisma.Decimal | null;
   cardColor: string | null;
+  isActive: boolean;
   statementClosingDay: number | null;
   statementDueDay: number | null;
 };
@@ -140,6 +145,67 @@ type InvoiceProjectionBucket = {
   closingDate: Date;
   dueDate: Date;
   projectedTransactions: ProjectedFixedInvoiceTransaction[];
+};
+
+type FixedMaterializationReason =
+  | 'READY'
+  | 'INVOICE_OPEN'
+  | 'INVOICE_PAID'
+  | 'ACCOUNT_INACTIVE'
+  | 'NOTHING_TO_MATERIALIZE';
+
+type FixedMaterializationMissingOccurrence = {
+  templateId: number;
+  description: string;
+  amount: string;
+  occurrenceKey: string;
+  occurrenceDate: Date;
+  templateIsActive: boolean;
+};
+
+type FixedMaterializationMaterializedOccurrence = FixedMaterializationMissingOccurrence & {
+  transactionId: number;
+  transactionDescription: string;
+  transactionAmount: string;
+  transactionStatus: TransactionStatus;
+  archivedAt: Date | null;
+  isIgnored: boolean;
+  matchedBy: 'OCCURRENCE_KEY' | 'LEGACY_RECURRING_COMPETENCE';
+};
+
+type FixedMaterializationInconsistency = FixedMaterializationMissingOccurrence & {
+  issue:
+    | 'OCCURRENCE_KEY_WITHOUT_INVOICE'
+    | 'OCCURRENCE_KEY_WRONG_INVOICE'
+    | 'AMBIGUOUS_LEGACY_OCCURRENCES'
+    | 'DUPLICATE_EXACT_AND_LEGACY_OCCURRENCES';
+  transactionIds: number[];
+  message: string;
+};
+
+export type CreditCardFixedMaterializationPreview = {
+  accountId: number;
+  invoiceId: number | null;
+  referenceYear: number;
+  referenceMonth: number;
+  status: CreditCardInvoiceStatus;
+  canMaterialize: boolean;
+  reason: FixedMaterializationReason;
+  expectedCount: number;
+  materializedCount: number;
+  ignoredCount: number;
+  missingCount: number;
+  inconsistencyCount: number;
+  excludedUnboundedInactiveTemplateCount: number;
+  warnings: string[];
+  missingOccurrences: FixedMaterializationMissingOccurrence[];
+  materializedOccurrences: FixedMaterializationMaterializedOccurrence[];
+  inconsistentOccurrences: FixedMaterializationInconsistency[];
+};
+
+type CreditCardFixedMaterializationContext = {
+  preview: CreditCardFixedMaterializationPreview;
+  invoiceReference: FixedMaterializationInvoiceReference;
 };
 
 function sumProjectedTransactionAmounts(
@@ -396,6 +462,7 @@ export default class CreditCardInvoiceService {
         accountNumber: true,
         creditLimit: true,
         cardColor: true,
+        isActive: true,
         statementClosingDay: true,
         statementDueDay: true
       }
@@ -523,12 +590,54 @@ export default class CreditCardInvoiceService {
     const existingOccurrences = await prisma.financialTransaction.findMany({
       where: {
         companyId,
-        occurrenceKey: {
-          in: projectedCandidates.map((candidate) => candidate.occurrenceKey)
-        }
+        OR: [
+          {
+            occurrenceKey: {
+              in: projectedCandidates.map((candidate) => candidate.occurrenceKey)
+            }
+          },
+          {
+            occurrenceKey: null,
+            recurringTransactionId: {
+              in: Array.from(new Set(
+                projectedCandidates.map((candidate) => candidate.template.id)
+              ))
+            },
+            fromAccountId: account.id,
+            type: TransactionType.EXPENSE,
+            OR: [
+              {
+                creditCardInvoice: {
+                  is: {
+                    accountId: account.id,
+                    OR: window.map((entry) => ({
+                      referenceYear: entry.referenceYear,
+                      referenceMonth: entry.referenceMonth
+                    }))
+                  }
+                }
+              },
+              {
+                creditCardInvoiceId: null,
+                date: {
+                  gte: rangeStart,
+                  lte: rangeEnd
+                }
+              }
+            ]
+          }
+        ]
       },
       select: {
-        occurrenceKey: true
+        occurrenceKey: true,
+        recurringTransactionId: true,
+        date: true,
+        creditCardInvoice: {
+          select: {
+            referenceYear: true,
+            referenceMonth: true
+          }
+        }
       }
     });
 
@@ -537,9 +646,28 @@ export default class CreditCardInvoiceService {
         .map((transaction) => transaction.occurrenceKey)
         .filter((occurrenceKey): occurrenceKey is string => Boolean(occurrenceKey))
     );
+    const existingLegacyCompetences = new Set(
+      existingOccurrences.flatMap((transaction) => {
+        if (transaction.occurrenceKey || !transaction.recurringTransactionId) {
+          return [];
+        }
+
+        const referenceYear = transaction.creditCardInvoice?.referenceYear
+          ?? transaction.date.getFullYear();
+        const referenceMonth = transaction.creditCardInvoice?.referenceMonth
+          ?? transaction.date.getMonth() + 1;
+
+        return [
+          `${transaction.recurringTransactionId}:${buildProjectionKey(referenceYear, referenceMonth)}`
+        ];
+      })
+    );
 
     for (const candidate of projectedCandidates) {
-      if (existingOccurrenceKeys.has(candidate.occurrenceKey)) {
+      if (
+        existingOccurrenceKeys.has(candidate.occurrenceKey) ||
+        existingLegacyCompetences.has(`${candidate.template.id}:${candidate.projectionKey}`)
+      ) {
         continue;
       }
 
@@ -583,6 +711,419 @@ export default class CreditCardInvoiceService {
     }
 
     return buckets;
+  }
+
+  private static async buildFixedMaterializationContext(params: {
+    accountId: number;
+    referenceYear: number;
+    referenceMonth: number;
+    companyId: number;
+    now?: Date;
+  }): Promise<CreditCardFixedMaterializationContext | null> {
+    const { accountId, referenceYear, referenceMonth, companyId, now = new Date() } = params;
+    const account = await this.getCardAccount(accountId, companyId);
+
+    if (!account) {
+      return null;
+    }
+
+    const invoice = await prisma.creditCardInvoice.findUnique({
+      where: {
+        unique_credit_card_invoice_reference: {
+          accountId,
+          referenceYear,
+          referenceMonth
+        }
+      },
+      select: {
+        id: true,
+        status: true,
+        settlementType: true,
+        closingDate: true,
+        dueDate: true,
+        paymentTransaction: {
+          select: {
+            status: true
+          }
+        }
+      }
+    });
+
+    if (
+      !invoice &&
+      (!account.statementClosingDay || !account.statementDueDay)
+    ) {
+      throw new Error('Cartão de crédito sem fechamento e vencimento configurados');
+    }
+
+    const calculatedReference = invoice
+      ? {
+          referenceYear,
+          referenceMonth,
+          closingDate: invoice.closingDate,
+          dueDate: invoice.dueDate
+        }
+      : buildCreditCardInvoiceReferenceForMonth(
+          referenceYear,
+          referenceMonth,
+          account.statementClosingDay as number,
+          account.statementDueDay as number
+        );
+    const invoiceReference: FixedMaterializationInvoiceReference = {
+      ...calculatedReference,
+      accountId
+    };
+    const invoiceIsPaid = Boolean(
+      invoice && (
+        invoice.status === CreditCardInvoiceStatus.PAID ||
+        invoice.paymentTransaction?.status === TransactionStatus.COMPLETED ||
+        invoice.settlementType === CreditCardInvoiceSettlementType.EXTERNAL
+      )
+    );
+    const status = invoiceIsPaid
+      ? CreditCardInvoiceStatus.PAID
+      : resolveCreditCardInvoiceStatus(calculatedReference.closingDate, false, now);
+    const occurrenceDate = new Date(calculatedReference.closingDate);
+    occurrenceDate.setHours(0, 0, 0, 0);
+
+    const templates = await prisma.recurringTransaction.findMany({
+      where: {
+        companyId,
+        frequency: RecurringFrequency.MONTHLY,
+        type: TransactionType.EXPENSE,
+        fromAccountId: accountId,
+        startDate: { lte: occurrenceDate },
+        OR: [
+          { endDate: null },
+          { endDate: { gte: occurrenceDate } }
+        ]
+      },
+      include: {
+        fromAccount: {
+          select: {
+            id: true,
+            type: true,
+            statementClosingDay: true,
+            statementDueDay: true
+          }
+        }
+      },
+      orderBy: { id: 'asc' }
+    });
+    const cardTemplates = templates.filter((template) =>
+      FixedTransactionService.isCreditCardFixedExpenseTemplate(template)
+    );
+    // isActive=false has no historical timestamp. Only an explicit endDate is
+    // evidence that an inactive template was valid for a past competence.
+    const excludedUnboundedInactiveTemplates = cardTemplates.filter(
+      (template) => !template.isActive && template.endDate === null
+    );
+    const expectedTemplates = cardTemplates.filter(
+      (template) => template.isActive || template.endDate !== null
+    );
+    const expectedOccurrences = expectedTemplates.map((template) => ({
+      template,
+      templateId: template.id,
+      description: template.description,
+      amount: template.amount.toString(),
+      occurrenceKey: buildOccurrenceKeyValue(template.id, occurrenceDate),
+      occurrenceDate,
+      templateIsActive: template.isActive
+    }));
+
+    let existingOccurrences: Array<{
+      id: number;
+      description: string;
+      amount: Prisma.Decimal;
+      date: Date;
+      status: TransactionStatus;
+      recurringTransactionId: number | null;
+      occurrenceKey: string | null;
+      archivedAt: Date | null;
+      creditCardInvoiceId: number | null;
+      creditCardInvoice: {
+        id: number;
+        accountId: number;
+        referenceYear: number;
+        referenceMonth: number;
+      } | null;
+    }> = [];
+
+    if (expectedOccurrences.length > 0) {
+      const referenceMonthStart = new Date(referenceYear, referenceMonth - 1, 1, 0, 0, 0, 0);
+      const referenceMonthEnd = new Date(referenceYear, referenceMonth, 0, 23, 59, 59, 999);
+      const templateIds = expectedOccurrences.map((occurrence) => occurrence.templateId);
+
+      existingOccurrences = await prisma.financialTransaction.findMany({
+        where: {
+          companyId,
+          OR: [
+            {
+              occurrenceKey: {
+                in: expectedOccurrences.map((occurrence) => occurrence.occurrenceKey)
+              }
+            },
+            {
+              occurrenceKey: null,
+              recurringTransactionId: { in: templateIds },
+              fromAccountId: accountId,
+              type: TransactionType.EXPENSE,
+              OR: [
+                {
+                  creditCardInvoice: {
+                    is: {
+                      accountId,
+                      referenceYear,
+                      referenceMonth
+                    }
+                  }
+                },
+                {
+                  creditCardInvoiceId: null,
+                  date: {
+                    gte: referenceMonthStart,
+                    lte: referenceMonthEnd
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        select: {
+          id: true,
+          description: true,
+          amount: true,
+          date: true,
+          status: true,
+          recurringTransactionId: true,
+          occurrenceKey: true,
+          archivedAt: true,
+          creditCardInvoiceId: true,
+          creditCardInvoice: {
+            select: {
+              id: true,
+              accountId: true,
+              referenceYear: true,
+              referenceMonth: true
+            }
+          }
+        },
+        orderBy: { id: 'asc' }
+      });
+    }
+
+    const exactByOccurrenceKey = new Map<string, (typeof existingOccurrences)[number]>();
+    const legacyByTemplateId = new Map<number, Array<(typeof existingOccurrences)[number]>>();
+
+    for (const transaction of existingOccurrences) {
+      if (transaction.occurrenceKey && !exactByOccurrenceKey.has(transaction.occurrenceKey)) {
+        exactByOccurrenceKey.set(transaction.occurrenceKey, transaction);
+      }
+
+      if (
+        !transaction.occurrenceKey &&
+        transaction.recurringTransactionId
+      ) {
+        const occurrences = legacyByTemplateId.get(transaction.recurringTransactionId) ?? [];
+        occurrences.push(transaction);
+        legacyByTemplateId.set(transaction.recurringTransactionId, occurrences);
+      }
+    }
+
+    const missingOccurrences: FixedMaterializationMissingOccurrence[] = [];
+    const materializedOccurrences: FixedMaterializationMaterializedOccurrence[] = [];
+    const inconsistentOccurrences: FixedMaterializationInconsistency[] = [];
+
+    for (const expected of expectedOccurrences) {
+      const exact = exactByOccurrenceKey.get(expected.occurrenceKey);
+      const legacy = legacyByTemplateId.get(expected.templateId) ?? [];
+      const materialized = exact ?? legacy[0];
+      const occurrenceIdentity = {
+        templateId: expected.templateId,
+        description: expected.description,
+        amount: expected.amount,
+        occurrenceKey: expected.occurrenceKey,
+        occurrenceDate: expected.occurrenceDate,
+        templateIsActive: expected.templateIsActive
+      };
+
+      if (!materialized) {
+        missingOccurrences.push(occurrenceIdentity);
+        continue;
+      }
+
+      if (exact) {
+        if (!exact.creditCardInvoice) {
+          inconsistentOccurrences.push({
+            ...occurrenceIdentity,
+            issue: 'OCCURRENCE_KEY_WITHOUT_INVOICE',
+            transactionIds: [exact.id],
+            message: 'A ocorrencia possui a chave esperada, mas nao esta vinculada a uma fatura'
+          });
+        } else if (
+          exact.creditCardInvoice.accountId !== accountId ||
+          exact.creditCardInvoice.referenceYear !== referenceYear ||
+          exact.creditCardInvoice.referenceMonth !== referenceMonth
+        ) {
+          inconsistentOccurrences.push({
+            ...occurrenceIdentity,
+            issue: 'OCCURRENCE_KEY_WRONG_INVOICE',
+            transactionIds: [exact.id],
+            message: 'A ocorrencia possui a chave esperada, mas esta vinculada a outro cartao ou competencia'
+          });
+        } else if (legacy.length > 0) {
+          inconsistentOccurrences.push({
+            ...occurrenceIdentity,
+            issue: 'DUPLICATE_EXACT_AND_LEGACY_OCCURRENCES',
+            transactionIds: [exact.id, ...legacy.map((occurrence) => occurrence.id)],
+            message: 'Existem ocorrencias exata e legada para o mesmo template e competencia'
+          });
+        }
+      } else if (legacy.length > 1) {
+        inconsistentOccurrences.push({
+          ...occurrenceIdentity,
+          issue: 'AMBIGUOUS_LEGACY_OCCURRENCES',
+          transactionIds: legacy.map((occurrence) => occurrence.id),
+          message: 'Existem multiplas ocorrencias legadas para o mesmo template e competencia'
+        });
+      }
+
+      materializedOccurrences.push({
+        ...occurrenceIdentity,
+        transactionId: materialized.id,
+        transactionDescription: materialized.description,
+        transactionAmount: materialized.amount.toString(),
+        transactionStatus: materialized.status,
+        archivedAt: materialized.archivedAt,
+        isIgnored: Boolean(materialized.archivedAt),
+        matchedBy: exact ? 'OCCURRENCE_KEY' : 'LEGACY_RECURRING_COMPETENCE'
+      });
+    }
+
+    const missingCount = missingOccurrences.length;
+    const canMaterialize =
+      account.isActive &&
+      status === CreditCardInvoiceStatus.CLOSED &&
+      missingCount > 0;
+    const reason: FixedMaterializationReason = status === CreditCardInvoiceStatus.OPEN
+      ? 'INVOICE_OPEN'
+      : status === CreditCardInvoiceStatus.PAID
+        ? 'INVOICE_PAID'
+        : missingCount === 0
+          ? 'NOTHING_TO_MATERIALIZE'
+          : !account.isActive
+            ? 'ACCOUNT_INACTIVE'
+            : 'READY';
+
+    return {
+      invoiceReference,
+      preview: {
+        accountId,
+        invoiceId: invoice?.id ?? null,
+        referenceYear,
+        referenceMonth,
+        status,
+        canMaterialize,
+        reason,
+        expectedCount: expectedOccurrences.length,
+        materializedCount: materializedOccurrences.length,
+        ignoredCount: materializedOccurrences.filter((occurrence) => occurrence.isIgnored).length,
+        missingCount,
+        inconsistencyCount: inconsistentOccurrences.length,
+        excludedUnboundedInactiveTemplateCount: excludedUnboundedInactiveTemplates.length,
+        warnings: excludedUnboundedInactiveTemplates.length > 0
+          ? [
+              'Templates inativos sem data final foram excluidos porque nao ha historico suficiente para confirmar sua vigencia nesta competencia'
+            ]
+          : [],
+        missingOccurrences,
+        materializedOccurrences,
+        inconsistentOccurrences
+      }
+    };
+  }
+
+  static async getFixedMaterializationPreview(params: {
+    accountId: number;
+    referenceYear: number;
+    referenceMonth: number;
+    companyId: number;
+  }): Promise<CreditCardFixedMaterializationPreview | null> {
+    const context = await this.buildFixedMaterializationContext(params);
+    return context?.preview ?? null;
+  }
+
+  static async materializeMissingFixedOccurrences(params: {
+    accountId: number;
+    referenceYear: number;
+    referenceMonth: number;
+    companyId: number;
+    userId: number;
+  }) {
+    const context = await this.buildFixedMaterializationContext(params);
+
+    if (!context) {
+      return null;
+    }
+
+    if (context.preview.status === CreditCardInvoiceStatus.OPEN) {
+      throw new Error('A fatura ainda esta aberta e nao pode materializar transacoes fixas');
+    }
+
+    if (context.preview.status === CreditCardInvoiceStatus.PAID) {
+      throw new Error('A fatura ja esta paga e nao pode materializar transacoes fixas');
+    }
+
+    if (context.preview.reason === 'ACCOUNT_INACTIVE') {
+      throw new Error('O cartao de credito esta inativo e nao pode receber materializacoes');
+    }
+
+    let createdCount = 0;
+    const errors: Array<{
+      templateId: number;
+      description: string;
+      occurrenceKey: string;
+      error: string;
+    }> = [];
+    const attemptedCount = context.preview.missingOccurrences.length;
+
+    for (const occurrence of context.preview.missingOccurrences) {
+      try {
+        const result = await FixedTransactionService.materializeOccurrence({
+          templateId: occurrence.templateId,
+          occurrenceDate: context.invoiceReference.closingDate,
+          companyId: params.companyId,
+          userId: params.userId,
+          creditCardInvoiceReference: context.invoiceReference,
+          allowInactiveTemplate: true
+        });
+
+        if (result.created) {
+          createdCount += 1;
+        }
+      } catch (error: any) {
+        errors.push({
+          templateId: occurrence.templateId,
+          description: occurrence.description,
+          occurrenceKey: occurrence.occurrenceKey,
+          error: error?.message ?? String(error)
+        });
+      }
+    }
+
+    const refreshed = await this.buildFixedMaterializationContext(params);
+
+    if (!refreshed) {
+      return null;
+    }
+
+    return {
+      ...refreshed.preview,
+      attemptedCount,
+      createdCount,
+      failedCount: errors.length,
+      errors
+    };
   }
 
   static async listCreditCards(params: {
@@ -1016,57 +1557,149 @@ export default class CreditCardInvoiceService {
     companyId: number;
     userId: number;
   }) {
-    const invoice = await this.getInvoiceById(params.invoiceId, params.companyId, false);
+    const invoiceIdentity = await prisma.creditCardInvoice.findFirst({
+      where: {
+        id: params.invoiceId,
+        account: {
+          companyId: params.companyId
+        }
+      },
+      select: {
+        id: true,
+        accountId: true
+      }
+    });
 
-    if (!invoice) {
+    if (!invoiceIdentity) {
       throw new Error('Fatura nao encontrada');
     }
 
-    if (invoice.status === CreditCardInvoiceStatus.PAID) {
-      throw new Error('Fatura ja esta paga');
-    }
-
-    if (normalizeMoney(invoice.totalAmount) <= 0) {
-      throw new Error('Fatura sem saldo para pagamento');
-    }
-
-    if (params.fromAccountId === invoice.accountId) {
+    if (params.fromAccountId === invoiceIdentity.accountId) {
       throw new Error('Conta pagadora deve ser diferente do cartao de credito');
     }
 
     const paymentDate = params.paymentDate ?? new Date();
-    const label = formatInvoiceLabel(invoice.referenceMonth, invoice.referenceYear);
+    const paidInvoiceId = await prisma.$transaction(async (tx) => {
+      // Every credit-card expense locks the card account before linking an
+      // invoice. Taking the same lock before calculating the payment amount
+      // serializes payment with fixed/manual materialization without a new DB
+      // object or migration.
+      const accountIds = Array.from(new Set([
+        params.fromAccountId,
+        invoiceIdentity.accountId
+      ])).sort((left, right) => left - right);
 
-    const createdPayment = await FinancialTransactionService.createTransaction({
-      description: `Pagamento fatura ${invoice.account.name} ${label}`,
-      amount: normalizeMoney(invoice.totalAmount),
-      date: paymentDate,
-      dueDate: paymentDate,
-      effectiveDate: paymentDate,
-      type: TransactionType.TRANSFER,
-      status: TransactionStatus.COMPLETED,
-      notes: params.notes || `Pagamento integral da fatura ${label}`,
-      fromAccountId: params.fromAccountId,
-      toAccountId: invoice.accountId,
-      companyId: params.companyId,
-      createdBy: params.userId
-    });
+      for (const accountId of accountIds) {
+        const lockedAccounts = await tx.$queryRaw<Array<{ id: number }>>`
+          SELECT id
+          FROM "FinancialAccount"
+          WHERE id = ${accountId}
+          FOR UPDATE
+        `;
 
-    if (Array.isArray(createdPayment)) {
-      throw new Error('Pagamento da fatura retornou formato inesperado');
-    }
-
-    await prisma.creditCardInvoice.update({
-      where: { id: invoice.id },
-      data: {
-        paymentTransactionId: createdPayment.id,
-        status: CreditCardInvoiceStatus.PAID,
-        settlementType: CreditCardInvoiceSettlementType.TRANSFER,
-        settledAt: paymentDate
+        if (lockedAccounts.length === 0) {
+          throw new Error(`Account ID ${accountId} not found`);
+        }
       }
+
+      const lockedInvoices = await tx.$queryRaw<Array<{ id: number }>>`
+        SELECT id
+        FROM "CreditCardInvoice"
+        WHERE id = ${params.invoiceId}
+        FOR UPDATE
+      `;
+
+      if (lockedInvoices.length === 0) {
+        throw new Error('Fatura nao encontrada');
+      }
+
+      const invoice = await tx.creditCardInvoice.findFirst({
+        where: {
+          id: params.invoiceId,
+          account: {
+            companyId: params.companyId
+          }
+        },
+        include: {
+          account: {
+            select: {
+              id: true,
+              name: true
+            }
+          },
+          paymentTransaction: {
+            select: {
+              status: true
+            }
+          }
+        }
+      });
+
+      if (!invoice) {
+        throw new Error('Fatura nao encontrada');
+      }
+
+      const invoiceIsPaid =
+        invoice.status === CreditCardInvoiceStatus.PAID ||
+        invoice.paymentTransaction?.status === TransactionStatus.COMPLETED ||
+        invoice.settlementType !== null;
+
+      if (invoiceIsPaid) {
+        throw new Error('Fatura ja esta paga');
+      }
+
+      const aggregate = await tx.financialTransaction.aggregate({
+        where: {
+          creditCardInvoiceId: invoice.id,
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED
+        },
+        _sum: {
+          amount: true
+        }
+      });
+      const totalAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
+
+      if (totalAmount.lte(0)) {
+        throw new Error('Fatura sem saldo para pagamento');
+      }
+
+      const label = formatInvoiceLabel(invoice.referenceMonth, invoice.referenceYear);
+      const createdPayment = await FinancialTransactionService.createCreditCardInvoicePaymentTx(
+        tx,
+        {
+          description: `Pagamento fatura ${invoice.account.name} ${label}`,
+          amount: totalAmount.toString(),
+          date: paymentDate,
+          dueDate: paymentDate,
+          effectiveDate: paymentDate,
+          notes: params.notes || `Pagamento integral da fatura ${label}`,
+          fromAccountId: params.fromAccountId,
+          toAccountId: invoice.accountId,
+          companyId: params.companyId,
+          createdBy: params.userId
+        }
+      );
+
+      await tx.creditCardInvoice.update({
+        where: { id: invoice.id },
+        data: {
+          totalAmount,
+          paymentTransactionId: createdPayment.id,
+          status: CreditCardInvoiceStatus.PAID,
+          settlementType: CreditCardInvoiceSettlementType.TRANSFER,
+          settledAt: paymentDate
+        }
+      });
+
+      return invoice.id;
+    }, {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      timeout: 30000,
+      maxWait: 10000
     });
 
-    return this.getInvoiceById(invoice.id, params.companyId);
+    return this.getInvoiceById(paidInvoiceId, params.companyId);
   }
 
   static async reopenInvoice(params: {

@@ -39,6 +39,20 @@ export const getProjectedCreditCardInvoiceSchema = z.object({
     .regex(/^\d{4}-\d{2}$/, 'Chave de projeção inválida')
 });
 
+export const creditCardFixedMaterializationSchema = z.object({
+  accountId: z.coerce.number()
+    .int('ID da conta deve ser um numero inteiro')
+    .positive('ID da conta deve ser positivo'),
+  referenceYear: z.coerce.number()
+    .int('Ano de referencia deve ser um numero inteiro')
+    .min(1900, 'Ano de referencia invalido')
+    .max(9999, 'Ano de referencia invalido'),
+  referenceMonth: z.coerce.number()
+    .int('Mes de referencia deve ser um numero inteiro')
+    .min(1, 'Mes de referencia deve ser entre 1 e 12')
+    .max(12, 'Mes de referencia deve ser entre 1 e 12')
+});
+
 export const payCreditCardInvoiceSchema = z.object({
   id: z.coerce.number()
     .int('ID da fatura deve ser um numero inteiro')

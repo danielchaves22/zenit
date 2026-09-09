@@ -724,6 +724,51 @@ export default class FinancialTransactionService {
     );
   }
 
+  /**
+   * Creates the transfer that settles a credit-card invoice inside the
+   * invoice service transaction. Keeping the transfer and the PAID marker in
+   * the same transaction prevents a committed payment without a paid invoice.
+   */
+  static async createCreditCardInvoicePaymentTx(
+    tx: Prisma.TransactionClient,
+    data: {
+      description: string;
+      amount: number | string;
+      date: Date;
+      dueDate: Date;
+      effectiveDate: Date;
+      notes?: string;
+      fromAccountId: number;
+      toAccountId: number;
+      companyId: number;
+      createdBy: number;
+    }
+  ): Promise<FinancialTransaction> {
+    this.validateTransactionData(
+      TransactionType.TRANSFER,
+      data.fromAccountId,
+      data.toAccountId,
+      false
+    );
+    const amount = parseDecimal(data.amount);
+
+    if (amount.lte(0)) {
+      throw new Error('O valor do pagamento deve ser positivo');
+    }
+
+    return this.executeTransactionWithFullLocking(
+      {
+        ...data,
+        type: TransactionType.TRANSFER,
+        status: TransactionStatus.COMPLETED
+      },
+      amount,
+      `invoice_payment_${randomUUID()}`,
+      Date.now(),
+      tx
+    );
+  }
+
   static async settleForBankReconciliationTx(
     tx: Prisma.TransactionClient, original: FinancialTransaction, effectiveDate: Date, companyId: number
   ): Promise<FinancialTransaction> {

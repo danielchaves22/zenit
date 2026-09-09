@@ -7,6 +7,8 @@ import {
   CreditCard,
   Download,
   Edit2,
+  Maximize,
+  Minimize,
   Receipt,
   Scale
 } from 'lucide-react';
@@ -171,6 +173,34 @@ function buildVisibleInvoices(sortedInvoices: CreditCardInvoiceListItem[], showP
   return sortedInvoices.slice(paidWindowStart);
 }
 
+interface InvoiceDetailViewToggleProps {
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+function InvoiceDetailViewToggle({ expanded, onToggle }: InvoiceDetailViewToggleProps) {
+  const label = expanded
+    ? 'Voltar à visualização normal'
+    : 'Ampliar detalhes da fatura';
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      title={label}
+      aria-label={label}
+      aria-pressed={expanded}
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-600 p-0 text-gray-300 transition-colors hover:border-accent hover:bg-elevated hover:text-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+    >
+      {expanded ? (
+        <Minimize size={18} aria-hidden="true" />
+      ) : (
+        <Maximize size={18} aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
 function InvoicesPageInner() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -190,6 +220,7 @@ function InvoicesPageInner() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [paying, setPaying] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isInvoiceDetailExpanded, setIsInvoiceDetailExpanded] = useState(false);
   const [showPaidInvoices, setShowPaidInvoices] = useState(false);
   const detailScrollRef = useRef<HTMLDivElement | null>(null);
   const invoiceItemRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -341,7 +372,7 @@ function InvoicesPageInner() {
       block: 'nearest',
       inline: 'nearest'
     });
-  }, [selectedInvoiceKey, visibleInvoices]);
+  }, [isInvoiceDetailExpanded, selectedInvoiceKey, visibleInvoices]);
 
   async function fetchPageData() {
     setLoading(true);
@@ -672,7 +703,7 @@ function InvoicesPageInner() {
               </div>
             */}
 
-            {card ? (
+            {card && !isInvoiceDetailExpanded ? (
               <div className="shrink-0">
                 <Card className="p-0">
                   <div className="space-y-2.5 p-3.5 md:p-4">
@@ -757,7 +788,8 @@ function InvoicesPageInner() {
             ) : null}
 
             <div className="flex flex-col gap-4 lg:min-h-0 lg:flex-1 lg:flex-row lg:overflow-hidden">
-              <Card className="p-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col lg:flex lg:h-full lg:min-h-0 lg:basis-0 lg:flex-1 lg:flex-col">
+              {!isInvoiceDetailExpanded && (
+                <Card className="p-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col lg:flex lg:h-full lg:min-h-0 lg:basis-0 lg:flex-1 lg:flex-col">
                 <div className="flex h-full min-h-0 flex-col p-6">
                   <div className="mb-4 flex items-center justify-between gap-3">
                     <div>
@@ -868,14 +900,27 @@ function InvoicesPageInner() {
                     </div>
                   </div>
                 </div>
-              </Card>
+                </Card>
+              )}
 
-              <Card className="p-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col lg:flex lg:h-full lg:min-h-0 lg:basis-0 lg:flex-[2] lg:flex-col">
+              <Card
+                className={`p-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>div]:flex-col lg:flex lg:h-full lg:min-h-0 lg:basis-0 lg:flex-col ${
+                  isInvoiceDetailExpanded ? 'lg:flex-1' : 'lg:flex-[2]'
+                }`}
+              >
                 <div className="flex h-full min-h-0 flex-col p-6">
                   <div
                     ref={detailScrollRef}
                     className="min-h-0 flex-1 overflow-x-hidden overflow-y-scroll overscroll-contain lg:pr-2"
                   >
+                    {isInvoiceDetailExpanded && (detailLoading || !invoiceDetail) && (
+                      <div className="sticky top-0 z-10 flex justify-end pb-4">
+                        <InvoiceDetailViewToggle
+                          expanded
+                          onToggle={() => setIsInvoiceDetailExpanded(false)}
+                        />
+                      </div>
+                    )}
                     {detailLoading ? (
                       <div className="h-80 animate-pulse rounded bg-[#1b212c]" />
                     ) : !invoiceDetail ? (
@@ -985,6 +1030,12 @@ function InvoicesPageInner() {
                                   {paying ? 'Pagando...' : 'Pagar fatura'}
                                 </Button>
                               )}
+                              <InvoiceDetailViewToggle
+                                expanded={isInvoiceDetailExpanded}
+                                onToggle={() =>
+                                  setIsInvoiceDetailExpanded((current) => !current)
+                                }
+                              />
                             </div>
                             <div className="hidden">
                               <Button

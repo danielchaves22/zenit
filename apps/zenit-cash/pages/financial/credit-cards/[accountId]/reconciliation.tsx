@@ -1145,7 +1145,7 @@ function CreditCardReconciliationSideBySide({
                     <li
                       key={item.id}
                       data-reconciliation-item-id={item.id}
-                      className={`rounded-lg border px-4 py-3 transition-colors ${
+                      className={`rounded-lg border px-4 py-3 transition-colors focus-within:border-accent ${
                         isSelected
                           ? 'border-accent bg-accent/10 ring-1 ring-accent/30'
                           : 'border-gray-700 bg-[#11161d]'
@@ -1169,7 +1169,7 @@ function CreditCardReconciliationSideBySide({
                           type="button"
                           aria-pressed={isSelected}
                           onClick={() => onSelectPreviewItem(item.id)}
-                          className="min-w-0 flex-1 rounded-md text-left focus:outline-none focus:ring-2 focus:ring-accent/60"
+                          className="min-w-0 flex-1 text-left focus:outline-none"
                         >
                           <span className="flex items-start justify-between gap-3">
                             <span className="min-w-0">

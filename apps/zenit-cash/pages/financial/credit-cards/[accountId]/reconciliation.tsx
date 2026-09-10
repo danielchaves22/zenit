@@ -712,6 +712,12 @@ function getItemResolution(item: ReconciliationPreviewItem): ReconciliationItemR
   return 'PENDING';
 }
 
+function getDisplayedItemStatus(
+  item: ReconciliationPreviewItem
+): ReconciliationItemStatus {
+  return getItemResolution(item) === 'CONFIRMED_EXISTING' ? 'OK' : item.status;
+}
+
 function canIgnoreItem(item: ReconciliationPreviewItem) {
   return (
     item.status !== 'NOT_IMPORTABLE' &&
@@ -1127,6 +1133,10 @@ function CreditCardReconciliationSideBySide({
       return 'A identidade da possível correspondência aparece em mais de um lançamento do Zenit. Revise os lançamentos destacados.';
     }
 
+    if (focusedResolution === 'CONFIRMED_EXISTING') {
+      return 'Lancamento existente confirmado nesta conciliacao.';
+    }
+
     if (highlightedRows.length === 0) {
       if (focusedMatchOutsideTargetCount > 0 && focusedMatchUnresolvedCount > 0) {
         return 'Há possíveis correspondências fora da fatura-alvo e outras que não estão disponíveis nos lançamentos carregados.';
@@ -1147,7 +1157,7 @@ function CreditCardReconciliationSideBySide({
       return `Mais de uma correspondência foi encontrada. Revise os ${highlightedRows.length} lançamentos destacados.`;
     }
 
-    if (focusedItem.status === 'OK') {
+    if (getDisplayedItemStatus(focusedItem) === 'OK') {
       return 'Correspondência encontrada e classificada como OK.';
     }
 
@@ -1266,9 +1276,9 @@ function CreditCardReconciliationSideBySide({
                                   Item {item.sequence}
                                 </span>
                                 <span
-                                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusClasses(item.status)}`}
+                                  className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusClasses(getDisplayedItemStatus(item))}`}
                                 >
-                                  {getStatusLabel(item.status)}
+                                  {getStatusLabel(getDisplayedItemStatus(item))}
                                 </span>
                                 <span className="rounded-full border border-gray-700 px-2 py-0.5 text-[11px] text-gray-300">
                                   {getSectionLabel(item.sourceSection)}
@@ -1295,24 +1305,27 @@ function CreditCardReconciliationSideBySide({
                                 )}
                                 {item.cardSuffix ? ` • cartão final ${item.cardSuffix}` : ''}
                               </span>
-                              <span className="mt-2 block text-sm text-gray-400">
-                                {getReasonLabel(item)}
-                              </span>
+                              {getItemResolution(item) !== 'CONFIRMED_EXISTING' && (
+                                <span className="mt-2 block text-sm text-gray-400">
+                                  {getReasonLabel(item)}
+                                </span>
+                              )}
                               {item.nonImportableReason && (
                                 <span className="mt-1 block text-sm text-amber-300">
                                   {item.nonImportableReason}
                                 </span>
                               )}
-                              {isSelected && (
-                                <>
-                                  <span className="mt-2 block text-xs font-medium text-accent">
-                                    {focusedMatchStatusMessage}
-                                  </span>
-                                  <span className="sr-only">
-                                    Item selecionado para comparação.
-                                  </span>
-                                </>
-                              )}
+                              {isSelected &&
+                                getItemResolution(item) !== 'CONFIRMED_EXISTING' && (
+                                  <>
+                                    <span className="mt-2 block text-xs font-medium text-accent">
+                                      {focusedMatchStatusMessage}
+                                    </span>
+                                    <span className="sr-only">
+                                      Item selecionado para comparação.
+                                    </span>
+                                  </>
+                                )}
                             </span>
                             <span className="shrink-0 text-right">
                               <span className="block font-semibold text-white">
@@ -1375,11 +1388,13 @@ function CreditCardReconciliationSideBySide({
                       ? 'border-gray-700 bg-[#11161d] text-gray-400'
                       : focusedMatchHasIdentityCollision
                         ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                        : focusedResolution === 'CONFIRMED_EXISTING'
+                          ? 'border-green-500/40 bg-green-500/10 text-green-200'
                         : highlightedRows.length === 0
                           ? 'border-gray-700 bg-[#11161d] text-gray-300'
                           : highlightedRows.length > 1
                             ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
-                            : focusedItem.status === 'OK'
+                            : getDisplayedItemStatus(focusedItem) === 'OK'
                               ? 'border-green-500/40 bg-green-500/10 text-green-200'
                               : 'border-amber-500/40 bg-amber-500/10 text-amber-200'
               }`}
@@ -1497,7 +1512,8 @@ function CreditCardReconciliationSideBySide({
                       data-reconciliation-highlighted={isHighlighted}
                       className={`rounded-lg border px-4 py-3 transition-colors ${
                         isHighlighted
-                          ? isAmbiguousHighlight || focusedItem?.status !== 'OK'
+                          ? isAmbiguousHighlight ||
+                            (focusedItem && getDisplayedItemStatus(focusedItem) !== 'OK')
                             ? 'border-amber-400/70 bg-amber-500/10 ring-1 ring-amber-400/30'
                             : 'border-green-400/70 bg-green-500/10 ring-1 ring-green-400/30'
                           : 'border-gray-700 bg-[#11161d]'
@@ -1801,6 +1817,21 @@ function CreditCardReconciliationPageInner() {
     };
   }, [focusedPreviewItemId, previewItemSystemMatchResolutions]);
 
+  const displayedStatusCounts = useMemo<Record<ReconciliationItemStatus, number>>(() => {
+    const counts: Record<ReconciliationItemStatus, number> = {
+      OK: 0,
+      SIMILAR: 0,
+      PENDING: 0,
+      NOT_IMPORTABLE: 0
+    };
+
+    preview?.items.forEach((item) => {
+      counts[getDisplayedItemStatus(item)] += 1;
+    });
+
+    return counts;
+  }, [preview]);
+
   const filteredItems = useMemo(() => {
     if (!preview) {
       return [];
@@ -1810,7 +1841,9 @@ function CreditCardReconciliationPageInner() {
       return preview.items;
     }
 
-    return preview.items.filter((item) => item.status === statusFilter);
+    return preview.items.filter(
+      (item) => getDisplayedItemStatus(item) === statusFilter
+    );
   }, [preview, statusFilter]);
 
   const filteredItemIds = useMemo(
@@ -1830,13 +1863,24 @@ function CreditCardReconciliationPageInner() {
 
   const selectedItemSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
 
-  const selectableItemIds = useMemo(() => {
+  const selectableItems = useMemo(() => {
     if (!preview) {
       return [];
     }
 
-    return preview.items.filter(isManuallyImportable).map((item) => item.id);
+    return preview.items.filter(isManuallyImportable);
   }, [preview]);
+  const selectableItemIds = useMemo(
+    () => selectableItems.map((item) => item.id),
+    [selectableItems]
+  );
+  const selectableAmount = useMemo(
+    () =>
+      selectableItems
+        .reduce((sum, item) => sum + Number(item.signedAmount), 0)
+        .toFixed(2),
+    [selectableItems]
+  );
   const allSelectableItemsSelected =
     selectableItemIds.length > 0 &&
     selectableItemIds.every((itemId) => selectedItemSet.has(itemId));
@@ -2536,7 +2580,18 @@ function CreditCardReconciliationPageInner() {
         sourceLabel: sourceConfig?.sourceLabel || preview.statement.sourceType,
         statusFilterLabel: statusFilter === 'ALL' ? 'Todos' : getStatusLabel(statusFilter),
         fileName,
-        preview,
+        preview: {
+          ...preview,
+          summary: {
+            ...preview.summary,
+            okCount: displayedStatusCounts.OK,
+            similarCount: displayedStatusCounts.SIMILAR,
+            pendingCount: displayedStatusCounts.PENDING,
+            notImportableCount: displayedStatusCounts.NOT_IMPORTABLE,
+            importableCount: selectableItems.length,
+            importableAmount: selectableAmount
+          }
+        },
         items: filteredItems,
         itemDrafts,
         selectedItemIds,
@@ -2931,14 +2986,14 @@ function CreditCardReconciliationPageInner() {
   }
 
   const filterButtons: Array<{ value: ReconciliationFilter; label: string; count: number }> = [
-    { value: 'ALL', label: 'Todos', count: preview?.summary.totalItems || 0 },
-    { value: 'OK', label: 'OK', count: preview?.summary.okCount || 0 },
-    { value: 'SIMILAR', label: 'Similares', count: preview?.summary.similarCount || 0 },
-    { value: 'PENDING', label: 'Pendentes', count: preview?.summary.pendingCount || 0 },
+    { value: 'ALL', label: 'Todos', count: preview?.items.length || 0 },
+    { value: 'OK', label: 'OK', count: displayedStatusCounts.OK },
+    { value: 'SIMILAR', label: 'Similares', count: displayedStatusCounts.SIMILAR },
+    { value: 'PENDING', label: 'Pendentes', count: displayedStatusCounts.PENDING },
     {
       value: 'NOT_IMPORTABLE',
       label: 'Nao importaveis',
-      count: preview?.summary.notImportableCount || 0
+      count: displayedStatusCounts.NOT_IMPORTABLE
     }
   ];
 
@@ -3502,9 +3557,9 @@ function CreditCardReconciliationPageInner() {
                                     Item {item.sequence}
                                   </span>
                                   <span
-                                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusClasses(item.status)}`}
+                                    className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusClasses(getDisplayedItemStatus(item))}`}
                                   >
-                                    {getStatusLabel(item.status)}
+                                    {getStatusLabel(getDisplayedItemStatus(item))}
                                   </span>
                                   <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
                                     {getSectionLabel(item.sourceSection)}
@@ -3518,9 +3573,11 @@ function CreditCardReconciliationPageInner() {
                                 <div className="mt-2 text-base font-semibold text-white">
                                   {item.sourceDescription}
                                 </div>
-                                <div className="mt-2 text-sm text-gray-400">
-                                  {getReasonLabel(item)}
-                                </div>
+                                {resolution !== 'CONFIRMED_EXISTING' && (
+                                  <div className="mt-2 text-sm text-gray-400">
+                                    {getReasonLabel(item)}
+                                  </div>
+                                )}
                                 {item.nonImportableReason && (
                                   <div className="mt-2 text-sm text-amber-300">
                                     {item.nonImportableReason}

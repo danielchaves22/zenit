@@ -64,6 +64,12 @@ export interface CreditCardInvoiceCsvInput {
 }
 
 type ReconciliationItemStatus = 'OK' | 'SIMILAR' | 'PENDING' | 'NOT_IMPORTABLE';
+type ReconciliationItemResolution =
+  | 'PENDING'
+  | 'IMPORTED'
+  | 'LINKED_FIXED'
+  | 'CONFIRMED_EXISTING'
+  | 'IGNORED';
 type ReconciliationReason =
   | 'EXACT'
   | 'MAPPED_FIXED'
@@ -113,6 +119,9 @@ interface CreditCardReconciliationCsvItem {
   cardSuffix: string | null;
   canImport: boolean;
   nonImportableReason: string | null;
+  progress?: {
+    resolution: ReconciliationItemResolution;
+  } | null;
   categorySuggestion: CreditCardReconciliationCsvCategorySuggestion;
   matchedTransactions: CreditCardReconciliationCsvMatchedTransaction[];
 }
@@ -241,7 +250,25 @@ function getReconciliationStatusLabel(status: ReconciliationItemStatus) {
   return 'Nao importavel';
 }
 
+function getReconciliationDisplayStatus(item: CreditCardReconciliationCsvItem) {
+  return item.progress?.resolution === 'CONFIRMED_EXISTING' ? 'OK' : item.status;
+}
+
+function isReconciliationItemCurrentlyImportable(
+  item: CreditCardReconciliationCsvItem
+) {
+  return (
+    item.canImport &&
+    item.status !== 'OK' &&
+    (!item.progress || item.progress.resolution === 'PENDING')
+  );
+}
+
 function getReconciliationReasonLabel(item: CreditCardReconciliationCsvItem) {
+  if (item.progress?.resolution === 'CONFIRMED_EXISTING') {
+    return 'Lancamento existente confirmado nesta conciliacao.';
+  }
+
   const hasProjectedFixedMatch = item.matchedTransactions.some(
     (transaction) => transaction.matchSource === 'PROJECTED_FIXED'
   );
@@ -483,7 +510,8 @@ export function buildCreditCardReconciliationCsv({
       },
       {
         header: 'Status',
-        getValue: (item) => getReconciliationStatusLabel(item.status)
+        getValue: (item) =>
+          getReconciliationStatusLabel(getReconciliationDisplayStatus(item))
       },
       {
         header: 'Motivo',
@@ -548,7 +576,8 @@ export function buildCreditCardReconciliationCsv({
       },
       {
         header: 'Importavel',
-        getValue: (item) => formatBooleanLabel(item.canImport)
+        getValue: (item) =>
+          formatBooleanLabel(isReconciliationItemCurrentlyImportable(item))
       },
       {
         header: 'Correspondencias',

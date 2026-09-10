@@ -1521,12 +1521,87 @@ describe('CreditCardReconciliationPage comparison views', () => {
       )
     })
     expect(await screen.findByText('Existente confirmado')).toBeInTheDocument()
+    expect(within(pendingCard).getByText('OK')).toBeInTheDocument()
+    expect(within(pendingCard).queryByText('Pendente')).not.toBeInTheDocument()
+    expect(
+      within(pendingCard).queryByText('Lancamento existente confirmado nesta conciliacao.')
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'OK (1)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pendentes (0)' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Pendentes (0)' }))
+    expect(screen.queryByText('Pendente no arquivo')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'OK (1)' }))
+    const confirmedCard = screen.getByText('Pendente no arquivo').closest('section') as HTMLElement
+    expect(within(confirmedCard).getByText('OK')).toBeInTheDocument()
+    expect(within(confirmedCard).getByText('Existente confirmado')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Todos (6)' }))
     await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
     const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
     const zenitRegion = screen.getByRole('region', { name: 'Lançamentos da fatura no Zenit' })
+    expect(within(getFileItem(fileRegion, 'bank-pending')).getByText('OK')).toBeInTheDocument()
+    await user.click(
+      getFileSelectionButton(fileRegion, 'bank-pending', /Pendente no arquivo/)
+    )
+    expect(
+      screen.getByText('Lancamento existente confirmado nesta conciliacao.')
+    ).toBeInTheDocument()
     await user.click(getFileSelectionButton(fileRegion, 'bank-market', /Mercado no arquivo/))
     expect(within(getZenitItem(zenitRegion, 'transaction:504')).getByRole('button')).toBeDisabled()
     expect(within(getZenitItem(zenitRegion, 'transaction:501')).getByRole('button')).toBeEnabled()
+  })
+
+  it('projeta similares e pendentes ja confirmados no filtro OK ao retomar a sessao', async () => {
+    const resumedWorkspace = buildWorkspace({
+      revision: 3,
+      resolutions: {
+        'bank-market': 'CONFIRMED_EXISTING',
+        'bank-pending': 'CONFIRMED_EXISTING'
+      },
+      transactionIds: {
+        'bank-market': [501],
+        'bank-pending': [504]
+      }
+    })
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: resumedWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+
+    const similarCard = (await screen.findByText('Mercado no arquivo')).closest(
+      'section'
+    ) as HTMLElement
+    const pendingConfirmedCard = screen.getByText('Pendente no arquivo').closest(
+      'section'
+    ) as HTMLElement
+    expect(within(similarCard).getByText('OK')).toBeInTheDocument()
+    expect(within(similarCard).queryByText('Similar')).not.toBeInTheDocument()
+    expect(within(pendingConfirmedCard).getByText('OK')).toBeInTheDocument()
+    expect(within(pendingConfirmedCard).queryByText('Pendente')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'OK (2)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Similares (4)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Pendentes (0)' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Similares (4)' }))
+    expect(screen.queryByText('Mercado no arquivo')).not.toBeInTheDocument()
+    expect(screen.queryByText('Pendente no arquivo')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'OK (2)' }))
+    expect(screen.getByText('Mercado no arquivo')).toBeInTheDocument()
+    expect(screen.getByText('Pendente no arquivo')).toBeInTheDocument()
   })
 
   it('ignora e restaura item sem recoloca-lo na selecao de importacao', async () => {

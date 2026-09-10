@@ -264,6 +264,7 @@ model User {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   financialTransactions FinancialTransaction[]
+  installmentPlans     InstallmentPlan[]
   recurringTransactions RecurringTransaction[]
   financialAccountAccess UserFinancialAccountAccess[]
   grantedPermissions     UserFinancialAccountAccess[] @relation("GrantedPermissions")
@@ -303,6 +304,7 @@ model Company {
   financialAccounts   FinancialAccount[]
   financialCategories FinancialCategory[]
   financialTransactions FinancialTransaction[]
+  installmentPlans     InstallmentPlan[]
   financialTags       FinancialTag[]
   recurringTransactions RecurringTransaction[]
   creditCardRecurringDescriptionAliases CreditCardRecurringDescriptionAlias[]
@@ -509,6 +511,8 @@ model FinancialTransaction {
   installmentNumber  Int?
   totalInstallments  Int?
   purchaseGroupId    String?
+  installmentPlanId  String?
+  installmentPlan    InstallmentPlan? @relation(fields: [installmentPlanId], references: [id], onDelete: SetNull)
   
   type            TransactionType
   entryKind       FinancialTransactionEntryKind @default(NORMAL)
@@ -552,6 +556,7 @@ model FinancialTransaction {
   @@index([date])
   @@index([companyId, date], map: "idx_ft_company_date")
   @@index([purchaseGroupId])
+  @@index([installmentPlanId])
   @@index([creditCardInvoiceId])
   @@index([companyId, creditCardInvoiceId], map: "idx_ft_company_invoice")
   @@index([companyId, entryKind])
@@ -563,6 +568,25 @@ model FinancialTransaction {
   @@index([effectiveDate])                               // Conciliação bancária
   @@index([companyId, effectiveDate, status])           // Relatórios financeiros
   @@index([companyId, createdAt], map: "idx_ft_company_created_at")
+}
+
+model InstallmentPlan {
+  id               String                 @id
+  description      String
+  totalAmount      Decimal                @db.Decimal(15, 2)
+  installmentCount Int
+  purchaseDate     DateTime
+  firstDueDate     DateTime
+  companyId        Int
+  company          Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdBy        Int
+  createdByUser    User                   @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  transactions     FinancialTransaction[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([companyId])
+  @@index([companyId, createdAt])
 }
 
 // Bank statements are evidence; linking them never changes a financial balance.

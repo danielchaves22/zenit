@@ -178,6 +178,43 @@ type CreditCardPurchaseBaseTransaction = {
   } | null;
 };
 
+type InstallmentPlanListItem = {
+  id: string;
+  description: string;
+  purchaseDate: Date;
+  firstDueDate: Date;
+  totalAmount: string;
+  installmentCount: number;
+  paidInstallmentCount: number;
+  pendingInstallmentCount: number;
+  canceledInstallmentCount: number;
+  paidAmount: string;
+  remainingAmount: string;
+  nextDueDate: Date | null;
+  lastDueDate: Date | null;
+  status: 'IN_PROGRESS' | 'OVERDUE' | 'COMPLETED' | 'CANCELED';
+  account: {
+    id: number;
+    name: string;
+  } | null;
+  category: {
+    id: number;
+    name: string;
+    color: string;
+    icon: string | null;
+  } | null;
+  installments: Array<{
+    id: number;
+    installmentNumber: number;
+    totalInstallments: number;
+    amount: string;
+    dueDate: Date | null;
+    effectiveDate: Date | null;
+    status: TransactionStatus;
+    archivedAt: Date | null;
+  }>;
+};
+
 // ============================================
 // CRITICAL: FINANCIAL DATA INTEGRITY CLASS
 // ============================================
@@ -253,8 +290,8 @@ export default class FinancialTransactionService {
       data.type === TransactionType.EXPENSE &&
       fromAccount?.type === AccountType.CREDIT_CARD;
 
-    if (installmentCount > 1 && !isCreditCardPurchase) {
-      throw new Error('Parcelamento está disponível apenas para despesas em cartão de crédito');
+    if (installmentCount > 1 && data.type !== TransactionType.EXPENSE) {
+      throw new Error('Parcelamento está disponível apenas para despesas');
     }
 
     if (isCreditCardPurchase) {
@@ -273,6 +310,19 @@ export default class FinancialTransactionService {
       return this.createCreditCardExpenseInstallments(
         data,
         fromAccount,
+        installmentCount,
+        existingTx,
+        options
+      );
+    }
+
+    if (installmentCount > 1) {
+      if (data.status === TransactionStatus.CANCELED) {
+        throw new Error('Uma compra parcelada não pode ser criada já cancelada');
+      }
+
+      return this.createNonCardExpenseInstallments(
+        data,
         installmentCount,
         existingTx,
         options
@@ -349,6 +399,120 @@ export default class FinancialTransactionService {
     const d = new Date(date);
     d.setMonth(d.getMonth() + months);
     return d;
+  }
+
+  private static async createNonCardExpenseInstallments(
+    data: {
+      description: string;
+      amount: number | string;
+      date: Date;
+      dueDate?: Date | null;
+      effectiveDate?: Date | null;
+      type: TransactionType;
+      status?: TransactionStatus;
+      notes?: string;
+      importSourceType?: FinancialTransactionImportSourceType | null;
+      importSourceDescription?: string | null;
+      fromAccountId?: number | null;
+      toAccountId?: number | null;
+      categoryId?: number | null;
+      entryKind?: FinancialTransactionEntryKind;
+      companyId: number;
+      createdBy: number;
+      tags?: string[];
+      recurringTransactionId?: number | null;
+      occurrenceKey?: string | null;
+      allowMissingAccount?: boolean;
+    },
+    installmentCount: number,
+    existingTx?: Prisma.TransactionClient,
+    options?: TransactionExecutionOptions
+  ): Promise<FinancialTransaction[]> {
+    const totalAmount = parseDecimal(data.amount);
+    const totalCents = totalAmount.mul(100).toDecimalPlaces(0).toNumber();
+
+    if (!Number.isSafeInteger(totalCents) || totalCents < installmentCount) {
+      throw new Error('Valor total deve permitir parcelas de pelo menos R$ 0,01');
+    }
+
+    const baseInstallmentCents = Math.floor(totalCents / installmentCount);
+    const lastInstallmentCents =
+      totalCents - baseInstallmentCents * (installmentCount - 1);
+    const firstDueDate = new Date(data.dueDate || data.date);
+    const installmentPlanId = randomUUID();
+
+    const execute = async (tx: Prisma.TransactionClient) => {
+      await tx.installmentPlan.create({
+        data: {
+          id: installmentPlanId,
+          description: data.description,
+          totalAmount,
+          installmentCount,
+          purchaseDate: data.date,
+          firstDueDate,
+          company: { connect: { id: data.companyId } },
+          createdByUser: { connect: { id: data.createdBy } }
+        }
+      });
+
+      const transactions: FinancialTransaction[] = [];
+
+      for (let index = 0; index < installmentCount; index += 1) {
+        const occurrenceDate = addMonthsClamped(firstDueDate, index);
+        const currentStatus = index === 0
+          ? data.status ?? TransactionStatus.PENDING
+          : TransactionStatus.PENDING;
+        const installmentCents = index === installmentCount - 1
+          ? lastInstallmentCents
+          : baseInstallmentCents;
+
+        const transaction = await this.createSingleTransaction(
+          {
+            ...data,
+            amount: new Prisma.Decimal(installmentCents).div(100).toFixed(2),
+            date: occurrenceDate,
+            dueDate: occurrenceDate,
+            effectiveDate:
+              index === 0 && currentStatus === TransactionStatus.COMPLETED
+                ? data.effectiveDate ?? data.date
+                : null,
+            status: currentStatus,
+            installmentNumber: index + 1,
+            totalInstallments: installmentCount,
+            installmentPlanId,
+            scheduledDate: occurrenceDate,
+            occurrenceKey: null
+          },
+          tx,
+          { ...options, deferPostCommitEffects: true }
+        );
+
+        transactions.push(transaction);
+      }
+
+      return transactions;
+    };
+
+    if (existingTx) {
+      return execute(existingTx);
+    }
+
+    const transactions = await prisma.$transaction(execute, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 30000,
+      maxWait: 10000
+    });
+
+    if (!options?.deferPostCommitEffects) {
+      await this.invalidateFinancialCaches(
+        data.companyId,
+        [data.fromAccountId, data.toAccountId].filter(
+          (accountId): accountId is number => typeof accountId === 'number'
+        )
+      );
+    }
+
+    return transactions;
   }
 
   private static async createCreditCardExpenseInstallments(
@@ -482,6 +646,7 @@ export default class FinancialTransactionService {
     installmentNumber?: number | null;
     totalInstallments?: number | null;
     purchaseGroupId?: string | null;
+    installmentPlanId?: string | null;
     scheduledDate?: Date | null;
     recurringTransactionId?: number | null;
     occurrenceKey?: string | null;
@@ -673,6 +838,9 @@ export default class FinancialTransactionService {
           installmentNumber: data.installmentNumber ?? null,
           totalInstallments: data.totalInstallments ?? null,
           purchaseGroupId: data.purchaseGroupId ?? null,
+          installmentPlan: data.installmentPlanId
+            ? { connect: { id: data.installmentPlanId } }
+            : undefined,
           scheduledDate: data.scheduledDate ?? null,
           fromAccount: data.fromAccountId ? { connect: { id: data.fromAccountId } } : undefined,
           toAccount: data.toAccountId ? { connect: { id: data.toAccountId } } : undefined,
@@ -1595,6 +1763,20 @@ export default class FinancialTransactionService {
     await tx.financialTransaction.delete({
       where: { id: originalTxn.id }
     });
+
+    if (originalTxn.installmentPlanId) {
+      const remainingInstallments = await tx.financialTransaction.count({
+        where: {
+          installmentPlanId: originalTxn.installmentPlanId
+        }
+      });
+
+      if (remainingInstallments === 0) {
+        await tx.installmentPlan.delete({
+          where: { id: originalTxn.installmentPlanId }
+        });
+      }
+    }
 
     await this.syncCreditCardInvoicesTx(tx, [originalTxn.creditCardInvoiceId]);
     await this.syncCreditCardInvoicesTx(
@@ -3131,12 +3313,43 @@ export default class FinancialTransactionService {
           }
         },
         tags: true,
+        installmentPlan: true,
         createdByUser: { select: { id: true, name: true, email: true } }
       }
     });
 
     if (!transaction) {
       return null;
+    }
+
+    if (transaction.installmentPlanId) {
+      const installmentPlanTransactions = await prisma.financialTransaction.findMany({
+        where: {
+          installmentPlanId: transaction.installmentPlanId,
+          companyId: transaction.companyId
+        },
+        select: {
+          id: true,
+          description: true,
+          amount: true,
+          installmentNumber: true,
+          totalInstallments: true,
+          dueDate: true,
+          effectiveDate: true,
+          scheduledDate: true,
+          status: true,
+          archivedAt: true
+        },
+        orderBy: [
+          { installmentNumber: 'asc' },
+          { id: 'asc' }
+        ]
+      });
+
+      return {
+        ...transaction,
+        installmentPlanTransactions
+      };
     }
 
     if (!transaction.purchaseGroupId) {
@@ -3179,6 +3392,148 @@ export default class FinancialTransactionService {
       ...transaction,
       purchaseGroupTransactions
     };
+  }
+
+  static async listInstallmentPlans(params: {
+    companyId: number;
+    accessibleAccountIds?: number[];
+  }): Promise<InstallmentPlanListItem[]> {
+    const accountWhere: Prisma.FinancialTransactionWhereInput = params.accessibleAccountIds
+      ? {
+          OR: [
+            {
+              AND: [
+                { fromAccountId: null },
+                { toAccountId: null }
+              ]
+            },
+            {
+              fromAccountId: {
+                in: params.accessibleAccountIds
+              }
+            }
+          ]
+        }
+      : {};
+
+    if (params.accessibleAccountIds && params.accessibleAccountIds.length === 0) {
+      return [];
+    }
+
+    const plans = await prisma.installmentPlan.findMany({
+      where: {
+        companyId: params.companyId,
+        transactions: {
+          some: accountWhere
+        }
+      },
+      include: {
+        transactions: {
+          where: accountWhere,
+          include: {
+            fromAccount: {
+              select: {
+                id: true,
+                name: true
+              }
+            },
+            category: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+                icon: true
+              }
+            }
+          },
+          orderBy: [
+            { installmentNumber: 'asc' },
+            { id: 'asc' }
+          ]
+        }
+      },
+      orderBy: [
+        { purchaseDate: 'desc' },
+        { createdAt: 'desc' }
+      ]
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return plans.map((plan) => {
+      const paidInstallments = plan.transactions.filter(
+        (transaction) =>
+          transaction.status === TransactionStatus.COMPLETED && !transaction.archivedAt
+      );
+      const pendingInstallments = plan.transactions.filter(
+        (transaction) =>
+          transaction.status === TransactionStatus.PENDING && !transaction.archivedAt
+      );
+      const canceledInstallments = plan.transactions.filter(
+        (transaction) =>
+          transaction.status === TransactionStatus.CANCELED || Boolean(transaction.archivedAt)
+      );
+      const overdue = pendingInstallments.some((transaction) => {
+        if (!transaction.dueDate) {
+          return false;
+        }
+
+        const dueDate = new Date(transaction.dueDate);
+        dueDate.setHours(0, 0, 0, 0);
+        return dueDate < today;
+      });
+      const paidAmount = paidInstallments.reduce(
+        (total, transaction) => total.add(transaction.amount),
+        new Prisma.Decimal(0)
+      );
+      const remainingAmount = pendingInstallments.reduce(
+        (total, transaction) => total.add(transaction.amount),
+        new Prisma.Decimal(0)
+      );
+      const nextDueDate = pendingInstallments
+        .map((transaction) => transaction.dueDate)
+        .filter((date): date is Date => Boolean(date))
+        .sort((left, right) => left.getTime() - right.getTime())[0] ?? null;
+      const lastDueDate = addMonthsClamped(plan.firstDueDate, plan.installmentCount - 1);
+      const representative = plan.transactions[0] ?? null;
+      const status: InstallmentPlanListItem['status'] = overdue
+        ? 'OVERDUE'
+        : pendingInstallments.length > 0
+          ? 'IN_PROGRESS'
+          : paidInstallments.length > 0
+            ? 'COMPLETED'
+            : 'CANCELED';
+
+      return {
+        id: plan.id,
+        description: plan.description,
+        purchaseDate: plan.purchaseDate,
+        firstDueDate: plan.firstDueDate,
+        totalAmount: plan.totalAmount.toFixed(2),
+        installmentCount: plan.installmentCount,
+        paidInstallmentCount: paidInstallments.length,
+        pendingInstallmentCount: pendingInstallments.length,
+        canceledInstallmentCount: canceledInstallments.length,
+        paidAmount: paidAmount.toFixed(2),
+        remainingAmount: remainingAmount.toFixed(2),
+        nextDueDate,
+        lastDueDate,
+        status,
+        account: representative?.fromAccount ?? null,
+        category: representative?.category ?? null,
+        installments: plan.transactions.map((transaction) => ({
+          id: transaction.id,
+          installmentNumber: transaction.installmentNumber ?? 1,
+          totalInstallments: transaction.totalInstallments ?? plan.installmentCount,
+          amount: transaction.amount.toFixed(2),
+          dueDate: transaction.dueDate,
+          effectiveDate: transaction.effectiveDate,
+          status: transaction.status,
+          archivedAt: transaction.archivedAt
+        }))
+      };
+    });
   }
 
   static async listCreditCardPurchases(params: {

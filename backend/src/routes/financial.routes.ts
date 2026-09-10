@@ -88,6 +88,7 @@ import {
   createTransaction,
   archiveTransaction,
   getCreditCardPurchases,
+  getInstallmentPurchases,
   getTransactions,
   getTransactionById,
   updateTransaction,
@@ -199,6 +200,7 @@ router.get('/credit-cards', requireFeaturePermission('FINANCIAL_ACCOUNTS'), list
 router.get('/credit-cards/:accountId/reset/preview', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireCompanyOwner, previewCreditCardReset);
 router.post('/credit-cards/:accountId/reset', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireCompanyOwner, validate(executeFinancialResetSchema), executeCreditCardReset);
 router.get('/credit-card-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(listCreditCardPurchasesSchema), getCreditCardPurchases);
+router.get('/installment-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), getInstallmentPurchases);
 router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
 router.get(
   '/credit-cards/:accountId/invoices/:referenceYear/:referenceMonth/fixed-materialization',

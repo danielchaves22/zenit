@@ -23,6 +23,7 @@ export default function NewTransactionPage() {
   const locked = readQueryValue(router.query.locked);
   const accountId = readQueryValue(router.query.accountId);
   const returnTo = readQueryValue(router.query.returnTo);
+  const installment = readQueryValue(router.query.installment);
   const isTypeLocked = locked === 'true';
   const initialType = (queryType as 'INCOME' | 'EXPENSE' | 'TRANSFER') || 'EXPENSE';
 
@@ -31,7 +32,7 @@ export default function NewTransactionPage() {
       case 'INCOME':
         return 'Nova Receita';
       case 'EXPENSE':
-        return 'Nova Despesa';
+        return installment === 'true' ? 'Nova Compra Parcelada' : 'Nova Despesa';
       case 'TRANSFER':
         return 'Nova Transferência';
       default:
@@ -55,6 +56,7 @@ export default function NewTransactionPage() {
         isTypeLocked={isTypeLocked}
         createFlow="standard"
         defaultFinancialAccountId={accountId}
+        defaultInstallmentPurchase={installment === 'true'}
         returnTo={returnTo}
       />
     </DashboardLayout>

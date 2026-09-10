@@ -47,6 +47,7 @@ import {
 } from '@/utils/financialStatus';
 import { buildTransactionUpsertPayload } from '@/utils/transactionPayload';
 import { resolveTransactionListPath } from '@/utils/transactionNavigation';
+import { buildInstallmentPreview } from '@/utils/installmentPlans';
 
 type TransactionKind = 'INCOME' | 'EXPENSE' | 'TRANSFER';
 type TransactionStatus = 'PENDING' | 'COMPLETED' | 'CANCELED';
@@ -141,6 +142,7 @@ interface Transaction {
   installmentNumber?: number | null;
   totalInstallments?: number | null;
   purchaseGroupId?: string | null;
+  installmentPlanId?: string | null;
   creditCardInvoice?: InvoiceSummary | null;
   purchaseGroupTransactions?: PurchaseGroupTransaction[];
 }
@@ -153,6 +155,7 @@ interface TransactionFormProps {
   createFlow?: CreateFlow;
   defaultCreditCardId?: string | null;
   defaultFinancialAccountId?: string | null;
+  defaultInstallmentPurchase?: boolean;
   returnTo?: string | null;
   onSuccess?: () => void;
   onCancel?: () => void;
@@ -294,6 +297,7 @@ export default function TransactionForm({
   createFlow = 'standard',
   defaultCreditCardId = null,
   defaultFinancialAccountId = null,
+  defaultInstallmentPurchase = false,
   returnTo = null,
   onSuccess,
   onCancel,
@@ -325,21 +329,34 @@ export default function TransactionForm({
     amount: '0.00',
     date: getTodayValue(),
     dueDate: getTodayValue(),
-    liquidationDate: getTodayValue(),
+    liquidationDate:
+      mode === 'create' && initialType === 'EXPENSE' && defaultInstallmentPurchase
+        ? ''
+        : getTodayValue(),
     type: initialType,
-    status: 'COMPLETED' as TransactionStatus,
+    status: (
+      mode === 'create' && initialType === 'EXPENSE' && defaultInstallmentPurchase
+        ? 'PENDING'
+        : 'COMPLETED'
+    ) as TransactionStatus,
     notes: '',
     fromAccountId: '',
     toAccountId: '',
     categoryId: '',
     tags: [],
     repeatTimes: '',
-    installmentCount: '1',
+    installmentCount:
+      mode === 'create' && initialType === 'EXPENSE' && defaultInstallmentPurchase
+        ? '2'
+        : '1',
     purchaseScope: 'PURCHASE' as PurchaseScope
   });
   const [pendingTagNames, setPendingTagNames] = useState<string[]>([]);
 
   const [isRecurring, setIsRecurring] = useState(false);
+  const [isInstallmentPurchase, setIsInstallmentPurchase] = useState(
+    mode === 'create' && initialType === 'EXPENSE' && defaultInstallmentPurchase
+  );
   const [isSettlementModalOpen, setIsSettlementModalOpen] = useState(false);
   const [settlementAccountId, setSettlementAccountId] = useState('');
   const [settlementAmount, setSettlementAmount] = useState('0.00');
@@ -397,6 +414,18 @@ export default function TransactionForm({
 
   const installmentCountValue = Math.max(Number(formData.installmentCount || 1), 1);
   const amountValue = Number(formData.amount || 0) || 0;
+  const isNonCardInstallmentCreation =
+    mode === 'create' &&
+    !isCreditCardPurchaseFlow &&
+    formData.type === 'EXPENSE' &&
+    isInstallmentPurchase;
+  const nonCardInstallmentPreview = useMemo(
+    () =>
+      isNonCardInstallmentCreation
+        ? buildInstallmentPreview(amountValue, installmentCountValue, formData.dueDate)
+        : [],
+    [amountValue, formData.dueDate, installmentCountValue, isNonCardInstallmentCreation]
+  );
   const totalCommittedAmount = isCreditCardExpense
     ? amountValue * installmentCountValue
     : amountValue;
@@ -564,6 +593,11 @@ export default function TransactionForm({
   );
   const completionHint = getCompletionHint(formData.type, isCompleted, formData.liquidationDate);
   const primaryDateLabel = getPrimaryDateLabel(formData.type, isCreditCardContext);
+  const dueDateLabel = isNonCardInstallmentCreation
+    ? 'Primeiro Vencimento'
+    : isCreditCardContext
+      ? 'Vencimento da Fatura'
+      : 'Data de Vencimento';
   const settlementToggleLabel = getSettlementToggleLabel(formData.type);
   const settlementDateLabel = getSettlementDateLabel(formData.type);
   const settlementActionLabel = isExpense
@@ -571,7 +605,8 @@ export default function TransactionForm({
     : isIncome
       ? getSettlementActionLabel('INCOME')
       : 'Liquidar transacao';
-  const requiresFromAccount = isTransfer || (isExpense && isCompleted);
+  const requiresFromAccount =
+    isTransfer || (isExpense && (isCompleted || isNonCardInstallmentCreation));
   const requiresToAccount = isTransfer || (isIncome && isCompleted);
   const canOpenSettlementModal =
     mode === 'edit' &&
@@ -600,6 +635,22 @@ export default function TransactionForm({
       void fetchTransaction();
     }
   }, [mode, transactionId]);
+
+  useEffect(() => {
+    if (mode !== 'create' || initialType !== 'EXPENSE' || !defaultInstallmentPurchase) {
+      return;
+    }
+
+    setIsInstallmentPurchase(true);
+    setIsRecurring(false);
+    setFormData((prev) => ({
+      ...prev,
+      status: 'PENDING',
+      liquidationDate: '',
+      repeatTimes: '',
+      installmentCount: Number(prev.installmentCount || 0) > 1 ? prev.installmentCount : '2'
+    }));
+  }, [defaultInstallmentPurchase, initialType, mode]);
 
   useEffect(() => {
     if (mode === 'create' && shouldFocusAmount && !loading) {
@@ -648,6 +699,7 @@ export default function TransactionForm({
     }
 
     setIsRecurring(false);
+    setIsInstallmentPurchase(false);
     setFormData((prev) => ({
       ...prev,
       type: 'EXPENSE',
@@ -805,6 +857,7 @@ export default function TransactionForm({
       }
 
       setIsRecurring(Boolean(txn.repeatTimes && txn.repeatTimes > 0));
+      setIsInstallmentPurchase(Boolean(txn.installmentPlanId));
       setFormData({
         description: txn.description,
         amount: txn.amount,
@@ -944,6 +997,7 @@ export default function TransactionForm({
     });
     setPendingTagNames([]);
     setIsRecurring(false);
+    setIsInstallmentPurchase(false);
     setShouldFocusAmount(true);
   }
 
@@ -1045,6 +1099,13 @@ export default function TransactionForm({
         categoryId: getDefaultCategoryId(nextType)
       }));
 
+      if (nextType !== 'EXPENSE') {
+        setIsInstallmentPurchase(false);
+      }
+      if (nextType === 'EXPENSE') {
+        setIsRecurring(false);
+      }
+
       return;
     }
 
@@ -1110,9 +1171,29 @@ export default function TransactionForm({
 
   const handleRecurringChange = (checked: boolean) => {
     setIsRecurring(checked);
+    if (checked) {
+      setIsInstallmentPurchase(false);
+      setFormData((prev) => ({ ...prev, installmentCount: '1' }));
+    }
     if (!checked) {
       setFormData((prev) => ({ ...prev, repeatTimes: '' }));
     }
+  };
+
+  const handleInstallmentPurchaseChange = (checked: boolean) => {
+    setIsInstallmentPurchase(checked);
+    setIsRecurring(false);
+    setFormData((prev) => ({
+      ...prev,
+      status: checked ? 'PENDING' : prev.status,
+      liquidationDate: checked ? '' : prev.liquidationDate,
+      repeatTimes: '',
+      installmentCount: checked
+        ? Number(prev.installmentCount || 0) > 1
+          ? prev.installmentCount
+          : '2'
+        : '1'
+    }));
   };
 
   const handleSimpleStatusChange = (checked: boolean) => {
@@ -1313,6 +1394,16 @@ export default function TransactionForm({
       return;
     }
 
+    if (isNonCardInstallmentCreation && installmentCountValue < 2) {
+      addToast('Compra parcelada deve ter pelo menos duas parcelas', 'error');
+      return;
+    }
+
+    if (isNonCardInstallmentCreation && nonCardInstallmentPreview.length === 0) {
+      addToast('Confira o valor total, a quantidade e o primeiro vencimento', 'error');
+      return;
+    }
+
     const requiresSettlementAccount =
       formData.status === 'COMPLETED' || Boolean(formData.liquidationDate);
 
@@ -1363,7 +1454,10 @@ export default function TransactionForm({
       const payload = buildTransactionUpsertPayload(formData, {
         status: normalizedStatus,
         liquidationDate: normalizedLiquidationDate,
-        repeatTimes: !isCreditCardPurchaseFlow && isRecurring ? Number(formData.repeatTimes || 0) : 0
+        repeatTimes:
+          !isCreditCardPurchaseFlow && !isNonCardInstallmentCreation && isRecurring
+            ? Number(formData.repeatTimes || 0)
+            : 0
       });
 
       if (mode === 'edit' && transaction?.purchaseGroupId) {
@@ -1390,12 +1484,18 @@ export default function TransactionForm({
         if (creditCardInvoiceReferenceOverride) {
           payload.creditCardInvoiceReference = creditCardInvoiceReferenceOverride;
         }
+      } else if (isNonCardInstallmentCreation) {
+        payload.installmentCount = installmentCountValue;
       }
 
       if (mode === 'create') {
         await api.post('/financial/transactions', payload);
         addToast(
-          isCreditCardPurchaseFlow ? 'Compra no cartão registrada com sucesso' : 'Transação criada com sucesso',
+          isCreditCardPurchaseFlow
+            ? 'Compra no cartão registrada com sucesso'
+            : isNonCardInstallmentCreation
+              ? 'Compra parcelada registrada com sucesso'
+              : 'Transação criada com sucesso',
           'success'
         );
         if (postCreateAction === 'create-another') {
@@ -1511,6 +1611,10 @@ export default function TransactionForm({
       return installmentCountValue > 1 ? 'Nova Compra Parcelada no Cartão' : 'Nova Compra no Cartão';
     }
 
+    if (isNonCardInstallmentCreation) {
+      return 'Nova Compra Parcelada';
+    }
+
     switch (formData.type) {
       case 'INCOME':
         return 'Nova Receita';
@@ -1528,7 +1632,9 @@ export default function TransactionForm({
     : mode === 'create'
       ? isCreditCardPurchaseFlow
         ? 'Registrar Compra'
-        : 'Criar Transação'
+        : isNonCardInstallmentCreation
+          ? 'Registrar Parcelamento'
+          : 'Criar Transação'
       : 'Salvar Alterações';
 
   const saveAndAddAnotherLabel = saving
@@ -1730,7 +1836,13 @@ export default function TransactionForm({
               <div>
                 <CurrencyInput
                   id="amount"
-                  label={isCreditCardPurchaseFlow && installmentCountValue > 1 ? 'Valor da Parcela *' : 'Valor *'}
+                  label={
+                    isNonCardInstallmentCreation
+                      ? 'Valor Total da Compra *'
+                      : isCreditCardPurchaseFlow && installmentCountValue > 1
+                        ? 'Valor da Parcela *'
+                        : 'Valor *'
+                  }
                   value={formData.amount}
                   onChange={handleAmountChange}
                   required={requiresToAccount}
@@ -1751,7 +1863,39 @@ export default function TransactionForm({
                   </div>
                 )}
 
-              {mode === 'create' ? (
+              {mode === 'create' && formData.type === 'EXPENSE' ? (
+                <>
+                  <div className="flex items-center pt-8">
+                    <span className="mr-2 text-sm text-gray-300">Compra parcelada</span>
+                    <label htmlFor="isInstallmentPurchase" className="relative inline-flex cursor-pointer items-center">
+                      <input
+                        id="isInstallmentPurchase"
+                        type="checkbox"
+                        checked={isInstallmentPurchase}
+                        onChange={(event) => handleInstallmentPurchaseChange(event.target.checked)}
+                        className="peer sr-only"
+                      />
+                      <div className="h-5 w-10 rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+                    </label>
+                  </div>
+                  {isInstallmentPurchase && (
+                    <div className="w-32">
+                      <Input
+                        id="installmentCount"
+                        name="installmentCount"
+                        type="number"
+                        min="2"
+                        max="120"
+                        label="Parcelas"
+                        value={formData.installmentCount}
+                        onChange={handleChange}
+                        disabled={saving || isReadOnly}
+                      />
+                    </div>
+                  )}
+                </>
+              ) : mode === 'create' ? (
                 <>
                   <div className="flex items-center pt-8">
                     <span className="mr-2 text-sm text-gray-300">Recorrente</span>
@@ -1773,16 +1917,46 @@ export default function TransactionForm({
                         id="repeatTimes"
                         name="repeatTimes"
                         type="number"
+                        min="1"
                         label="Repetir (meses)"
                         value={formData.repeatTimes}
                         onChange={handleChange}
-                        placeholder="0"
                         disabled={saving || isReadOnly}
                       />
                     </div>
                   )}
                 </>
               ) : null}
+            </div>
+          )}
+
+          {isNonCardInstallmentCreation && nonCardInstallmentPreview.length > 0 && (
+            <div className="rounded-lg border border-violet-700/60 bg-violet-950/20 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-medium text-white">Previsão do parcelamento</div>
+                  <div className="mt-1 text-sm text-gray-300">
+                    {installmentCountValue} parcelas · total {formatCurrency(amountValue)}
+                  </div>
+                </div>
+                <div className="text-sm text-gray-300 sm:text-right">
+                  <div>
+                    {formatCurrency(nonCardInstallmentPreview[0].amount)} por parcela
+                    {nonCardInstallmentPreview.at(-1)?.amount !== nonCardInstallmentPreview[0].amount
+                      ? ` · última ${formatCurrency(nonCardInstallmentPreview.at(-1)?.amount || 0)}`
+                      : ''}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-400">
+                    De {formatCalendarDate(nonCardInstallmentPreview[0].dueDate)} até{' '}
+                    {formatCalendarDate(nonCardInstallmentPreview.at(-1)?.dueDate)}
+                  </div>
+                  <div className="mt-1 text-xs text-gray-400">
+                    {formData.status === 'COMPLETED'
+                      ? 'A primeira parcela será criada como paga; as demais ficarão pendentes.'
+                      : 'Todas as parcelas serão criadas como pendentes.'}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -2015,7 +2189,7 @@ export default function TransactionForm({
                   <div>
                     <div className="mb-2 flex items-center gap-3">
                       <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
-                        {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                        {dueDateLabel}
                       </label>
                     </div>
                     <input
@@ -2079,12 +2253,12 @@ export default function TransactionForm({
                     >
                       <option value="PENDING">Pendente</option>
                       <option value="COMPLETED">Concluída</option>
-                      <option value="CANCELED">Cancelada</option>
+                      {!isNonCardInstallmentCreation && <option value="CANCELED">Cancelada</option>}
                     </select>
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="dueDate">
-                      {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                      {dueDateLabel}
                     </label>
                     <input
                       id="dueDate"
@@ -2134,7 +2308,7 @@ export default function TransactionForm({
                 <div>
                   <div className="mb-2 flex items-center gap-3">
                     <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
-                      {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                      {dueDateLabel}
                     </label>
                   </div>
                   <input
@@ -2192,7 +2366,7 @@ export default function TransactionForm({
 
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="dueDate">
-                    {isCreditCardContext ? 'Vencimento da Fatura' : 'Data de Vencimento'}
+                    {dueDateLabel}
                   </label>
                   <input
                     id="dueDate"

@@ -57,6 +57,13 @@ const quickNavigationItems: NavigationItem[] = [
     category: 'financeiro'
   },
   {
+    label: 'Compras Parceladas',
+    href: '/financial/installment-purchases',
+    icon: <Receipt size={20} />,
+    description: 'Acompanhar compras parceladas fora do cartão',
+    category: 'financeiro'
+  },
+  {
     label: 'Transações Fixas',
     href: '/financial/fixed-transactions',
     icon: <Repeat size={20} />,
@@ -146,6 +153,13 @@ const navigationItems: NavigationItem[] = [
     href: '/financial/transactions',
     icon: <Receipt size={20} />,
     description: 'Lançamentos financeiros',
+    category: 'financeiro'
+  },
+  {
+    label: 'Compras Parceladas',
+    href: '/financial/installment-purchases',
+    icon: <Receipt size={20} />,
+    description: 'Acompanhar compras parceladas fora do cartão',
     category: 'financeiro'
   },
   

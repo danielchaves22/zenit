@@ -204,6 +204,38 @@ export async function getCreditCardPurchases(req: Request, res: Response) {
 }
 
 /**
+ * GET /api/financial/installment-purchases
+ * Lista compras parceladas fora do cartao, agrupadas pelo compromisso original.
+ */
+export async function getInstallmentPurchases(req: Request, res: Response) {
+  try {
+    const { companyId } = getUserContext(req);
+    // @ts-ignore - auth middleware adiciona
+    const { userId, role } = req.user;
+    const accessibleAccountIds =
+      role === 'ADMIN' || role === 'SUPERUSER'
+        ? undefined
+        : await UserFinancialAccountAccessService.getUserAccessibleAccounts(
+            userId,
+            role,
+            companyId
+          );
+
+    const result = await FinancialTransactionService.listInstallmentPlans({
+      companyId,
+      accessibleAccountIds
+    });
+
+    return res.status(200).json(result);
+  } catch (error: any) {
+    logger.error('Erro ao listar compras parceladas:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao listar compras parceladas'
+    });
+  }
+}
+
+/**
  * GET /api/financial/transactions/:id
  * ObtÃ©m uma transaÃ§Ã£o financeira especÃ­fica pelo ID
  */

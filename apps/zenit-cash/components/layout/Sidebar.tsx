@@ -169,6 +169,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
       subItems: [
         { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
         { label: 'Nova Compra no Cartão', href: '/financial/transactions/new-credit-card-purchase' },
+        { label: 'Compras Parceladas', href: '/financial/installment-purchases' },
         { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
         { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
         { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },

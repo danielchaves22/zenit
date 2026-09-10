@@ -110,6 +110,11 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
     { label: 'Financeiro' },
     { label: 'Transações Fixas' }
   ],
+  '/financial/installment-purchases': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Financeiro' },
+    { label: 'Compras Parceladas' }
+  ],
   '/financial/fixed-transactions/new': [
     { label: 'Dashboard', href: '/' },
     { label: 'Financeiro' },

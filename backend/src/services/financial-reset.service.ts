@@ -248,6 +248,15 @@ export default class FinancialResetService {
           where: this.buildResetTransactionWhere(companyId)
         });
 
+        await tx.installmentPlan.deleteMany({
+          where: {
+            companyId,
+            transactions: {
+              none: {}
+            }
+          }
+        });
+
         await tx.creditCardInvoice.deleteMany({
           where: this.buildOrphanGeneralInvoiceWhere(companyId)
         });

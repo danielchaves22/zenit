@@ -106,6 +106,7 @@ interface Transaction {
   installmentNumber?: number | null;
   totalInstallments?: number | null;
   purchaseGroupId?: string | null;
+  installmentPlanId?: string | null;
   creditCardInvoice?: {
     id?: number;
     referenceYear: number;
@@ -1902,6 +1903,17 @@ export default function TransactionsListPage() {
 	                          className="rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200"
 	                        >
 	                          Fixa
+	                        </span>
+	                      );
+	                    }
+
+	                    if (transaction.installmentPlanId) {
+	                      characteristicBadges.push(
+	                        <span
+	                          key="installment"
+	                          className="rounded-full bg-violet-900 px-2 py-0.5 text-[10px] uppercase text-violet-200"
+	                        >
+	                          Parcelada
 	                        </span>
 	                      );
 	                    }

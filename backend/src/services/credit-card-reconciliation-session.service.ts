@@ -81,8 +81,31 @@ type CommitSelection = {
 
 type ItemDecisionInput = {
   expectedRevision: number;
-  decision: 'CONFIRM_EXISTING' | 'IGNORE' | 'RESTORE';
+  decision:
+    | 'CONFIRM_EXISTING'
+    | 'IGNORE'
+    | 'RESTORE'
+    | 'UNCONFIRM_EXISTING'
+    | 'UNLINK_FIXED';
   transactionIds?: number[];
+};
+
+type AutomaticMatchSuppression = {
+  mode: 'AUTO_MATCH_SUPPRESSED';
+  suppressedResolution: 'CONFIRMED_EXISTING' | 'LINKED_FIXED';
+  matchKey: string | null;
+  transactionId: number | null;
+  transactionIds: number[];
+  fixedTemplateId?: number | null;
+  occurrenceKey?: string | null;
+};
+
+type CommitOverrideEligibility = {
+  itemId: string;
+  fingerprint: string;
+  forceImport: boolean;
+  forceLinkFixed: boolean;
+  completeMappedFixed: boolean;
 };
 
 function asJson(value: unknown): Prisma.InputJsonValue {
@@ -142,7 +165,23 @@ function buildPersistedItemRecords(preview: ReconciliationPreviewResult) {
   });
 }
 
-function getAutomaticLinkedFixedResolution(item: ReconciliationPreviewItem) {
+function buildMatchKeyUsage(items: ReconciliationPreviewItem[]) {
+  const usage = new Map<string, number>();
+
+  for (const item of items) {
+    const itemMatchKeys = new Set(item.matchedTransactions.map((match) => match.matchKey));
+    for (const matchKey of itemMatchKeys) {
+      usage.set(matchKey, (usage.get(matchKey) || 0) + 1);
+    }
+  }
+
+  return usage;
+}
+
+function getAutomaticLinkedFixedResolution(
+  item: ReconciliationPreviewItem,
+  matchKeyUsage: Map<string, number>
+) {
   const uniqueMatch = item.matchedTransactions.length === 1
     ? item.matchedTransactions[0]
     : null;
@@ -150,7 +189,8 @@ function getAutomaticLinkedFixedResolution(item: ReconciliationPreviewItem) {
   if (
     item.status !== 'OK' ||
     uniqueMatch?.matchSource !== 'PROJECTED_FIXED' ||
-    !uniqueMatch.fixedTemplateId
+    !uniqueMatch.fixedTemplateId ||
+    matchKeyUsage.get(uniqueMatch.matchKey) !== 1
   ) {
     return null;
   }
@@ -160,6 +200,7 @@ function getAutomaticLinkedFixedResolution(item: ReconciliationPreviewItem) {
     resolutionData: asJson({
       mode: 'PROJECTED_MATCH',
       reason: item.reason,
+      matchKey: uniqueMatch.matchKey,
       fixedTemplateId: uniqueMatch.fixedTemplateId,
       occurrenceKey: uniqueMatch.occurrenceKey
     })
@@ -171,9 +212,13 @@ function buildInitialItemRecords(
   userId: number
 ) {
   const resolvedAt = new Date();
+  const matchKeyUsage = buildMatchKeyUsage(preview.items);
 
   return buildPersistedItemRecords(preview).map((record, index) => {
-    const automaticResolution = getAutomaticLinkedFixedResolution(preview.items[index]!);
+    const automaticResolution = getAutomaticLinkedFixedResolution(
+      preview.items[index]!,
+      matchKeyUsage
+    );
     return automaticResolution
       ? {
           ...record,
@@ -399,11 +444,15 @@ async function lockSessionEvidence(
   context: CreditCardReconciliationSessionContext,
   session: { referenceYear: number; referenceMonth: number }
 ) {
+  // Financial writers explicitly take an UPDATE-strength account lock, while
+  // recurring-template FK checks only need KEY SHARE. NO KEY UPDATE therefore
+  // preserves financial serialization without deadlocking a template update
+  // that already owns its RecurringTransaction row.
   const lockedAccounts = await db.$queryRaw<Array<{ id: number }>>`
     SELECT id
     FROM "FinancialAccount"
     WHERE id = ${context.accountId}
-    FOR UPDATE
+    FOR NO KEY UPDATE
   `;
   if (lockedAccounts.length === 0) {
     throw new CreditCardReconciliationSessionError(
@@ -477,12 +526,70 @@ function progressDto(items: any[]) {
   };
 }
 
-async function buildWorkspace(
+function getPersistedCategorySuggestions(items: any[]) {
+  return Object.fromEntries(
+    items.map((item) => {
+      const snapshot = item.snapshot as unknown as ReconciliationPreviewItem;
+      return [item.sourceItemId, snapshot.categorySuggestion];
+    })
+  );
+}
+
+async function rebuildPersistedSessionPreview(
   context: CreditCardReconciliationSessionContext,
-  sessionId: number,
-  allowInvalidation = true
+  session: any,
+  items: any[],
+  existingTx?: Prisma.TransactionClient
 ) {
-  const session = await prisma.creditCardReconciliationSession.findFirst({
+  return CreditCardStatementReconciliationService.buildPreview({
+    accountId: context.accountId,
+    companyId: context.companyId,
+    sourceType: session.sourceType as CreditCardReconciliationSourceType,
+    targetReferenceYear: session.referenceYear,
+    targetReferenceMonth: session.referenceMonth,
+    fileBase64: Buffer.from(session.fileData).toString('base64'),
+    fileName: session.fileName,
+    categorySuggestionsByItemId: getPersistedCategorySuggestions(items),
+    existingTx
+  });
+}
+
+function assertPersistedPreviewIdentity(
+  session: { id: number; revision: number },
+  items: any[],
+  preview: ReconciliationPreviewResult
+) {
+  const persistedBySourceId = new Map(
+    items.map((item) => [item.sourceItemId, item])
+  );
+  const currentIdentityBySourceId = new Map(
+    buildPersistedItemRecords(preview).map((item) => [item.sourceItemId, item.identityKey])
+  );
+
+  if (
+    preview.items.length !== items.length ||
+    preview.items.some((item) => !persistedBySourceId.has(item.id)) ||
+    items.some(
+      (item) => currentIdentityBySourceId.get(item.sourceItemId) !== item.identityKey
+    )
+  ) {
+    throw new CreditCardReconciliationSessionError(
+      'O arquivo salvo nao corresponde mais ao snapshot persistido da conciliacao',
+      'SESSION_SNAPSHOT_MISMATCH',
+      409,
+      { currentRevision: session.revision, currentSessionId: session.id }
+    );
+  }
+
+  return persistedBySourceId;
+}
+
+async function loadWorkspaceSession(
+  tx: Prisma.TransactionClient,
+  context: CreditCardReconciliationSessionContext,
+  sessionId: number
+) {
+  return tx.creditCardReconciliationSession.findFirst({
     where: {
       id: sessionId,
       accountId: context.accountId,
@@ -535,62 +642,156 @@ async function buildWorkspace(
       }
     }
   });
+}
 
-  if (!session) {
-    throw new CreditCardReconciliationSessionError(
-      'Sessao de conciliacao de cartao nao encontrada',
-      'RECONCILIATION_SESSION_NOT_FOUND',
-      404
-    );
-  }
-
-  const categorySuggestionsByItemId = Object.fromEntries(
-    session.items.map((item) => {
-      const snapshot = item.snapshot as unknown as ReconciliationPreviewItem;
-      return [item.sourceItemId, snapshot.categorySuggestion];
-    })
-  );
-  const preview = await CreditCardStatementReconciliationService.buildPreview({
-    accountId: context.accountId,
-    companyId: context.companyId,
-    sourceType: session.sourceType as CreditCardReconciliationSourceType,
-    targetReferenceYear: session.referenceYear,
-    targetReferenceMonth: session.referenceMonth,
-    fileBase64: Buffer.from(session.fileData).toString('base64'),
-    fileName: session.fileName,
-    categorySuggestionsByItemId
-  });
-  const persistedBySourceId = new Map(
-    session.items.map((item) => [item.sourceItemId, item])
-  );
-  const currentIdentityBySourceId = new Map(
-    buildPersistedItemRecords(preview).map((item) => [item.sourceItemId, item.identityKey])
-  );
-
-  if (
-    preview.items.length !== session.items.length ||
-    preview.items.some((item) => !persistedBySourceId.has(item.id)) ||
-    session.items.some(
-      (item) => currentIdentityBySourceId.get(item.sourceItemId) !== item.identityKey
+async function lockPreviewEvidenceRows(
+  tx: Prisma.TransactionClient,
+  preview: ReconciliationPreviewResult,
+  persistedItems: any[]
+) {
+  const transactionIds = Array.from(new Set([
+    ...preview.items.flatMap((item) =>
+      item.matchedTransactions.flatMap((match) =>
+        match.matchSource === 'TRANSACTION' && match.id !== null ? [match.id] : []
+      )
+    ),
+    ...persistedItems.flatMap((item) =>
+      item.transactions?.flatMap((link: any) =>
+        typeof link.transactionId === 'number' ? [link.transactionId] : []
+      ) || []
     )
-  ) {
-    throw new CreditCardReconciliationSessionError(
-      'O arquivo salvo nao corresponde mais ao snapshot persistido da conciliacao',
-      'SESSION_SNAPSHOT_MISMATCH',
-      409,
-      { currentRevision: session.revision, currentSessionId: session.id }
-    );
-  }
+  ])).sort((left, right) => left - right);
+  const recurringTransactionIds = Array.from(new Set(
+    preview.items.flatMap((item) =>
+      item.matchedTransactions.flatMap((match) =>
+        match.matchSource === 'PROJECTED_FIXED' && match.fixedTemplateId !== null
+          ? [match.fixedTemplateId]
+          : []
+      )
+    )
+  )).sort((left, right) => left - right);
 
-  if (allowInvalidation && await invalidateStaleResolutions(context, session, preview)) {
+  // Lock order is account -> invoice -> recurring templates -> financial
+  // candidates. Deleting a recurring template can reach financial rows through
+  // the recurringTransactionId ON DELETE SET NULL FK, so taking recurring rows
+  // first avoids the reverse recurring -> financial lock order. Financial
+  // writers acquire the account with NOWAIT after their own row and therefore
+  // fail/release instead of waiting on our account lock.
+  if (recurringTransactionIds.length > 0) {
+    await tx.$queryRaw(Prisma.sql`
+      SELECT id
+      FROM "RecurringTransaction"
+      WHERE id IN (${Prisma.join(recurringTransactionIds)})
+      ORDER BY id
+      FOR UPDATE
+    `);
+  }
+  if (transactionIds.length > 0) {
+    await tx.$queryRaw(Prisma.sql`
+      SELECT id
+      FROM "FinancialTransaction"
+      WHERE id IN (${Prisma.join(transactionIds)})
+      ORDER BY id
+      FOR UPDATE
+    `);
+  }
+}
+
+async function buildWorkspace(
+  context: CreditCardReconciliationSessionContext,
+  sessionId: number,
+  allowInvalidation = true
+) {
+  const attempt = await prisma.$transaction(async (tx) => {
+    const scoped = await loadScopedSession(tx, context, sessionId);
+    let canInvalidate = allowInvalidation;
+    try {
+      await lockMutationTarget(tx, context, scoped);
+    } catch (error) {
+      if (
+        error instanceof CreditCardReconciliationSessionError &&
+        (error.code === 'SESSION_TARGET_PAID' || error.code === 'ACCOUNT_INACTIVE')
+      ) {
+        // lockMutationTarget acquires the evidence locks before validating
+        // mutability. Keep serving a consistent read, but do not mutate a paid
+        // target or inactive card as part of a workspace refresh.
+        canInvalidate = false;
+      } else {
+        throw error;
+      }
+    }
+
+    const initialSession = await loadWorkspaceSession(tx, context, sessionId);
+    if (!initialSession) {
+      throw new CreditCardReconciliationSessionError(
+        'Sessao de conciliacao de cartao nao encontrada',
+        'RECONCILIATION_SESSION_NOT_FOUND',
+        404
+      );
+    }
+
+    const initialPreview = await rebuildPersistedSessionPreview(
+      context,
+      initialSession,
+      initialSession.items,
+      tx
+    );
+    await lockPreviewEvidenceRows(tx, initialPreview, initialSession.items);
+
+    // A writer may have held a candidate/template row before we acquired its
+    // evidence lock. Reload every durable input and rebuild the classification
+    // only after those row locks are ours.
+    const session = await loadWorkspaceSession(tx, context, sessionId);
+    if (!session) {
+      throw new CreditCardReconciliationSessionError(
+        'Sessao de conciliacao de cartao nao encontrada',
+        'RECONCILIATION_SESSION_NOT_FOUND',
+        404
+      );
+    }
+    const preview = await rebuildPersistedSessionPreview(
+      context,
+      session,
+      session.items,
+      tx
+    );
+    const persistedBySourceId = assertPersistedPreviewIdentity(
+      session,
+      session.items,
+      preview
+    );
+    if (canInvalidate && await invalidateStaleResolutions(tx, context, session, preview)) {
+      return { invalidated: true as const };
+    }
+
+    const workspacePreview = await projectPreviewForWorkspace(
+      context,
+      session,
+      preview,
+      tx
+    );
+    return {
+      invalidated: false as const,
+      session,
+      persistedBySourceId,
+      workspacePreview
+    };
+  }, {
+    timeout: 120000,
+    maxWait: 10000
+  });
+
+  if (attempt.invalidated) {
     return buildWorkspace(context, sessionId, false);
   }
+
+  const { session, persistedBySourceId, workspacePreview } = attempt;
 
   return {
     session: sessionDto(session),
     preview: {
-      ...preview,
-      items: preview.items.map((item) => {
+      ...workspacePreview,
+      items: workspacePreview.items.map((item) => {
         const persisted = persistedBySourceId.get(item.id)!;
         const terminal =
           item.canImport === false ||
@@ -604,8 +805,8 @@ async function buildWorkspace(
             resolution: persisted.resolution,
             resolutionData: persisted.resolutionData,
             transactionIds: persisted.transactions
-              .map((link) => link.transactionId)
-              .filter((id): id is number => id !== null),
+              .map((link: any) => link.transactionId)
+              .filter((id: number | null): id is number => id !== null),
             terminal,
             resolvedAt: persisted.resolvedAt,
             resolvedBy: persisted.resolvedBy
@@ -667,19 +868,513 @@ function hasStableFinancialIdentity(link: any) {
   );
 }
 
+function getAutomaticExistingCandidates(preview: ReconciliationPreviewResult) {
+  const matchKeyUsage = buildMatchKeyUsage(preview.items);
+
+  return preview.items.flatMap((item) => {
+    const match = item.matchedTransactions.length === 1
+      ? item.matchedTransactions[0]
+      : null;
+
+    if (
+      item.status !== 'OK' ||
+      item.reason !== 'EXACT' ||
+      match?.matchSource !== 'TRANSACTION' ||
+      match.id === null ||
+      matchKeyUsage.get(match.matchKey) !== 1
+    ) {
+      return [];
+    }
+
+    return [{ item, match, transactionId: match.id }];
+  });
+}
+
+function matchesCurrentFinancialIdentity(
+  transaction: any,
+  match: ReconciliationPreviewItem['matchedTransactions'][number]
+) {
+  return (
+    String(transaction.amount) === String(match.amount) &&
+    new Date(transaction.date).toISOString() === new Date(match.date).toISOString() &&
+    (transaction.installmentNumber ?? null) === (match.installmentNumber ?? null) &&
+    (transaction.totalInstallments ?? null) === (match.totalInstallments ?? null)
+  );
+}
+
+async function persistAutomaticExistingMatches(
+  tx: Prisma.TransactionClient,
+  context: CreditCardReconciliationSessionContext,
+  session: { id: number; referenceYear: number; referenceMonth: number },
+  preview: ReconciliationPreviewResult
+) {
+  const candidates = getAutomaticExistingCandidates(preview);
+  if (candidates.length === 0) {
+    return;
+  }
+
+  const transactionIds = candidates.map((candidate) => candidate.transactionId);
+  await tx.$queryRaw<Array<{ id: number }>>`
+    SELECT id
+    FROM "FinancialTransaction"
+    WHERE id IN (${Prisma.join(transactionIds)})
+    FOR UPDATE
+  `;
+  const transactions = await tx.financialTransaction.findMany({
+    where: { id: { in: transactionIds } },
+    include: {
+      creditCardInvoice: {
+        select: {
+          accountId: true,
+          referenceYear: true,
+          referenceMonth: true
+        }
+      }
+    }
+  });
+  const persistedItems = await tx.creditCardReconciliationItem.findMany({
+    where: {
+      sessionId: session.id,
+      sourceItemId: { in: candidates.map((candidate) => candidate.item.id) }
+    },
+    select: { id: true, sourceItemId: true }
+  });
+  const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
+  const persistedBySourceId = new Map(
+    persistedItems.map((item) => [item.sourceItemId, item])
+  );
+
+  for (const candidate of candidates) {
+    const transaction = transactionById.get(candidate.transactionId);
+    const persistedItem = persistedBySourceId.get(candidate.item.id);
+    if (
+      !transaction ||
+      !persistedItem ||
+      !isOperationalTargetTransaction(transaction, context, session) ||
+      !matchesCurrentFinancialIdentity(transaction, candidate.match)
+    ) {
+      continue;
+    }
+
+    // A claim can race with session creation/replacement. `skipDuplicates`
+    // turns both the per-item and reverse transaction uniqueness constraints
+    // into a safe no-op instead of aborting the whole reconciliation start.
+    const claimed = await tx.creditCardReconciliationItemTransaction.createMany({
+      data: [{
+        itemId: persistedItem.id,
+        transactionId: transaction.id,
+        transactionSnapshot: asJson(transaction)
+      }],
+      skipDuplicates: true
+    });
+    if (claimed.count !== 1) {
+      continue;
+    }
+
+    const resolvedAt = new Date();
+    const resolved = await tx.creditCardReconciliationItem.updateMany({
+      where: {
+        id: persistedItem.id,
+        sessionId: session.id,
+        resolution: CreditCardReconciliationItemResolution.PENDING
+      },
+      data: {
+        resolution: CreditCardReconciliationItemResolution.CONFIRMED_EXISTING,
+        resolutionData: asJson({
+          mode: 'AUTO_EXACT',
+          reason: candidate.item.reason,
+          matchKey: candidate.match.matchKey,
+          transactionId: transaction.id,
+          transactionIds: [transaction.id]
+        }),
+        resolvedAt,
+        resolvedBy: context.userId
+      }
+    });
+    if (resolved.count !== 1) {
+      await tx.creditCardReconciliationItemTransaction.deleteMany({
+        where: {
+          itemId: persistedItem.id,
+          transactionId: transaction.id
+        }
+      });
+      continue;
+    }
+
+    await tx.creditCardReconciliationEvent.create({
+      data: {
+        sessionId: session.id,
+        itemId: persistedItem.id,
+        userId: context.userId,
+        action: 'AUTO_CONFIRM_EXISTING',
+        details: asJson({
+          mode: 'AUTO_EXACT',
+          reason: candidate.item.reason,
+          matchKey: candidate.match.matchKey,
+          transactionId: transaction.id,
+          transactionIds: [transaction.id]
+        })
+      }
+    });
+  }
+}
+
+function getAutomaticMatchSuppression(value: unknown): AutomaticMatchSuppression | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const candidate = value as Partial<AutomaticMatchSuppression>;
+  if (
+    candidate.mode !== 'AUTO_MATCH_SUPPRESSED' ||
+    (candidate.suppressedResolution !== 'CONFIRMED_EXISTING' &&
+      candidate.suppressedResolution !== 'LINKED_FIXED')
+  ) {
+    return null;
+  }
+
+  return {
+    mode: 'AUTO_MATCH_SUPPRESSED',
+    suppressedResolution: candidate.suppressedResolution,
+    matchKey: typeof candidate.matchKey === 'string' ? candidate.matchKey : null,
+    transactionId: typeof candidate.transactionId === 'number' ? candidate.transactionId : null,
+    transactionIds: Array.isArray(candidate.transactionIds)
+      ? candidate.transactionIds.filter((id): id is number => typeof id === 'number')
+      : [],
+    fixedTemplateId: typeof candidate.fixedTemplateId === 'number'
+      ? candidate.fixedTemplateId
+      : null,
+    occurrenceKey: typeof candidate.occurrenceKey === 'string' ? candidate.occurrenceKey : null
+  };
+}
+
+function isSuppressedAutomaticMatch(
+  item: ReconciliationPreviewItem,
+  suppression: AutomaticMatchSuppression
+) {
+  if (suppression.suppressedResolution === 'CONFIRMED_EXISTING') {
+    return item.matchedTransactions.some((match) =>
+      match.matchSource === 'TRANSACTION' &&
+      (
+        (match.id !== null && (
+          match.id === suppression.transactionId ||
+          suppression.transactionIds.includes(match.id)
+        )) ||
+        (Boolean(suppression.matchKey) && match.matchKey === suppression.matchKey)
+      )
+    );
+  }
+
+  return item.matchedTransactions.some((match) =>
+    match.matchSource === 'PROJECTED_FIXED' &&
+    (
+      (Boolean(suppression.matchKey) && match.matchKey === suppression.matchKey) ||
+      (
+        suppression.fixedTemplateId !== null &&
+        match.fixedTemplateId === suppression.fixedTemplateId &&
+        (
+          !suppression.occurrenceKey ||
+          match.occurrenceKey === suppression.occurrenceKey
+        )
+      )
+    )
+  ) || (
+    !suppression.matchKey &&
+    suppression.fixedTemplateId === null &&
+    item.matchedTransactions.some((match) => match.matchSource === 'PROJECTED_FIXED')
+  );
+}
+
+function buildProjectedPreviewSummary(items: ReconciliationPreviewItem[]) {
+  const byStatus = (status: ReconciliationPreviewItem['status']) =>
+    items.filter((item) => item.status === status);
+  const sum = (entries: ReconciliationPreviewItem[]) => entries.reduce(
+    (total, item) => total.plus(new Prisma.Decimal(item.signedAmount)),
+    new Prisma.Decimal(0)
+  ).toString();
+  const okItems = byStatus('OK');
+  const similarItems = byStatus('SIMILAR');
+  const pendingItems = byStatus('PENDING');
+  const notImportableItems = byStatus('NOT_IMPORTABLE');
+  const importableItems = items.filter((item) => item.canImport);
+
+  return {
+    totalItems: items.length,
+    okCount: okItems.length,
+    similarCount: similarItems.length,
+    pendingCount: pendingItems.length,
+    notImportableCount: notImportableItems.length,
+    importableCount: importableItems.length,
+    importableAmount: sum(importableItems),
+    okAmount: sum(okItems),
+    similarAmount: sum(similarItems),
+    pendingAmount: sum(pendingItems),
+    notImportableAmount: sum(notImportableItems)
+  };
+}
+
+async function projectPreviewForWorkspace(
+  context: CreditCardReconciliationSessionContext,
+  session: any,
+  preview: ReconciliationPreviewResult,
+  existingTx?: Prisma.TransactionClient
+): Promise<ReconciliationPreviewResult> {
+  const db = existingTx ?? prisma;
+  const transactionIds = Array.from(new Set(
+    preview.items.flatMap((item) => item.matchedTransactions.flatMap((match) =>
+      match.matchSource === 'TRANSACTION' && match.id !== null ? [match.id] : []
+    ))
+  ));
+  const [transactions, claims] = transactionIds.length > 0
+    ? await Promise.all([
+        db.financialTransaction.findMany({
+          where: { id: { in: transactionIds } },
+          include: {
+            creditCardInvoice: {
+              select: {
+                accountId: true,
+                referenceYear: true,
+                referenceMonth: true
+              }
+            }
+          }
+        }),
+        db.creditCardReconciliationItemTransaction.findMany({
+          where: { transactionId: { in: transactionIds } },
+          select: { itemId: true, transactionId: true }
+        })
+      ])
+    : [[], []];
+  const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
+  const claimsByTransactionId = new Map<number, number[]>();
+  for (const claim of claims) {
+    if (claim.transactionId === null) {
+      continue;
+    }
+    claimsByTransactionId.set(
+      claim.transactionId,
+      [...(claimsByTransactionId.get(claim.transactionId) || []), claim.itemId]
+    );
+  }
+  const persistedBySourceId = new Map(
+    session.items.map((item: any) => [item.sourceItemId, item])
+  );
+  const matchKeyUsage = buildMatchKeyUsage(preview.items);
+
+  const items = preview.items.map((item) => {
+    const persisted = persistedBySourceId.get(item.id) as any;
+    const suppression = persisted?.resolution === CreditCardReconciliationItemResolution.PENDING
+      ? getAutomaticMatchSuppression(persisted.resolutionData)
+      : null;
+    if (suppression && isSuppressedAutomaticMatch(item, suppression)) {
+      return {
+        ...item,
+        status: 'PENDING' as const,
+        operationalMatchState: 'SUPPRESSED' as const
+      };
+    }
+
+    if (item.status !== 'OK') {
+      return item;
+    }
+
+    const match = item.matchedTransactions.length === 1
+      ? item.matchedTransactions[0]
+      : null;
+    if (!match || matchKeyUsage.get(match.matchKey) !== 1) {
+      return {
+        ...item,
+        status: 'SIMILAR' as const,
+        reason: 'AMBIGUOUS_EXACT' as const,
+        operationalMatchState: 'REVERSE_AMBIGUOUS' as const
+      };
+    }
+
+    if (match.matchSource === 'PROJECTED_FIXED') {
+      return persisted?.resolution === CreditCardReconciliationItemResolution.PENDING
+        ? {
+            ...item,
+            status: 'SIMILAR' as const,
+            operationalMatchState: 'UNCONFIRMED' as const
+          }
+        : item;
+    }
+
+    const transaction = match.id === null ? null : transactionById.get(match.id);
+    const claimedByAnotherItem = match.id !== null && (
+      claimsByTransactionId.get(match.id) || []
+    ).some((itemId) => itemId !== persisted?.id);
+    if (!transaction || !isOperationalTargetTransaction(transaction, context, session)) {
+      return {
+        ...item,
+        status: 'SIMILAR' as const,
+        operationalMatchState: 'OUT_OF_SCOPE' as const
+      };
+    }
+    if (!matchesCurrentFinancialIdentity(transaction, match)) {
+      return {
+        ...item,
+        status: 'SIMILAR' as const,
+        operationalMatchState: 'IDENTITY_CHANGED' as const
+      };
+    }
+    if (claimedByAnotherItem) {
+      return {
+        ...item,
+        status: 'SIMILAR' as const,
+        operationalMatchState: 'CLAIMED' as const
+      };
+    }
+
+    return persisted?.resolution === CreditCardReconciliationItemResolution.PENDING
+      ? {
+          ...item,
+          status: 'SIMILAR' as const,
+          operationalMatchState: 'UNCONFIRMED' as const
+        }
+      : item;
+  });
+
+  return {
+    ...preview,
+    summary: buildProjectedPreviewSummary(items),
+    items
+  };
+}
+
+function buildCommitOverrideFingerprint(
+  rawItem: ReconciliationPreviewItem,
+  projectedItem: ReconciliationPreviewItem
+) {
+  const matches = rawItem.matchedTransactions
+    .map((match) => ({
+      matchKey: match.matchKey,
+      matchSource: match.matchSource,
+      id: match.id,
+      fixedTemplateId: match.fixedTemplateId,
+      occurrenceKey: match.occurrenceKey,
+      amount: match.amount,
+      date: match.date,
+      status: match.status,
+      installmentNumber: match.installmentNumber,
+      totalInstallments: match.totalInstallments,
+      invoiceReference: match.invoiceReference,
+      invoiceStatus: match.invoiceStatus
+    }))
+    .sort((left, right) => left.matchKey.localeCompare(right.matchKey));
+
+  return sha256(JSON.stringify({
+    rawStatus: rawItem.status,
+    rawReason: rawItem.reason,
+    projectedStatus: projectedItem.status,
+    projectedReason: projectedItem.reason,
+    operationalMatchState: projectedItem.operationalMatchState || null,
+    canImport: projectedItem.canImport,
+    matches
+  }));
+}
+
+function buildCommitOverrideEligibility(
+  selectedItems: CommitSelection[],
+  persistedItems: any[],
+  rawPreview: ReconciliationPreviewResult,
+  projectedPreview: ReconciliationPreviewResult
+): CommitOverrideEligibility[] {
+  const persistedByItemId = new Map(
+    persistedItems.map((item) => [item.sourceItemId, item])
+  );
+  const rawByItemId = new Map(rawPreview.items.map((item) => [item.id, item]));
+  const projectedByItemId = new Map(
+    projectedPreview.items.map((item) => [item.id, item])
+  );
+
+  return selectedItems.map((selected) => {
+    const persisted = persistedByItemId.get(selected.itemId);
+    const raw = rawByItemId.get(selected.itemId);
+    const projected = projectedByItemId.get(selected.itemId);
+    if (!persisted || !raw || !projected) {
+      throw new Error('Um ou mais itens nao pertencem a esta conciliacao');
+    }
+
+    const action = selected.action || 'IMPORT';
+    const suppression = getAutomaticMatchSuppression(persisted.resolutionData);
+    const rawWouldBeRejectedAsDuplicate =
+      raw.status === 'OK' || raw.reason === 'AMBIGUOUS_EXACT';
+
+    return {
+      itemId: selected.itemId,
+      fingerprint: buildCommitOverrideFingerprint(raw, projected),
+      forceImport:
+        action === 'IMPORT' &&
+        projected.canImport &&
+        projected.status !== 'OK' &&
+        rawWouldBeRejectedAsDuplicate,
+      forceLinkFixed:
+        action === 'LINK_FIXED' &&
+        raw.reason === 'MAPPED_FIXED' &&
+        projected.operationalMatchState === 'SUPPRESSED' &&
+        suppression?.suppressedResolution === 'LINKED_FIXED',
+      completeMappedFixed:
+        action === 'LINK_FIXED' &&
+        raw.reason === 'MAPPED_FIXED' &&
+        raw.matchedTransactions.some((match) => match.matchSource === 'PROJECTED_FIXED')
+    };
+  });
+}
+
 async function invalidateStaleResolutions(
+  tx: Prisma.TransactionClient,
   context: CreditCardReconciliationSessionContext,
   session: any,
   preview: ReconciliationPreviewResult
 ) {
+  if (isLiveMutation(session)) {
+    return false;
+  }
+
   const previewById = new Map(preview.items.map((item) => [item.id, item]));
+  const matchKeyUsage = buildMatchKeyUsage(preview.items);
   const invalidItems = session.items.filter((item: any) => {
     if (item.resolution === CreditCardReconciliationItemResolution.CONFIRMED_EXISTING) {
-      return item.transactions.length === 0 || item.transactions.some(
-        (link: any) =>
-          !isOperationalTargetTransaction(link.transaction, context, session) ||
-          !hasStableFinancialIdentity(link)
+      const resolutionData = item.resolutionData as {
+        mode?: string;
+        transactionId?: number;
+      } | null;
+
+      const baseInvalid =
+        item.transactions.length === 0 ||
+        item.transactions.some(
+          (link: any) =>
+            !isOperationalTargetTransaction(link.transaction, context, session) ||
+            !hasStableFinancialIdentity(link)
+        );
+      if (baseInvalid) {
+        // Human confirmation protects only against a later classifier change.
+        // The persisted link itself must remain present, in scope and financially stable.
+        return true;
+      }
+
+      if (resolutionData?.mode !== 'AUTO_EXACT') {
+        // A human confirmation is an explicit checkpoint. Keep it when only
+        // the live classification becomes ambiguous; its durable evidence was
+        // already validated by baseInvalid above.
+        return false;
+      }
+
+      const current = previewById.get(item.sourceItemId);
+      const currentMatch = current?.matchedTransactions.length === 1
+        ? current.matchedTransactions[0]
+        : null;
+      const remainsTheSameUniqueExactMatch = Boolean(
+        current &&
+        current.status === 'OK' &&
+        current.reason === 'EXACT' &&
+        currentMatch?.matchSource === 'TRANSACTION' &&
+        currentMatch.id === resolutionData.transactionId &&
+        matchKeyUsage.get(currentMatch.matchKey) === 1
       );
+
+      return !remainsTheSameUniqueExactMatch;
     }
 
     if (item.resolution === CreditCardReconciliationItemResolution.IMPORTED) {
@@ -694,11 +1389,19 @@ async function invalidateStaleResolutions(
 
     if (item.resolution === CreditCardReconciliationItemResolution.LINKED_FIXED) {
       const current = previewById.get(item.sourceItemId);
+      const resolutionData = item.resolutionData as { mode?: string } | null;
+      const isDuplicatedAutomaticMatch = resolutionData?.mode === 'PROJECTED_MATCH' &&
+        current?.matchedTransactions.some((match) =>
+          match.matchSource === 'PROJECTED_FIXED' &&
+          matchKeyUsage.get(match.matchKey) !== 1
+        );
       return !current || !(
-        current.reason === 'MAPPED_FIXED' ||
-        (
-          current.status === 'OK' &&
-          current.matchedTransactions.some((match) => match.matchSource === 'PROJECTED_FIXED')
+        !isDuplicatedAutomaticMatch && (
+          current.reason === 'MAPPED_FIXED' ||
+          (
+            current.status === 'OK' &&
+            current.matchedTransactions.some((match) => match.matchSource === 'PROJECTED_FIXED')
+          )
         )
       );
     }
@@ -710,85 +1413,66 @@ async function invalidateStaleResolutions(
     return false;
   }
 
-  return prisma.$transaction(async (tx) => {
-    const current = await loadScopedSession(tx, context, session.id);
-    if (current.revision !== session.revision || isLiveMutation(current)) {
-      return false;
+  const updated = await tx.creditCardReconciliationSession.updateMany({
+    where: revisionCasWhere(session.id, session.revision),
+    data: {
+      revision: { increment: 1 },
+      status: CreditCardReconciliationSessionStatus.OPEN,
+      completedAt: null,
+      completedBy: null,
+      activeMutationToken: null,
+      activeMutationAt: null
     }
+  });
+  if (updated.count !== 1) {
+    return false;
+  }
 
-    try {
-      await lockMutationTarget(tx, context, current);
-    } catch (error) {
-      if (
-        error instanceof CreditCardReconciliationSessionError &&
-        (error.code === 'SESSION_TARGET_PAID' || error.code === 'ACCOUNT_INACTIVE')
-      ) {
-        return false;
-      }
-      throw error;
-    }
-
-    const updated = await tx.creditCardReconciliationSession.updateMany({
-      where: revisionCasWhere(current.id, current.revision),
+  for (const invalidItem of invalidItems) {
+    const reset = await tx.creditCardReconciliationItem.updateMany({
+      where: {
+        id: invalidItem.id,
+        sessionId: session.id,
+        resolution: invalidItem.resolution
+      },
       data: {
-        revision: { increment: 1 },
-        status: CreditCardReconciliationSessionStatus.OPEN,
-        completedAt: null,
-        completedBy: null,
-        activeMutationToken: null,
-        activeMutationAt: null
+        resolution: CreditCardReconciliationItemResolution.PENDING,
+        resolutionData: Prisma.DbNull,
+        resolvedAt: null,
+        resolvedBy: null
       }
     });
-    if (updated.count !== 1) {
-      return false;
+    if (reset.count === 0) {
+      throw new CreditCardReconciliationSessionError(
+        'O andamento da conciliacao mudou durante a reavaliacao',
+        'REVISION_CONFLICT',
+        409,
+        { currentRevision: session.revision, currentSessionId: session.id }
+      );
     }
-
-    for (const invalidItem of invalidItems) {
-      const reset = await tx.creditCardReconciliationItem.updateMany({
-        where: {
-          id: invalidItem.id,
-          sessionId: current.id,
-          resolution: invalidItem.resolution
-        },
-        data: {
-          resolution: CreditCardReconciliationItemResolution.PENDING,
-          resolutionData: Prisma.DbNull,
-          resolvedAt: null,
-          resolvedBy: null
-        }
-      });
-      if (reset.count === 0) {
-        throw new CreditCardReconciliationSessionError(
-          'O andamento da conciliacao mudou durante a reavaliacao',
-          'REVISION_CONFLICT',
-          409,
-          { currentRevision: current.revision, currentSessionId: current.id }
-        );
+    await tx.creditCardReconciliationItemTransaction.deleteMany({
+      where: { itemId: invalidItem.id }
+    });
+    await tx.creditCardReconciliationEvent.create({
+      data: {
+        sessionId: session.id,
+        itemId: invalidItem.id,
+        action: 'INVALIDATE',
+        details: asJson({ previousResolution: invalidItem.resolution })
       }
-      await tx.creditCardReconciliationItemTransaction.deleteMany({
-        where: { itemId: invalidItem.id }
-      });
-      await tx.creditCardReconciliationEvent.create({
-        data: {
-          sessionId: current.id,
-          itemId: invalidItem.id,
-          action: 'INVALIDATE',
-          details: asJson({ previousResolution: invalidItem.resolution })
-        }
-      });
-    }
+    });
+  }
 
-    if (session.status === CreditCardReconciliationSessionStatus.COMPLETED) {
-      await tx.creditCardReconciliationEvent.create({
-        data: {
-          sessionId: current.id,
-          action: 'REOPEN',
-          details: asJson({ reason: 'RESOLUTION_INVALIDATED' })
-        }
-      });
-    }
-    return true;
-  });
+  if (session.status === CreditCardReconciliationSessionStatus.COMPLETED) {
+    await tx.creditCardReconciliationEvent.create({
+      data: {
+        sessionId: session.id,
+        action: 'REOPEN',
+        details: asJson({ reason: 'RESOLUTION_INVALIDATED' })
+      }
+    });
+  }
+  return true;
 }
 
 async function clearMutationToken(sessionId: number, mutationToken: string, error?: unknown) {
@@ -816,6 +1500,60 @@ async function clearMutationToken(sessionId: number, mutationToken: string, erro
       });
     }
   });
+}
+
+function buildAutomaticMatchSuppression(item: any): AutomaticMatchSuppression {
+  const suppressedResolution = item.resolution === CreditCardReconciliationItemResolution.LINKED_FIXED
+    ? 'LINKED_FIXED'
+    : 'CONFIRMED_EXISTING';
+  const previousData = item.resolutionData && typeof item.resolutionData === 'object'
+    ? item.resolutionData as Record<string, unknown>
+    : {};
+  const snapshot = item.snapshot as ReconciliationPreviewItem;
+  const linkedTransactionIds = item.transactions
+    .map((link: any) => link.transactionId)
+    .filter((id: unknown): id is number => typeof id === 'number');
+  const previousTransactionIds = Array.isArray(previousData.transactionIds)
+    ? previousData.transactionIds.filter((id): id is number => typeof id === 'number')
+    : [];
+  const transactionIds = Array.from(new Set([...linkedTransactionIds, ...previousTransactionIds]));
+  const previousTransactionId = typeof previousData.transactionId === 'number'
+    ? previousData.transactionId
+    : null;
+  const transactionId = previousTransactionId ?? (transactionIds.length === 1 ? transactionIds[0]! : null);
+
+  const snapshotMatch = suppressedResolution === 'CONFIRMED_EXISTING'
+    ? snapshot.matchedTransactions.find((match) =>
+        match.matchSource === 'TRANSACTION' &&
+        match.id !== null &&
+        transactionIds.includes(match.id)
+      )
+    : snapshot.matchedTransactions.find((match) =>
+        match.matchSource === 'PROJECTED_FIXED' &&
+        (
+          (typeof previousData.matchKey === 'string' && match.matchKey === previousData.matchKey) ||
+          (
+            typeof previousData.fixedTemplateId === 'number' &&
+            match.fixedTemplateId === previousData.fixedTemplateId
+          )
+        )
+      ) || snapshot.matchedTransactions.find((match) => match.matchSource === 'PROJECTED_FIXED');
+
+  return {
+    mode: 'AUTO_MATCH_SUPPRESSED',
+    suppressedResolution,
+    matchKey: typeof previousData.matchKey === 'string'
+      ? previousData.matchKey
+      : snapshotMatch?.matchKey || null,
+    transactionId,
+    transactionIds,
+    fixedTemplateId: typeof previousData.fixedTemplateId === 'number'
+      ? previousData.fixedTemplateId
+      : snapshotMatch?.fixedTemplateId || null,
+    occurrenceKey: typeof previousData.occurrenceKey === 'string'
+      ? previousData.occurrenceKey
+      : snapshotMatch?.occurrenceKey || null
+  };
 }
 
 function isPrismaUniqueError(error: unknown) {
@@ -882,7 +1620,21 @@ export default class CreditCardReconciliationSessionService {
       fileBase64: fileData.toString('base64'),
       fileName: input.fileName
     });
-    const itemRecords = buildInitialItemRecords(preview, context.userId);
+    const categorySuggestionsByItemId = Object.fromEntries(
+      preview.items.map((item) => [item.id, item.categorySuggestion])
+    );
+    const rebuildPreviewUnderLock = (tx: Prisma.TransactionClient) =>
+      CreditCardStatementReconciliationService.buildPreview({
+        accountId: context.accountId,
+        companyId: context.companyId,
+        sourceType: input.sourceType,
+        targetReferenceYear: input.targetReferenceYear,
+        targetReferenceMonth: input.targetReferenceMonth,
+        fileBase64: fileData.toString('base64'),
+        fileName: input.fileName,
+        categorySuggestionsByItemId,
+        existingTx: tx
+      });
 
     let sessionId: number;
     try {
@@ -903,6 +1655,8 @@ export default class CreditCardReconciliationSessionService {
         });
 
         if (!current) {
+          const lockedPreview = await rebuildPreviewUnderLock(tx);
+          const itemRecords = buildInitialItemRecords(lockedPreview, context.userId);
           const created = await tx.creditCardReconciliationSession.create({
             data: {
               accountId: context.accountId,
@@ -912,7 +1666,7 @@ export default class CreditCardReconciliationSessionService {
               fileHash,
               fileName: input.fileName,
               fileData,
-              statementSnapshot: asJson(preview.statement),
+              statementSnapshot: asJson(lockedPreview.statement),
               parserVersion: PARSER_VERSION,
               createdBy: context.userId,
               updatedBy: context.userId,
@@ -934,6 +1688,16 @@ export default class CreditCardReconciliationSessionService {
             created.id,
             context.userId,
             itemRecords
+          );
+          await persistAutomaticExistingMatches(
+            tx,
+            context,
+            {
+              id: created.id,
+              referenceYear: input.targetReferenceYear,
+              referenceMonth: input.targetReferenceMonth
+            },
+            lockedPreview
           );
           return created.id;
         }
@@ -972,6 +1736,8 @@ export default class CreditCardReconciliationSessionService {
           );
         }
         assertNoLiveMutation(current);
+        const lockedPreview = await rebuildPreviewUnderLock(tx);
+        const itemRecords = buildInitialItemRecords(lockedPreview, context.userId);
 
         const replaced = await tx.creditCardReconciliationSession.updateMany({
           where: revisionCasWhere(current.id, current.revision),
@@ -980,7 +1746,7 @@ export default class CreditCardReconciliationSessionService {
             fileHash,
             fileName: input.fileName,
             fileData,
-            statementSnapshot: asJson(preview.statement),
+            statementSnapshot: asJson(lockedPreview.statement),
             parserVersion: PARSER_VERSION,
             revision: { increment: 1 },
             updatedBy: context.userId,
@@ -1020,7 +1786,20 @@ export default class CreditCardReconciliationSessionService {
           context.userId,
           itemRecords
         );
+        await persistAutomaticExistingMatches(
+          tx,
+          context,
+          {
+            id: current.id,
+            referenceYear: input.targetReferenceYear,
+            referenceMonth: input.targetReferenceMonth
+          },
+          lockedPreview
+        );
         return current.id;
+      }, {
+        timeout: 120000,
+        maxWait: 10000
       });
     } catch (error) {
       if (!isPrismaUniqueError(error)) {
@@ -1087,11 +1866,6 @@ export default class CreditCardReconciliationSessionService {
     expectedRevision: number,
     selectedItems: CommitSelection[]
   ) {
-    // Reparse the persisted bytes and compare every identity key before any
-    // financial effect. A concurrent replacement necessarily changes the
-    // revision and is rejected by the CAS below.
-    await buildWorkspace(context, sessionId);
-
     const mutationToken = randomUUID();
     const claimed = await prisma.$transaction(async (tx) => {
       const session = await loadScopedSession(tx, context, sessionId);
@@ -1111,9 +1885,26 @@ export default class CreditCardReconciliationSessionService {
       if (itemIds.length !== selectedItems.length) {
         throw new Error('Itens repetidos nao sao permitidos');
       }
-      const persistedItems = await tx.creditCardReconciliationItem.findMany({
-        where: { sessionId, sourceItemId: { in: itemIds } }
+      const allPersistedItems = await tx.creditCardReconciliationItem.findMany({
+        where: { sessionId },
+        orderBy: { position: 'asc' }
       });
+      const lockedPreview = await rebuildPersistedSessionPreview(
+        context,
+        session,
+        allPersistedItems,
+        tx
+      );
+      assertPersistedPreviewIdentity(session, allPersistedItems, lockedPreview);
+      const projectedPreview = await projectPreviewForWorkspace(
+        context,
+        { ...session, items: allPersistedItems },
+        lockedPreview,
+        tx
+      );
+      const persistedItems = allPersistedItems.filter((item) =>
+        itemIds.includes(item.sourceItemId)
+      );
       if (persistedItems.length !== itemIds.length) {
         throw new Error('Um ou mais itens nao pertencem a esta conciliacao');
       }
@@ -1125,6 +1916,12 @@ export default class CreditCardReconciliationSessionService {
           { currentRevision: session.revision, currentSessionId: session.id }
         );
       }
+      const overrideEligibility = buildCommitOverrideEligibility(
+        selectedItems,
+        persistedItems,
+        lockedPreview,
+        projectedPreview
+      );
 
       const updated = await tx.creditCardReconciliationSession.updateMany({
         where: {
@@ -1158,7 +1955,7 @@ export default class CreditCardReconciliationSessionService {
       return {
         ...session,
         claimedRevision: expectedRevision,
-        persistedItems
+        overrideEligibility
       };
     });
 
@@ -1179,8 +1976,99 @@ export default class CreditCardReconciliationSessionService {
           );
         }
 
-        const session = current;
-        const persistedItems = claimed.persistedItems;
+        const itemIds = selectedItems.map((item) => item.itemId);
+        const initialEvidenceSession = await loadWorkspaceSession(tx, context, sessionId);
+        if (!initialEvidenceSession) {
+          throw new CreditCardReconciliationSessionError(
+            'Sessao de conciliacao de cartao nao encontrada',
+            'RECONCILIATION_SESSION_NOT_FOUND',
+            404
+          );
+        }
+        const initialPreview = await rebuildPersistedSessionPreview(
+          context,
+          initialEvidenceSession,
+          initialEvidenceSession.items,
+          tx
+        );
+        await lockPreviewEvidenceRows(tx, initialPreview, initialEvidenceSession.items);
+
+        const session = await loadWorkspaceSession(tx, context, sessionId);
+        if (
+          !session ||
+          session.activeMutationToken !== mutationToken ||
+          session.revision !== claimed.claimedRevision
+        ) {
+          throw new CreditCardReconciliationSessionError(
+            'A reserva da operacao de conciliacao nao e mais valida',
+            'REVISION_CONFLICT',
+            409,
+            { currentRevision: current.revision, currentSessionId: current.id }
+          );
+        }
+        const allPersistedItems = session.items;
+        const persistedItems = allPersistedItems.filter((item) =>
+          itemIds.includes(item.sourceItemId)
+        );
+        if (
+          persistedItems.length !== itemIds.length ||
+          persistedItems.some(
+            (item) => item.resolution !== CreditCardReconciliationItemResolution.PENDING
+          )
+        ) {
+          throw new CreditCardReconciliationSessionError(
+            'Um ou mais itens selecionados mudaram depois da reserva da operacao',
+            'ITEM_STATE_CONFLICT',
+            409,
+            { currentRevision: current.revision, currentSessionId: current.id }
+          );
+        }
+
+        // Rebuild after the candidate/template row locks and bind every
+        // exceptional duplicate override to the exact operational state the
+        // user acted on, so a concurrent evidence mutation cannot be bypassed.
+        const revalidatedPreview = await rebuildPersistedSessionPreview(
+          context,
+          session,
+          allPersistedItems,
+          tx
+        );
+        assertPersistedPreviewIdentity(session, allPersistedItems, revalidatedPreview);
+        const revalidatedProjection = await projectPreviewForWorkspace(
+          context,
+          { ...session, items: allPersistedItems },
+          revalidatedPreview,
+          tx
+        );
+        const revalidatedEligibility = buildCommitOverrideEligibility(
+          selectedItems,
+          persistedItems,
+          revalidatedPreview,
+          revalidatedProjection
+        );
+        const reservedEligibilityByItemId = new Map(
+          claimed.overrideEligibility.map((entry) => [entry.itemId, entry])
+        );
+        const remainsReservedState = (entry: CommitOverrideEligibility) => {
+          const reserved = reservedEligibilityByItemId.get(entry.itemId);
+          return reserved?.fingerprint === entry.fingerprint ? reserved : null;
+        };
+        const forceImportItemIds = revalidatedEligibility.flatMap((entry) => {
+          const reserved = remainsReservedState(entry);
+          return reserved?.forceImport && entry.forceImport ? [entry.itemId] : [];
+        });
+        const forceLinkFixedItemIds = revalidatedEligibility.flatMap((entry) => {
+          const reserved = remainsReservedState(entry);
+          return reserved?.forceLinkFixed && entry.forceLinkFixed ? [entry.itemId] : [];
+        });
+        const completeMappedFixedItemIds = new Set(
+          revalidatedEligibility.flatMap((entry) => {
+            const reserved = remainsReservedState(entry);
+            return reserved?.completeMappedFixed && entry.completeMappedFixed
+              ? [entry.itemId]
+              : [];
+          })
+        );
 
         const commitResult = await CreditCardStatementReconciliationService.commit({
           accountId: context.accountId,
@@ -1195,7 +2083,9 @@ export default class CreditCardReconciliationSessionService {
           allowExternalSettlement: false,
           allowPaidInvoiceSettlement: false,
           existingTx: tx,
-          deferPostCommitEffects: true
+          deferPostCommitEffects: true,
+          forceImportItemIds,
+          forceLinkFixedItemIds
         });
 
       const inputByItemId = new Map(selectedItems.map((item) => [item.itemId, item]));
@@ -1217,11 +2107,12 @@ export default class CreditCardReconciliationSessionService {
           resolution = CreditCardReconciliationItemResolution.LINKED_FIXED;
         } else if (
           itemResult.status === 'SKIPPED_DUPLICATE' &&
-          selectedInput.action === 'LINK_FIXED'
+          selectedInput.action === 'LINK_FIXED' &&
+          completeMappedFixedItemIds.has(itemResult.itemId)
         ) {
-          // LINK_FIXED can race with another request that persisted the same
-          // alias first. The durable alias is already the intended outcome,
-          // so this result is terminal and idempotent for the session item.
+          // The mapped fixed evidence was identical in both transaction phases.
+          // Its durable alias is already the intended outcome, so this result
+          // is terminal and idempotent for the session item.
           resolution = CreditCardReconciliationItemResolution.LINKED_FIXED;
         }
 
@@ -1401,6 +2292,24 @@ export default class CreditCardReconciliationSessionService {
             { currentRevision: session.revision, currentSessionId: session.id }
           );
         }
+      } else if (input.decision === 'UNCONFIRM_EXISTING') {
+        if (item.resolution !== CreditCardReconciliationItemResolution.CONFIRMED_EXISTING) {
+          throw new CreditCardReconciliationSessionError(
+            'Somente itens confirmados como existentes podem ter o vinculo removido',
+            'ITEM_STATE_CONFLICT',
+            409,
+            { currentRevision: session.revision, currentSessionId: session.id }
+          );
+        }
+      } else if (input.decision === 'UNLINK_FIXED') {
+        if (item.resolution !== CreditCardReconciliationItemResolution.LINKED_FIXED) {
+          throw new CreditCardReconciliationSessionError(
+            'Somente itens vinculados a uma fixa podem ter o vinculo removido',
+            'ITEM_STATE_CONFLICT',
+            409,
+            { currentRevision: session.revision, currentSessionId: session.id }
+          );
+        }
       } else if (item.resolution !== CreditCardReconciliationItemResolution.PENDING) {
         throw new CreditCardReconciliationSessionError(
           'Este item ja foi resolvido',
@@ -1409,6 +2318,10 @@ export default class CreditCardReconciliationSessionService {
           { currentRevision: session.revision, currentSessionId: session.id }
         );
       }
+      const automaticMatchSuppression =
+        input.decision === 'UNCONFIRM_EXISTING' || input.decision === 'UNLINK_FIXED'
+          ? buildAutomaticMatchSuppression(item)
+          : null;
 
       let transactions: any[] = [];
       if (input.decision === 'CONFIRM_EXISTING') {
@@ -1480,6 +2393,19 @@ export default class CreditCardReconciliationSessionService {
             resolvedBy: null
           }
         });
+      } else if (automaticMatchSuppression) {
+        // The join is reconciliation evidence only. Removing it must not mutate
+        // the financial transaction or the global recurring-description alias.
+        await tx.creditCardReconciliationItemTransaction.deleteMany({ where: { itemId: item.id } });
+        await tx.creditCardReconciliationItem.update({
+          where: { id: item.id },
+          data: {
+            resolution: CreditCardReconciliationItemResolution.PENDING,
+            resolutionData: asJson(automaticMatchSuppression),
+            resolvedAt: null,
+            resolvedBy: null
+          }
+        });
       } else {
         const resolution = input.decision === 'IGNORE'
           ? CreditCardReconciliationItemResolution.IGNORED
@@ -1511,7 +2437,9 @@ export default class CreditCardReconciliationSessionService {
           itemId: item.id,
           userId: context.userId,
           action: input.decision,
-          details: asJson({ transactionIds: transactions.map((transaction) => transaction.id) })
+          details: automaticMatchSuppression
+            ? asJson(automaticMatchSuppression)
+            : asJson({ transactionIds: transactions.map((transaction) => transaction.id) })
         }
       });
     }).catch((error) => {

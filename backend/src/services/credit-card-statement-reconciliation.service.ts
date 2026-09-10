@@ -147,6 +147,13 @@ export type ReconciliationPreviewItem = {
   cardSuffix: string | null;
   canImport: boolean;
   nonImportableReason: string | null;
+  operationalMatchState?:
+    | 'SUPPRESSED'
+    | 'CLAIMED'
+    | 'OUT_OF_SCOPE'
+    | 'IDENTITY_CHANGED'
+    | 'REVERSE_AMBIGUOUS'
+    | 'UNCONFIRMED';
   categorySuggestion: CreditCardReconciliationCategorySuggestion;
   matchedTransactions: Array<{
     matchKey: string;
@@ -2522,8 +2529,13 @@ export default class CreditCardStatementReconciliationService {
     fileBase64: string;
     fileName?: string | null;
     categorySuggestionsByItemId?: Record<string, CreditCardReconciliationCategorySuggestion>;
+    existingTx?: Prisma.TransactionClient;
   }): Promise<ReconciliationPreviewResult> {
-    const account = await ensureCreditCardAccount(params.accountId, params.companyId);
+    const account = await ensureCreditCardAccount(
+      params.accountId,
+      params.companyId,
+      params.existingTx
+    );
 
     if (params.sourceType !== account.reconciliationSourceType) {
       throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
@@ -2544,7 +2556,8 @@ export default class CreditCardStatementReconciliationService {
         companyId: params.companyId,
         items: statement.items,
         targetReferenceYear: statement.referenceYear,
-        targetReferenceMonth: statement.referenceMonth
+        targetReferenceMonth: statement.referenceMonth,
+        existingTx: params.existingTx
       }),
       params.categorySuggestionsByItemId
         ? Promise.resolve(new Map(Object.entries(params.categorySuggestionsByItemId)))
@@ -2566,7 +2579,8 @@ export default class CreditCardStatementReconciliationService {
         accountId: params.accountId,
         companyId: params.companyId,
         sourceType: params.sourceType,
-        items: statement.items
+        items: statement.items,
+        existingTx: params.existingTx
       })
     ]);
     const items = buildPreviewItems(
@@ -2604,6 +2618,8 @@ export default class CreditCardStatementReconciliationService {
     allowPaidInvoiceSettlement?: boolean;
     existingTx?: Prisma.TransactionClient;
     deferPostCommitEffects?: boolean;
+    forceImportItemIds?: string[];
+    forceLinkFixedItemIds?: string[];
     selectedItems: Array<{
       itemId: string;
       action?: 'IMPORT' | 'LINK_FIXED';
@@ -2634,6 +2650,8 @@ export default class CreditCardStatementReconciliationService {
       new Map(params.selectedItems.map((item) => [item.itemId, item])).values()
     );
     const selectedItemIds = selectedItemsInput.map((item) => item.itemId);
+    const forceImportItemIds = new Set(params.forceImportItemIds || []);
+    const forceLinkFixedItemIds = new Set(params.forceLinkFixedItemIds || []);
     const selectedItems = statement.items.filter((item) => selectedItemIds.includes(item.id));
     const importedStatementInvoiceReference = buildImportedStatementInvoiceReference(
       {
@@ -2699,6 +2717,19 @@ export default class CreditCardStatementReconciliationService {
             itemId,
             status: 'FAILED',
             message: 'Somente despesas recorrentes simples podem ser vinculadas a fixas',
+            createdTransactionIds: []
+          });
+          continue;
+        }
+
+        if (
+          classification.reason === 'MAPPED_FIXED' &&
+          forceLinkFixedItemIds.has(itemId)
+        ) {
+          results.push({
+            itemId,
+            status: 'LINKED_FIXED',
+            message: 'Item reassociado a fixa recorrente nesta conciliacao',
             createdTransactionIds: []
           });
           continue;
@@ -2776,7 +2807,10 @@ export default class CreditCardStatementReconciliationService {
         continue;
       }
 
-      if (classification.status === 'OK' || classification.reason === 'AMBIGUOUS_EXACT') {
+      if (
+        (classification.status === 'OK' || classification.reason === 'AMBIGUOUS_EXACT') &&
+        !forceImportItemIds.has(itemId)
+      ) {
         const hasProjectedFixedMatch = classification.matchedTransactions.some(
           (candidate) => candidate.matchSource === 'PROJECTED_FIXED'
         );

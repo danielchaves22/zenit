@@ -159,6 +159,13 @@ interface ReconciliationPreviewItem {
     reason: string | null;
   };
   matchedTransactions: ReconciliationMatchedTransaction[];
+  operationalMatchState?:
+    | 'SUPPRESSED'
+    | 'CLAIMED'
+    | 'OUT_OF_SCOPE'
+    | 'IDENTITY_CHANGED'
+    | 'REVERSE_AMBIGUOUS'
+    | 'UNCONFIRMED';
   progress?: {
     itemId: string;
     identityKey: string;
@@ -229,6 +236,13 @@ type ReconciliationSessionStatus = 'OPEN' | 'COMPLETED';
 type ReconciliationItemResolution = NonNullable<
   ReconciliationPreviewItem['progress']
 >['resolution'];
+
+type ReconciliationItemDecision =
+  | 'CONFIRM_EXISTING'
+  | 'IGNORE'
+  | 'RESTORE'
+  | 'UNCONFIRM_EXISTING'
+  | 'UNLINK_FIXED';
 
 interface ReconciliationSession {
   id: number;
@@ -370,14 +384,19 @@ function getStatusClasses(status: ReconciliationItemStatus) {
   return 'border-gray-600 bg-gray-800 text-gray-300';
 }
 
-function getResolutionLabel(resolution: ReconciliationItemResolution) {
+function getResolutionLabel(
+  resolution: ReconciliationItemResolution,
+  resolutionData?: Record<string, unknown> | null
+) {
   switch (resolution) {
     case 'IMPORTED':
       return 'Importado';
     case 'LINKED_FIXED':
       return 'Fixa vinculada';
     case 'CONFIRMED_EXISTING':
-      return 'Existente confirmado';
+      return resolutionData?.mode === 'AUTO_EXACT'
+        ? 'Relacionado automaticamente'
+        : 'Existente confirmado';
     case 'IGNORED':
       return 'Ignorado';
     default:
@@ -427,6 +446,24 @@ function isSuccessfulCommitResult(
 }
 
 function getReasonLabel(item: ReconciliationPreviewItem) {
+  if (
+    item.operationalMatchState === 'SUPPRESSED' ||
+    item.progress?.resolutionData?.mode === 'AUTO_MATCH_SUPPRESSED'
+  ) {
+    return 'Vínculo automático removido. Selecione a contraparte para confirmar manualmente.';
+  }
+
+  switch (item.operationalMatchState) {
+    case 'CLAIMED':
+      return 'Este lançamento já foi usado em outro item da conciliação.';
+    case 'OUT_OF_SCOPE':
+      return 'A correspondência indicada não pertence ou não está disponível na fatura-alvo.';
+    case 'IDENTITY_CHANGED':
+      return 'Os dados do lançamento mudaram durante a análise. Revise a correspondência.';
+    case 'REVERSE_AMBIGUOUS':
+      return 'A mesma contraparte pode corresponder a mais de um item. Revise antes de confirmar.';
+  }
+
   const hasProjectedFixedMatch = item.matchedTransactions.some(
     (transaction) => transaction.matchSource === 'PROJECTED_FIXED'
   );
@@ -457,6 +494,25 @@ function getReasonLabel(item: ReconciliationPreviewItem) {
     default:
       return 'Ainda nao ha lancamento equivalente no cartao.';
   }
+}
+
+function getMatchSummaryLabel(item: ReconciliationPreviewItem) {
+  const matchCount = item.matchedTransactions.length;
+  const isPending = getItemResolution(item) === 'PENDING';
+
+  if (matchCount === 0) {
+    return isPending ? 'Sem sugestão de correspondência' : 'Sem correspondência atual';
+  }
+
+  if (isPending) {
+    return matchCount === 1
+      ? '1 sugestão de correspondência'
+      : `${matchCount} sugestões de correspondência`;
+  }
+
+  return matchCount === 1
+    ? '1 correspondência encontrada'
+    : `${matchCount} correspondências encontradas`;
 }
 
 function getSectionLabel(section: string) {
@@ -772,10 +828,14 @@ function getUniqueProjectedFixedTemplateId(item: ReconciliationPreviewItem) {
 }
 
 function canLinkToFixed(item: ReconciliationPreviewItem) {
+  const isSuppressedFixedLink =
+    item.progress?.resolutionData?.mode === 'AUTO_MATCH_SUPPRESSED' &&
+    item.progress.resolutionData.suppressedResolution === 'LINKED_FIXED';
+
   return (
     item.canImport &&
     getItemResolution(item) === 'PENDING' &&
-    item.status === 'SIMILAR' &&
+    (item.status === 'SIMILAR' || isSuppressedFixedLink) &&
     item.kind === 'PURCHASE' &&
     !item.installmentNumber &&
     !item.totalInstallments &&
@@ -1048,6 +1108,8 @@ interface CreditCardReconciliationSideBySideProps {
   onSelectSystemTransaction: (itemId: string, transactionKey: string) => void;
   onToggleImportSelection: (itemId: string, checked: boolean) => void;
   onConfirmExisting: (itemId: string, transactionId: number) => void;
+  onUnconfirmExisting: (itemId: string) => void;
+  onUnlinkFixed: (itemId: string) => void;
   onIgnore: (itemId: string) => void;
   onRestore: (itemId: string) => void;
   onRetryTargetInvoiceDetail: () => void;
@@ -1086,6 +1148,8 @@ function CreditCardReconciliationSideBySide({
   onSelectSystemTransaction,
   onToggleImportSelection,
   onConfirmExisting,
+  onUnconfirmExisting,
+  onUnlinkFixed,
   onIgnore,
   onRestore,
   onRetryTargetInvoiceDetail
@@ -1134,7 +1198,9 @@ function CreditCardReconciliationSideBySide({
     }
 
     if (focusedResolution === 'CONFIRMED_EXISTING') {
-      return 'Lancamento existente confirmado nesta conciliacao.';
+      return focusedItem.progress?.resolutionData?.mode === 'AUTO_EXACT'
+        ? 'Lançamento relacionado automaticamente nesta conciliação.'
+        : 'Lancamento existente confirmado nesta conciliacao.';
     }
 
     if (highlightedRows.length === 0) {
@@ -1285,7 +1351,10 @@ function CreditCardReconciliationSideBySide({
                                 </span>
                                 {getItemResolution(item) !== 'PENDING' && (
                                   <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-200">
-                                    {getResolutionLabel(getItemResolution(item))}
+                                    {getResolutionLabel(
+                                      getItemResolution(item),
+                                      item.progress?.resolutionData
+                                    )}
                                   </span>
                                 )}
                                 {isOutsideFilter && (
@@ -1455,6 +1524,40 @@ function CreditCardReconciliationSideBySide({
                   >
                     {focusedDecisionLoading ? 'Salvando...' : 'Voltar a conferir'}
                   </Button>
+                )}
+                {focusedResolution === 'CONFIRMED_EXISTING' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => onUnconfirmExisting(focusedItem.id)}
+                      disabled={mutationInFlight || focusedDecisionLoading}
+                    >
+                      {focusedDecisionLoading
+                        ? 'Removendo vínculo...'
+                        : 'Remover vínculo'}
+                    </Button>
+                    <span className="basis-full text-xs text-gray-400">
+                      Remove apenas a confirmação desta conciliação; o lançamento financeiro não
+                      será alterado.
+                    </span>
+                  </>
+                )}
+                {focusedResolution === 'LINKED_FIXED' && (
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => onUnlinkFixed(focusedItem.id)}
+                      disabled={mutationInFlight || focusedDecisionLoading}
+                    >
+                      {focusedDecisionLoading
+                        ? 'Removendo vínculo...'
+                        : 'Remover vínculo'}
+                    </Button>
+                    <span className="basis-full text-xs text-gray-400">
+                      Remove o vínculo somente desta conciliação; a regra recorrente será mantida
+                      para os próximos meses.
+                    </span>
+                  </>
                 )}
               </div>
             )}
@@ -2856,7 +2959,7 @@ function CreditCardReconciliationPageInner() {
 
   async function updateItemDecision(
     itemId: string,
-    decision: 'CONFIRM_EXISTING' | 'IGNORE' | 'RESTORE',
+    decision: ReconciliationItemDecision,
     transactionIds?: number[]
   ) {
     if (!session || !selectedTargetInvoice) {
@@ -2888,6 +2991,24 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
+    if (
+      decision === 'UNCONFIRM_EXISTING' &&
+      !window.confirm(
+        'Remover este vínculo confirmado da conciliação? Apenas a confirmação será removida; o lançamento financeiro existente não será alterado.'
+      )
+    ) {
+      return;
+    }
+
+    if (
+      decision === 'UNLINK_FIXED' &&
+      !window.confirm(
+        'Remover este vínculo somente desta conciliação? A regra recorrente será mantida para os próximos meses.'
+      )
+    ) {
+      return;
+    }
+
     setDecisionItemIds((current) => Array.from(new Set([...current, itemId])));
     try {
       const response = await api.post(
@@ -2904,6 +3025,16 @@ function CreditCardReconciliationPageInner() {
         addToast('Correspondencia existente confirmada e andamento salvo', 'success');
       } else if (decision === 'IGNORE') {
         addToast('Item ignorado e andamento salvo', 'success');
+      } else if (decision === 'UNCONFIRM_EXISTING') {
+        addToast(
+          'Vínculo removido da conciliação. O lançamento financeiro não foi alterado.',
+          'success'
+        );
+      } else if (decision === 'UNLINK_FIXED') {
+        addToast(
+          'Vínculo removido desta conciliação. A regra recorrente foi mantida para os próximos meses.',
+          'success'
+        );
       } else {
         addToast('Item voltou para conferencia', 'success');
       }
@@ -3453,6 +3584,10 @@ function CreditCardReconciliationPageInner() {
                   onConfirmExisting={(itemId, transactionId) =>
                     void updateItemDecision(itemId, 'CONFIRM_EXISTING', [transactionId])
                   }
+                  onUnconfirmExisting={(itemId) =>
+                    void updateItemDecision(itemId, 'UNCONFIRM_EXISTING')
+                  }
+                  onUnlinkFixed={(itemId) => void updateItemDecision(itemId, 'UNLINK_FIXED')}
                   onIgnore={(itemId) => void updateItemDecision(itemId, 'IGNORE')}
                   onRestore={(itemId) => void updateItemDecision(itemId, 'RESTORE')}
                   onRetryTargetInvoiceDetail={() => {
@@ -3566,7 +3701,10 @@ function CreditCardReconciliationPageInner() {
                                   </span>
                                   {resolution !== 'PENDING' && (
                                     <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-xs text-violet-200">
-                                      {getResolutionLabel(resolution)}
+                                      {getResolutionLabel(
+                                        resolution,
+                                        item.progress?.resolutionData
+                                      )}
                                     </span>
                                   )}
                                 </div>
@@ -3673,7 +3811,61 @@ function CreditCardReconciliationPageInner() {
                                     {itemDecisionLoading ? 'Salvando...' : 'Voltar a conferir'}
                                   </Button>
                                 )}
+                                {resolution === 'CONFIRMED_EXISTING' && (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() =>
+                                      void updateItemDecision(item.id, 'UNCONFIRM_EXISTING')
+                                    }
+                                    disabled={
+                                      !sessionTargetReady ||
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
+                                      itemDecisionLoading
+                                    }
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    {itemDecisionLoading
+                                      ? 'Removendo vínculo...'
+                                      : 'Remover vínculo'}
+                                  </Button>
+                                )}
+                                {resolution === 'LINKED_FIXED' && (
+                                  <Button
+                                    variant="outline"
+                                    onClick={() => void updateItemDecision(item.id, 'UNLINK_FIXED')}
+                                    disabled={
+                                      !sessionTargetReady ||
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
+                                      itemDecisionLoading
+                                    }
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    {itemDecisionLoading
+                                      ? 'Removendo vínculo...'
+                                      : 'Remover vínculo'}
+                                  </Button>
+                                )}
                               </div>
+                              {resolution === 'CONFIRMED_EXISTING' && (
+                                <div className="max-w-md text-xs text-gray-400 lg:text-right">
+                                  Remove apenas a confirmação desta conciliação; o lançamento
+                                  financeiro não será alterado.
+                                </div>
+                              )}
+                              {resolution === 'LINKED_FIXED' && (
+                                <div className="max-w-md text-xs text-gray-400 lg:text-right">
+                                  Remove o vínculo somente desta conciliação; a regra recorrente
+                                  será mantida para os próximos meses.
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -3798,9 +3990,7 @@ function CreditCardReconciliationPageInner() {
                               </div>
                             </div>
                             <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
-                              {item.matchedTransactions.length > 0
-                                ? `${item.matchedTransactions.length} relacionado(s)`
-                                : 'Sem relacao atual'}
+                              {getMatchSummaryLabel(item)}
                             </span>
                           </div>
 

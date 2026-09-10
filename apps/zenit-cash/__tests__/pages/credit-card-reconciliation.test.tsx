@@ -349,7 +349,8 @@ function buildWorkspace({
   revision = 1,
   status = 'OPEN',
   resolutions = {},
-  transactionIds = {}
+  transactionIds = {},
+  resolutionData = {}
 }: {
   sourcePreview?: any
   referenceMonth?: number
@@ -357,6 +358,7 @@ function buildWorkspace({
   status?: 'OPEN' | 'COMPLETED'
   resolutions?: Record<string, ItemResolution>
   transactionIds?: Record<string, number[]>
+  resolutionData?: Record<string, Record<string, unknown>>
 } = {}) {
   const items = sourcePreview.items.map((item: any) => {
     const resolution = resolutions[item.id] || 'PENDING'
@@ -368,7 +370,7 @@ function buildWorkspace({
         itemId: item.id,
         identityKey: `identity:${item.id}`,
         resolution,
-        resolutionData: null,
+        resolutionData: resolutionData[item.id] || null,
         terminal,
         transactionIds: transactionIds[item.id] || [],
         resolvedAt: resolution === 'PENDING' ? null : '2026-09-09T13:00:00.000Z',
@@ -1551,6 +1553,302 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await user.click(getFileSelectionButton(fileRegion, 'bank-market', /Mercado no arquivo/))
     expect(within(getZenitItem(zenitRegion, 'transaction:504')).getByRole('button')).toBeDisabled()
     expect(within(getZenitItem(zenitRegion, 'transaction:501')).getByRole('button')).toBeEnabled()
+  })
+
+  it('remove a confirmacao existente nos dois modos sem sugerir exclusao financeira', async () => {
+    const autoMatchPreview = {
+      ...preview,
+      items: preview.items.map((item) =>
+        item.id === 'bank-pending'
+          ? {
+              ...item,
+              status: 'OK',
+              reason: 'EXACT',
+              matchedTransactions: [
+                matchedTransaction(504, 'Sem correspondencia no Zenit', '25.00')
+              ]
+            }
+          : item
+      )
+    }
+    const suppressedPreview = {
+      ...autoMatchPreview,
+      items: autoMatchPreview.items.map((item) =>
+        item.id === 'bank-pending'
+          ? { ...item, status: 'PENDING', operationalMatchState: 'SUPPRESSED' }
+          : item
+      )
+    }
+    const confirmedWorkspace = buildWorkspace({
+      sourcePreview: autoMatchPreview,
+      revision: 2,
+      resolutions: { 'bank-pending': 'CONFIRMED_EXISTING' },
+      transactionIds: { 'bank-pending': [504] },
+      resolutionData: { 'bank-pending': { mode: 'AUTO_EXACT' } }
+    })
+    const unconfirmedWorkspace = buildWorkspace({
+      sourcePreview: suppressedPreview,
+      revision: 3,
+      resolutionData: {
+        'bank-pending': {
+          mode: 'AUTO_MATCH_SUPPRESSED',
+          suppressedResolution: 'CONFIRMED_EXISTING',
+          transactionId: 504,
+          transactionIds: [504]
+        }
+      }
+    })
+    const confirmMock = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirmMock)
+    let resolveDecision!: (value: { data: typeof unconfirmedWorkspace }) => void
+    const decisionRequest = new Promise<{ data: typeof unconfirmedWorkspace }>((resolve) => {
+      resolveDecision = resolve
+    })
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: confirmedWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url.endsWith('/sessions/301/items/bank-pending/decision')) {
+        return decisionRequest
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    const confirmedCard = (await screen.findByText('Pendente no arquivo')).closest(
+      'section'
+    ) as HTMLElement
+    expect(
+      within(confirmedCard).getByRole('button', { name: 'Remover vínculo' })
+    ).toBeEnabled()
+    expect(within(confirmedCard).getByText('Relacionado automaticamente')).toBeInTheDocument()
+    expect(within(confirmedCard).getByText('1 correspondência encontrada')).toBeInTheDocument()
+    expect(
+      within(confirmedCard).getByText(
+        /Remove apenas a confirmação desta conciliação; o lançamento financeiro não será alterado\./
+      )
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+    const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
+    await user.click(getFileSelectionButton(fileRegion, 'bank-pending', /Pendente no arquivo/))
+    expect(
+      screen.getByText('Lançamento relacionado automaticamente nesta conciliação.')
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /Remove apenas a confirmação desta conciliação; o lançamento financeiro não será alterado\./
+      )
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remover vínculo' }))
+
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.stringMatching(/lançamento financeiro existente não será alterado/i)
+    )
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/financial/credit-cards/1/reconciliation/sessions/301/items/bank-pending/decision',
+        { expectedRevision: 2, decision: 'UNCONFIRM_EXISTING' }
+      )
+    })
+    expect(screen.getByRole('button', { name: 'Removendo vínculo...' })).toBeDisabled()
+
+    await act(async () => {
+      resolveDecision({ data: unconfirmedWorkspace })
+      await decisionRequest
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Remover vínculo' })).not.toBeInTheDocument()
+    })
+    expect(
+      screen.getByRole('status')
+    ).toHaveTextContent(
+      'Possível correspondência destacada. Vínculo automático removido. Selecione a contraparte para confirmar manualmente.'
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Visualização detalhada' }))
+    const pendingCard = screen.getByText('Pendente no arquivo').closest('section') as HTMLElement
+    expect(within(pendingCard).getByText('1 sugestão de correspondência')).toBeInTheDocument()
+    expect(
+      within(pendingCard).getByText(
+        'Vínculo automático removido. Selecione a contraparte para confirmar manualmente.'
+      )
+    ).toBeInTheDocument()
+    expect(within(pendingCard).queryByText('Lancamento ja encontrado.')).not.toBeInTheDocument()
+    expect(addToastMock).toHaveBeenCalledWith(
+      'Vínculo removido da conciliação. O lançamento financeiro não foi alterado.',
+      'success'
+    )
+  })
+
+  it('remove o vinculo com fixa apenas da conciliacao nos dois modos', async () => {
+    const suppressedFixedPreview = {
+      ...preview,
+      items: preview.items.map((item) =>
+        item.id === 'bank-fixed' ? { ...item, status: 'PENDING' } : item
+      )
+    }
+    const linkedWorkspace = buildWorkspace({
+      revision: 4,
+      resolutions: { 'bank-fixed': 'LINKED_FIXED' }
+    })
+    const unlinkedWorkspace = buildWorkspace({
+      sourcePreview: suppressedFixedPreview,
+      revision: 5,
+      resolutionData: {
+        'bank-fixed': {
+          mode: 'AUTO_MATCH_SUPPRESSED',
+          suppressedResolution: 'LINKED_FIXED',
+          fixedTemplateId: 77,
+          occurrenceKey: '77:2026-09'
+        }
+      }
+    })
+    const confirmMock = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirmMock)
+    let resolveDecision!: (value: { data: typeof unlinkedWorkspace }) => void
+    const decisionRequest = new Promise<{ data: typeof unlinkedWorkspace }>((resolve) => {
+      resolveDecision = resolve
+    })
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: linkedWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url.endsWith('/sessions/301/items/bank-fixed/decision')) {
+        return decisionRequest
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    const linkedCard = (await screen.findByText('Netflix no arquivo')).closest(
+      'section'
+    ) as HTMLElement
+    expect(
+      within(linkedCard).getByRole('button', { name: 'Remover vínculo' })
+    ).toBeEnabled()
+    expect(
+      within(linkedCard).getByText(
+        /Remove o vínculo somente desta conciliação; a regra recorrente será mantida para os próximos meses\./
+      )
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+    const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
+    await user.click(getFileSelectionButton(fileRegion, 'bank-fixed', /Netflix no arquivo/))
+    expect(
+      screen.getByText(
+        /Remove o vínculo somente desta conciliação; a regra recorrente será mantida para os próximos meses\./
+      )
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Remover vínculo' }))
+
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.stringMatching(/regra recorrente será mantida para os próximos meses/i)
+    )
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/financial/credit-cards/1/reconciliation/sessions/301/items/bank-fixed/decision',
+        { expectedRevision: 4, decision: 'UNLINK_FIXED' }
+      )
+    })
+    expect(screen.getByRole('button', { name: 'Removendo vínculo...' })).toBeDisabled()
+
+    await act(async () => {
+      resolveDecision({ data: unlinkedWorkspace })
+      await decisionRequest
+    })
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: 'Remover vínculo' })
+      ).not.toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Visualização detalhada' }))
+    const unlinkedCard = screen.getByText('Netflix no arquivo').closest('section') as HTMLElement
+    expect(within(unlinkedCard).getByText('1 sugestão de correspondência')).toBeInTheDocument()
+    expect(within(unlinkedCard).getByRole('button', { name: 'Vincular a fixa' })).toBeEnabled()
+    expect(addToastMock).toHaveBeenCalledWith(
+      'Vínculo removido desta conciliação. A regra recorrente foi mantida para os próximos meses.',
+      'success'
+    )
+  })
+
+  it('explica os estados operacionais que impedem uma confirmacao direta', async () => {
+    const operationalStates = [
+      {
+        state: 'CLAIMED',
+        message: 'Este lançamento já foi usado em outro item da conciliação.'
+      },
+      {
+        state: 'OUT_OF_SCOPE',
+        message:
+          'A correspondência indicada não pertence ou não está disponível na fatura-alvo.'
+      },
+      {
+        state: 'IDENTITY_CHANGED',
+        message: 'Os dados do lançamento mudaram durante a análise. Revise a correspondência.'
+      },
+      {
+        state: 'REVERSE_AMBIGUOUS',
+        message:
+          'A mesma contraparte pode corresponder a mais de um item. Revise antes de confirmar.'
+      }
+    ] as const
+    const operationalPreview = {
+      ...preview,
+      items: preview.items.map((item, index) => ({
+        ...item,
+        operationalMatchState: operationalStates[index]?.state
+      }))
+    }
+    const operationalWorkspace = buildWorkspace({ sourcePreview: operationalPreview })
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: operationalWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Mercado no arquivo')
+
+    operationalStates.forEach(({ message }) => {
+      expect(screen.getByText(message)).toBeInTheDocument()
+    })
   })
 
   it('projeta similares e pendentes ja confirmados no filtro OK ao retomar a sessao', async () => {

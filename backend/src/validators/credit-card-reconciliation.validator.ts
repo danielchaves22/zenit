@@ -143,7 +143,13 @@ export const decideCreditCardReconciliationItemSchema = z.object({
   sessionId: sessionIdSchema,
   itemId: z.string().trim().min(1).max(64),
   expectedRevision: expectedRevisionSchema,
-  decision: z.enum(['CONFIRM_EXISTING', 'IGNORE', 'RESTORE']),
+  decision: z.enum([
+    'CONFIRM_EXISTING',
+    'IGNORE',
+    'RESTORE',
+    'UNCONFIRM_EXISTING',
+    'UNLINK_FIXED'
+  ]),
   transactionIds: z.array(z.coerce.number().int().positive()).max(50).optional()
 }).superRefine((value, ctx) => {
   const transactionIds = value.transactionIds || [];

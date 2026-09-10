@@ -698,7 +698,10 @@ describe('CreditCardReconciliationPage comparison views', () => {
       resolvePreview?.({ data: openWorkspace })
     })
     await screen.findByText('Mercado no arquivo')
-    await waitFor(() => expect(fileInput).toBeEnabled())
+    await waitFor(() => expect(fileInput).not.toBeInTheDocument())
+    expect(
+      screen.getByRole('region', { name: 'Resumo da fatura em conciliação' })
+    ).toBeInTheDocument()
   })
 
   it('invalida a sessao atrasada quando a referencia automatica passa a estar paga', async () => {
@@ -991,7 +994,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     expect(within(zenitRegion).getAllByRole('button')).toHaveLength(7)
     expect(marketImportCheckbox).not.toBeChecked()
-    expect(pendingImportCheckbox).toBeChecked()
+    expect(pendingImportCheckbox).not.toBeChecked()
 
     await user.click(marketButton)
 
@@ -1000,7 +1003,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled())
     expect(scrollIntoViewMock.mock.contexts).toContain(marketZenitItem)
     expect(marketImportCheckbox).not.toBeChecked()
-    expect(pendingImportCheckbox).toBeChecked()
+    expect(pendingImportCheckbox).not.toBeChecked()
 
     scrollIntoViewMock.mockClear()
     await user.click(gasButton)
@@ -1019,8 +1022,30 @@ describe('CreditCardReconciliationPage comparison views', () => {
       zenitRegion.querySelectorAll('[data-reconciliation-highlighted="true"]')
     ).toHaveLength(0)
     expect(marketImportCheckbox).not.toBeChecked()
-    expect(pendingImportCheckbox).toBeChecked()
+    expect(pendingImportCheckbox).not.toBeChecked()
     expect(api.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('marca e desmarca todos os itens importaveis independentemente do filtro', async () => {
+    const user = await renderAnalyzedPage()
+
+    expect(screen.getByRole('button', { name: 'Importar 0 selecionado(s)' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Similares (5)' }))
+    expect(screen.queryByText('Pendente no arquivo')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Marcar tudo' }))
+
+    expect(screen.getByRole('button', { name: 'Importar 6 selecionado(s)' })).toBeEnabled()
+    screen.getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).toBeChecked())
+
+    await user.click(screen.getByRole('button', { name: 'Desmarcar tudo' }))
+
+    expect(screen.getByRole('button', { name: 'Importar 0 selecionado(s)' })).toBeDisabled()
+    screen.getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).not.toBeChecked())
+
+    await user.click(screen.getByRole('button', { name: 'Todos (6)' }))
+    const pendingCard = screen.getByText('Pendente no arquivo').closest('section') as HTMLElement
+    expect(within(pendingCard).getByRole('checkbox')).not.toBeChecked()
   })
 
   it('destaca todas as correspondencias ambiguas e reconhece fixa projetada', async () => {
@@ -1164,16 +1189,15 @@ describe('CreditCardReconciliationPage comparison views', () => {
     })
 
     const user = await renderAnalyzedPage({ targetInvoiceKey: '2026-08' })
-    const targetInvoiceSelect = screen.getByRole('option', {
-      name: /08\/2026/
-    }).parentElement as HTMLSelectElement
+    const summary = screen.getByRole('region', { name: 'Resumo da fatura em conciliação' })
     const pendingCard = screen.getByText('Pendente no arquivo').closest('section')
 
     await user.click(
       within(pendingCard as HTMLElement).getByRole('button', { name: 'Importar este item' })
     )
 
-    await waitFor(() => expect(targetInvoiceSelect).toHaveValue('2026-08'))
+    await waitFor(() => expect(within(summary).getByText('08/2026')).toBeInTheDocument())
+    expect(screen.queryByRole('option', { name: /08\/2026/ })).not.toBeInTheDocument()
     await waitFor(() => {
       expect(
         vi.mocked(api.get).mock.calls.filter(
@@ -1254,7 +1278,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
         name: 'Resultado do ultimo processamento'
       })
       expect(within(resultRegion).getByText(resultMessage)).toBeInTheDocument()
-      expect(within(pendingCard).getByRole('checkbox')).toBeChecked()
+      expect(within(pendingCard).getByRole('checkbox')).not.toBeChecked()
     }
   )
 
@@ -1327,8 +1351,13 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     expect(await screen.findByText('Mercado no arquivo')).toBeInTheDocument()
     expect(screen.getByText('Em andamento')).toBeInTheDocument()
-    expect(screen.getByText('0/6')).toBeInTheDocument()
-    expect(screen.getByText('Arquivo salvo:').parentElement).toHaveTextContent('fatura.csv')
+    const summary = screen.getByRole('region', { name: 'Resumo da fatura em conciliação' })
+    expect(within(summary).getByText('09/2026')).toBeInTheDocument()
+    expect(within(summary).getByText('R$ 364,70')).toBeInTheDocument()
+    expect(screen.queryByText('Escolher arquivo')).not.toBeInTheDocument()
+    expect(screen.queryByText('Fatura-alvo da conciliacao')).not.toBeInTheDocument()
+    expect(screen.queryByText('Correspondencias encontradas')).not.toBeInTheDocument()
+    expect(screen.queryByText(/similar\(es\)/)).not.toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
 
@@ -1343,7 +1372,9 @@ describe('CreditCardReconciliationPage comparison views', () => {
         return Promise.resolve({ data: targetInvoiceDetail })
       }
       if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
-        return Promise.resolve({ data: openWorkspace })
+        return Promise.resolve({
+          data: { session: null, preview: null, progress: null, events: [] }
+        })
       }
       return Promise.reject(new Error(`Unexpected GET request: ${url}`))
     })
@@ -1362,7 +1393,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     const user = userEvent.setup()
     render(<CreditCardReconciliationPage />)
-    await screen.findByText('Mercado no arquivo')
+    await screen.findByText('Escolher arquivo')
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     await user.upload(fileInput, new File(['new'], 'nova-fatura.csv', { type: 'text/csv' }))
     await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
@@ -1388,7 +1419,9 @@ describe('CreditCardReconciliationPage comparison views', () => {
         return Promise.resolve({ data: targetInvoiceDetail })
       }
       if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
-        return Promise.resolve({ data: openWorkspace })
+        return Promise.resolve({
+          data: { session: null, preview: null, progress: null, events: [] }
+        })
       }
       return Promise.reject(new Error(`Unexpected GET request: ${url}`))
     })
@@ -1409,7 +1442,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     const user = userEvent.setup()
     render(<CreditCardReconciliationPage />)
-    await screen.findByText('Mercado no arquivo')
+    await screen.findByText('Escolher arquivo')
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     await waitFor(() => expect(fileInput).toBeEnabled())
     const replacementFile = new File(['new'], 'mesma-fatura.csv', { type: 'text/csv' })
@@ -1528,7 +1561,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await screen.findByText('Ignorado')
     const pendingCheckbox = within(pendingCard).getByRole('checkbox')
     expect(pendingCheckbox).not.toBeChecked()
-    await user.click(screen.getByRole('button', { name: 'Selecionar pendentes' }))
+    await user.click(screen.getByRole('button', { name: 'Marcar tudo' }))
     expect(pendingCheckbox).not.toBeChecked()
     await user.click(within(pendingCard).getByRole('button', { name: 'Voltar a conferir' }))
 
@@ -1596,6 +1629,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       )
     })
     expect(screen.queryByText('Mercado no arquivo')).not.toBeInTheDocument()
+    expect(await screen.findByText('Escolher arquivo')).toBeInTheDocument()
   })
 
   it('trata nao importavel como informativo terminal sem oferecer decisao de ignorar', async () => {
@@ -1633,6 +1667,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       return Promise.reject(new Error(`Unexpected GET request: ${url}`))
     })
 
+    const user = userEvent.setup()
     render(<CreditCardReconciliationPage />)
     const informationalCard = (await screen.findByText('Pendente no arquivo')).closest(
       'section'
@@ -1641,7 +1676,11 @@ describe('CreditCardReconciliationPage comparison views', () => {
     expect(within(informationalCard).getByText('Nao importavel')).toBeInTheDocument()
     expect(within(informationalCard).getByRole('checkbox')).toBeDisabled()
     expect(within(informationalCard).queryByRole('button', { name: 'Ignorar' })).not.toBeInTheDocument()
-    expect(screen.getByText('1/6')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Nao importaveis (1)' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Marcar tudo' }))
+    expect(within(informationalCard).getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByRole('button', { name: 'Importar 5 selecionado(s)' })).toBeEnabled()
   })
 
   it('lista vencidas pela data e exclui referencias pagas do seletor', async () => {

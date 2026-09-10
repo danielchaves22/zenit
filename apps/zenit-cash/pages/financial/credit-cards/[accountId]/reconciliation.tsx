@@ -300,9 +300,6 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
     analyzeFileMessage: string;
     unsupportedTitle: string;
     unsupportedDescription: string;
-    statementDateLabel: string;
-    totalAmountLabel: string;
-    parsedAmountLabel: string;
   }
 > = {
   CAIXA_PDF: {
@@ -315,10 +312,7 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
     analyzeFileMessage: 'Selecione o arquivo da Caixa antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
     unsupportedDescription:
-      'No momento a conciliacao aceita PDF ou TXT da Caixa e CSVs do Bradesco e Nubank.',
-    statementDateLabel: 'Data de referencia',
-    totalAmountLabel: 'Total do arquivo',
-    parsedAmountLabel: 'Calculado do arquivo'
+      'No momento a conciliacao aceita PDF ou TXT da Caixa e CSVs do Bradesco e Nubank.'
   },
   BRADESCO_CSV: {
     fileLabel: 'CSV do Bradesco',
@@ -330,10 +324,7 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
     analyzeFileMessage: 'Selecione o CSV da fatura do Bradesco antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
     unsupportedDescription:
-      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.',
-    statementDateLabel: 'Data da fatura',
-    totalAmountLabel: 'Total da fatura',
-    parsedAmountLabel: 'Lido do arquivo'
+      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.'
   },
   NUBANK_CSV: {
     fileLabel: 'CSV do Nubank',
@@ -345,10 +336,7 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
     analyzeFileMessage: 'Selecione o CSV do Nubank antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
     unsupportedDescription:
-      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.',
-    statementDateLabel: 'Data do arquivo',
-    totalAmountLabel: 'Total do arquivo',
-    parsedAmountLabel: 'Calculado do CSV'
+      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.'
   }
 };
 
@@ -1842,6 +1830,17 @@ function CreditCardReconciliationPageInner() {
 
   const selectedItemSet = useMemo(() => new Set(selectedItemIds), [selectedItemIds]);
 
+  const selectableItemIds = useMemo(() => {
+    if (!preview) {
+      return [];
+    }
+
+    return preview.items.filter(isManuallyImportable).map((item) => item.id);
+  }, [preview]);
+  const allSelectableItemsSelected =
+    selectableItemIds.length > 0 &&
+    selectableItemIds.every((itemId) => selectedItemSet.has(itemId));
+
   const selectedItems = useMemo(() => {
     if (!preview) {
       return [];
@@ -2161,17 +2160,8 @@ function CreditCardReconciliationPageInner() {
     }
   }
 
-  function applyDefaultSelection(nextPreview: ReconciliationPreview) {
-    setSelectedItemIds(
-      nextPreview.items
-        .filter(
-          (item) =>
-            item.status === 'PENDING' &&
-            item.canImport &&
-            getItemResolution(item) === 'PENDING'
-        )
-        .map((item) => item.id)
-    );
+  function initializePreviewState(nextPreview: ReconciliationPreview) {
+    setSelectedItemIds([]);
     setItemDrafts(buildItemDrafts(nextPreview.items));
   }
 
@@ -2205,7 +2195,7 @@ function CreditCardReconciliationPageInner() {
       setStatusFilter('ALL');
       setFocusedPreviewItemId(null);
       setReconciliationMobilePanel('FILE');
-      applyDefaultSelection(nextPreview);
+      initializePreviewState(nextPreview);
       return;
     }
 
@@ -2530,24 +2520,8 @@ function CreditCardReconciliationPageInner() {
     });
   }
 
-  function handleSelectPending() {
-    if (!preview) {
-      return;
-    }
-
-    setSelectedItemIds(
-      preview.items
-        .filter((item) => item.status === 'PENDING' && isManuallyImportable(item))
-        .map((item) => item.id)
-    );
-  }
-
-  function handleSelectVisibleImportable() {
-    setSelectedItemIds(
-      filteredItems
-        .filter((item) => isManuallyImportable(item))
-        .map((item) => item.id)
-    );
+  function handleToggleAllSelection() {
+    setSelectedItemIds(allSelectableItemsSelected ? [] : selectableItemIds);
   }
 
   function handleExportPreviewCsv() {
@@ -3023,8 +2997,9 @@ function CreditCardReconciliationPageInner() {
         </Card>
       ) : (
         <div className="space-y-6">
-          <Card>
-            <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          {!preview && (
+            <Card className={sessionLoading ? 'hidden' : ''}>
+              <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
               <div className="rounded-xl border border-gray-700 bg-[#11161d] p-4">
                 <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
                   Arquivo da fatura
@@ -3159,8 +3134,9 @@ function CreditCardReconciliationPageInner() {
                   </div>
                 )}
               </div>
-            </div>
-          </Card>
+              </div>
+            </Card>
+          )}
 
           {sessionLoading && selectedTargetInvoice && (
             <Card>
@@ -3171,10 +3147,36 @@ function CreditCardReconciliationPageInner() {
             </Card>
           )}
 
-          {session && displayedSessionProgress && (
-            <Card>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
+          {preview && (
+            <Card className="p-0">
+              <div
+                role="region"
+                aria-label="Resumo da fatura em conciliação"
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                      Mês de referência
+                    </span>
+                    <span className="font-semibold text-white">
+                      {formatReference(
+                        preview.statement.referenceMonth,
+                        preview.statement.referenceYear
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                      Total do arquivo
+                    </span>
+                    <span className="font-semibold text-white">
+                      {formatCurrency(preview.statement.totalAmount)}
+                    </span>
+                  </div>
+                </div>
+
+                {session && displayedSessionProgress && (
                   <div className="flex flex-wrap items-center gap-2">
                     <span
                       className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
@@ -3185,162 +3187,61 @@ function CreditCardReconciliationPageInner() {
                     >
                       {session.status === 'COMPLETED' ? 'Concluida' : 'Em andamento'}
                     </span>
-                    <span className="text-sm text-gray-400">
-                      Arquivo salvo: <span className="text-gray-200">{session.fileName}</span>
-                    </span>
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3 xl:grid-cols-6">
-                    <div>
-                      <span className="block text-gray-500">Resolvidos</span>
-                      <span className="font-semibold text-white">
-                        {displayedSessionProgress.resolvedCount}/{displayedSessionProgress.totalCount}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-gray-500">Pendentes</span>
-                      <span className="font-semibold text-blue-200">
-                        {displayedSessionProgress.pendingCount}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-gray-500">Importados</span>
-                      <span className="font-semibold text-green-200">
-                        {displayedSessionProgress.importedCount}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-gray-500">Fixas</span>
-                      <span className="font-semibold text-sky-200">
-                        {displayedSessionProgress.linkedFixedCount}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-gray-500">Existentes</span>
-                      <span className="font-semibold text-green-200">
-                        {displayedSessionProgress.confirmedExistingCount}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="block text-gray-500">Ignorados</span>
-                      <span className="font-semibold text-gray-300">
-                        {displayedSessionProgress.ignoredCount}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {session.status === 'COMPLETED' ? (
+                    {session.status === 'COMPLETED' ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => void updateSessionStatus('OPEN')}
+                        disabled={sessionActionLoading !== null || !sessionTargetReady}
+                      >
+                        {sessionActionLoading === 'STATUS' ? 'Reabrindo...' : 'Reabrir'}
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="accent"
+                        onClick={() => void updateSessionStatus('COMPLETED')}
+                        title={
+                          displayedSessionProgress.pendingCount > 0
+                            ? 'Resolva ou ignore os itens pendentes antes de concluir a conciliacao.'
+                            : undefined
+                        }
+                        disabled={
+                          sessionActionLoading !== null ||
+                          !sessionTargetReady ||
+                          commitLoading ||
+                          hasPendingSingleCommit ||
+                          hasDecisionInFlight ||
+                          displayedSessionProgress.pendingCount > 0
+                        }
+                      >
+                        {sessionActionLoading === 'STATUS' ? 'Concluindo...' : 'Concluir'}
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
-                      onClick={() => void updateSessionStatus('OPEN')}
-                      disabled={sessionActionLoading !== null || !sessionTargetReady}
-                    >
-                      {sessionActionLoading === 'STATUS' ? 'Reabrindo...' : 'Reabrir'}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="accent"
-                      onClick={() => void updateSessionStatus('COMPLETED')}
+                      onClick={() => void resetSession()}
                       disabled={
-                        sessionActionLoading !== null ||
+                        session.status === 'COMPLETED' ||
                         !sessionTargetReady ||
+                        sessionActionLoading !== null ||
                         commitLoading ||
                         hasPendingSingleCommit ||
-                        hasDecisionInFlight ||
-                        displayedSessionProgress.pendingCount > 0
+                        hasDecisionInFlight
                       }
                     >
-                      {sessionActionLoading === 'STATUS' ? 'Concluindo...' : 'Concluir'}
+                      {sessionActionLoading === 'RESET' ? 'Reiniciando...' : 'Reiniciar'}
                     </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    onClick={() => void resetSession()}
-                    disabled={
-                      session.status === 'COMPLETED' ||
-                      !sessionTargetReady ||
-                      sessionActionLoading !== null ||
-                      commitLoading ||
-                      hasPendingSingleCommit ||
-                      hasDecisionInFlight
-                    }
-                  >
-                    {sessionActionLoading === 'RESET' ? 'Reiniciando...' : 'Reiniciar'}
-                  </Button>
-                </div>
+                  </div>
+                )}
               </div>
-              {session.status === 'OPEN' && displayedSessionProgress.pendingCount > 0 && (
-                <p className="mt-3 text-sm text-gray-400">
-                  Resolva ou ignore os itens pendentes antes de concluir a conciliacao.
-                </p>
-              )}
             </Card>
           )}
 
           {preview && (
             <>
-              <div className="grid gap-4 xl:grid-cols-4">
-                <Card>
-                  <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                    Referencia
-                  </div>
-                  <div className="mt-2 text-xl font-semibold text-white">
-                    {formatReference(
-                      preview.statement.referenceMonth,
-                      preview.statement.referenceYear
-                    )}
-                  </div>
-                  <div className="mt-2 text-sm text-gray-400">
-                    {sourceConfig.statementDateLabel} {formatCalendarDate(preview.statement.dueDate)}
-                  </div>
-                </Card>
-                <Card>
-                  <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                    {sourceConfig.totalAmountLabel}
-                  </div>
-                  <div className="mt-2 text-xl font-semibold text-white">
-                    {formatCurrency(preview.statement.totalAmount)}
-                  </div>
-                  <div className="mt-2 text-sm text-gray-400">
-                    {sourceConfig.parsedAmountLabel}: {formatCurrency(preview.statement.parsedNetAmount)}
-                  </div>
-                </Card>
-                <Card>
-                  <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                    Pendentes
-                  </div>
-                  <div className="mt-2 text-xl font-semibold text-blue-200">
-                    {preview.summary.pendingCount}
-                  </div>
-                  <div className="mt-2 text-sm text-gray-400">
-                    {formatCurrency(preview.summary.pendingAmount)}
-                  </div>
-                </Card>
-                <Card>
-                  <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
-                    Correspondencias encontradas
-                  </div>
-                  <div className="mt-2 text-xl font-semibold text-green-200">
-                    {preview.summary.okCount}
-                  </div>
-                  <div className="mt-2 text-sm text-gray-400">
-                    {formatCurrency(preview.summary.okAmount)}
-                  </div>
-                </Card>
-              </div>
-
               <Card>
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <div className="text-lg font-semibold text-white">
-                      Conferencia da conciliacao
-                    </div>
-                    <div className="mt-1 text-sm text-gray-400">
-                      {preview.summary.similarCount} similar(es),{' '}
-                      {preview.summary.notImportableCount} nao importavel(is) e{' '}
-                      {preview.summary.importableCount} item(ns) importavel(is).
-                    </div>
+                  <div className="text-lg font-semibold text-white">
+                    Conferencia da conciliacao
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <div
@@ -3388,24 +3289,15 @@ function CreditCardReconciliationPageInner() {
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={handleSelectPending}
-                      disabled={commitLoading || hasDecisionInFlight || sessionCompleted}
+                      onClick={handleToggleAllSelection}
+                      disabled={
+                        commitLoading ||
+                        hasDecisionInFlight ||
+                        sessionCompleted ||
+                        selectableItemIds.length === 0
+                      }
                     >
-                      Selecionar pendentes
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleSelectVisibleImportable}
-                      disabled={commitLoading || hasDecisionInFlight || sessionCompleted}
-                    >
-                      Selecionar visiveis
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setSelectedItemIds([])}
-                      disabled={commitLoading || hasDecisionInFlight || sessionCompleted}
-                    >
-                      Limpar selecao
+                      {allSelectableItemsSelected ? 'Desmarcar tudo' : 'Marcar tudo'}
                     </Button>
                     <Button
                       variant="accent"
@@ -3450,8 +3342,6 @@ function CreditCardReconciliationPageInner() {
                 <div className="mt-4 rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3 text-sm text-gray-300">
                   Selecao atual: <span className="font-semibold text-white">{selectedItems.length}</span>{' '}
                   item(ns) somando <span className="font-semibold text-white">{formatCurrency(selectedAmount)}</span>.
-                  A selecao inicial marca apenas os pendentes; itens similares podem ser marcados
-                  manualmente ou vinculados a uma fixa recorrente.
                   {selectedDraftIssues.missingDescriptionCount > 0 && (
                     <span className="block pt-2 text-amber-300">
                       Revise {selectedDraftIssues.missingDescriptionCount} descricao(oes) antes de importar.

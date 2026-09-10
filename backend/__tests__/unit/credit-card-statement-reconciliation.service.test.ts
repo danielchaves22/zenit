@@ -701,6 +701,90 @@ describe('Credit card statement reconciliation service', () => {
     });
   });
 
+  it('separates Nubank payments and explains the total difference from item composition', () => {
+    const parsed = __private__.parseNubankStatementText(
+      sampleNubankStatementText,
+      'Nubank_2026-06-17.csv'
+    );
+    const invoice = {
+      id: 91,
+      referenceYear: 2026,
+      referenceMonth: 6,
+      status: CreditCardInvoiceStatus.OPEN
+    };
+    const candidate = (
+      id: number,
+      description: string,
+      amount: string,
+      date: string,
+      installmentNumber: number | null = null,
+      totalInstallments: number | null = null
+    ) => ({
+      matchKey: `transaction:${id}`,
+      matchSource: 'TRANSACTION' as const,
+      id,
+      fixedTemplateId: null,
+      occurrenceKey: null,
+      description,
+      amount: new Prisma.Decimal(amount),
+      date: new Date(date),
+      installmentNumber,
+      totalInstallments,
+      status: TransactionStatus.COMPLETED,
+      purchaseGroupId: null,
+      creditCardInvoice: invoice
+    });
+    const candidates = [
+      candidate(1, 'Netflix Entretenimento', '59.90', '2026-06-09T12:00:00.000Z'),
+      candidate(2, 'IOF de compra internacional', '1.17', '2026-06-03T12:00:00.000Z'),
+      candidate(3, 'Ri Happy', '33.34', '2026-05-10T12:00:00.000Z', 4, 6),
+      candidate(4, 'Lançamento somente no Zenit', '10.00', '2026-06-08T12:00:00.000Z')
+    ];
+    const items = __private__.buildPreviewItems(
+      parsed,
+      candidates,
+      new Map(),
+      new Map()
+    );
+
+    const comparison = __private__.buildValueComparison(parsed, items, candidates);
+
+    expect(comparison.file).toMatchObject({
+      reportedTotalAmount: null,
+      comparableAmount: '565.4',
+      paymentAmount: '625.29',
+      paymentCount: 1,
+      netAmount: '-59.89'
+    });
+    expect(comparison.zenit).toEqual({ totalAmount: '104.41', itemCount: 4 });
+    expect(comparison).toMatchObject({
+      status: 'EXPLAINED',
+      differenceAmount: '-460.99',
+      explainedDifferenceAmount: '-460.99',
+      unexplainedDifferenceAmount: '0',
+      pairedCount: 3,
+      exactAmountCount: 2,
+      amountDivergenceCount: 1,
+      missingCount: 1,
+      extraCount: 1,
+      ambiguousCount: 0
+    });
+    expect(comparison.amountDivergences[0]).toMatchObject({
+      sourceDescription: 'Ri Happy',
+      fileAmount: '33.33',
+      zenitAmount: '33.34',
+      differenceAmount: '0.01'
+    });
+    expect(comparison.missingItems[0]).toMatchObject({
+      description: 'Deivid Pinturas',
+      amount: '471'
+    });
+    expect(comparison.extraItems[0]).toMatchObject({
+      description: 'Lançamento somente no Zenit',
+      amount: '10'
+    });
+  });
+
   it('expands the candidate search window backwards for installment lines', () => {
     const parsed = __private__.parseNubankStatementText(
       sampleNubankStatementText,

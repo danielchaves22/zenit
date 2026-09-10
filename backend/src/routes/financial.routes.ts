@@ -40,6 +40,7 @@ import {
   reopenCreditCardInvoiceSchema
 } from '../validators/credit-card-invoice.validator';
 import {
+  analyzeCreditCardReconciliationValuesSchema,
   commitCreditCardReconciliationSessionSchema,
   commitCreditCardReconciliationSchema,
   decideCreditCardReconciliationItemSchema,
@@ -135,6 +136,7 @@ import {
   updateVariableProjectionPreference
 } from '../controllers/user-variable-projection-preference.controller';
 import {
+  analyzeCreditCardReconciliationValues,
   commitCreditCardReconciliationSession,
   commitCreditCardReconciliation,
   decideCreditCardReconciliationItem,
@@ -153,6 +155,14 @@ import {
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
+const creditCardValueAnalysisLimit = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: req => `credit-card-values:${req.user.companyId}:${req.user.userId}`,
+  message: { error: 'Aguarde um minuto antes de solicitar novos pareceres da IA.' }
+});
 
 const bankRouter = Router({ mergeParams: true });
 bankRouter.use(requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess());
@@ -221,6 +231,7 @@ router.post('/credit-cards/:accountId/reconciliation/preview', requireFeaturePer
 router.post('/credit-cards/:accountId/reconciliation/commit', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(commitCreditCardReconciliationSchema, { source: ['body', 'params'] }), commitCreditCardReconciliation);
 router.post('/credit-cards/:accountId/reconciliation/sessions', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(startCreditCardReconciliationSessionSchema, { source: ['body', 'params'] }), startCreditCardReconciliationSession);
 router.get('/credit-cards/:accountId/reconciliation/sessions/:referenceYear/:referenceMonth', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(getCreditCardReconciliationSessionSchema, { source: 'params' }), getCreditCardReconciliationSession);
+router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/value-analysis', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), creditCardValueAnalysisLimit, validate(analyzeCreditCardReconciliationValuesSchema, { source: ['body', 'params'] }), analyzeCreditCardReconciliationValues);
 router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/commit', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(commitCreditCardReconciliationSessionSchema, { source: ['body', 'params'] }), commitCreditCardReconciliationSession);
 router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/items/:itemId/decision', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(decideCreditCardReconciliationItemSchema, { source: ['body', 'params'] }), decideCreditCardReconciliationItem);
 router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/status', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(updateCreditCardReconciliationSessionStatusSchema, { source: ['body', 'params'] }), updateCreditCardReconciliationSessionStatus);

@@ -192,8 +192,15 @@ export const resetCreditCardReconciliationSessionSchema = z.object({
   confirmed: z.literal(true)
 });
 
+export const analyzeCreditCardReconciliationValuesSchema = z.object({
+  accountId: z.coerce.number().int().positive(),
+  sessionId: sessionIdSchema,
+  expectedRevision: expectedRevisionSchema
+});
+
 export type PreviewCreditCardReconciliationData = z.infer<typeof previewCreditCardReconciliationSchema>;
 export type CommitCreditCardReconciliationData = z.infer<typeof commitCreditCardReconciliationSchema>;
 export type StartCreditCardReconciliationSessionData = z.infer<typeof startCreditCardReconciliationSessionSchema>;
 export type CommitCreditCardReconciliationSessionData = z.infer<typeof commitCreditCardReconciliationSessionSchema>;
 export type DecideCreditCardReconciliationItemData = z.infer<typeof decideCreditCardReconciliationItemSchema>;
+export type AnalyzeCreditCardReconciliationValuesData = z.infer<typeof analyzeCreditCardReconciliationValuesSchema>;

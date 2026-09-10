@@ -4,12 +4,14 @@ import { useRouter } from 'next/router';
 import {
   AlertTriangle,
   ArrowLeft,
+  BarChart3,
   CheckCircle2,
   Columns2,
   Download,
   FileSearch,
   RefreshCw,
   Rows3,
+  Sparkles,
   Upload
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -22,7 +24,9 @@ import {
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useToast } from '@/components/ui/ToastContext';
+import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
 import { buildCreditCardReconciliationCsv } from '@/utils/creditCardCsv';
 import {
@@ -47,8 +51,80 @@ type ReconciliationReason =
   | 'NO_MATCH';
 type ReconciliationFilter = 'ALL' | ReconciliationItemStatus;
 type ReconciliationSuggestionSource = 'RULE' | 'HISTORY' | 'AI';
-type ReconciliationViewMode = 'DETAILED' | 'SIDE_BY_SIDE';
+type ReconciliationViewMode = 'DETAILED' | 'SIDE_BY_SIDE' | 'SUMMARY';
 type ReconciliationMobilePanel = 'ZENIT' | 'FILE';
+
+type ReconciliationValueComparisonStatus = 'MATCHED' | 'EXPLAINED' | 'UNEXPLAINED';
+
+interface ReconciliationValueComparisonItem {
+  itemId: string;
+  description: string;
+  amount: string;
+}
+
+interface ReconciliationValueComparisonMatch {
+  itemId: string;
+  sourceDescription: string;
+  fileAmount: string;
+  zenitAmount: string;
+  differenceAmount: string;
+  matchKey: string;
+  transactionId: number | null;
+  transactionDescription: string;
+}
+
+interface ReconciliationValueComparisonExtraItem {
+  matchKey: string;
+  transactionId: number | null;
+  description: string;
+  amount: string;
+}
+
+interface ReconciliationValueComparison {
+  status: ReconciliationValueComparisonStatus;
+  file: {
+    reportedTotalAmount: string | null;
+    comparableAmount: string;
+    debitAmount: string;
+    creditAmount: string;
+    paymentAmount: string;
+    balanceAmount: string;
+    netAmount: string;
+    comparableItemCount: number;
+    creditCount: number;
+    paymentCount: number;
+  };
+  zenit: {
+    totalAmount: string;
+    itemCount: number;
+  };
+  differenceAmount: string;
+  absoluteDifferenceAmount: string;
+  explainedDifferenceAmount: string;
+  unexplainedDifferenceAmount: string;
+  pairedCount: number;
+  exactAmountCount: number;
+  amountDivergenceCount: number;
+  missingCount: number;
+  extraCount: number;
+  ambiguousCount: number;
+  amountDivergences: ReconciliationValueComparisonMatch[];
+  missingItems: ReconciliationValueComparisonItem[];
+  extraItems: ReconciliationValueComparisonExtraItem[];
+  ambiguousItems: ReconciliationValueComparisonItem[];
+}
+
+interface ReconciliationValueAnalysisResponse {
+  sessionId: number;
+  revision: number;
+  generatedAt: string;
+  analysis: {
+    headline: string;
+    summary: string;
+    findings: string[];
+    model: string;
+  };
+}
 
 interface CreditCardAccount {
   id: number;
@@ -206,6 +282,7 @@ interface ReconciliationPreview {
     pendingAmount: string;
     notImportableAmount: string;
   };
+  valueComparison?: ReconciliationValueComparison;
   items: ReconciliationPreviewItem[];
 }
 
@@ -359,6 +436,38 @@ function formatCurrency(value: string | number) {
     style: 'currency',
     currency: 'BRL'
   }).format(Number(value || 0));
+}
+
+function formatSignedCurrency(value: string | number) {
+  const amount = Number(value || 0);
+  if (amount > 0) {
+    return `+${formatCurrency(amount)}`;
+  }
+  return formatCurrency(amount);
+}
+
+function getValueComparisonStatusLabel(status: ReconciliationValueComparisonStatus) {
+  if (status === 'MATCHED') return 'Valores fecham';
+  if (status === 'EXPLAINED') return 'Diferença explicada';
+  return 'Diferença não explicada';
+}
+
+function getValueComparisonStatusClasses(status: ReconciliationValueComparisonStatus) {
+  if (status === 'MATCHED') {
+    return 'border-green-500/40 bg-green-500/10 text-green-200';
+  }
+  if (status === 'EXPLAINED') {
+    return 'border-amber-500/40 bg-amber-500/10 text-amber-200';
+  }
+  return 'border-red-500/40 bg-red-500/10 text-red-200';
+}
+
+function getValueDifferenceLabel(comparison: ReconciliationValueComparison) {
+  const difference = Number(comparison.differenceAmount || 0);
+  if (difference === 0) return 'Sem diferença';
+  return `Zenit ${formatCurrency(comparison.absoluteDifferenceAmount)} ${
+    difference < 0 ? 'abaixo' : 'acima'
+  }`;
 }
 
 function getStatusLabel(status: ReconciliationItemStatus) {
@@ -1115,6 +1224,314 @@ interface CreditCardReconciliationSideBySideProps {
   onRetryTargetInvoiceDetail: () => void;
 }
 
+function CreditCardReconciliationValueSummary({
+  preview,
+  analysis,
+  analysisLoading,
+  analysisError,
+  onRequestAnalysis
+}: {
+  preview: ReconciliationPreview;
+  analysis: ReconciliationValueAnalysisResponse | null;
+  analysisLoading: boolean;
+  analysisError: string | null;
+  onRequestAnalysis: () => void;
+}) {
+  const comparison = preview.valueComparison;
+  if (!comparison) {
+    return (
+      <Card>
+        <div className="text-sm text-gray-400">
+          O resumo de valores não está disponível para esta prévia. Recarregue a conciliação.
+        </div>
+      </Card>
+    );
+  }
+
+  const previewItemsById = new Map(preview.items.map((item) => [item.id, item]));
+  const missingItemResolution = (itemId: string) =>
+    previewItemsById.get(itemId)?.progress?.resolution || 'PENDING';
+  const generatedAt = analysis
+    ? new Intl.DateTimeFormat('pt-BR', {
+        dateStyle: 'short',
+        timeStyle: 'short'
+      }).format(new Date(analysis.generatedAt))
+    : null;
+
+  return (
+    <Card>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Conferência dos valores</h2>
+          <p className="mt-1 text-sm text-gray-400">
+            Comparação calculada entre o arquivo e os lançamentos da fatura escolhida.
+          </p>
+        </div>
+        <span
+          className={`w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${getValueComparisonStatusClasses(
+            comparison.status
+          )}`}
+        >
+          {getValueComparisonStatusLabel(comparison.status)}
+        </span>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3">
+          <div className="text-xs uppercase tracking-[0.12em] text-gray-400">
+            Total comparável do arquivo
+          </div>
+          <div className="mt-1 text-xl font-semibold text-white">
+            {formatCurrency(comparison.file.comparableAmount)}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            {comparison.file.comparableItemCount} item(ns) comparável(is)
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3">
+          <div className="text-xs uppercase tracking-[0.12em] text-gray-400">Fatura no Zenit</div>
+          <div className="mt-1 text-xl font-semibold text-white">
+            {formatCurrency(comparison.zenit.totalAmount)}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            {comparison.zenit.itemCount} lançamento(s)
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3">
+          <div className="text-xs uppercase tracking-[0.12em] text-gray-400">Diferença</div>
+          <div className="mt-1 text-xl font-semibold text-white">
+            {formatCurrency(comparison.absoluteDifferenceAmount)}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">{getValueDifferenceLabel(comparison)}</div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
+        {comparison.file.reportedTotalAmount !== null && (
+          <div>
+            <div className="text-gray-400">Total informado pelo emissor</div>
+            <div className="mt-1 font-semibold text-white">
+              {formatCurrency(comparison.file.reportedTotalAmount)}
+            </div>
+          </div>
+        )}
+        <div>
+          <div className="text-gray-400">Líquido das linhas</div>
+          <div className="mt-1 font-semibold text-white">
+            {formatCurrency(comparison.file.netAmount)}
+          </div>
+        </div>
+        <div>
+          <div className="text-gray-400">Créditos e ajustes</div>
+          <div className="mt-1 font-semibold text-white">
+            {formatCurrency(comparison.file.creditAmount)}
+          </div>
+        </div>
+        <div>
+          <div className="text-gray-400">Pagamentos separados</div>
+          <div className="mt-1 font-semibold text-white">
+            {formatCurrency(comparison.file.paymentAmount)}
+          </div>
+        </div>
+        {Number(comparison.file.balanceAmount || 0) !== 0 && (
+          <div>
+            <div className="text-gray-400">Saldo anterior separado</div>
+            <div className="mt-1 font-semibold text-white">
+              {formatCurrency(comparison.file.balanceAmount)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-5 border-t border-gray-700 pt-4">
+        <h3 className="font-semibold text-white">Composição da conferência</h3>
+        <div className="mt-3 flex flex-wrap gap-2 text-sm">
+          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+            {comparison.exactAmountCount} valor(es) exato(s)
+          </span>
+          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+            {comparison.amountDivergenceCount} valor(es) divergente(s)
+          </span>
+          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+            {comparison.missingCount} ausente(s) no Zenit
+          </span>
+          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+            {comparison.extraCount} excedente(s) no Zenit
+          </span>
+          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+            {comparison.ambiguousCount} ambíguo(s)
+          </span>
+        </div>
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <div className="rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2">
+            <div className="text-gray-400">Diferença identificada pela composição</div>
+            <div className="mt-1 font-semibold text-white">
+              {formatSignedCurrency(comparison.explainedDifferenceAmount)}
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2">
+            <div className="text-gray-400">Saldo ainda não explicado</div>
+            <div className="mt-1 font-semibold text-white">
+              {formatSignedCurrency(comparison.unexplainedDifferenceAmount)}
+            </div>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          Os sinais representam o total do Zenit menos o total comparável do arquivo.
+        </p>
+      </div>
+
+      {comparison.amountDivergences.length > 0 && (
+        <div className="mt-5">
+          <h3 className="font-semibold text-white">Valores divergentes</h3>
+          <div className="mt-2 overflow-x-auto rounded-xl border border-gray-700">
+            <table className="min-w-full divide-y divide-gray-700 text-sm">
+              <thead className="bg-[#11161d] text-left text-gray-400">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Lançamento</th>
+                  <th className="px-3 py-2 text-right font-medium">Arquivo</th>
+                  <th className="px-3 py-2 text-right font-medium">Zenit</th>
+                  <th className="px-3 py-2 text-right font-medium">Diferença</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {comparison.amountDivergences.map((item) => (
+                  <tr key={`${item.itemId}:${item.matchKey}`}>
+                    <td className="px-3 py-2 text-white">
+                      <div>{item.sourceDescription}</div>
+                      {item.transactionDescription !== item.sourceDescription && (
+                        <div className="mt-0.5 text-xs text-gray-400">Zenit: {item.transactionDescription}</div>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-gray-300">
+                      {formatCurrency(item.fileAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-gray-300">
+                      {formatCurrency(item.zenitAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-amber-200">
+                      {formatSignedCurrency(item.differenceAmount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {comparison.missingItems.length > 0 && (
+        <div className="mt-5">
+          <h3 className="font-semibold text-white">Itens do arquivo ausentes no Zenit</h3>
+          <div className="mt-2 space-y-2">
+            {comparison.missingItems.map((item) => {
+              const resolution = missingItemResolution(item.itemId);
+              return (
+                <div
+                  key={item.itemId}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2 text-sm"
+                >
+                  <span className="text-white">{item.description}</span>
+                  <span className="flex items-center gap-3">
+                    <span className="text-gray-400">
+                      {resolution === 'IGNORED' ? 'Ignorado' : 'Pendente'}
+                    </span>
+                    <span className="font-semibold text-white">{formatCurrency(item.amount)}</span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {comparison.extraItems.length > 0 && (
+        <div className="mt-5">
+          <h3 className="font-semibold text-white">Itens excedentes no Zenit</h3>
+          <div className="mt-2 space-y-2">
+            {comparison.extraItems.map((item) => (
+              <div
+                key={item.matchKey}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2 text-sm"
+              >
+                <span className="text-white">{item.description}</span>
+                <span className="font-semibold text-white">{formatCurrency(item.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {comparison.ambiguousItems.length > 0 && (
+        <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+          <h3 className="font-semibold text-red-100">Correspondências ambíguas</h3>
+          <div className="mt-2 space-y-1 text-sm text-red-100">
+            {comparison.ambiguousItems.map((item) => (
+              <div key={item.itemId} className="flex justify-between gap-3">
+                <span>{item.description}</span>
+                <span className="whitespace-nowrap">{formatCurrency(item.amount)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 rounded-xl border border-gray-700 bg-[#11161d] px-4 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 font-semibold text-white">
+              <Sparkles size={16} className="text-accent" />
+              Parecer da IA
+            </h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {analysis
+                ? `Parecer solicitado em ${generatedAt}.`
+                : 'A IA não foi consultada. Os cálculos acima independem dela.'}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={onRequestAnalysis}
+            disabled={analysisLoading}
+            className="flex items-center gap-2"
+          >
+            {analysisLoading ? (
+              <RefreshCw size={16} className="animate-spin" />
+            ) : (
+              <Sparkles size={16} />
+            )}
+            {analysisLoading
+              ? 'Consultando IA...'
+              : analysis
+                ? 'Solicitar novo parecer'
+                : 'Solicitar parecer da IA'}
+          </Button>
+        </div>
+
+        {analysisError && (
+          <div role="alert" className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+            {analysisError}
+          </div>
+        )}
+
+        {analysis && (
+          <div className="mt-4 border-l-2 border-accent pl-4">
+            <div className="font-semibold text-white">{analysis.analysis.headline}</div>
+            <p className="mt-2 text-sm leading-6 text-gray-300">{analysis.analysis.summary}</p>
+            {analysis.analysis.findings.length > 0 && (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-300">
+                {analysis.analysis.findings.map((finding, index) => (
+                  <li key={`${index}:${finding}`}>{finding}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function CreditCardReconciliationSideBySide({
   preview,
   rows,
@@ -1709,6 +2126,7 @@ function CreditCardReconciliationSideBySide({
 function CreditCardReconciliationPageInner() {
   const router = useRouter();
   const { addToast } = useToast();
+  const confirmation = useConfirmation();
   const accountId = Number(router.query.accountId);
 
   const [card, setCard] = useState<CreditCardAccount | null>(null);
@@ -1743,6 +2161,10 @@ function CreditCardReconciliationPageInner() {
   const [localSystemSelections, setLocalSystemSelections] = useState<Record<string, string>>({});
   const [reconciliationViewMode, setReconciliationViewMode] =
     useState<ReconciliationViewMode>('DETAILED');
+  const [valueAnalysis, setValueAnalysis] =
+    useState<ReconciliationValueAnalysisResponse | null>(null);
+  const [valueAnalysisLoading, setValueAnalysisLoading] = useState(false);
+  const [valueAnalysisError, setValueAnalysisError] = useState<string | null>(null);
   const [focusedPreviewItemId, setFocusedPreviewItemId] = useState<string | null>(null);
   const [reconciliationMobilePanel, setReconciliationMobilePanel] =
     useState<ReconciliationMobilePanel>('FILE');
@@ -1750,6 +2172,8 @@ function CreditCardReconciliationPageInner() {
   const batchCommitInFlightRef = useRef(false);
   const targetInvoiceDetailRequestIdRef = useRef(0);
   const sessionRequestIdRef = useRef(0);
+  const valueAnalysisRequestIdRef = useRef(0);
+  const reconciliationListScrollYRef = useRef<number | null>(null);
   const selectedTargetInvoiceKeyRef = useRef(selectedTargetInvoiceKey);
   const fileReadRequestIdRef = useRef(0);
   const previewRequestIdRef = useRef(0);
@@ -2319,11 +2743,15 @@ function CreditCardReconciliationPageInner() {
     const nextPreview = workspace.preview;
 
     sessionRequestIdRef.current += 1;
+    valueAnalysisRequestIdRef.current += 1;
     fileReadRequestIdRef.current += 1;
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
     setSessionLoading(false);
+    setValueAnalysis(null);
+    setValueAnalysisLoading(false);
+    setValueAnalysisError(null);
     setSession(workspace.session);
     setSessionProgress(workspace.progress);
     setPreview(nextPreview);
@@ -2340,6 +2768,7 @@ function CreditCardReconciliationPageInner() {
 
     if (options.resetTransient) {
       setStatusFilter('ALL');
+      setReconciliationViewMode('DETAILED');
       setFocusedPreviewItemId(null);
       setReconciliationMobilePanel('FILE');
       initializePreviewState(nextPreview);
@@ -2363,11 +2792,15 @@ function CreditCardReconciliationPageInner() {
 
   function clearWorkspace() {
     sessionRequestIdRef.current += 1;
+    valueAnalysisRequestIdRef.current += 1;
     fileReadRequestIdRef.current += 1;
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
     setSessionLoading(false);
+    setValueAnalysis(null);
+    setValueAnalysisLoading(false);
+    setValueAnalysisError(null);
     setSession(null);
     setSessionProgress(null);
     setPreview(null);
@@ -2377,7 +2810,78 @@ function CreditCardReconciliationPageInner() {
     setItemDrafts({});
     setSelectedItemIds([]);
     setFocusedPreviewItemId(null);
+    setReconciliationViewMode('DETAILED');
     setLocalSystemSelections({});
+  }
+
+  function changeReconciliationViewMode(nextMode: ReconciliationViewMode) {
+    if (nextMode === reconciliationViewMode) {
+      return;
+    }
+
+    if (nextMode === 'SUMMARY') {
+      reconciliationListScrollYRef.current = window.scrollY;
+    }
+    const returningToItems =
+      reconciliationViewMode === 'SUMMARY' && nextMode !== 'SUMMARY';
+    setReconciliationViewMode(nextMode);
+
+    if (returningToItems) {
+      window.requestAnimationFrame(() => {
+        const focusedItem = focusedPreviewItemId
+          ? comparisonItemRefs.current[focusedPreviewItemId]
+          : null;
+        if (focusedItem) {
+          focusedItem.scrollIntoView({ block: 'center' });
+          return;
+        }
+        if (reconciliationListScrollYRef.current !== null) {
+          window.scrollTo({ top: reconciliationListScrollYRef.current });
+        }
+      });
+    }
+  }
+
+  async function requestValueAnalysis() {
+    if (!session || !preview?.valueComparison) {
+      setValueAnalysisError('Carregue uma conciliação antes de solicitar o parecer da IA.');
+      return;
+    }
+
+    const requestId = valueAnalysisRequestIdRef.current + 1;
+    valueAnalysisRequestIdRef.current = requestId;
+    setValueAnalysisLoading(true);
+    setValueAnalysisError(null);
+
+    try {
+      const response = await api.post(
+        `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/value-analysis`,
+        { expectedRevision: session.revision }
+      );
+      if (valueAnalysisRequestIdRef.current !== requestId) {
+        return;
+      }
+      const result = response.data as ReconciliationValueAnalysisResponse;
+      if (result.sessionId !== session.id || result.revision !== session.revision) {
+        setValueAnalysisError('A conciliação mudou durante a análise. Solicite um novo parecer.');
+        return;
+      }
+      setValueAnalysis(result);
+    } catch (error: any) {
+      if (valueAnalysisRequestIdRef.current !== requestId) {
+        return;
+      }
+      setValueAnalysisError(
+        error.response?.data?.error || 'Não foi possível consultar a IA agora.'
+      );
+      if (error.response?.data?.code === 'REVISION_CONFLICT' && selectedTargetInvoice) {
+        await fetchReconciliationSession(selectedTargetInvoice);
+      }
+    } finally {
+      if (valueAnalysisRequestIdRef.current === requestId) {
+        setValueAnalysisLoading(false);
+      }
+    }
   }
 
   async function fetchReconciliationSession(invoice: TargetInvoiceOption) {
@@ -2480,18 +2984,6 @@ function CreditCardReconciliationPageInner() {
           throw error;
         }
 
-        const replace = window.confirm(
-          'Ja existe uma conciliacao em andamento para esta referencia com outro arquivo. Deseja substituir o arquivo e reiniciar a conferencia?'
-        );
-        if (!replace) {
-          if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-          }
-          setFileName(session?.fileName || null);
-          setFileBase64('');
-          return;
-        }
-
         const expectedSessionId =
           error.response?.data?.currentSessionId ?? session?.id;
         const expectedRevision =
@@ -2501,7 +2993,68 @@ function CreditCardReconciliationPageInner() {
           throw new Error('A conciliacao mudou. Atualize a tela e tente novamente.');
         }
 
-        response = await start(true, expectedSessionId, expectedRevision);
+        confirmation.confirm(
+          {
+            title: 'Substituir arquivo da conciliação?',
+            message:
+              'Já existe uma conciliação em andamento para esta referência com outro arquivo. O arquivo salvo e os checkpoints atuais serão substituídos. Os lançamentos financeiros e os vínculos já efetivados serão preservados.',
+            confirmText: 'Substituir e reiniciar',
+            cancelText: 'Cancelar',
+            type: 'danger'
+          },
+          async () => {
+            setPreviewLoading(true);
+            setSessionActionLoading('START');
+
+            try {
+              const replacementResponse = await start(
+                true,
+                expectedSessionId,
+                expectedRevision
+              );
+
+              if (
+                previewRequestIdRef.current !== requestId ||
+                selectedTargetInvoiceKeyRef.current !== targetInvoiceKey
+              ) {
+                return;
+              }
+
+              applyWorkspace(replacementResponse.data as ReconciliationWorkspace, {
+                resetTransient: true
+              });
+              await fetchTargetInvoiceDetail(selectedTargetInvoice);
+            } catch (replacementError: any) {
+              if (
+                previewRequestIdRef.current === requestId &&
+                selectedTargetInvoiceKeyRef.current === targetInvoiceKey
+              ) {
+                addToast(
+                  replacementError.response?.data?.error || 'Erro ao substituir a conciliação',
+                  'error'
+                );
+                if (replacementError.response?.data?.code === 'REVISION_CONFLICT') {
+                  await fetchReconciliationSession(selectedTargetInvoice);
+                  return;
+                }
+                throw replacementError;
+              }
+            } finally {
+              if (previewRequestIdRef.current === requestId) {
+                setPreviewLoading(false);
+                setSessionActionLoading(null);
+              }
+            }
+          },
+          () => {
+            if (fileInputRef.current) {
+              fileInputRef.current.value = '';
+            }
+            setFileName(session?.fileName || null);
+            setFileBase64('');
+          }
+        );
+        return;
       }
 
       if (
@@ -2991,61 +3544,81 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
-    if (
-      decision === 'UNCONFIRM_EXISTING' &&
-      !window.confirm(
-        'Remover este vínculo confirmado da conciliação? Apenas a confirmação será removida; o lançamento financeiro existente não será alterado.'
-      )
-    ) {
-      return;
-    }
+    const persistDecision = async (keepConfirmationOpenOnError = false) => {
+      setDecisionItemIds((current) => Array.from(new Set([...current, itemId])));
+      try {
+        const response = await api.post(
+          `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/items/${encodeURIComponent(itemId)}/decision`,
+          {
+            expectedRevision: session.revision,
+            decision,
+            ...(transactionIds?.length ? { transactionIds } : {})
+          }
+        );
+        applyWorkspace(response.data as ReconciliationWorkspace);
 
-    if (
-      decision === 'UNLINK_FIXED' &&
-      !window.confirm(
-        'Remover este vínculo somente desta conciliação? A regra recorrente será mantida para os próximos meses.'
-      )
-    ) {
-      return;
-    }
-
-    setDecisionItemIds((current) => Array.from(new Set([...current, itemId])));
-    try {
-      const response = await api.post(
-        `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/items/${encodeURIComponent(itemId)}/decision`,
-        {
-          expectedRevision: session.revision,
-          decision,
-          ...(transactionIds?.length ? { transactionIds } : {})
+        if (decision === 'CONFIRM_EXISTING') {
+          addToast('Correspondencia existente confirmada e andamento salvo', 'success');
+        } else if (decision === 'IGNORE') {
+          addToast('Item ignorado e andamento salvo', 'success');
+        } else if (decision === 'UNCONFIRM_EXISTING') {
+          addToast(
+            'Vínculo removido da conciliação. O lançamento financeiro não foi alterado.',
+            'success'
+          );
+        } else if (decision === 'UNLINK_FIXED') {
+          addToast(
+            'Vínculo removido desta conciliação. A regra recorrente foi mantida para os próximos meses.',
+            'success'
+          );
+        } else {
+          addToast('Item voltou para conferencia', 'success');
         }
-      );
-      applyWorkspace(response.data as ReconciliationWorkspace);
+      } catch (error: any) {
+        addToast(error.response?.data?.error || 'Erro ao salvar a decisao do item', 'error');
+        if (error.response?.data?.code === 'REVISION_CONFLICT') {
+          await fetchReconciliationSession(selectedTargetInvoice);
+          return;
+        }
+        if (keepConfirmationOpenOnError) {
+          throw error;
+        }
+      } finally {
+        setDecisionItemIds((current) => current.filter((currentId) => currentId !== itemId));
+      }
+    };
 
-      if (decision === 'CONFIRM_EXISTING') {
-        addToast('Correspondencia existente confirmada e andamento salvo', 'success');
-      } else if (decision === 'IGNORE') {
-        addToast('Item ignorado e andamento salvo', 'success');
-      } else if (decision === 'UNCONFIRM_EXISTING') {
-        addToast(
-          'Vínculo removido da conciliação. O lançamento financeiro não foi alterado.',
-          'success'
-        );
-      } else if (decision === 'UNLINK_FIXED') {
-        addToast(
-          'Vínculo removido desta conciliação. A regra recorrente foi mantida para os próximos meses.',
-          'success'
-        );
-      } else {
-        addToast('Item voltou para conferencia', 'success');
-      }
-    } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao salvar a decisao do item', 'error');
-      if (error.response?.data?.code === 'REVISION_CONFLICT') {
-        await fetchReconciliationSession(selectedTargetInvoice);
-      }
-    } finally {
-      setDecisionItemIds((current) => current.filter((currentId) => currentId !== itemId));
+    if (decision === 'UNCONFIRM_EXISTING') {
+      confirmation.confirm(
+        {
+          title: 'Remover vínculo com o lançamento?',
+          message:
+            'Apenas a confirmação desta conciliação será removida. O lançamento financeiro existente não será alterado.',
+          confirmText: 'Remover vínculo',
+          cancelText: 'Cancelar',
+          type: 'warning'
+        },
+        () => persistDecision(true)
+      );
+      return;
     }
+
+    if (decision === 'UNLINK_FIXED') {
+      confirmation.confirm(
+        {
+          title: 'Remover vínculo com a transação fixa?',
+          message:
+            'O vínculo será removido somente desta conciliação. A regra recorrente será mantida para os próximos meses.',
+          confirmText: 'Remover vínculo',
+          cancelText: 'Cancelar',
+          type: 'warning'
+        },
+        () => persistDecision(true)
+      );
+      return;
+    }
+
+    await persistDecision();
   }
 
   async function updateSessionStatus(status: ReconciliationSessionStatus) {
@@ -3081,7 +3654,7 @@ function CreditCardReconciliationPageInner() {
     }
   }
 
-  async function resetSession() {
+  function resetSession() {
     if (!session || !selectedTargetInvoice) {
       return;
     }
@@ -3091,29 +3664,36 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
-    const confirmed = window.confirm(
-      'Reiniciar esta conciliacao? O arquivo salvo e os checkpoints de andamento serao removidos. Os lancamentos financeiros ja criados e os vinculos a transacoes fixas ja efetivados serao preservados.'
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    setSessionActionLoading('RESET');
-    try {
-      await api.post(
-        `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/reset`,
-        { expectedRevision: session.revision, confirmed: true }
-      );
-      clearWorkspace();
-      addToast('Conciliacao reiniciada', 'success');
-    } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao reiniciar a conciliacao', 'error');
-      if (error.response?.data?.code === 'REVISION_CONFLICT') {
-        await fetchReconciliationSession(selectedTargetInvoice);
+    confirmation.confirm(
+      {
+        title: 'Reiniciar conciliação?',
+        message:
+          'O arquivo salvo e os checkpoints de andamento serão removidos. Os lançamentos financeiros já criados e os vínculos com transações fixas já efetivados serão preservados.',
+        confirmText: 'Reiniciar conciliação',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        setSessionActionLoading('RESET');
+        try {
+          await api.post(
+            `/financial/credit-cards/${accountId}/reconciliation/sessions/${session.id}/reset`,
+            { expectedRevision: session.revision, confirmed: true }
+          );
+          clearWorkspace();
+          addToast('Conciliacao reiniciada', 'success');
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao reiniciar a conciliacao', 'error');
+          if (error.response?.data?.code === 'REVISION_CONFLICT') {
+            await fetchReconciliationSession(selectedTargetInvoice);
+            return;
+          }
+          throw error;
+        } finally {
+          setSessionActionLoading(null);
+        }
       }
-    } finally {
-      setSessionActionLoading(null);
-    }
+    );
   }
 
   const filterButtons: Array<{ value: ReconciliationFilter; label: string; count: number }> = [
@@ -3352,14 +3932,50 @@ function CreditCardReconciliationPageInner() {
                       )}
                     </span>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
-                      Total do arquivo
-                    </span>
-                    <span className="font-semibold text-white">
-                      {formatCurrency(preview.statement.totalAmount)}
-                    </span>
-                  </div>
+                  {preview.valueComparison ? (
+                    <>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                          Arquivo
+                        </span>
+                        <span className="font-semibold text-white">
+                          {formatCurrency(preview.valueComparison.file.comparableAmount)}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                          Zenit
+                        </span>
+                        <span className="font-semibold text-white">
+                          {formatCurrency(preview.valueComparison.zenit.totalAmount)}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                          Diferença
+                        </span>
+                        <span className="font-semibold text-white">
+                          {formatCurrency(preview.valueComparison.absoluteDifferenceAmount)}
+                        </span>
+                      </div>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getValueComparisonStatusClasses(
+                          preview.valueComparison.status
+                        )}`}
+                      >
+                        {getValueComparisonStatusLabel(preview.valueComparison.status)}
+                      </span>
+                    </>
+                  ) : (
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                        Líquido das linhas
+                      </span>
+                      <span className="font-semibold text-white">
+                        {formatCurrency(preview.statement.parsedNetAmount)}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {session && displayedSessionProgress && (
@@ -3439,7 +4055,7 @@ function CreditCardReconciliationPageInner() {
                         type="button"
                         aria-label="Visualização detalhada"
                         aria-pressed={reconciliationViewMode === 'DETAILED'}
-                        onClick={() => setReconciliationViewMode('DETAILED')}
+                        onClick={() => changeReconciliationViewMode('DETAILED')}
                         className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           reconciliationViewMode === 'DETAILED'
                             ? 'bg-accent text-white'
@@ -3453,7 +4069,7 @@ function CreditCardReconciliationPageInner() {
                         type="button"
                         aria-label="Visualização lado a lado"
                         aria-pressed={reconciliationViewMode === 'SIDE_BY_SIDE'}
-                        onClick={() => setReconciliationViewMode('SIDE_BY_SIDE')}
+                        onClick={() => changeReconciliationViewMode('SIDE_BY_SIDE')}
                         className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           reconciliationViewMode === 'SIDE_BY_SIDE'
                             ? 'bg-accent text-white'
@@ -3463,88 +4079,118 @@ function CreditCardReconciliationPageInner() {
                         <Columns2 size={16} />
                         Lado a lado
                       </button>
+                      <button
+                        type="button"
+                        aria-label="Resumo da conferência de valores"
+                        aria-pressed={reconciliationViewMode === 'SUMMARY'}
+                        onClick={() => changeReconciliationViewMode('SUMMARY')}
+                        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                          reconciliationViewMode === 'SUMMARY'
+                            ? 'bg-accent text-white'
+                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                        }`}
+                      >
+                        <BarChart3 size={16} />
+                        Resumo
+                      </button>
                     </div>
-                    <Button
-                      variant="outline"
-                      onClick={handleExportPreviewCsv}
-                      disabled={commitLoading}
-                      className="flex items-center gap-2"
-                    >
-                      <Download size={16} />
-                      Exportar CSV
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={handleToggleAllSelection}
-                      disabled={
-                        commitLoading ||
-                        hasDecisionInFlight ||
-                        sessionCompleted ||
-                        selectableItemIds.length === 0
-                      }
-                    >
-                      {allSelectableItemsSelected ? 'Desmarcar tudo' : 'Marcar tudo'}
-                    </Button>
-                    <Button
-                      variant="accent"
-                      onClick={() => void commitItems(selectedItemIds)}
-                      disabled={
-                        !sessionTargetReady ||
-                        commitLoading ||
-                        hasPendingSingleCommit ||
-                        hasDecisionInFlight ||
-                        sessionActionLoading !== null ||
-                        sessionCompleted ||
-                        categoriesLoading ||
-                        selectedItemIds.length === 0 ||
-                        selectedDraftIssues.missingDescriptionCount > 0 ||
-                        selectedDraftIssues.missingCategoryCount > 0
-                      }
-                    >
-                      {commitLoading
-                        ? 'Importando...'
-                        : `Importar ${selectedItemIds.length} selecionado(s)`}
-                    </Button>
+                    {reconciliationViewMode !== 'SUMMARY' && (
+                      <>
+                        <Button
+                          variant="outline"
+                          onClick={handleExportPreviewCsv}
+                          disabled={commitLoading}
+                          className="flex items-center gap-2"
+                        >
+                          <Download size={16} />
+                          Exportar CSV
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={handleToggleAllSelection}
+                          disabled={
+                            commitLoading ||
+                            hasDecisionInFlight ||
+                            sessionCompleted ||
+                            selectableItemIds.length === 0
+                          }
+                        >
+                          {allSelectableItemsSelected ? 'Desmarcar tudo' : 'Marcar tudo'}
+                        </Button>
+                        <Button
+                          variant="accent"
+                          onClick={() => void commitItems(selectedItemIds)}
+                          disabled={
+                            !sessionTargetReady ||
+                            commitLoading ||
+                            hasPendingSingleCommit ||
+                            hasDecisionInFlight ||
+                            sessionActionLoading !== null ||
+                            sessionCompleted ||
+                            categoriesLoading ||
+                            selectedItemIds.length === 0 ||
+                            selectedDraftIssues.missingDescriptionCount > 0 ||
+                            selectedDraftIssues.missingCategoryCount > 0
+                          }
+                        >
+                          {commitLoading
+                            ? 'Importando...'
+                            : `Importar ${selectedItemIds.length} selecionado(s)`}
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {filterButtons.map((filter) => (
-                    <button
-                      key={filter.value}
-                      type="button"
-                      onClick={() => setStatusFilter(filter.value)}
-                      className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                        statusFilter === filter.value
-                          ? 'border-accent bg-accent/10 text-accent'
-                          : 'border-gray-700 bg-[#11161d] text-gray-300 hover:border-accent hover:text-accent'
-                      }`}
-                    >
-                      {filter.label} ({filter.count})
-                    </button>
-                  ))}
-                </div>
+                {reconciliationViewMode !== 'SUMMARY' && (
+                  <>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {filterButtons.map((filter) => (
+                        <button
+                          key={filter.value}
+                          type="button"
+                          onClick={() => setStatusFilter(filter.value)}
+                          className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                            statusFilter === filter.value
+                              ? 'border-accent bg-accent/10 text-accent'
+                              : 'border-gray-700 bg-[#11161d] text-gray-300 hover:border-accent hover:text-accent'
+                          }`}
+                        >
+                          {filter.label} ({filter.count})
+                        </button>
+                      ))}
+                    </div>
 
-                <div className="mt-4 rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3 text-sm text-gray-300">
-                  Selecao atual: <span className="font-semibold text-white">{selectedItems.length}</span>{' '}
-                  item(ns) somando <span className="font-semibold text-white">{formatCurrency(selectedAmount)}</span>.
-                  {selectedDraftIssues.missingDescriptionCount > 0 && (
-                    <span className="block pt-2 text-amber-300">
-                      Revise {selectedDraftIssues.missingDescriptionCount} descricao(oes) antes de importar.
-                    </span>
-                  )}
-                  {selectedDraftIssues.missingCategoryCount > 0 && (
-                    <span className="block pt-1 text-amber-300">
-                      Selecione categoria para {selectedDraftIssues.missingCategoryCount} item(ns) marcado(s).
-                    </span>
-                  )}
-                  {categoriesLoading && (
-                    <span className="block pt-1 text-gray-400">Carregando categorias...</span>
-                  )}
-                </div>
+                    <div className="mt-4 rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3 text-sm text-gray-300">
+                      Selecao atual: <span className="font-semibold text-white">{selectedItems.length}</span>{' '}
+                      item(ns) somando <span className="font-semibold text-white">{formatCurrency(selectedAmount)}</span>.
+                      {selectedDraftIssues.missingDescriptionCount > 0 && (
+                        <span className="block pt-2 text-amber-300">
+                          Revise {selectedDraftIssues.missingDescriptionCount} descricao(oes) antes de importar.
+                        </span>
+                      )}
+                      {selectedDraftIssues.missingCategoryCount > 0 && (
+                        <span className="block pt-1 text-amber-300">
+                          Selecione categoria para {selectedDraftIssues.missingCategoryCount} item(ns) marcado(s).
+                        </span>
+                      )}
+                      {categoriesLoading && (
+                        <span className="block pt-1 text-gray-400">Carregando categorias...</span>
+                      )}
+                    </div>
+                  </>
+                )}
               </Card>
 
-              {reconciliationViewMode === 'SIDE_BY_SIDE' ? (
+              {reconciliationViewMode === 'SUMMARY' ? (
+                <CreditCardReconciliationValueSummary
+                  preview={preview}
+                  analysis={valueAnalysis}
+                  analysisLoading={valueAnalysisLoading}
+                  analysisError={valueAnalysisError}
+                  onRequestAnalysis={() => void requestValueAnalysis()}
+                />
+              ) : reconciliationViewMode === 'SIDE_BY_SIDE' ? (
                 <CreditCardReconciliationSideBySide
                   preview={preview}
                   rows={targetInvoiceTransactionRows}
@@ -4284,6 +4930,17 @@ function CreditCardReconciliationPageInner() {
           )}
         </div>
       )}
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={confirmation.handleClose}
+        onConfirm={confirmation.handleConfirm}
+        title={confirmation.options.title}
+        message={confirmation.options.message}
+        confirmText={confirmation.options.confirmText}
+        cancelText={confirmation.options.cancelText}
+        type={confirmation.options.type}
+        loading={confirmation.loading}
+      />
     </DashboardLayout>
   );
 }

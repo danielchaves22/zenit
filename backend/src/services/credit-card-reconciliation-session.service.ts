@@ -17,6 +17,7 @@ import CreditCardStatementReconciliationService, {
   type ReconciliationPreviewResult
 } from './credit-card-statement-reconciliation.service';
 import FinancialTransactionService from './financial-transaction.service';
+import CreditCardReconciliationValueAnalysisService from './credit-card-reconciliation-value-analysis.service';
 
 const prisma = new PrismaClient();
 const PARSER_VERSION = 1;
@@ -1858,6 +1859,37 @@ export default class CreditCardReconciliationSessionService {
     }
 
     return buildWorkspace(context, session.id);
+  }
+
+  static async analyzeValues(
+    context: CreditCardReconciliationSessionContext,
+    sessionId: number,
+    expectedRevision: number
+  ) {
+    const workspace = await buildWorkspace(context, sessionId);
+    if (!workspace.session || !workspace.preview) {
+      throw new CreditCardReconciliationSessionError(
+        'Sessao de conciliacao de cartao nao encontrada',
+        'RECONCILIATION_SESSION_NOT_FOUND',
+        404
+      );
+    }
+    assertExpectedRevision(workspace.session, expectedRevision);
+
+    const analysis = await CreditCardReconciliationValueAnalysisService.analyze({
+      companyId: context.companyId,
+      comparison: workspace.preview.valueComparison
+    });
+    const currentSession = await loadScopedSession(prisma, context, sessionId);
+    assertExpectedRevision(currentSession, expectedRevision);
+    assertNoLiveMutation(currentSession);
+
+    return {
+      sessionId,
+      revision: expectedRevision,
+      generatedAt: new Date().toISOString(),
+      analysis
+    };
   }
 
   static async commit(

@@ -315,6 +315,69 @@ const preview = {
     pendingAmount: '-25.00',
     notImportableAmount: '0.00'
   },
+  valueComparison: {
+    status: 'UNEXPLAINED',
+    file: {
+      reportedTotalAmount: null,
+      comparableAmount: '364.70',
+      debitAmount: '364.70',
+      creditAmount: '0.00',
+      paymentAmount: '0.00',
+      balanceAmount: '0.00',
+      netAmount: '-364.70',
+      comparableItemCount: 6,
+      creditCount: 0,
+      paymentCount: 0
+    },
+    zenit: {
+      totalAmount: '380.70',
+      itemCount: 6
+    },
+    differenceAmount: '16.00',
+    absoluteDifferenceAmount: '16.00',
+    explainedDifferenceAmount: '75.90',
+    unexplainedDifferenceAmount: '-59.90',
+    pairedCount: 3,
+    exactAmountCount: 3,
+    amountDivergenceCount: 0,
+    missingCount: 1,
+    extraCount: 2,
+    ambiguousCount: 2,
+    amountDivergences: [],
+    missingItems: [
+      {
+        itemId: 'bank-pending',
+        description: 'Pendente no arquivo',
+        amount: '25.00'
+      }
+    ],
+    extraItems: [
+      {
+        matchKey: 'transaction:504',
+        transactionId: 504,
+        description: 'Sem correspondencia no Zenit',
+        amount: '41.00'
+      },
+      {
+        matchKey: 'transaction:505',
+        transactionId: 505,
+        description: 'Assinatura alternativa no Zenit',
+        amount: '59.90'
+      }
+    ],
+    ambiguousItems: [
+      {
+        itemId: 'bank-ambiguous-a',
+        description: 'Assinatura ambigua A no arquivo',
+        amount: '59.90'
+      },
+      {
+        itemId: 'bank-ambiguous-b',
+        description: 'Assinatura ambigua B no arquivo',
+        amount: '59.90'
+      }
+    ]
+  },
   items: previewItems
 }
 
@@ -584,6 +647,12 @@ function expectRegionToHaveOwnScroll(region: HTMLElement) {
 describe('CreditCardReconciliationPage comparison views', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal(
+      'confirm',
+      vi.fn(() => {
+        throw new Error('Native window.confirm must not be used')
+      })
+    )
     scrollIntoViewMock.mockReset()
     Element.prototype.scrollIntoView = scrollIntoViewMock
 
@@ -825,7 +894,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     expect(screen.queryByText('Item da referencia paga removida')).not.toBeInTheDocument()
   })
 
-  it('mantem o modo detalhado como padrao e preserva o foco ao alternar a visualizacao', async () => {
+  it('mantem o modo detalhado como padrao e preserva o foco ao alternar as visualizacoes', async () => {
     const user = await renderAnalyzedPage()
 
     expect(screen.getAllByText('Na fatura do banco')).not.toHaveLength(0)
@@ -875,6 +944,26 @@ describe('CreditCardReconciliationPage comparison views', () => {
       'data-reconciliation-highlighted',
       'true'
     )
+
+    scrollIntoViewMock.mockReset()
+    await user.click(screen.getByRole('button', { name: 'Resumo da conferência de valores' }))
+    expect(screen.getByRole('heading', { name: 'Conferência dos valores' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+
+    const summaryRestoredZenitRegion = screen.getByRole('region', {
+      name: 'Lançamentos da fatura no Zenit'
+    })
+    const summaryRestoredFileRegion = screen.getByRole('region', {
+      name: 'Itens do arquivo da fatura'
+    })
+    expect(
+      getFileSelectionButton(summaryRestoredFileRegion, 'bank-market', /Mercado no arquivo/)
+    ).toHaveAttribute('aria-pressed', 'true')
+    expect(getZenitItem(summaryRestoredZenitRegion, 'transaction:501')).toHaveAttribute(
+      'data-reconciliation-highlighted',
+      'true'
+    )
+    await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled())
   })
 
   it('mantem o painel mobile no Zenit enquanto o detalhe carrega e destaca ao concluir', async () => {
@@ -1363,9 +1452,84 @@ describe('CreditCardReconciliationPage comparison views', () => {
     expect(api.post).not.toHaveBeenCalled()
   })
 
+  it('exibe o resumo deterministico e consulta a IA somente sob demanda', async () => {
+    const analyzedWorkspace = buildWorkspace({ revision: 1 })
+    const ignoredWorkspace = buildWorkspace({
+      revision: 2,
+      resolutions: { 'bank-pending': 'IGNORED' }
+    })
+    const analysisEndpoint =
+      '/financial/credit-cards/1/reconciliation/sessions/301/value-analysis'
+
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards/1/reconciliation/sessions') {
+        return Promise.resolve({ data: analyzedWorkspace })
+      }
+      if (url === analysisEndpoint) {
+        return Promise.resolve({
+          data: {
+            sessionId: 301,
+            revision: 1,
+            generatedAt: '2026-09-10T15:00:00.000Z',
+            analysis: {
+              headline: 'Diferença requer revisão',
+              summary: 'Há itens ausentes, excedentes e correspondências ambíguas.',
+              findings: ['O pagamento não participa do total de compras.'],
+              model: 'gpt-4o-mini'
+            }
+          }
+        })
+      }
+      if (url.endsWith('/items/bank-pending/decision')) {
+        return Promise.resolve({ data: ignoredWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+    vi.stubGlobal('scrollTo', vi.fn())
+
+    const user = await renderAnalyzedPage()
+    const compactSummary = screen.getByRole('region', {
+      name: 'Resumo da fatura em conciliação'
+    })
+
+    expect(within(compactSummary).getByText('R$ 364,70')).toBeInTheDocument()
+    expect(within(compactSummary).getByText('R$ 380,70')).toBeInTheDocument()
+    expect(within(compactSummary).getByText('R$ 16,00')).toBeInTheDocument()
+    expect(within(compactSummary).getByText('Diferença não explicada')).toBeInTheDocument()
+    expect(vi.mocked(api.post).mock.calls.some(([url]) => url === analysisEndpoint)).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Resumo da conferência de valores' }))
+
+    expect(screen.getByRole('heading', { name: 'Conferência dos valores' })).toBeInTheDocument()
+    expect(screen.queryByText('Mercado no arquivo')).not.toBeInTheDocument()
+    expect(screen.getByText('A IA não foi consultada. Os cálculos acima independem dela.'))
+      .toBeInTheDocument()
+    expect(vi.mocked(api.post).mock.calls.some(([url]) => url === analysisEndpoint)).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Solicitar parecer da IA' }))
+
+    await screen.findByText('Diferença requer revisão')
+    expect(api.post).toHaveBeenCalledWith(analysisEndpoint, { expectedRevision: 1 })
+    expect(screen.getByText('Há itens ausentes, excedentes e correspondências ambíguas.'))
+      .toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Visualização detalhada' }))
+    const pendingCard = screen.getByText('Pendente no arquivo').closest('section') as HTMLElement
+    await user.click(within(pendingCard).getByRole('button', { name: 'Ignorar' }))
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/financial/credit-cards/1/reconciliation/sessions/301/items/bank-pending/decision',
+        { expectedRevision: 1, decision: 'IGNORE' }
+      )
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Resumo da conferência de valores' }))
+    expect(screen.queryByText('Diferença requer revisão')).not.toBeInTheDocument()
+    expect(screen.getByText('A IA não foi consultada. Os cálculos acima independem dela.'))
+      .toBeInTheDocument()
+  })
+
   it('substitui arquivo conflitante somente com confirmacao e protecao de sessao e revisao', async () => {
-    const confirmMock = vi.fn(() => true)
-    vi.stubGlobal('confirm', confirmMock)
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
       if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
@@ -1400,7 +1564,13 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await user.upload(fileInput, new File(['new'], 'nova-fatura.csv', { type: 'text/csv' }))
     await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
 
-    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByRole('heading', { name: 'Substituir arquivo da conciliação?' })
+    ).toBeInTheDocument()
+    expect(api.post).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: 'Substituir e reiniciar' }))
+
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2))
     expect(vi.mocked(api.post).mock.calls[1]?.[1]).toMatchObject({
       replace: true,
@@ -1411,8 +1581,6 @@ describe('CreditCardReconciliationPage comparison views', () => {
   })
 
   it('permite selecionar novamente o mesmo arquivo depois de cancelar a substituicao', async () => {
-    const confirmMock = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
-    vi.stubGlobal('confirm', confirmMock)
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
       if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
@@ -1451,7 +1619,17 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     await user.upload(fileInput, replacementFile)
     await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
-    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(1))
+    expect(
+      await screen.findByRole('heading', { name: 'Substituir arquivo da conciliação?' })
+    ).toBeInTheDocument()
+    expect(api.post).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('heading', { name: 'Substituir arquivo da conciliação?' })
+      ).not.toBeInTheDocument()
+    })
+    expect(api.post).toHaveBeenCalledTimes(1)
     await waitFor(() => expect(fileInput).toHaveValue(''))
     expect(screen.getByRole('button', { name: 'Analisar fatura' })).toBeDisabled()
 
@@ -1460,7 +1638,12 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await waitFor(() => expect(analyzeButton).toBeEnabled())
     await user.click(analyzeButton)
 
-    await waitFor(() => expect(confirmMock).toHaveBeenCalledTimes(2))
+    expect(
+      await screen.findByRole('heading', { name: 'Substituir arquivo da conciliação?' })
+    ).toBeInTheDocument()
+    expect(api.post).toHaveBeenCalledTimes(2)
+    await user.click(screen.getByRole('button', { name: 'Substituir e reiniciar' }))
+
     await waitFor(() => expect(api.post).toHaveBeenCalledTimes(3))
     expect(vi.mocked(api.post).mock.calls[2]?.[1]).toMatchObject({
       replace: true,
@@ -1598,8 +1781,6 @@ describe('CreditCardReconciliationPage comparison views', () => {
         }
       }
     })
-    const confirmMock = vi.fn(() => true)
-    vi.stubGlobal('confirm', confirmMock)
     let resolveDecision!: (value: { data: typeof unconfirmedWorkspace }) => void
     const decisionRequest = new Promise<{ data: typeof unconfirmedWorkspace }>((resolve) => {
       resolveDecision = resolve
@@ -1654,9 +1835,19 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remover vínculo' }))
 
-    expect(confirmMock).toHaveBeenCalledWith(
-      expect.stringMatching(/lançamento financeiro existente não será alterado/i)
-    )
+    expect(
+      await screen.findByRole('heading', { name: 'Remover vínculo com o lançamento?' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Apenas a confirmação desta conciliação será removida. O lançamento financeiro existente não será alterado.'
+      )
+    ).toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalled()
+
+    const removeExistingButtons = screen.getAllByRole('button', { name: 'Remover vínculo' })
+    await user.click(removeExistingButtons[removeExistingButtons.length - 1])
+
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith(
         '/financial/credit-cards/1/reconciliation/sessions/301/items/bank-pending/decision',
@@ -1717,8 +1908,6 @@ describe('CreditCardReconciliationPage comparison views', () => {
         }
       }
     })
-    const confirmMock = vi.fn(() => true)
-    vi.stubGlobal('confirm', confirmMock)
     let resolveDecision!: (value: { data: typeof unlinkedWorkspace }) => void
     const decisionRequest = new Promise<{ data: typeof unlinkedWorkspace }>((resolve) => {
       resolveDecision = resolve
@@ -1768,9 +1957,19 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     await user.click(screen.getByRole('button', { name: 'Remover vínculo' }))
 
-    expect(confirmMock).toHaveBeenCalledWith(
-      expect.stringMatching(/regra recorrente será mantida para os próximos meses/i)
-    )
+    expect(
+      await screen.findByRole('heading', { name: 'Remover vínculo com a transação fixa?' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'O vínculo será removido somente desta conciliação. A regra recorrente será mantida para os próximos meses.'
+      )
+    ).toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalled()
+
+    const unlinkFixedButtons = screen.getAllByRole('button', { name: 'Remover vínculo' })
+    await user.click(unlinkFixedButtons[unlinkFixedButtons.length - 1])
+
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith(
         '/financial/credit-cards/1/reconciliation/sessions/301/items/bank-fixed/decision',
@@ -1957,8 +2156,6 @@ describe('CreditCardReconciliationPage comparison views', () => {
       status: 'COMPLETED'
     })
     const reopenedWorkspace = buildWorkspace({ resolutions: allResolved, revision: 3 })
-    const confirmMock = vi.fn(() => true)
-    vi.stubGlobal('confirm', confirmMock)
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
       if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
@@ -1992,9 +2189,34 @@ describe('CreditCardReconciliationPage comparison views', () => {
     expect(await screen.findByText('Em andamento')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Reiniciar' }))
 
-    expect(confirmMock).toHaveBeenCalledWith(
-      expect.stringMatching(/lancamentos financeiros.*vinculos a transacoes fixas/i)
+    expect(
+      await screen.findByRole('heading', { name: 'Reiniciar conciliação?' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'O arquivo salvo e os checkpoints de andamento serão removidos. Os lançamentos financeiros já criados e os vínculos com transações fixas já efetivados serão preservados.'
+      )
+    ).toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalledWith(
+      '/financial/credit-cards/1/reconciliation/sessions/301/reset',
+      expect.anything()
     )
+
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('heading', { name: 'Reiniciar conciliação?' })
+      ).not.toBeInTheDocument()
+    })
+    expect(api.post).not.toHaveBeenCalledWith(
+      '/financial/credit-cards/1/reconciliation/sessions/301/reset',
+      expect.anything()
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Reiniciar' }))
+    await screen.findByRole('heading', { name: 'Reiniciar conciliação?' })
+    await user.click(screen.getByRole('button', { name: 'Reiniciar conciliação' }))
+
     await waitFor(() => {
       expect(api.post).toHaveBeenLastCalledWith(
         '/financial/credit-cards/1/reconciliation/sessions/301/reset',
@@ -2003,6 +2225,58 @@ describe('CreditCardReconciliationPage comparison views', () => {
     })
     expect(screen.queryByText('Mercado no arquivo')).not.toBeInTheDocument()
     expect(await screen.findByText('Escolher arquivo')).toBeInTheDocument()
+  })
+
+  it('mantem a confirmacao de reinicio aberta e reutilizavel quando o POST falha', async () => {
+    let rejectReset!: (reason?: unknown) => void
+    const resetRequest = new Promise<never>((_resolve, reject) => {
+      rejectReset = reject
+    })
+
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
+      if (url === '/financial/categories') return Promise.resolve({ data: [category] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: targetInvoiceDetail })
+      }
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: openWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url.endsWith('/reset')) return resetRequest
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Mercado no arquivo')
+
+    await user.click(screen.getByRole('button', { name: 'Reiniciar' }))
+    await screen.findByRole('heading', { name: 'Reiniciar conciliação?' })
+    expect(api.post).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Reiniciar conciliação' }))
+
+    expect(screen.getByRole('button', { name: 'Processando...' })).toBeDisabled()
+    expect(api.post).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      rejectReset({ response: { data: { error: 'Falha simulada ao reiniciar' } } })
+      await Promise.resolve()
+    })
+
+    expect(addToastMock).toHaveBeenCalledWith('Falha simulada ao reiniciar', 'error')
+    expect(
+      screen.getByRole('heading', { name: 'Reiniciar conciliação?' })
+    ).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Reiniciar conciliação' })).toBeEnabled()
+    })
+    expect(screen.queryByRole('button', { name: 'Processando...' })).not.toBeInTheDocument()
+    expect(api.post).toHaveBeenCalledTimes(1)
   })
 
   it('trata nao importavel como informativo terminal sem oferecer decisao de ignorar', async () => {

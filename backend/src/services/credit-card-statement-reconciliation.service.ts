@@ -173,6 +173,69 @@ export type ReconciliationPreviewItem = {
   }>;
 };
 
+export type ReconciliationValueComparisonStatus =
+  | 'MATCHED'
+  | 'EXPLAINED'
+  | 'UNEXPLAINED';
+
+export type ReconciliationValueComparisonItem = {
+  itemId: string;
+  description: string;
+  amount: string;
+};
+
+export type ReconciliationValueComparisonMatch = {
+  itemId: string;
+  sourceDescription: string;
+  fileAmount: string;
+  zenitAmount: string;
+  differenceAmount: string;
+  matchKey: string;
+  transactionId: number | null;
+  transactionDescription: string;
+};
+
+export type ReconciliationValueComparisonExtraItem = {
+  matchKey: string;
+  transactionId: number | null;
+  description: string;
+  amount: string;
+};
+
+export type ReconciliationValueComparison = {
+  status: ReconciliationValueComparisonStatus;
+  file: {
+    reportedTotalAmount: string | null;
+    comparableAmount: string;
+    debitAmount: string;
+    creditAmount: string;
+    paymentAmount: string;
+    balanceAmount: string;
+    netAmount: string;
+    comparableItemCount: number;
+    creditCount: number;
+    paymentCount: number;
+  };
+  zenit: {
+    totalAmount: string;
+    itemCount: number;
+  };
+  differenceAmount: string;
+  absoluteDifferenceAmount: string;
+  explainedDifferenceAmount: string;
+  unexplainedDifferenceAmount: string;
+  pairedCount: number;
+  exactAmountCount: number;
+  amountDivergenceCount: number;
+  missingCount: number;
+  extraCount: number;
+  ambiguousCount: number;
+  amountDivergences: ReconciliationValueComparisonMatch[];
+  missingItems: ReconciliationValueComparisonItem[];
+  extraItems: ReconciliationValueComparisonExtraItem[];
+  ambiguousItems: ReconciliationValueComparisonItem[];
+};
+
 export type ReconciliationPreviewResult = {
   statement: {
     sourceType: CreditCardReconciliationSourceType;
@@ -196,6 +259,7 @@ export type ReconciliationPreviewResult = {
     pendingAmount: string;
     notImportableAmount: string;
   };
+  valueComparison: ReconciliationValueComparison;
   items: ReconciliationPreviewItem[];
 };
 
@@ -1978,6 +2042,8 @@ async function loadCandidateTransactions(params: {
         status: {
           not: TransactionStatus.CANCELED
         },
+        archivedAt: null,
+        isExternalCreditCardSettlement: false,
         date: {
           gte: minDate,
           lte: maxDate
@@ -2107,7 +2173,9 @@ async function loadTargetInvoiceCandidates(params: {
         transactions: {
           where: {
             type: TransactionType.EXPENSE,
-            status: { not: TransactionStatus.CANCELED }
+            status: { not: TransactionStatus.CANCELED },
+            archivedAt: null,
+            isExternalCreditCardSettlement: false
           },
           select: {
             id: true,
@@ -2161,18 +2229,25 @@ async function loadTargetInvoiceCandidates(params: {
     return [] as ExistingTransactionCandidate[];
   }
 
-  return (invoiceDetail.transactions || []).map((transaction) =>
-    mapInvoiceTransactionToCandidate({
-      transaction,
-      invoice: {
-        id: invoiceDetail.id ?? null,
-        referenceYear: invoiceDetail.referenceYear,
-        referenceMonth: invoiceDetail.referenceMonth,
-        status: invoiceDetail.status as CreditCardInvoiceStatus,
-        dueDate: invoiceDetail.dueDate
-      }
-    })
-  );
+  return (invoiceDetail.transactions || [])
+    .filter(
+      (transaction) =>
+        (!('status' in transaction) || transaction.status !== TransactionStatus.CANCELED) &&
+        (!('archivedAt' in transaction) || !transaction.archivedAt) &&
+        !transaction.isExternalCreditCardSettlement
+    )
+    .map((transaction) =>
+      mapInvoiceTransactionToCandidate({
+        transaction,
+        invoice: {
+          id: invoiceDetail.id ?? null,
+          referenceYear: invoiceDetail.referenceYear,
+          referenceMonth: invoiceDetail.referenceMonth,
+          status: invoiceDetail.status as CreditCardInvoiceStatus,
+          dueDate: invoiceDetail.dueDate
+        }
+      })
+    );
 }
 
 async function loadProjectedFixedCandidates(params: {
@@ -2479,6 +2554,176 @@ function buildPreviewSummary(items: ReconciliationPreviewItem[]) {
   };
 }
 
+function buildValueComparison(
+  statement: ParsedStatement,
+  items: ReconciliationPreviewItem[],
+  candidates: ExistingTransactionCandidate[]
+): ReconciliationValueComparison {
+  const zero = () => new Prisma.Decimal(0);
+  const sumAmounts = <T>(entries: T[], resolveAmount: (entry: T) => Prisma.Decimal) =>
+    entries.reduce((sum, entry) => sum.plus(resolveAmount(entry)), zero());
+  const targetCandidates = candidates.filter((candidate) =>
+    isCandidateInStatementReference(
+      candidate,
+      statement.referenceYear,
+      statement.referenceMonth
+    )
+  );
+  const targetCandidatesByKey = new Map(
+    targetCandidates.map((candidate) => [candidate.matchKey, candidate])
+  );
+  const targetMatchesByItemId = new Map(
+    items.map((item) => [
+      item.id,
+      item.matchedTransactions.filter((match) => targetCandidatesByKey.has(match.matchKey))
+    ])
+  );
+  const potentialMatchUsage = new Map<string, number>();
+
+  for (const matches of targetMatchesByItemId.values()) {
+    for (const match of matches) {
+      potentialMatchUsage.set(
+        match.matchKey,
+        (potentialMatchUsage.get(match.matchKey) || 0) + 1
+      );
+    }
+  }
+
+  const comparableItems = items.filter((item) => item.canImport);
+  const missingItems: ReconciliationValueComparisonItem[] = [];
+  const ambiguousItems: ReconciliationValueComparisonItem[] = [];
+  const amountDivergences: ReconciliationValueComparisonMatch[] = [];
+  const pairedCandidateKeys = new Set<string>();
+  let pairedCount = 0;
+  let exactAmountCount = 0;
+
+  for (const item of comparableItems) {
+    const matches = targetMatchesByItemId.get(item.id) || [];
+    if (matches.length === 0) {
+      missingItems.push({
+        itemId: item.id,
+        description: item.sourceDescription,
+        amount: item.amount
+      });
+      continue;
+    }
+
+    const match = matches.length === 1 ? matches[0] : null;
+    if (!match || potentialMatchUsage.get(match.matchKey) !== 1) {
+      ambiguousItems.push({
+        itemId: item.id,
+        description: item.sourceDescription,
+        amount: item.amount
+      });
+      continue;
+    }
+
+    const candidate = targetCandidatesByKey.get(match.matchKey);
+    if (!candidate) {
+      missingItems.push({
+        itemId: item.id,
+        description: item.sourceDescription,
+        amount: item.amount
+      });
+      continue;
+    }
+
+    pairedCount += 1;
+    pairedCandidateKeys.add(candidate.matchKey);
+    const difference = candidate.amount.minus(parseDecimal(item.amount));
+    if (difference.isZero()) {
+      exactAmountCount += 1;
+      continue;
+    }
+
+    amountDivergences.push({
+      itemId: item.id,
+      sourceDescription: item.sourceDescription,
+      fileAmount: item.amount,
+      zenitAmount: candidate.amount.toString(),
+      differenceAmount: difference.toString(),
+      matchKey: candidate.matchKey,
+      transactionId: candidate.id,
+      transactionDescription: candidate.description
+    });
+  }
+
+  const extraCandidates = targetCandidates.filter(
+    (candidate) =>
+      !pairedCandidateKeys.has(candidate.matchKey) &&
+      !potentialMatchUsage.has(candidate.matchKey)
+  );
+  const extraItems = extraCandidates.map((candidate) => ({
+    matchKey: candidate.matchKey,
+    transactionId: candidate.id,
+    description: candidate.description,
+    amount: candidate.amount.toString()
+  }));
+  const comparableAmount = sumAmounts(comparableItems, (item) => parseDecimal(item.amount));
+  const debitItems = items.filter(
+    (item) => item.direction === 'DEBIT' && item.kind !== 'BALANCE' && item.kind !== 'PAYMENT'
+  );
+  const creditItems = items.filter(
+    (item) => item.direction === 'CREDIT' && item.kind !== 'PAYMENT' && item.kind !== 'BALANCE'
+  );
+  const paymentItems = items.filter((item) => item.kind === 'PAYMENT');
+  const balanceItems = items.filter((item) => item.kind === 'BALANCE');
+  const zenitTotal = sumAmounts(targetCandidates, (candidate) => candidate.amount);
+  const difference = zenitTotal.minus(comparableAmount);
+  const amountDivergenceTotal = sumAmounts(
+    amountDivergences,
+    (entry) => parseDecimal(entry.differenceAmount)
+  );
+  const missingTotal = sumAmounts(missingItems, (entry) => parseDecimal(entry.amount));
+  const extraTotal = sumAmounts(extraItems, (entry) => parseDecimal(entry.amount));
+  const explainedDifference = amountDivergenceTotal.plus(extraTotal).minus(missingTotal);
+  const unexplainedDifference = difference.minus(explainedDifference);
+  const hasCompositionDifference =
+    amountDivergences.length > 0 || missingItems.length > 0 || extraItems.length > 0;
+  const status: ReconciliationValueComparisonStatus =
+    ambiguousItems.length > 0 || !unexplainedDifference.isZero()
+      ? 'UNEXPLAINED'
+      : difference.isZero() && !hasCompositionDifference
+        ? 'MATCHED'
+        : 'EXPLAINED';
+
+  return {
+    status,
+    file: {
+      reportedTotalAmount: statement.sourceType === 'NUBANK_CSV'
+        ? null
+        : statement.totalAmount,
+      comparableAmount: comparableAmount.toString(),
+      debitAmount: sumAmounts(debitItems, (item) => parseDecimal(item.amount)).toString(),
+      creditAmount: sumAmounts(creditItems, (item) => parseDecimal(item.amount)).toString(),
+      paymentAmount: sumAmounts(paymentItems, (item) => parseDecimal(item.amount)).toString(),
+      balanceAmount: sumAmounts(balanceItems, (item) => parseDecimal(item.amount)).toString(),
+      netAmount: statement.parsedNetAmount,
+      comparableItemCount: comparableItems.length,
+      creditCount: creditItems.length,
+      paymentCount: paymentItems.length
+    },
+    zenit: {
+      totalAmount: zenitTotal.toString(),
+      itemCount: targetCandidates.length
+    },
+    differenceAmount: difference.toString(),
+    absoluteDifferenceAmount: difference.abs().toString(),
+    explainedDifferenceAmount: explainedDifference.toString(),
+    unexplainedDifferenceAmount: unexplainedDifference.toString(),
+    pairedCount,
+    exactAmountCount,
+    amountDivergenceCount: amountDivergences.length,
+    missingCount: missingItems.length,
+    extraCount: extraItems.length,
+    ambiguousCount: ambiguousItems.length,
+    amountDivergences,
+    missingItems,
+    extraItems,
+    ambiguousItems
+  };
+}
+
 async function parseStatementFromSource(params: {
   sourceType: CreditCardReconciliationSourceType;
   fileBase64: string;
@@ -2601,6 +2846,7 @@ export default class CreditCardStatementReconciliationService {
         referenceMonth: statement.referenceMonth
       },
       summary: buildPreviewSummary(items),
+      valueComparison: buildValueComparison(statement, items, candidates),
       items
     };
   }
@@ -2932,6 +3178,8 @@ export const __private__ = {
   parseBradescoStatementText,
   parseNubankStatementText,
   classifyMatches,
+  buildPreviewItems,
   applyTargetReferenceToStatement,
-  buildDateWindow
+  buildDateWindow,
+  buildValueComparison
 };

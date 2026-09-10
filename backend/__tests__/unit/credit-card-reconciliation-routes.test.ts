@@ -1,5 +1,6 @@
 import financialRouter from '../../src/routes/financial.routes';
 import {
+  analyzeCreditCardReconciliationValues,
   commitCreditCardReconciliation,
   commitCreditCardReconciliationSession
 } from '../../src/controllers/credit-card-reconciliation.controller';
@@ -127,5 +128,61 @@ describe('credit-card reconciliation session route validation boundaries', () =>
     expect(next).toHaveBeenCalledTimes(1);
     expect(req.params).toEqual({ accountId: 12, referenceYear: 2026, referenceMonth: 8 });
     expect(req.query).toEqual({ accountId: '999', referenceYear: '2099', referenceMonth: '1' });
+  });
+
+  it('requests the AI opinion only for the authorized session and expected revision', async () => {
+    const analyzeSpy = jest.spyOn(
+      CreditCardReconciliationSessionService,
+      'analyzeValues'
+    ).mockResolvedValueOnce({
+      sessionId: 4,
+      revision: 3,
+      generatedAt: '2026-09-10T12:00:00.000Z',
+      analysis: {
+        headline: 'Valores conferidos',
+        summary: 'A diferença está explicada.',
+        findings: [],
+        model: 'gpt-4o-mini'
+      }
+    });
+    const response = responseDouble();
+    const req: any = {
+      user: { companyId: 1, userId: 2 },
+      params: { accountId: '3', sessionId: '4' },
+      body: { expectedRevision: 3 }
+    };
+
+    try {
+      await analyzeCreditCardReconciliationValues(req, response);
+
+      expect(analyzeSpy).toHaveBeenCalledWith(
+        { accountId: 3, companyId: 1, userId: 2 },
+        4,
+        3
+      );
+      expect(response.status).toHaveBeenCalledWith(200);
+    } finally {
+      analyzeSpy.mockRestore();
+    }
+  });
+
+  it('validates value-analysis identifiers from path and the revision from the body', () => {
+    const validate = validationMiddleware(
+      '/credit-cards/:accountId/reconciliation/sessions/:sessionId/value-analysis',
+      'post'
+    );
+    const req: any = {
+      method: 'POST',
+      params: { accountId: '12', sessionId: '34' },
+      query: {},
+      body: { expectedRevision: '5' }
+    };
+    const next = jest.fn();
+
+    validate(req, responseDouble(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(req.params).toEqual({ accountId: 12, sessionId: 34 });
+    expect(req.body.expectedRevision).toBe(5);
   });
 });

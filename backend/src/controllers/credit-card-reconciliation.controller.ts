@@ -5,6 +5,7 @@ import CreditCardStatementReconciliationService, {
 import CreditCardReconciliationSessionService, {
   CreditCardReconciliationSessionError
 } from '../services/credit-card-reconciliation-session.service';
+import { CreditCardReconciliationValueAnalysisError } from '../services/credit-card-reconciliation-value-analysis.service';
 import { logger } from '../utils/logger';
 
 function getUserContext(req: Request): { companyId: number; userId: number } {
@@ -39,6 +40,13 @@ function handleSessionError(res: Response, error: any, fallback: string) {
       ...(error.currentSessionId === undefined
         ? {}
         : { currentSessionId: error.currentSessionId })
+    });
+  }
+
+  if (error instanceof CreditCardReconciliationValueAnalysisError) {
+    return res.status(error.statusCode).json({
+      error: error.message,
+      code: error.code
     });
   }
 
@@ -105,6 +113,21 @@ export async function getCreditCardReconciliationSession(req: Request, res: Resp
     return res.status(200).json(workspace);
   } catch (error: any) {
     return handleSessionError(res, error, 'Erro ao retomar conciliacao persistida de cartao');
+  }
+}
+
+export async function analyzeCreditCardReconciliationValues(req: Request, res: Response) {
+  try {
+    const { companyId, userId } = getUserContext(req);
+    const accountId = Number(req.params.accountId);
+    const result = await CreditCardReconciliationSessionService.analyzeValues(
+      { accountId, companyId, userId },
+      Number(req.params.sessionId),
+      req.body.expectedRevision
+    );
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return handleSessionError(res, error, 'Erro ao solicitar parecer da IA para a conciliacao');
   }
 }
 

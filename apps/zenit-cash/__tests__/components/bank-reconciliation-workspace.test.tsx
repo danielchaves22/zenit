@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Workspace from '@/components/financial/BankReconciliationWorkspace';
 import api from '@/lib/api';
@@ -285,6 +286,39 @@ describe('Simplified bank reconciliation', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Iniciar Conciliação' }));
     await waitFor(() => expect(screen.queryByText('Importar extrato da conta')).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Reiniciar conciliação' })).toBeInTheDocument();
+  });
+  it('uses description history to fill the structured category selector', async () => {
+    const user = userEvent.setup();
+    data = makeData([item(1)]);
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (String(url) === '/financial/categories') return { data: [
+        { id: 10, name: 'Alimentação', color: '#3b82f6', icon: 'utensils', type: 'EXPENSE', parentId: null },
+        { id: 11, name: 'Mercado', color: '#22c55e', icon: 'shopping-cart', type: 'EXPENSE', parentId: 10 }
+      ] } as any;
+      if (String(url) === '/financial/accounts') return { data: [] } as any;
+      if (String(url) === '/financial/transactions/autocomplete') return { data: { suggestions: [
+        { description: 'Mercado do bairro', frequency: 4, categoryId: 11, categoryName: 'Mercado' }
+      ] } } as any;
+      return defaultGet(url, config);
+    });
+
+    await open();
+    fireEvent.click(screen.getByLabelText('Selecionar Movimento 1 em 22/08/2026'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Registrar faltante' }));
+
+    const descriptionInput = await screen.findByRole('textbox', { name: 'Descrição *' });
+    expect(descriptionInput).toHaveValue('Movimento 1');
+    expect(screen.getByRole('button', { name: 'Criar e conciliar' })).toBeDisabled();
+
+    await user.clear(descriptionInput);
+    await user.type(descriptionInput, 'Merc');
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/financial/transactions/autocomplete', { params: { q: 'Merc', type: 'EXPENSE' } }));
+    fireEvent.mouseDown(await screen.findByText('Mercado'));
+
+    expect(descriptionInput).toHaveValue('Mercado do bairro');
+    expect(screen.getByRole('button', { name: /Alimentação \/ Mercado/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Criar e conciliar' })).toBeEnabled();
   });
   it('does not offer reset, upload or selection in a completed month', async () => {
     data.session = { id: 1, month: '2026-08', status: 'COMPLETED' };

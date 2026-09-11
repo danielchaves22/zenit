@@ -17,6 +17,8 @@ interface AutocompleteInputProps {
   onSuggestionSelect?: (suggestion: AutocompleteSuggestion) => void;
   placeholder?: string;
   required?: boolean;
+  autoFocus?: boolean;
+  maxLength?: number;
   disabled?: boolean;
   className?: string;
   error?: string;
@@ -34,6 +36,8 @@ export function AutocompleteInput({
   onSuggestionSelect,
   placeholder,
   required = false,
+  autoFocus = false,
+  maxLength,
   disabled = false,
   className = '',
   error,
@@ -241,6 +245,8 @@ export function AutocompleteInput({
           onBlur={handleBlur}
           placeholder={placeholder}
           required={required}
+          autoFocus={autoFocus}
+          maxLength={maxLength}
           disabled={disabled}
           className={`w-full pl-3 pr-10 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''

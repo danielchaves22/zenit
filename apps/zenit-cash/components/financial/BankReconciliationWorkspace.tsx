@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { InfoModalButton } from '@/components/ui/InfoModalButton';
+import { AutocompleteInput, type AutocompleteSuggestion } from '@/components/ui/AutoCompleteInput';
 import { useToast } from '@/components/ui/ToastContext';
+import CategorySelect, { type CategoryOption } from './CategorySelect';
 import BankMatchReview from './BankMatchReview';
 import BankBatchReview, { BankBatchSnapshot } from './BankBatchReview';
 import { bankBatchSnapshot } from '@/lib/bank-reconciliation-batch';
@@ -21,6 +23,7 @@ const panelClass = 'p-0 min-w-0 [&>div]:flex [&>div]:h-full [&>div]:min-h-0 [&>d
 const emptyItems: BankItem[] = [];
 const errorMessage = (error: any) => error.response?.data?.error || error.response?.data?.errors?.[0]?.message || 'Não foi possível concluir a operação.';
 const eventLabels: Record<string, string> = { IMPORT: 'Extrato importado', CONFIRM: 'Correspondência confirmada', UNDO: 'Vínculo desfeito', COMPLETE: 'Mês concluído', REOPEN: 'Mês reaberto', IGNORE_ITEM: 'Movimento ignorado', RESTORE_ITEM: 'Movimento voltou para conferência', TRANSACTION_CHANGED: 'Lançamento alterado: revisão necessária', NEW_STATEMENT_ITEMS: 'Novos itens: mês reaberto', MONTH_TRANSACTIONS_CHANGED: 'Movimentação do mês alterada: revisão necessária' };
+type BankCategoryOption = CategoryOption & { type: string };
 
 function Pagination({ page, total, size, disabled, onChange }: { page: number; total: number; size: number; disabled?: boolean; onChange: (page: number) => void }) {
   return <div className="mt-4 flex items-center justify-between gap-2 text-sm text-gray-400">
@@ -53,7 +56,7 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const [undoId, setUndoId] = useState<number | null>(null), [undoNote, setUndoNote] = useState('');
   const [creating, setCreating] = useState(false), [description, setDescription] = useState(''), [createDate, setCreateDate] = useState('');
   const [categoryId, setCategoryId] = useState(''), [transfer, setTransfer] = useState(false), [transferAccountId, setTransferAccountId] = useState('');
-  const [categories, setCategories] = useState<Array<{ id: number; name: string; type: string }>>([]);
+  const [categories, setCategories] = useState<BankCategoryOption[]>([]);
   const [accounts, setAccounts] = useState<Array<{ id: number; name: string; type: string; isActive: boolean }>>([]);
   const fileRef = useRef<HTMLInputElement>(null), generation = useRef(0), loadGeneration = useRef(0), alive = useRef(true);
   const selectAllRef = useRef<HTMLInputElement>(null), searchAbort = useRef<AbortController>();
@@ -66,6 +69,9 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
   const searchRows = computedMode ? filteredSearch.rows : ruleSearch.rows;
   const results = searchAsGroup ? groupResults : selected.flatMap(item => searchRows[item.id]?.result ? [searchRows[item.id].result!] : []);
   const selectedTotal = bankTotal(selected);
+  const createTransactionType = transfer ? 'TRANSFER' : selectedTotal < 0 ? 'EXPENSE' : 'INCOME';
+  const availableCreateCategories = categories.filter(category => category.type === createTransactionType);
+  const createFormIncomplete = !description.trim() || !createDate || (transfer ? !transferAccountId : !categoryId);
   const eligibleItems = displayedItems.filter(item => !item.activeGroupId && !item.ignoredAt);
   const allPageSelected = eligibleItems.length > 0 && eligibleItems.every(item => selected.some(s => s.id === item.id));
   const groupAllowed = selected.length > 0 && selected.length <= 20 && new Set(selected.map(item => Math.sign(Number(item.amount)))).size === 1;
@@ -200,11 +206,38 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
     try {
       const [categoryResponse, accountResponse] = await Promise.all([api.get('/financial/categories'), api.get('/financial/accounts')]);
       if (!alive.current) return;
-      setCategories(categoryResponse.data); setAccounts(accountResponse.data);
+      setCategories((categoryResponse.data || []).map((category: any) => ({
+        id: category.id,
+        name: category.name,
+        color: category.color || '#6b7280',
+        icon: category.icon,
+        isDefault: category.isDefault,
+        parentId: category.parentId,
+        type: category.type
+      })));
+      setAccounts(accountResponse.data || []);
       setDescription(items.map(i => i.description).join(' / ').slice(0, 255)); setCreateDate(items[0].date.slice(0, 10));
       setCategoryId(''); setTransfer(false); setTransferAccountId(''); setCreating(true);
     } catch (e) { setError(errorMessage(e)); }
     finally { if (alive.current) setBusy(false); }
+  }
+
+  async function fetchCreateDescriptionSuggestions(query: string): Promise<AutocompleteSuggestion[]> {
+    if (query.trim().length < 3) return [];
+    try {
+      const response = await api.get('/financial/transactions/autocomplete', { params: { q: query, type: createTransactionType } });
+      return response.data.suggestions || [];
+    } catch (suggestionError) {
+      console.error('Error fetching bank reconciliation description suggestions:', suggestionError);
+      return [];
+    }
+  }
+
+  function handleCreateSuggestionSelect(suggestion: AutocompleteSuggestion) {
+    setDescription(suggestion.description);
+    if (transfer || suggestion.categoryId == null) return;
+    const suggestedCategoryId = String(suggestion.categoryId);
+    if (availableCreateCategories.some(category => String(category.id) === suggestedCategoryId)) setCategoryId(suggestedCategoryId);
   }
 
   return <div className="flex flex-col gap-3 text-gray-200">
@@ -267,15 +300,23 @@ export default function BankReconciliationWorkspace({ accountId, month, onMonthC
         <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={busy} onClick={() => changeSelection([])}>Desmarcar todos</Button><Button variant="outline" disabled={busy || !groupAllowed} onClick={() => setTab('transactions')}>Buscar lançamento manualmente</Button><Button variant="outline" disabled={busy || !groupAllowed} onClick={() => void beginCreate()}>Registrar lançamento faltante</Button></div>
       </div>}
       {creating && <Card headerTitle="Registrar lançamento faltante" headerSubtitle="Confira primeiro se o lançamento já existe. A criação atualizará o saldo e gravará o vínculo na mesma operação.">
-        <form className="grid gap-4 md:grid-cols-2" onSubmit={async e => { e.preventDefault(); if (await mutate('transactions', { itemIds: selected.map(i => i.id), description, effectiveDate: createDate, categoryId: !transfer && categoryId ? Number(categoryId) : undefined, transferAccountId: transfer && transferAccountId ? Number(transferAccountId) : undefined }, 'Lançamento criado e conciliado.')) setCreating(false); }}>
-          <label className="text-sm md:col-span-2">Descrição<input required maxLength={255} autoFocus value={description} disabled={busy} onChange={e => setDescription(e.target.value)} className={`${fieldClass} mt-1 w-full`} /></label>
-          <label className="text-sm">Data de liquidação<input required type="date" value={createDate} disabled={busy} onChange={e => setCreateDate(e.target.value)} className={`${fieldClass} mt-1 w-full`} /></label>
-          <p className="self-center">Valor: <strong>{bankCurrency(selectedTotal)}</strong> · {selectedTotal < 0 ? 'Saída' : 'Entrada'}</p>
-          <label className="flex items-center gap-2 text-sm md:col-span-2"><input type="checkbox" checked={transfer} disabled={busy} onChange={e => setTransfer(e.target.checked)} /> É uma transferência entre minhas contas</label>
-          {transfer ? <label className="text-sm">Outra conta<select required value={transferAccountId} disabled={busy} onChange={e => setTransferAccountId(e.target.value)} className={`${fieldClass} mt-1 w-full`}><option value="">Selecione</option>{accounts.filter(a => a.id !== accountId && a.isActive && a.type !== 'CREDIT_CARD').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
-            : <label className="text-sm">Categoria<select required value={categoryId} disabled={busy} onChange={e => setCategoryId(e.target.value)} className={`${fieldClass} mt-1 w-full`}><option value="">Selecione</option>{categories.filter(c => c.type === (selectedTotal < 0 ? 'EXPENSE' : 'INCOME')).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
-          <p className="text-sm text-gray-400 md:col-span-2">Para pagamento de cartão, <Link className="text-blue-300 underline" href="/financial/credit-cards">pague a fatura</Link> e depois vincule o lançamento gerado.</p>
-          <div className="flex gap-3 md:col-span-2"><Button type="submit" disabled={busy}>{busy ? 'Salvando…' : 'Criar e conciliar'}</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setCreating(false)}>Cancelar</Button></div>
+        <form className="space-y-4" onSubmit={async e => { e.preventDefault(); if (createFormIncomplete) return; if (await mutate('transactions', { itemIds: selected.map(i => i.id), description, effectiveDate: createDate, categoryId: !transfer && categoryId ? Number(categoryId) : undefined, transferAccountId: transfer && transferAccountId ? Number(transferAccountId) : undefined }, 'Lançamento criado e conciliado.')) setCreating(false); }}>
+          <div>
+            <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <label htmlFor="bank-reconciliation-description" className="text-sm font-medium text-gray-300">Descrição *</label>
+              <span className="text-xs text-gray-400">Digite pelo menos 3 caracteres para buscar no histórico</span>
+            </div>
+            <AutocompleteInput id="bank-reconciliation-description" required autoFocus maxLength={255} value={description} disabled={busy} onChange={setDescription} onSuggestionSelect={handleCreateSuggestionSelect} fetchSuggestions={fetchCreateDescriptionSuggestions} placeholder="Descrição do lançamento" minLength={3} maxSuggestions={10} />
+          </div>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={transfer} disabled={busy} onChange={e => { setTransfer(e.target.checked); if (e.target.checked) setCategoryId(''); else setTransferAccountId(''); }} /> É uma transferência entre minhas contas</label>
+          <div className="grid items-end gap-4 md:grid-cols-[minmax(12rem,0.7fr)_minmax(16rem,1.3fr)] lg:grid-cols-[minmax(12rem,0.55fr)_minmax(18rem,1.45fr)_auto]">
+            <label className="text-sm font-medium text-gray-300">Data de liquidação *<input required type="date" value={createDate} disabled={busy} onChange={e => setCreateDate(e.target.value)} className={`${fieldClass} mt-1 block min-h-10 w-full`} /></label>
+            {transfer ? <label className="text-sm font-medium text-gray-300">Outra conta *<select required value={transferAccountId} disabled={busy} onChange={e => setTransferAccountId(e.target.value)} className={`${fieldClass} mt-1 block min-h-10 w-full`}><option value="">Selecione</option>{accounts.filter(a => a.id !== accountId && a.isActive && a.type !== 'CREDIT_CARD').map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+              : <CategorySelect label="Categoria *" categories={availableCreateCategories} value={categoryId} onChange={setCategoryId} placeholder="Selecione a categoria" emptyLabel="Selecione a categoria" disabled={busy} />}
+            <p className="rounded border border-gray-700 bg-background px-3 py-2 text-sm md:col-span-2 lg:col-span-1">Valor: <strong>{bankCurrency(selectedTotal)}</strong> · {selectedTotal < 0 ? 'Saída' : 'Entrada'}</p>
+          </div>
+          <p className="text-sm text-gray-400">Para pagamento de cartão, <Link className="text-blue-300 underline" href="/financial/credit-cards">pague a fatura</Link> e depois vincule o lançamento gerado.</p>
+          <div className="flex gap-3"><Button type="submit" disabled={busy || createFormIncomplete}>{busy ? 'Salvando…' : 'Criar e conciliar'}</Button><Button type="button" variant="outline" disabled={busy} onClick={() => setCreating(false)}>Cancelar</Button></div>
         </form>
       </Card>}
       {tab === 'statement' && <div className={`grid items-start gap-4 ${selected.length && !closed ? 'lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]' : ''}`}>

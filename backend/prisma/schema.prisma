@@ -329,6 +329,7 @@ model Company {
   personalWorkspaceOwner User?              @relation("PersonalWorkspaceOwner", fields: [personalWorkspaceOwnerId], references: [id], onDelete: SetNull)
   budgets             Budget[]
   monthlyCategoryBudgets MonthlyCategoryBudget[]
+  recurringMonthlyCategoryBudgets RecurringMonthlyCategoryBudget[]
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -494,6 +495,7 @@ model FinancialCategory {
   transactions    FinancialTransaction[]
   recurringTransactions RecurringTransaction[]
   monthlyBudgets  MonthlyCategoryBudget[]
+  recurringMonthlyBudgets RecurringMonthlyCategoryBudget[]
 
   @@unique([name, parentId, companyId])
   @@index([companyId])
@@ -1041,20 +1043,44 @@ model BudgetEntry {
 }
 
 model MonthlyCategoryBudget {
-  id              Int               @id @default(autoincrement())
-  companyId       Int
-  referenceMonth  DateTime
-  categoryId      Int
-  limitAmount     Decimal           @db.Decimal(15, 2)
-  includeChildren Boolean           @default(true)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id                Int                            @id @default(autoincrement())
+  companyId         Int
+  referenceMonth    DateTime
+  categoryId        Int
+  limitAmount       Decimal                        @db.Decimal(15, 2)
+  includeChildren   Boolean                        @default(true)
+  isExcluded        Boolean                        @default(false)
+  recurringBudgetId Int?
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
 
-  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  category        FinancialCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  company           Company                         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category          FinancialCategory               @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  recurringBudget   RecurringMonthlyCategoryBudget? @relation(fields: [recurringBudgetId], references: [id], onDelete: SetNull)
 
   @@unique([companyId, referenceMonth, categoryId], name: "unique_monthly_category_budget")
   @@index([companyId, referenceMonth])
+  @@index([categoryId])
+  @@index([recurringBudgetId])
+}
+
+model RecurringMonthlyCategoryBudget {
+  id              Int                     @id @default(autoincrement())
+  companyId       Int
+  categoryId      Int
+  limitAmount     Decimal                 @db.Decimal(15, 2)
+  includeChildren Boolean                 @default(true)
+  startMonth      DateTime
+  endMonth        DateTime?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  company         Company                 @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category        FinancialCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  monthlyAdjustments MonthlyCategoryBudget[]
+
+  @@unique([companyId, categoryId, startMonth], name: "unique_recurring_monthly_category_budget_start")
+  @@index([companyId, startMonth, endMonth])
   @@index([categoryId])
 }
 

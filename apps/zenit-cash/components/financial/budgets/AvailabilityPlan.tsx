@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, CalendarDays, PiggyBank, Star, Wallet } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import {
@@ -80,13 +81,23 @@ export function AvailabilityPlan() {
 
   return (
     <>
-      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div>
+      <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-xl font-semibold text-white">Plano de disponibilidade</h2>
-          <p className="mt-1 max-w-3xl text-sm text-gray-400">
-            Acompanhe quanto pode utilizar por dia preservando o saldo que deseja manter ao fim do período.
-            {payload && ` Data de negócio: ${formatBusinessDate(businessDate, timeZone)}.`}
-          </p>
+          <InfoModalButton
+            modalTitle="Sobre o Plano de Disponibilidade"
+            buttonLabel="Ajuda sobre o Plano de Disponibilidade"
+          >
+            <p>
+              Acompanhe quanto pode utilizar por dia preservando o saldo que deseja manter ao fim do
+              período.
+            </p>
+          </InfoModalButton>
+          {payload && (
+            <span className="text-xs text-gray-500">
+              Data de negócio: {formatBusinessDate(businessDate, timeZone)}
+            </span>
+          )}
         </div>
         <Button variant="outline" onClick={() => void loadBudgets()}>
           Atualizar

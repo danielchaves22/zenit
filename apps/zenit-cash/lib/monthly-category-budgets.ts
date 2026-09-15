@@ -1,6 +1,9 @@
 import api from '@/lib/api';
 
 export type MonthlyCategoryBudgetStatus = 'ON_TRACK' | 'AT_RISK' | 'EXCEEDED';
+export type MonthlyCategoryBudgetOrigin = 'ONE_TIME' | 'FIXED_MONTHLY' | 'FIXED_OVERRIDE';
+export type MonthlyCategoryBudgetKind = 'ONE_TIME' | 'FIXED_MONTHLY';
+export type RecurringBudgetChangeScope = 'MONTH_ONLY' | 'FROM_MONTH';
 
 export interface MonthlyCategoryBudgetItem {
   id: number;
@@ -11,8 +14,13 @@ export interface MonthlyCategoryBudgetItem {
     icon: string;
     parentId: number | null;
   };
+  monthlyBudgetId: number | null;
+  recurringBudgetId: number | null;
   limitAmount: string;
   includeChildren: boolean;
+  origin: MonthlyCategoryBudgetOrigin;
+  baseLimitAmount: string | null;
+  recurrenceStartMonth: string | null;
   realizedAmount: string;
   committedAmount: string;
   historicalAverageAmount: string;
@@ -43,6 +51,7 @@ export interface MonthlyCategoryBudgetAllocationInput {
   categoryId: number;
   limitAmount: string;
   includeChildren: boolean;
+  recurringChangeScope?: RecurringBudgetChangeScope;
 }
 
 export async function getMonthlyCategoryBudget(
@@ -64,5 +73,27 @@ export async function replaceMonthlyCategoryBudget(params: {
   allocations: MonthlyCategoryBudgetAllocationInput[];
 }): Promise<MonthlyCategoryBudgetResponse> {
   const response = await api.put('/financial/budgets/monthly', params);
+  return response.data as MonthlyCategoryBudgetResponse;
+}
+
+export async function createMonthlyCategoryBudget(params: {
+  month: string;
+  categoryId: number;
+  limitAmount: string;
+  includeChildren: boolean;
+  kind: MonthlyCategoryBudgetKind;
+}): Promise<MonthlyCategoryBudgetResponse> {
+  const response = await api.post('/financial/budgets/monthly/items', params);
+  return response.data as MonthlyCategoryBudgetResponse;
+}
+
+export async function endRecurringMonthlyCategoryBudget(params: {
+  recurringBudgetId: number;
+  month: string;
+}): Promise<MonthlyCategoryBudgetResponse> {
+  const response = await api.post(
+    `/financial/budgets/monthly/recurring/${params.recurringBudgetId}/end`,
+    { month: params.month }
+  );
   return response.data as MonthlyCategoryBudgetResponse;
 }

@@ -18,6 +18,12 @@ function currentMonthKey(): string {
   return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function addMonths(monthKey: string, offset: number): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const date = new Date(year, month - 1 + offset, 1, 12, 0, 0, 0);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
 describe('Monthly category budget', () => {
   let companyId: number;
   let otherCompanyId: number;
@@ -139,11 +145,13 @@ describe('Monthly category budget', () => {
   beforeEach(async () => {
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.monthlyCategoryBudget.deleteMany({ where: { companyId } });
+    await prisma.recurringMonthlyCategoryBudget.deleteMany({ where: { companyId } });
   });
 
   afterAll(async () => {
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.monthlyCategoryBudget.deleteMany({ where: { companyId } });
+    await prisma.recurringMonthlyCategoryBudget.deleteMany({ where: { companyId } });
     await prisma.financialCategory.deleteMany({ where: { companyId } });
     await prisma.financialCategory.deleteMany({ where: { companyId: otherCompanyId } });
     await prisma.financialAccount.deleteMany({ where: { companyId } });
@@ -220,6 +228,226 @@ describe('Monthly category budget', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toContain('cobrem os mesmos gastos');
+  });
+
+  it('projects a fixed monthly planning virtually into future months', async () => {
+    const month = currentMonthKey();
+    const nextMonth = addMonths(month, 1);
+    const createResponse = await request(app)
+      .post('/api/financial/budgets/monthly/items')
+      .set(authHeaders())
+      .send({
+        month,
+        categoryId: siblingCategoryId,
+        limitAmount: '400.00',
+        includeChildren: true,
+        kind: 'FIXED_MONTHLY'
+      });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.items[0]).toMatchObject({
+      origin: 'FIXED_MONTHLY',
+      limitAmount: '400.00',
+      recurrenceStartMonth: month
+    });
+    expect(createResponse.body.items[0].recurringBudgetId).toEqual(expect.any(Number));
+
+    const futureResponse = await request(app)
+      .get('/api/financial/budgets/monthly')
+      .query({ month: nextMonth })
+      .set(authHeaders());
+
+    expect(futureResponse.status).toBe(200);
+    expect(futureResponse.body.items[0]).toMatchObject({
+      origin: 'FIXED_MONTHLY',
+      limitAmount: '400.00',
+      monthlyBudgetId: null
+    });
+    await expect(
+      prisma.monthlyCategoryBudget.count({ where: { companyId } })
+    ).resolves.toBe(0);
+  });
+
+  it('keeps a fixed monthly adjustment restricted to the selected month', async () => {
+    const month = currentMonthKey();
+    const nextMonth = addMonths(month, 1);
+    await request(app)
+      .post('/api/financial/budgets/monthly/items')
+      .set(authHeaders())
+      .send({
+        month,
+        categoryId: siblingCategoryId,
+        limitAmount: '400.00',
+        includeChildren: true,
+        kind: 'FIXED_MONTHLY'
+      });
+
+    const overrideResponse = await request(app)
+      .put('/api/financial/budgets/monthly')
+      .set(authHeaders())
+      .send({
+        month,
+        allocations: [
+          {
+            categoryId: siblingCategoryId,
+            limitAmount: '550.00',
+            includeChildren: true,
+            recurringChangeScope: 'MONTH_ONLY'
+          }
+        ]
+      });
+
+    expect(overrideResponse.status).toBe(200);
+    expect(overrideResponse.body.items[0]).toMatchObject({
+      origin: 'FIXED_OVERRIDE',
+      limitAmount: '550.00',
+      baseLimitAmount: '400.00'
+    });
+
+    const futureResponse = await request(app)
+      .get('/api/financial/budgets/monthly')
+      .query({ month: nextMonth })
+      .set(authHeaders());
+    expect(futureResponse.body.items[0]).toMatchObject({
+      origin: 'FIXED_MONTHLY',
+      limitAmount: '400.00'
+    });
+  });
+
+  it('removes a fixed planning only from the selected month when replacing that month', async () => {
+    const month = currentMonthKey();
+    const nextMonth = addMonths(month, 1);
+    await request(app)
+      .post('/api/financial/budgets/monthly/items')
+      .set(authHeaders())
+      .send({
+        month,
+        categoryId: siblingCategoryId,
+        limitAmount: '400.00',
+        includeChildren: true,
+        kind: 'FIXED_MONTHLY'
+      });
+
+    const removeResponse = await request(app)
+      .put('/api/financial/budgets/monthly')
+      .set(authHeaders())
+      .send({ month, allocations: [] });
+    expect(removeResponse.status).toBe(200);
+    expect(removeResponse.body.items).toEqual([]);
+
+    const futureResponse = await request(app)
+      .get('/api/financial/budgets/monthly')
+      .query({ month: nextMonth })
+      .set(authHeaders());
+    expect(futureResponse.body.items[0]).toMatchObject({
+      origin: 'FIXED_MONTHLY',
+      limitAmount: '400.00'
+    });
+  });
+
+  it('changes a fixed monthly planning from a selected future month onward', async () => {
+    const month = currentMonthKey();
+    const nextMonth = addMonths(month, 1);
+    const followingMonth = addMonths(month, 2);
+    await request(app)
+      .post('/api/financial/budgets/monthly/items')
+      .set(authHeaders())
+      .send({
+        month,
+        categoryId: siblingCategoryId,
+        limitAmount: '400.00',
+        includeChildren: true,
+        kind: 'FIXED_MONTHLY'
+      });
+
+    const changeResponse = await request(app)
+      .put('/api/financial/budgets/monthly')
+      .set(authHeaders())
+      .send({
+        month: nextMonth,
+        allocations: [
+          {
+            categoryId: siblingCategoryId,
+            limitAmount: '600.00',
+            includeChildren: true,
+            recurringChangeScope: 'FROM_MONTH'
+          }
+        ]
+      });
+
+    expect(changeResponse.status).toBe(200);
+    expect(changeResponse.body.items[0]).toMatchObject({
+      origin: 'FIXED_MONTHLY',
+      limitAmount: '600.00',
+      recurrenceStartMonth: nextMonth
+    });
+
+    const [originalResponse, followingResponse] = await Promise.all([
+      request(app).get('/api/financial/budgets/monthly').query({ month }).set(authHeaders()),
+      request(app)
+        .get('/api/financial/budgets/monthly')
+        .query({ month: followingMonth })
+        .set(authHeaders())
+    ]);
+    expect(originalResponse.body.items[0].limitAmount).toBe('400.00');
+    expect(followingResponse.body.items[0].limitAmount).toBe('600.00');
+  });
+
+  it('creates a one-time planning only in the selected future month', async () => {
+    const month = currentMonthKey();
+    const nextMonth = addMonths(month, 1);
+    const createResponse = await request(app)
+      .post('/api/financial/budgets/monthly/items')
+      .set(authHeaders())
+      .send({
+        month: nextMonth,
+        categoryId: siblingCategoryId,
+        limitAmount: '250.00',
+        includeChildren: true,
+        kind: 'ONE_TIME'
+      });
+
+    expect(createResponse.status).toBe(201);
+    expect(createResponse.body.items[0]).toMatchObject({
+      origin: 'ONE_TIME',
+      limitAmount: '250.00',
+      recurringBudgetId: null
+    });
+
+    const currentResponse = await request(app)
+      .get('/api/financial/budgets/monthly')
+      .query({ month })
+      .set(authHeaders());
+    expect(currentResponse.body.items).toEqual([]);
+  });
+
+  it('ends a fixed planning from the selected month without changing prior months', async () => {
+    const month = currentMonthKey();
+    const nextMonth = addMonths(month, 1);
+    const createResponse = await request(app)
+      .post('/api/financial/budgets/monthly/items')
+      .set(authHeaders())
+      .send({
+        month,
+        categoryId: siblingCategoryId,
+        limitAmount: '400.00',
+        includeChildren: true,
+        kind: 'FIXED_MONTHLY'
+      });
+    const recurringBudgetId = createResponse.body.items[0].recurringBudgetId;
+
+    const endResponse = await request(app)
+      .post(`/api/financial/budgets/monthly/recurring/${recurringBudgetId}/end`)
+      .set(authHeaders())
+      .send({ month: nextMonth });
+
+    expect(endResponse.status).toBe(200);
+    expect(endResponse.body.items).toEqual([]);
+    const currentResponse = await request(app)
+      .get('/api/financial/budgets/monthly')
+      .query({ month })
+      .set(authHeaders());
+    expect(currentResponse.body.items[0].limitAmount).toBe('400.00');
   });
 
   it('aggregates child expenses into the parent limit and distinguishes realized from committed', async () => {

@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import MonthlyCategoryBudgetService from '../services/monthly-category-budget.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import {
+  CreateMonthlyCategoryBudgetBody,
+  EndRecurringMonthlyCategoryBudgetBody,
   GetMonthlyCategoryBudgetQuery,
   ReplaceMonthlyCategoryBudgetBody
 } from '../validators/monthly-category-budget.validator';
@@ -79,6 +81,58 @@ export async function replaceMonthlyCategoryBudget(req: Request, res: Response) 
   } catch (error: any) {
     return res.status(400).json({
       error: error.message || 'Erro ao salvar planejamento mensal'
+    });
+  }
+}
+
+export async function createMonthlyCategoryBudget(req: Request, res: Response) {
+  try {
+    const input = req.body as CreateMonthlyCategoryBudgetBody;
+    const context = await resolveAccess(req);
+
+    await MonthlyCategoryBudgetService.createPlanning({
+      companyId: context.companyId,
+      ...input
+    });
+
+    const plan = await MonthlyCategoryBudgetService.getPlan({
+      ...context,
+      month: input.month
+    });
+
+    return res.status(201).json(plan);
+  } catch (error: any) {
+    return res.status(400).json({
+      error: error.message || 'Erro ao criar planejamento mensal'
+    });
+  }
+}
+
+export async function endRecurringMonthlyCategoryBudget(req: Request, res: Response) {
+  try {
+    const recurringBudgetId = Number(req.params.id);
+    if (!Number.isInteger(recurringBudgetId) || recurringBudgetId <= 0) {
+      throw new Error('Planejamento fixo inválido');
+    }
+
+    const { month } = req.body as EndRecurringMonthlyCategoryBudgetBody;
+    const context = await resolveAccess(req);
+
+    await MonthlyCategoryBudgetService.endRecurringPlanning({
+      companyId: context.companyId,
+      recurringBudgetId,
+      month
+    });
+
+    const plan = await MonthlyCategoryBudgetService.getPlan({
+      ...context,
+      month
+    });
+
+    return res.status(200).json(plan);
+  } catch (error: any) {
+    return res.status(400).json({
+      error: error.message || 'Erro ao encerrar planejamento fixo'
     });
   }
 }

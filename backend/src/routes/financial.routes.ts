@@ -64,6 +64,8 @@ import {
 } from '../validators/financial-dashboard.validator';
 import { updateVariableProjectionPreferenceSchema } from '../validators/variable-projection-preference.validator';
 import {
+  createMonthlyCategoryBudgetSchema,
+  endRecurringMonthlyCategoryBudgetSchema,
   getMonthlyCategoryBudgetSchema,
   replaceMonthlyCategoryBudgetSchema
 } from '../validators/monthly-category-budget.validator';
@@ -144,6 +146,8 @@ import {
   updateVariableProjectionPreference
 } from '../controllers/user-variable-projection-preference.controller';
 import {
+  createMonthlyCategoryBudget,
+  endRecurringMonthlyCategoryBudget,
   getMonthlyCategoryBudget,
   replaceMonthlyCategoryBudget
 } from '../controllers/monthly-category-budget.controller';
@@ -281,6 +285,16 @@ router.put(
   '/budgets/monthly',
   validate(replaceMonthlyCategoryBudgetSchema, { source: 'body' }),
   replaceMonthlyCategoryBudget
+);
+router.post(
+  '/budgets/monthly/items',
+  validate(createMonthlyCategoryBudgetSchema, { source: 'body' }),
+  createMonthlyCategoryBudget
+);
+router.post(
+  '/budgets/monthly/recurring/:id/end',
+  validate(endRecurringMonthlyCategoryBudgetSchema, { source: 'body' }),
+  endRecurringMonthlyCategoryBudget
 );
 
 router.get(

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  CalendarX2,
   CheckCircle2,
   Copy,
   Loader2,
   Plus,
+  Repeat2,
   Save,
   Target,
   Trash2,
@@ -16,14 +18,19 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
 import api from '@/lib/api';
 import {
   MonthlyCategoryBudgetItem,
+  MonthlyCategoryBudgetKind,
   MonthlyCategoryBudgetResponse,
   MonthlyCategoryBudgetStatus,
+  RecurringBudgetChangeScope,
+  createMonthlyCategoryBudget,
+  endRecurringMonthlyCategoryBudget,
   getMonthlyCategoryBudget,
   replaceMonthlyCategoryBudget
 } from '@/lib/monthly-category-budgets';
@@ -38,6 +45,19 @@ interface DraftAllocation {
   categoryId: number;
   limitAmount: string;
   includeChildren: boolean;
+  recurringBudgetId: number | null;
+  origin: MonthlyCategoryBudgetItem['origin'];
+  baseLimitAmount: string | null;
+  recurrenceStartMonth: string | null;
+  recurringChangeScope: RecurringBudgetChangeScope;
+}
+
+interface CreationDraft {
+  categoryId: string;
+  limitAmount: string;
+  kind: MonthlyCategoryBudgetKind;
+  month: string;
+  includeChildren: boolean;
 }
 
 function formatMoney(value: string | number): string {
@@ -51,6 +71,39 @@ function previousMonth(monthKey: string): string {
   const [year, month] = monthKey.split('-').map(Number);
   const date = new Date(year, month - 2, 1, 12, 0, 0, 0);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function currentMonthKey(): string {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function addMonths(monthKey: string, offset: number): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const date = new Date(year, month - 1 + offset, 1, 12, 0, 0, 0);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const label = new Intl.DateTimeFormat('pt-BR', {
+    month: 'long',
+    year: 'numeric'
+  }).format(new Date(year, month - 1, 1, 12, 0, 0, 0));
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function draftFromItem(item: MonthlyCategoryBudgetItem): DraftAllocation {
+  return {
+    categoryId: item.category.id,
+    limitAmount: item.limitAmount,
+    includeChildren: item.includeChildren,
+    recurringBudgetId: item.recurringBudgetId,
+    origin: item.origin,
+    baseLimitAmount: item.baseLimitAmount,
+    recurrenceStartMonth: item.recurrenceStartMonth,
+    recurringChangeScope: 'MONTH_ONLY'
+  };
 }
 
 function normalizeAmount(value: string): string {
@@ -126,14 +179,28 @@ function statusPresentation(status: MonthlyCategoryBudgetStatus) {
   };
 }
 
-export function MonthlyCategoryPlanning({ month }: { month: string }) {
+export function MonthlyCategoryPlanning({
+  month,
+  onMonthChange
+}: {
+  month: string;
+  onMonthChange?: (month: string) => void;
+}) {
   const { addToast } = useToast();
   const confirmation = useConfirmation();
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [plan, setPlan] = useState<MonthlyCategoryBudgetResponse | null>(null);
   const [draft, setDraft] = useState<DraftAllocation[]>([]);
   const [savedSignature, setSavedSignature] = useState('');
-  const [newCategoryId, setNewCategoryId] = useState('');
+  const [creationDraft, setCreationDraft] = useState<CreationDraft>({
+    categoryId: '',
+    limitAmount: '0.00',
+    kind: 'ONE_TIME',
+    month,
+    includeChildren: true
+  });
+  const [creationPlan, setCreationPlan] = useState<MonthlyCategoryBudgetResponse | null>(null);
+  const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -150,16 +217,19 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
 
         if (cancelled) return;
 
-        const nextDraft = planResponse.items.map((item) => ({
-          categoryId: item.category.id,
-          limitAmount: item.limitAmount,
-          includeChildren: item.includeChildren
-        }));
+        const nextDraft = planResponse.items.map(draftFromItem);
         setCategories((categoryResponse.data || []) as ExpenseCategory[]);
         setPlan(planResponse);
         setDraft(nextDraft);
         setSavedSignature(allocationSignature(nextDraft));
-        setNewCategoryId('');
+        setCreationDraft({
+          categoryId: '',
+          limitAmount: '0.00',
+          kind: 'ONE_TIME',
+          month,
+          includeChildren: true
+        });
+        setCreationPlan(planResponse);
       } catch (error: any) {
         if (!cancelled) {
           addToast(error.response?.data?.error || 'Erro ao carregar o planejamento mensal', 'error');
@@ -178,6 +248,31 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
     };
   }, [month]);
 
+  useEffect(() => {
+    if (creationDraft.month === month) {
+      setCreationPlan(plan);
+      return;
+    }
+
+    let cancelled = false;
+    getMonthlyCategoryBudget(creationDraft.month, { planOnly: true })
+      .then((response) => {
+        if (!cancelled) setCreationPlan(response);
+      })
+      .catch((error: any) => {
+        if (!cancelled) {
+          setCreationPlan(null);
+          addToast(
+            error.response?.data?.error || 'Erro ao verificar o mês escolhido',
+            'error'
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [addToast, creationDraft.month, month, plan]);
+
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
     [categories]
@@ -185,10 +280,6 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
   const planItemByCategoryId = useMemo(
     () => new Map((plan?.items || []).map((item) => [item.category.id, item])),
     [plan]
-  );
-  const selectedCategoryIds = useMemo(
-    () => new Set(draft.map((allocation) => allocation.categoryId)),
-    [draft]
   );
   const childrenByParentId = useMemo(() => {
     const result = new Map<number, number[]>();
@@ -200,26 +291,42 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
     });
     return result;
   }, [categories]);
-  const availableCategories = useMemo(
-    () => {
-      const alreadyCovered = new Set<number>();
-      draft.forEach((allocation) => {
-        coveredCategoryIds(
-          allocation.categoryId,
-          allocation.includeChildren,
-          childrenByParentId
-        ).forEach((categoryId) => alreadyCovered.add(categoryId));
-      });
-
-      return categories.filter((category) => {
-        if (selectedCategoryIds.has(category.id)) return false;
-        return !coveredCategoryIds(category.id, true, childrenByParentId).some((categoryId) =>
-          alreadyCovered.has(categoryId)
-        );
-      });
-    },
-    [categories, childrenByParentId, draft, selectedCategoryIds]
+  const creationAllocations = useMemo(
+    () =>
+      creationDraft.month === month
+        ? draft
+        : (creationPlan?.items || []).map(draftFromItem),
+    [creationDraft.month, creationPlan, draft, month]
   );
+  const availableCreationCategories = useMemo(() => {
+    const selectedCategoryIds = new Set(
+      creationAllocations.map((allocation) => allocation.categoryId)
+    );
+    const alreadyCovered = new Set<number>();
+    creationAllocations.forEach((allocation) => {
+      coveredCategoryIds(
+        allocation.categoryId,
+        allocation.includeChildren,
+        childrenByParentId
+      ).forEach((categoryId) => alreadyCovered.add(categoryId));
+    });
+
+    return categories.filter((category) => {
+      if (selectedCategoryIds.has(category.id)) return false;
+      return !coveredCategoryIds(category.id, true, childrenByParentId).some((categoryId) =>
+        alreadyCovered.has(categoryId)
+      );
+    });
+  }, [categories, childrenByParentId, creationAllocations]);
+  const selectedCreationCategory = categoryById.get(Number(creationDraft.categoryId));
+  const monthOptions = useMemo(() => {
+    const currentMonth = currentMonthKey();
+    return Array.from({ length: 25 }, (_, index) => {
+      const value = addMonths(currentMonth, index);
+      const suffix = index === 0 ? ' — mês atual' : index === 1 ? ' — próximo mês' : '';
+      return { value, label: `${formatMonthLabel(value)}${suffix}` };
+    });
+  }, []);
   const currentSignature = useMemo(() => allocationSignature(draft), [draft]);
   const isDirty = currentSignature !== savedSignature;
 
@@ -249,15 +356,12 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
     );
   }, [draft, planItemByCategoryId]);
 
-  function addCategory() {
-    const categoryId = Number(newCategoryId);
-    if (!categoryId || selectedCategoryIds.has(categoryId)) return;
-
-    setDraft((current) => [
-      ...current,
-      { categoryId, limitAmount: '0.00', includeChildren: true }
-    ]);
-    setNewCategoryId('');
+  function applyPlanResponse(response: MonthlyCategoryBudgetResponse) {
+    const nextDraft = response.items.map(draftFromItem);
+    setPlan(response);
+    setDraft(nextDraft);
+    setSavedSignature(allocationSignature(nextDraft));
+    if (creationDraft.month === response.month) setCreationPlan(response);
   }
 
   function updateAllocation(categoryId: number, patch: Partial<DraftAllocation>) {
@@ -265,6 +369,82 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
       current.map((allocation) =>
         allocation.categoryId === categoryId ? { ...allocation, ...patch } : allocation
       )
+    );
+  }
+
+  async function handleCreatePlanning() {
+    if (isDirty) {
+      addToast('Salve as alterações do mês em exibição antes de criar outro planejamento', 'error');
+      return;
+    }
+    const categoryId = Number(creationDraft.categoryId);
+    if (!categoryId || Number(creationDraft.limitAmount) <= 0) {
+      addToast('Informe a categoria e um limite maior que zero', 'error');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const response = await createMonthlyCategoryBudget({
+        month: creationDraft.month,
+        categoryId,
+        limitAmount: normalizeAmount(creationDraft.limitAmount),
+        includeChildren: creationDraft.includeChildren,
+        kind: creationDraft.kind
+      });
+      setCreationDraft((current) => ({
+        ...current,
+        categoryId: '',
+        limitAmount: '0.00',
+        includeChildren: true
+      }));
+      addToast(
+        creationDraft.kind === 'FIXED_MONTHLY'
+          ? 'Planejamento fixo criado'
+          : 'Planejamento do mês criado',
+        'success'
+      );
+      if (creationDraft.month === month) {
+        applyPlanResponse(response);
+      } else if (onMonthChange) {
+        onMonthChange(creationDraft.month);
+      } else {
+        setCreationPlan(response);
+      }
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao criar planejamento', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function handleEndRecurring(item: MonthlyCategoryBudgetItem) {
+    if (!item.recurringBudgetId) return;
+    if (isDirty) {
+      addToast('Salve as alterações do mês antes de encerrar um planejamento fixo', 'error');
+      return;
+    }
+
+    confirmation.confirm(
+      {
+        title: 'Encerrar planejamento fixo',
+        message: `${item.category.name} deixará de ser projetado em ${formatMonthLabel(month)} e nos meses seguintes. Os meses anteriores serão preservados.`,
+        confirmText: 'Encerrar a partir deste mês',
+        type: 'warning'
+      },
+      async () => {
+        try {
+          const response = await endRecurringMonthlyCategoryBudget({
+            recurringBudgetId: item.recurringBudgetId!,
+            month
+          });
+          applyPlanResponse(response);
+          addToast('Planejamento fixo encerrado', 'success');
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao encerrar planejamento fixo', 'error');
+          throw error;
+        }
+      }
     );
   }
 
@@ -282,17 +462,11 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
         allocations: draft.map((allocation) => ({
           categoryId: allocation.categoryId,
           limitAmount: normalizeAmount(allocation.limitAmount),
-          includeChildren: allocation.includeChildren
+          includeChildren: allocation.includeChildren,
+          recurringChangeScope: allocation.recurringChangeScope
         }))
       });
-      const nextDraft = response.items.map((item) => ({
-        categoryId: item.category.id,
-        limitAmount: item.limitAmount,
-        includeChildren: item.includeChildren
-      }));
-      setPlan(response);
-      setDraft(nextDraft);
-      setSavedSignature(allocationSignature(nextDraft));
+      applyPlanResponse(response);
       addToast('Planejamento mensal salvo', 'success');
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao salvar o planejamento mensal', 'error');
@@ -327,13 +501,23 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
         return;
       }
 
-      setDraft(
-        previousPlan.items.map((item) => ({
-          categoryId: item.category.id,
-          limitAmount: item.limitAmount,
-          includeChildren: item.includeChildren
-        }))
-      );
+      const nextDraft = previousPlan.items.map((item) => {
+        const currentItem = planItemByCategoryId.get(item.category.id);
+        return currentItem
+          ? { ...draftFromItem(currentItem), limitAmount: item.limitAmount }
+          : {
+              ...draftFromItem(item),
+              origin: 'ONE_TIME' as const,
+              recurringBudgetId: null,
+              baseLimitAmount: null,
+              recurrenceStartMonth: null
+            };
+      });
+      if (allocationSignature(nextDraft) === savedSignature) {
+        addToast('Os planejamentos fixos do mês anterior já estão projetados neste mês');
+        return;
+      }
+      setDraft(nextDraft);
       addToast('Mês anterior copiado para o rascunho. Salve para aplicar.', 'success');
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao copiar o mês anterior', 'error');
@@ -373,13 +557,23 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
 
   return (
     <>
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div>
+      <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex items-center gap-2">
           <h2 className="text-xl font-semibold text-white">Planejamento mensal por categoria</h2>
-          <p className="mt-1 max-w-3xl text-sm text-gray-400">
-            Defina limites para as despesas do mês. Os lançamentos continuam livres; o Zenit apenas
-            compara sua intenção com o realizado, o já comprometido e a tendência.
-          </p>
+          <InfoModalButton
+            modalTitle="Sobre o Planejamento Mensal"
+            buttonLabel="Ajuda sobre o Planejamento Mensal"
+          >
+            <p>
+              Defina limites para as despesas do mês. Os lançamentos continuam livres; o Zenit apenas
+              compara sua intenção com o realizado, o já comprometido e a tendência.
+            </p>
+            <p>
+              Um planejamento pode existir somente no mês escolhido ou ser fixo mensal. Os fixos são
+              projetados virtualmente a partir do mês inicial e só criam um ajuste próprio quando você
+              muda um mês específico.
+            </p>
+          </InfoModalButton>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={handleCopyPrevious} className="inline-flex items-center gap-2">
@@ -416,28 +610,102 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
       </div>
 
       <Card className="mb-6">
-        <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,1fr)_auto]">
           <CategorySelect
-            label="Adicionar categoria ou grupo"
-            categories={availableCategories}
-            value={newCategoryId}
-            onChange={setNewCategoryId}
+            label="Categoria ou grupo"
+            categories={availableCreationCategories}
+            value={creationDraft.categoryId}
+            onChange={(categoryId) =>
+              setCreationDraft((current) => ({ ...current, categoryId, includeChildren: true }))
+            }
             placeholder="Selecione uma categoria de despesa"
             emptyLabel="Selecione uma categoria"
           />
+          <CurrencyInput
+            id="new-monthly-budget-limit"
+            label="Limite mensal"
+            value={creationDraft.limitAmount}
+            onChange={(limitAmount) =>
+              setCreationDraft((current) => ({ ...current, limitAmount }))
+            }
+            selectOnFocus
+            className="mb-0"
+          />
+          <div>
+            <label htmlFor="monthly-budget-kind" className="mb-1 block text-sm font-medium text-gray-300">
+              Tipo
+            </label>
+            <select
+              id="monthly-budget-kind"
+              value={creationDraft.kind}
+              onChange={(event) =>
+                setCreationDraft((current) => ({
+                  ...current,
+                  kind: event.target.value as MonthlyCategoryBudgetKind
+                }))
+              }
+              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
+            >
+              <option value="ONE_TIME">Somente em um mês</option>
+              <option value="FIXED_MONTHLY">Fixo mensal</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="monthly-budget-start-month" className="mb-1 block text-sm font-medium text-gray-300">
+              {creationDraft.kind === 'FIXED_MONTHLY' ? 'Começa em' : 'Mês do planejamento'}
+            </label>
+            <select
+              id="monthly-budget-start-month"
+              value={creationDraft.month}
+              onChange={(event) => {
+                const nextMonth = event.target.value;
+                setCreationPlan(nextMonth === month ? plan : null);
+                setCreationDraft((current) => ({
+                  ...current,
+                  month: nextMonth,
+                  categoryId: ''
+                }));
+              }}
+              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
+            >
+              {monthOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <Button
-            variant="outline"
-            onClick={addCategory}
-            disabled={!newCategoryId}
+            variant="accent"
+            onClick={() => void handleCreatePlanning()}
+            disabled={
+              creating ||
+              !creationPlan ||
+              !creationDraft.categoryId ||
+              Number(creationDraft.limitAmount) <= 0
+            }
             className="mb-0 inline-flex min-h-10 items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Plus size={16} />
-            Adicionar
+            {creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+            Criar
           </Button>
         </div>
-        <p className="mt-3 text-xs text-gray-500">
-          Ao planejar um grupo, suas subcategorias são incluídas. O mesmo gasto nunca é contado em dois limites.
-        </p>
+        {selectedCreationCategory && (selectedCreationCategory._count?.children || 0) > 0 && (
+          <label className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+            <input
+              type="checkbox"
+              checked={creationDraft.includeChildren}
+              onChange={(event) =>
+                setCreationDraft((current) => ({
+                  ...current,
+                  includeChildren: event.target.checked
+                }))
+              }
+              className="rounded border-gray-600 bg-[#1e2126]"
+            />
+            Incluir subcategorias deste grupo
+          </label>
+        )}
       </Card>
 
       {draft.length === 0 ? (
@@ -463,12 +731,14 @@ export function MonthlyCategoryPlanning({ month }: { month: string }) {
                 category={category}
                 allocation={allocation}
                 item={item}
+                month={month}
                 onChange={(patch) => updateAllocation(allocation.categoryId, patch)}
                 onRemove={() =>
                   setDraft((current) =>
                     current.filter((entry) => entry.categoryId !== allocation.categoryId)
                   )
                 }
+                onEndRecurring={item?.recurringBudgetId ? () => handleEndRecurring(item) : undefined}
               />
             );
           })}
@@ -515,14 +785,18 @@ function CategoryBudgetRow({
   category,
   allocation,
   item,
+  month,
   onChange,
-  onRemove
+  onRemove,
+  onEndRecurring
 }: {
   category: ExpenseCategory;
   allocation: DraftAllocation;
   item?: MonthlyCategoryBudgetItem;
+  month: string;
   onChange: (patch: Partial<DraftAllocation>) => void;
   onRemove: () => void;
+  onEndRecurring?: () => void;
 }) {
   const limit = Number(allocation.limitAmount || 0);
   const realized = Number(item?.realizedAmount || 0);
@@ -540,6 +814,13 @@ function CategoryBudgetRow({
   const StatusIcon = presentation.icon;
   const progress = limit > 0 ? Math.min(Math.max((known / limit) * 100, 0), 100) : 0;
   const hasChildren = (category._count?.children || 0) > 0;
+  const isRecurring = Boolean(allocation.recurringBudgetId);
+  const originLabel =
+    allocation.origin === 'FIXED_OVERRIDE'
+      ? 'Fixo ajustado neste mês'
+      : allocation.origin === 'FIXED_MONTHLY'
+        ? 'Fixo mensal'
+        : 'Somente neste mês';
 
   return (
     <Card>
@@ -550,7 +831,27 @@ function CategoryBudgetRow({
               <CategoryIcon icon={category.icon} color={category.color} size={20} />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate font-semibold text-white">{category.name}</h3>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="truncate font-semibold text-white">{category.name}</h3>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    isRecurring
+                      ? 'border-blue-800 bg-blue-950/40 text-blue-300'
+                      : 'border-gray-700 bg-gray-900/50 text-gray-400'
+                  }`}
+                >
+                  {isRecurring && <Repeat2 size={11} />}
+                  {originLabel}
+                </span>
+              </div>
+              {isRecurring && allocation.recurrenceStartMonth && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Desde {formatMonthLabel(allocation.recurrenceStartMonth)}
+                  {allocation.origin === 'FIXED_OVERRIDE' && allocation.baseLimitAmount
+                    ? ` · Base fixa: ${formatMoney(allocation.baseLimitAmount)}`
+                    : ''}
+                </p>
+              )}
               {hasChildren ? (
                 <label className="mt-1 flex items-center gap-2 text-xs text-gray-400">
                   <input
@@ -568,22 +869,57 @@ function CategoryBudgetRow({
           </div>
 
           <div className="flex items-start gap-2">
-            <CurrencyInput
-              id={`monthly-budget-${category.id}`}
-              label="Limite mensal"
-              value={allocation.limitAmount}
-              onChange={(limitAmount) => onChange({ limitAmount })}
-              selectOnFocus
-              className="mb-0 w-48"
-            />
+            <div>
+              <CurrencyInput
+                id={`monthly-budget-${category.id}`}
+                label="Limite mensal"
+                value={allocation.limitAmount}
+                onChange={(limitAmount) => onChange({ limitAmount })}
+                selectOnFocus
+                className="mb-0 w-48"
+              />
+              {isRecurring && (
+                <label className="mt-2 block text-xs text-gray-400">
+                  Aplicar alteração
+                  <select
+                    value={allocation.recurringChangeScope}
+                    onChange={(event) =>
+                      onChange({
+                        recurringChangeScope: event.target.value as RecurringBudgetChangeScope
+                      })
+                    }
+                    className="mt-1 w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  >
+                    <option value="MONTH_ONLY">Somente em {formatMonthLabel(month)}</option>
+                    <option value="FROM_MONTH">Neste e nos próximos meses</option>
+                  </select>
+                </label>
+              )}
+            </div>
             <button
               type="button"
               onClick={onRemove}
               className="mt-6 rounded-lg border border-gray-700 p-2 text-gray-400 transition-colors hover:border-red-800 hover:bg-red-950/30 hover:text-red-300"
-              aria-label={`Remover ${category.name} do planejamento`}
+              aria-label={
+                isRecurring
+                  ? `Remover ${category.name} somente deste mês`
+                  : `Remover ${category.name} do planejamento`
+              }
+              title={isRecurring ? 'Remover somente deste mês' : 'Remover planejamento'}
             >
               <Trash2 size={18} />
             </button>
+            {onEndRecurring && (
+              <button
+                type="button"
+                onClick={onEndRecurring}
+                className="mt-6 rounded-lg border border-gray-700 p-2 text-gray-400 transition-colors hover:border-amber-800 hover:bg-amber-950/30 hover:text-amber-300"
+                aria-label={`Encerrar planejamento fixo de ${category.name}`}
+                title="Encerrar a partir deste mês"
+              >
+                <CalendarX2 size={18} />
+              </button>
+            )}
           </div>
         </div>
 

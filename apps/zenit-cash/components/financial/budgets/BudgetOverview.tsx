@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CalendarRange, PiggyBank, Target, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowRight, PiggyBank, Target, TrendingDown, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -76,14 +76,6 @@ export function BudgetOverview({ month }: { month: string }) {
 
   return (
     <>
-      <div className="mb-6 rounded-xl border border-blue-800/60 bg-blue-950/30 p-4">
-        <p className="text-sm font-medium text-blue-200">Dois planos, duas perguntas complementares</p>
-        <p className="mt-1 text-sm text-blue-100/70">
-          O Plano de Disponibilidade mostra quanto pode ser utilizado preservando a meta de saldo. O
-          Planejamento Mensal organiza onde você pretende usar esse dinheiro.
-        </p>
-      </div>
-
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card className="flex h-full flex-col">
           <div className="flex items-start justify-between gap-4">
@@ -191,19 +183,6 @@ export function BudgetOverview({ month }: { month: string }) {
           </div>
         </Card>
       </div>
-
-      <Card className="mt-4">
-        <div className="flex items-start gap-3">
-          <CalendarRange className="mt-0.5 shrink-0 text-accent" size={22} />
-          <div>
-            <h3 className="font-medium text-white">Leitura conjunta</h3>
-            <p className="mt-1 text-sm text-gray-400">
-              Limites por categoria não alteram o saldo do Plano de Disponibilidade e não criam
-              lançamentos. Eles funcionam como uma intenção mensal comparada aos gastos que já existem.
-            </p>
-          </div>
-        </div>
-      </Card>
     </>
   );
 }

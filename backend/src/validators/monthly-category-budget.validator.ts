@@ -14,6 +14,12 @@ const monthKeySchema = z
     return value <= maximumMonth;
   }, 'O planejamento pode ser criado com até 24 meses de antecedência');
 
+const mutableMonthKeySchema = monthKeySchema.refine((value) => {
+  const today = new Date();
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  return value >= currentMonth;
+}, 'O planejamento não pode alterar meses anteriores');
+
 const planOnlySchema = z
   .enum(['true', 'false'])
   .transform((value) => value === 'true')
@@ -31,7 +37,8 @@ const allocationSchema = z.object({
     .refine((value) => /^\d+(\.\d{1,2})?$/.test(value), 'Limite deve ter no máximo duas casas decimais')
     .refine((value) => Number(value) > 0, 'Limite deve ser maior que zero')
     .refine((value) => Number(value) <= 999999999.99, 'Limite excede o valor máximo permitido'),
-  includeChildren: z.boolean().optional().default(true)
+  includeChildren: z.boolean().optional().default(true),
+  recurringChangeScope: z.enum(['MONTH_ONLY', 'FROM_MONTH']).optional().default('MONTH_ONLY')
 });
 
 export const getMonthlyCategoryBudgetSchema = z.object({
@@ -41,7 +48,7 @@ export const getMonthlyCategoryBudgetSchema = z.object({
 
 export const replaceMonthlyCategoryBudgetSchema = z
   .object({
-    month: monthKeySchema,
+    month: mutableMonthKeySchema,
     allocations: z.array(allocationSchema).max(200, 'Use no máximo 200 categorias por mês')
   })
   .superRefine((value, context) => {
@@ -60,7 +67,25 @@ export const replaceMonthlyCategoryBudgetSchema = z
     });
   });
 
+export const createMonthlyCategoryBudgetSchema = z.object({
+  month: mutableMonthKeySchema,
+  categoryId: allocationSchema.shape.categoryId,
+  limitAmount: allocationSchema.shape.limitAmount,
+  includeChildren: allocationSchema.shape.includeChildren,
+  kind: z.enum(['ONE_TIME', 'FIXED_MONTHLY'])
+});
+
+export const endRecurringMonthlyCategoryBudgetSchema = z.object({
+  month: mutableMonthKeySchema
+});
+
 export type GetMonthlyCategoryBudgetQuery = z.infer<typeof getMonthlyCategoryBudgetSchema>;
 export type ReplaceMonthlyCategoryBudgetBody = z.infer<
   typeof replaceMonthlyCategoryBudgetSchema
+>;
+export type CreateMonthlyCategoryBudgetBody = z.infer<
+  typeof createMonthlyCategoryBudgetSchema
+>;
+export type EndRecurringMonthlyCategoryBudgetBody = z.infer<
+  typeof endRecurringMonthlyCategoryBudgetSchema
 >;

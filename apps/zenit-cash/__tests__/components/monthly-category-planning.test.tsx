@@ -4,9 +4,18 @@ import type { ButtonHTMLAttributes, ChangeEventHandler, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MonthlyCategoryPlanning } from '@/components/financial/budgets/MonthlyCategoryPlanning';
 
-const { addToastMock, apiGetMock, getPlanMock, replacePlanMock } = vi.hoisted(() => ({
+const {
+  addToastMock,
+  apiGetMock,
+  createPlanMock,
+  endRecurringMock,
+  getPlanMock,
+  replacePlanMock
+} = vi.hoisted(() => ({
   addToastMock: vi.fn(),
   apiGetMock: vi.fn(),
+  createPlanMock: vi.fn(),
+  endRecurringMock: vi.fn(),
   getPlanMock: vi.fn(),
   replacePlanMock: vi.fn()
 }));
@@ -20,6 +29,8 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/lib/monthly-category-budgets', () => ({
+  createMonthlyCategoryBudget: (...args: unknown[]) => createPlanMock(...args),
+  endRecurringMonthlyCategoryBudget: (...args: unknown[]) => endRecurringMock(...args),
   getMonthlyCategoryBudget: (...args: unknown[]) => getPlanMock(...args),
   replaceMonthlyCategoryBudget: (...args: unknown[]) => replacePlanMock(...args)
 }));
@@ -114,7 +125,11 @@ function emptyPlan(month: string) {
   };
 }
 
-function planWithFuel(month: string, limitAmount = '450.00') {
+function planWithFuel(
+  month: string,
+  limitAmount = '450.00',
+  recurring = false
+) {
   return {
     ...emptyPlan(month),
     summary: {
@@ -126,6 +141,8 @@ function planWithFuel(month: string, limitAmount = '450.00') {
     items: [
       {
         id: 1,
+        monthlyBudgetId: recurring ? null : 1,
+        recurringBudgetId: recurring ? 20 : null,
         category: {
           id: 10,
           name: 'Combustível',
@@ -135,6 +152,9 @@ function planWithFuel(month: string, limitAmount = '450.00') {
         },
         limitAmount,
         includeChildren: true,
+        origin: recurring ? ('FIXED_MONTHLY' as const) : ('ONE_TIME' as const),
+        baseLimitAmount: recurring ? limitAmount : null,
+        recurrenceStartMonth: recurring ? month : null,
         realizedAmount: '120.00',
         committedAmount: '80.00',
         historicalAverageAmount: '320.00',
@@ -165,27 +185,87 @@ describe('MonthlyCategoryPlanning', () => {
     });
   });
 
-  it('adds a category and saves the monthly limit explicitly', async () => {
+  it('creates a one-time category planning explicitly', async () => {
     const user = userEvent.setup();
     getPlanMock.mockResolvedValue(emptyPlan('2026-09'));
-    replacePlanMock.mockResolvedValue(planWithFuel('2026-09'));
+    createPlanMock.mockResolvedValue(planWithFuel('2026-09'));
 
     render(<MonthlyCategoryPlanning month="2026-09" />);
 
     await user.selectOptions(
-      await screen.findByLabelText('Adicionar categoria ou grupo'),
+      await screen.findByLabelText('Categoria ou grupo'),
       '10'
     );
-    await user.click(screen.getByRole('button', { name: 'Adicionar' }));
     await user.clear(screen.getByLabelText('Limite mensal'));
     await user.type(screen.getByLabelText('Limite mensal'), '450.00');
+    await user.click(screen.getByRole('button', { name: 'Criar' }));
+
+    await waitFor(() => {
+      expect(createPlanMock).toHaveBeenCalledWith({
+        month: '2026-09',
+        categoryId: 10,
+        limitAmount: '450.00',
+        includeChildren: true,
+        kind: 'ONE_TIME'
+      });
+    });
+  });
+
+  it('creates a fixed planning starting in a selected future month', async () => {
+    const user = userEvent.setup();
+    const onMonthChange = vi.fn();
+    getPlanMock.mockImplementation((month: string) => Promise.resolve(emptyPlan(month)));
+    createPlanMock.mockResolvedValue(planWithFuel('2026-10', '500.00', true));
+
+    render(<MonthlyCategoryPlanning month="2026-09" onMonthChange={onMonthChange} />);
+
+    await user.selectOptions(await screen.findByLabelText('Tipo'), 'FIXED_MONTHLY');
+    await user.selectOptions(screen.getByLabelText('Começa em'), '2026-10');
+    await waitFor(() => expect(getPlanMock).toHaveBeenCalledWith('2026-10', { planOnly: true }));
+    await user.selectOptions(screen.getByLabelText('Categoria ou grupo'), '10');
+    await user.clear(screen.getByLabelText('Limite mensal'));
+    await user.type(screen.getByLabelText('Limite mensal'), '500.00');
+    await user.click(screen.getByRole('button', { name: 'Criar' }));
+
+    await waitFor(() => {
+      expect(createPlanMock).toHaveBeenCalledWith({
+        month: '2026-10',
+        categoryId: 10,
+        limitAmount: '500.00',
+        includeChildren: true,
+        kind: 'FIXED_MONTHLY'
+      });
+      expect(onMonthChange).toHaveBeenCalledWith('2026-10');
+    });
+  });
+
+  it('lets a projected fixed planning change from the displayed month onward', async () => {
+    const user = userEvent.setup();
+    getPlanMock.mockResolvedValue(planWithFuel('2026-09', '500.00', true));
+    replacePlanMock.mockResolvedValue(planWithFuel('2026-09', '600.00', true));
+
+    render(<MonthlyCategoryPlanning month="2026-09" />);
+
+    expect(await screen.findByText('Fixo mensal', { selector: 'span' })).toBeInTheDocument();
+    const limitInputs = screen.getAllByLabelText('Limite mensal');
+    await user.clear(limitInputs[1]);
+    await user.type(limitInputs[1], '600.00');
+    await user.selectOptions(
+      screen.getByLabelText('Aplicar alteração'),
+      'FROM_MONTH'
+    );
     await user.click(screen.getByRole('button', { name: 'Salvar planejamento' }));
 
     await waitFor(() => {
       expect(replacePlanMock).toHaveBeenCalledWith({
         month: '2026-09',
         allocations: [
-          { categoryId: 10, limitAmount: '450.00', includeChildren: true }
+          {
+            categoryId: 10,
+            limitAmount: '600.00',
+            includeChildren: true,
+            recurringChangeScope: 'FROM_MONTH'
+          }
         ]
       });
     });

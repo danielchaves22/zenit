@@ -12,6 +12,7 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
+import { InfoModalButton } from '@/components/ui/InfoModalButton';
 
 function getCurrentMonthKey(): string {
   const today = new Date();
@@ -93,23 +94,38 @@ function BudgetsPageInner() {
         ]}
       />
 
-      <div className="mb-6">
+      <div className="mb-4 flex items-center gap-2">
         <h1 className="text-2xl font-semibold text-white">Orçamento</h1>
-        <p className="mt-1 max-w-3xl text-sm text-gray-400">
-          Transforme sua movimentação financeira em decisões: preserve uma disponibilidade segura e
-          planeje onde deseja gastar a cada mês.
-        </p>
+        <InfoModalButton modalTitle="Sobre o Orçamento" buttonLabel="Ajuda sobre o Orçamento">
+          <p>
+            O Orçamento reúne dois controles complementares para transformar sua movimentação
+            financeira em decisões.
+          </p>
+          <p>
+            <strong className="text-white">Plano de Disponibilidade:</strong> mostra quanto pode ser
+            utilizado preservando a meta de saldo.
+          </p>
+          <p>
+            <strong className="text-white">Planejamento Mensal:</strong> organiza onde você pretende
+            usar esse dinheiro por categoria.
+          </p>
+          <p>
+            Os limites mensais não alteram o saldo do Plano de Disponibilidade nem criam lançamentos.
+            Eles representam uma intenção comparada aos gastos existentes.
+          </p>
+        </InfoModalButton>
       </div>
 
       <BudgetSectionTabs activeView={view} month={month} />
 
       {view !== 'availability' && (
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-surface px-4 py-3">
+        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-gray-700 bg-surface px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <CalendarDays size={18} className="text-accent" />
             Mês de referência
           </div>
-          <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-white">{formatMonthLabel(month)}</span>
+          <div className="ml-1 flex items-center gap-2">
             <Button
               variant="outline"
               aria-label="Mês anterior"
@@ -119,9 +135,6 @@ function BudgetsPageInner() {
             >
               <ChevronLeft size={18} />
             </Button>
-            <span className="min-w-40 text-center text-sm font-semibold text-white">
-              {formatMonthLabel(month)}
-            </span>
             <Button
               variant="outline"
               aria-label="Próximo mês"
@@ -137,7 +150,9 @@ function BudgetsPageInner() {
 
       {view === 'overview' && <BudgetOverview month={month} />}
       {view === 'availability' && <AvailabilityPlan />}
-      {view === 'monthly' && <MonthlyCategoryPlanning month={month} />}
+      {view === 'monthly' && (
+        <MonthlyCategoryPlanning month={month} onMonthChange={changeMonth} />
+      )}
     </DashboardLayout>
   );
 }

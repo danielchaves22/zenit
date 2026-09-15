@@ -309,9 +309,9 @@ export const routeSurfaces: RouteSurface[] = [
     pattern: '/financial/budgets',
     module: 'planning',
     template: 'workspace',
-    title: 'Planejamento',
+    title: 'Orçamento',
     localTabs: [
-      { label: 'Orcamentos', href: '/financial/budgets' },
+      { label: 'Orçamento', href: '/financial/budgets' },
       { label: 'Fixas', href: '/financial/fixed-transactions' },
     ],
   },
@@ -319,7 +319,7 @@ export const routeSurfaces: RouteSurface[] = [
     pattern: '/financial/budgets/[budgetId]',
     module: 'planning',
     template: 'form',
-    title: 'Detalhe do orcamento',
+    title: 'Detalhe do plano de disponibilidade',
   },
   {
     pattern: '/financial/fixed-transactions',
@@ -328,7 +328,7 @@ export const routeSurfaces: RouteSurface[] = [
     title: 'Transacoes fixas',
     localTabs: [
       { label: 'Fixas', href: '/financial/fixed-transactions' },
-      { label: 'Orcamentos', href: '/financial/budgets' },
+      { label: 'Orçamento', href: '/financial/budgets' },
     ],
   },
   {

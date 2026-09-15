@@ -68,7 +68,8 @@ function BudgetDetailPageInner() {
         items={[
           { label: 'Inicio', href: '/' },
           { label: 'Financeiro' },
-          { label: 'Orçamentos', href: '/financial/budgets' },
+          { label: 'Orçamento', href: '/financial/budgets' },
+          { label: 'Plano de disponibilidade', href: '/financial/budgets?view=availability' },
           { label: budget?.code || 'Detalhe' }
         ]}
       />
@@ -85,7 +86,7 @@ function BudgetDetailPageInner() {
           )}
         </div>
 
-        <Link href="/financial/budgets">
+        <Link href="/financial/budgets?view=availability">
           <Button variant="outline" className="inline-flex items-center gap-2">
             <ArrowLeft size={16} />
             Voltar
@@ -106,7 +107,7 @@ function BudgetDetailPageInner() {
             <p className="mb-4 text-sm text-gray-500">
               O orçamento pode ter sido removido, trocado de empresa ou ainda não sincronizado.
             </p>
-            <Link href="/financial/budgets">
+            <Link href="/financial/budgets?view=availability">
               <Button variant="outline">Voltar para a listagem</Button>
             </Link>
           </div>

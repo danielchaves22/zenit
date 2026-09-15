@@ -1,316 +1,144 @@
-import Link from 'next/link';
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CalendarDays, PiggyBank, Star, Wallet } from 'lucide-react';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { Breadcrumb } from '@/components/ui/Breadcrumb';
-import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/Skeleton';
-import { useToast } from '@/components/ui/ToastContext';
-import { PageGuard } from '@/components/ui/AccessGuard';
+import React, { useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AvailabilityPlan } from '@/components/financial/budgets/AvailabilityPlan';
+import { BudgetOverview } from '@/components/financial/budgets/BudgetOverview';
 import {
-  Budget,
-  BudgetKind,
-  BudgetListResponse,
-  BudgetStatus,
-  fetchBudgets,
-  formatBusinessDate,
-  formatCurrencyFromCents,
-  getBudgetKindLabel,
-  getBudgetStatusLabel,
-  getPrimaryBudget
-} from '@/utils/budgets';
+  BudgetSectionTabs,
+  BudgetSectionView
+} from '@/components/financial/budgets/BudgetSectionTabs';
+import { MonthlyCategoryPlanning } from '@/components/financial/budgets/MonthlyCategoryPlanning';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { PageGuard } from '@/components/ui/AccessGuard';
+import { Breadcrumb } from '@/components/ui/Breadcrumb';
+import { Button } from '@/components/ui/Button';
 
-function kindBadgeClass(kind: BudgetKind): string {
-  return kind === 'SPENDING'
-    ? 'bg-blue-900/50 text-blue-200 border border-blue-700'
-    : 'bg-emerald-900/50 text-emerald-200 border border-emerald-700';
+function getCurrentMonthKey(): string {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function statusBadgeClass(status: BudgetStatus): string {
-  const map: Record<BudgetStatus, string> = {
-    ACTIVE: 'bg-green-900 text-green-300',
-    ARCHIVED: 'bg-slate-700 text-slate-200',
-    EXPIRED: 'bg-amber-900 text-amber-300',
-    DELETED: 'bg-red-900 text-red-300'
-  };
+function normalizeView(value: string | string[] | undefined): BudgetSectionView {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  return candidate === 'availability' || candidate === 'monthly' ? candidate : 'overview';
+}
 
-  return map[status] || 'bg-slate-700 text-slate-200';
+function normalizeMonth(value: string | string[] | undefined, currentMonth: string): string {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  if (!candidate || !/^\d{4}-\d{2}$/.test(candidate)) return currentMonth;
+
+  const numericMonth = Number(candidate.slice(5));
+  if (numericMonth < 1 || numericMonth > 12 || candidate < currentMonth) return currentMonth;
+  return candidate;
+}
+
+function addMonths(monthKey: string, offset: number): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const date = new Date(year, month - 1 + offset, 1, 12, 0, 0, 0);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-').map(Number);
+  const label = new Intl.DateTimeFormat('pt-BR', {
+    month: 'long',
+    year: 'numeric'
+  }).format(new Date(year, month - 1, 1, 12, 0, 0, 0));
+
+  return label.charAt(0).toUpperCase() + label.slice(1);
 }
 
 function BudgetsPageInner() {
-  const { addToast } = useToast();
-  const [payload, setPayload] = useState<BudgetListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [kindFilter, setKindFilter] = useState<'ALL' | BudgetKind>('ALL');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | BudgetStatus>('ALL');
-  const [onlyPrimary, setOnlyPrimary] = useState(false);
+  const router = useRouter();
+  const currentMonth = getCurrentMonthKey();
+  const maximumMonth = addMonths(currentMonth, 24);
+  const view = normalizeView(router.query.view);
+  const month = normalizeMonth(router.query.month, currentMonth);
 
   useEffect(() => {
-    void loadBudgets();
-  }, []);
+    if (!router.isReady) return;
 
-  async function loadBudgets() {
-    setLoading(true);
+    const rawView = Array.isArray(router.query.view) ? router.query.view[0] : router.query.view;
+    const rawMonth = Array.isArray(router.query.month) ? router.query.month[0] : router.query.month;
+    if (rawView === view && rawMonth === month) return;
 
-    try {
-      const nextPayload = await fetchBudgets();
-      setPayload(nextPayload);
-    } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao carregar orçamentos', 'error');
-    } finally {
-      setLoading(false);
-    }
+    void router.replace(
+      {
+        pathname: '/financial/budgets',
+        query: { view, month }
+      },
+      undefined,
+      { shallow: true }
+    );
+  }, [month, router, view]);
+
+  function changeMonth(nextMonth: string) {
+    void router.push(
+      {
+        pathname: '/financial/budgets',
+        query: { view, month: nextMonth }
+      },
+      undefined,
+      { shallow: true }
+    );
   }
 
-  const budgets = payload?.budgets || [];
-  const timeZone = payload?.timeZone || 'UTC';
-  const businessDate = payload?.businessDate || new Date().toISOString();
-
-  const filteredBudgets = useMemo(() => {
-    return budgets.filter((budget) => {
-      if (kindFilter !== 'ALL' && budget.kind !== kindFilter) return false;
-      if (statusFilter !== 'ALL' && budget.status !== statusFilter) return false;
-      if (onlyPrimary && !budget.isPrimary) return false;
-      return true;
-    });
-  }, [budgets, kindFilter, statusFilter, onlyPrimary]);
-
-  const primaryBudget = useMemo(() => getPrimaryBudget(budgets), [budgets]);
-  const activeBudgets = useMemo(
-    () => budgets.filter((budget) => budget.status === 'ACTIVE'),
-    [budgets]
-  );
-
   return (
-    <DashboardLayout title="Orçamentos">
+    <DashboardLayout title="Orçamento">
       <Breadcrumb
         items={[
-          { label: 'Inicio', href: '/' },
+          { label: 'Início', href: '/' },
           { label: 'Financeiro' },
-          { label: 'Orçamentos' }
+          { label: 'Orçamento' }
         ]}
       />
 
-      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-white">Orçamentos</h1>
-          <p className="mt-1 text-sm text-gray-400">
-            Visão dos orçamentos sincronizados nesta empresa. Data de negócio:{' '}
-            {formatBusinessDate(businessDate, timeZone)}
-          </p>
-        </div>
-
-        <Button variant="outline" onClick={() => void loadBudgets()}>
-          Atualizar
-        </Button>
+      <div className="mb-6">
+        <h1 className="text-2xl font-semibold text-white">Orçamento</h1>
+        <p className="mt-1 max-w-3xl text-sm text-gray-400">
+          Transforme sua movimentação financeira em decisões: preserve uma disponibilidade segura e
+          planeje onde deseja gastar a cada mês.
+        </p>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Total de orçamentos</p>
-              <p className="mt-2 text-3xl font-bold text-white">{budgets.length}</p>
-            </div>
-            <Wallet className="text-accent" size={22} />
-          </div>
-        </Card>
+      <BudgetSectionTabs activeView={view} month={month} />
 
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Ativos</p>
-              <p className="mt-2 text-3xl font-bold text-white">{activeBudgets.length}</p>
-            </div>
-            <CalendarDays className="text-accent" size={22} />
+      {view !== 'availability' && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-surface px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <CalendarDays size={18} className="text-accent" />
+            Mês de referência
           </div>
-        </Card>
-
-        <Card>
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-sm text-gray-400">Orçamento principal</p>
-              <p className="mt-2 text-lg font-semibold text-white">
-                {primaryBudget?.code || 'Nenhum definido'}
-              </p>
-              {primaryBudget && (
-                <p className="mt-1 text-sm text-gray-400">
-                  Hoje: {formatCurrencyFromCents(primaryBudget.dailyBudgetCurrentCents)}
-                </p>
-              )}
-            </div>
-            <Star className="text-yellow-400" size={22} />
-          </div>
-        </Card>
-      </div>
-
-      <Card className="mb-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Tipo</label>
-            <select
-              value={kindFilter}
-              onChange={(event) => setKindFilter(event.target.value as 'ALL' | BudgetKind)}
-              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring"
-            >
-              <option value="ALL">Todos</option>
-              <option value="SPENDING">Gasto</option>
-              <option value="SAVINGS">Economia</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Status</label>
-            <select
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as 'ALL' | BudgetStatus)}
-              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring"
-            >
-              <option value="ALL">Todos</option>
-              <option value="ACTIVE">Ativos</option>
-              <option value="ARCHIVED">Arquivados</option>
-              <option value="EXPIRED">Expirados</option>
-              <option value="DELETED">Excluídos</option>
-            </select>
-          </div>
-
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 rounded border border-gray-700 px-3 py-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={onlyPrimary}
-                onChange={(event) => setOnlyPrimary(event.target.checked)}
-                className="rounded border-gray-600 bg-[#1e2126]"
-              />
-              Apenas principal
-            </label>
-          </div>
-
-          <div className="flex items-end">
+          <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              onClick={() => {
-                setKindFilter('ALL');
-                setStatusFilter('ALL');
-                setOnlyPrimary(false);
-              }}
-              className="w-full"
+              aria-label="Mês anterior"
+              disabled={month === currentMonth}
+              onClick={() => changeMonth(addMonths(month, -1))}
+              className="px-2 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Limpar filtros
+              <ChevronLeft size={18} />
+            </Button>
+            <span className="min-w-40 text-center text-sm font-semibold text-white">
+              {formatMonthLabel(month)}
+            </span>
+            <Button
+              variant="outline"
+              aria-label="Próximo mês"
+              disabled={month === maximumMonth}
+              onClick={() => changeMonth(addMonths(month, 1))}
+              className="px-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronRight size={18} />
             </Button>
           </div>
         </div>
-      </Card>
+      )}
 
-      <Card>
-        {loading ? (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {[...Array(4)].map((_, index) => (
-              <Skeleton key={index} className="h-52 rounded-xl" />
-            ))}
-          </div>
-        ) : budgets.length === 0 ? (
-          <div className="py-12 text-center">
-            <PiggyBank size={42} className="mx-auto mb-3 text-gray-500" />
-          <p className="mb-2 text-gray-300">Nenhum orçamento sincronizado nesta empresa</p>
-            <p className="text-sm text-gray-500">
-              Os orçamentos aparecem aqui quando o app mobile sincroniza com o Cash.
-            </p>
-          </div>
-        ) : filteredBudgets.length === 0 ? (
-          <div className="py-12 text-center">
-            <PiggyBank size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="text-gray-400">Nenhum orçamento encontrado para os filtros aplicados</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {filteredBudgets.map((budget) => (
-              <BudgetCard
-                key={budget.clientKey}
-                budget={budget}
-                timeZone={timeZone}
-                businessDate={businessDate}
-              />
-            ))}
-          </div>
-        )}
-      </Card>
+      {view === 'overview' && <BudgetOverview month={month} />}
+      {view === 'availability' && <AvailabilityPlan />}
+      {view === 'monthly' && <MonthlyCategoryPlanning month={month} />}
     </DashboardLayout>
-  );
-}
-
-function BudgetCard({
-  budget,
-  timeZone,
-  businessDate
-}: {
-  budget: Budget;
-  timeZone: string;
-  businessDate: string;
-}) {
-  return (
-    <div className="rounded-xl border border-gray-700 bg-[#11161d] p-5">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold text-white">{budget.code}</h2>
-            {budget.isPrimary && (
-              <span className="rounded-full bg-yellow-900 px-2 py-1 text-xs font-medium text-yellow-300">
-                Principal
-              </span>
-            )}
-          </div>
-          <p className="mt-1 text-sm text-gray-400">
-            Periodo {formatBusinessDate(budget.startDate, timeZone)} ate{' '}
-            {formatBusinessDate(budget.endDate, timeZone)}
-          </p>
-        </div>
-
-        <div className="flex flex-wrap justify-end gap-2">
-          <span className={`rounded-full px-2 py-1 text-xs ${kindBadgeClass(budget.kind)}`}>
-            {getBudgetKindLabel(budget.kind)}
-          </span>
-          <span className={`rounded-full px-2 py-1 text-xs ${statusBadgeClass(budget.status)}`}>
-            {getBudgetStatusLabel(budget.status)}
-          </span>
-        </div>
-      </div>
-
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="rounded-lg border border-gray-700 bg-[#151b23] p-3">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Saldo atual</p>
-          <p className="mt-2 text-lg font-semibold text-white">
-            {formatCurrencyFromCents(budget.currentBalanceCents)}
-          </p>
-        </div>
-        <div className="rounded-lg border border-gray-700 bg-[#151b23] p-3">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Hoje</p>
-          <p className="mt-2 text-lg font-semibold text-white">
-            {formatCurrencyFromCents(budget.dailyBudgetCurrentCents)}
-          </p>
-        </div>
-        <div className="rounded-lg border border-gray-700 bg-[#151b23] p-3">
-          <p className="text-xs uppercase tracking-wide text-gray-500">Saldo extra</p>
-          <p className="mt-2 text-lg font-semibold text-white">
-            {formatCurrencyFromCents(budget.dayExtraBalanceCents)}
-          </p>
-        </div>
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center gap-4 text-sm text-gray-400">
-        <span>Entries: {budget.entries.length}</span>
-        <span>Meta final: {formatCurrencyFromCents(budget.targetEndingBalanceCents)}</span>
-        <span>Data de negócio: {formatBusinessDate(businessDate, timeZone)}</span>
-      </div>
-
-      <Link href={`/financial/budgets/${budget.clientKey}`}>
-        <Button variant="outline" className="inline-flex items-center gap-2">
-          Ver detalhes
-          <ArrowRight size={16} />
-        </Button>
-      </Link>
-    </div>
   );
 }
 

@@ -328,6 +328,7 @@ model Company {
   userAppGrants       UserAppGrant[]
   personalWorkspaceOwner User?              @relation("PersonalWorkspaceOwner", fields: [personalWorkspaceOwnerId], references: [id], onDelete: SetNull)
   budgets             Budget[]
+  monthlyCategoryBudgets MonthlyCategoryBudget[]
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -492,6 +493,7 @@ model FinancialCategory {
   // Relações
   transactions    FinancialTransaction[]
   recurringTransactions RecurringTransaction[]
+  monthlyBudgets  MonthlyCategoryBudget[]
 
   @@unique([name, parentId, companyId])
   @@index([companyId])
@@ -1036,6 +1038,24 @@ model BudgetEntry {
 
   @@unique([budgetId, clientKey], name: "unique_budget_entry_client_key")
   @@index([budgetId, occurredAt])
+}
+
+model MonthlyCategoryBudget {
+  id              Int               @id @default(autoincrement())
+  companyId       Int
+  referenceMonth  DateTime
+  categoryId      Int
+  limitAmount     Decimal           @db.Decimal(15, 2)
+  includeChildren Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  company         Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category        FinancialCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, referenceMonth, categoryId], name: "unique_monthly_category_budget")
+  @@index([companyId, referenceMonth])
+  @@index([categoryId])
 }
 
 model Process {

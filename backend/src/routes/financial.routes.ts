@@ -64,6 +64,10 @@ import {
 } from '../validators/financial-dashboard.validator';
 import { updateVariableProjectionPreferenceSchema } from '../validators/variable-projection-preference.validator';
 import {
+  getMonthlyCategoryBudgetSchema,
+  replaceMonthlyCategoryBudgetSchema
+} from '../validators/monthly-category-budget.validator';
+import {
   createAccount,
   getAccounts,
   getAccountById,
@@ -139,6 +143,10 @@ import {
   getVariableProjectionPreference,
   updateVariableProjectionPreference
 } from '../controllers/user-variable-projection-preference.controller';
+import {
+  getMonthlyCategoryBudget,
+  replaceMonthlyCategoryBudget
+} from '../controllers/monthly-category-budget.controller';
 import {
   analyzeCreditCardReconciliationValues,
   commitCreditCardReconciliationSession,
@@ -262,6 +270,17 @@ router.put(
   '/preferences/variable-projection',
   validate(updateVariableProjectionPreferenceSchema),
   updateVariableProjectionPreference
+);
+
+router.get(
+  '/budgets/monthly',
+  validate(getMonthlyCategoryBudgetSchema, { source: 'query' }),
+  getMonthlyCategoryBudget
+);
+router.put(
+  '/budgets/monthly',
+  validate(replaceMonthlyCategoryBudgetSchema, { source: 'body' }),
+  replaceMonthlyCategoryBudget
 );
 
 router.get(

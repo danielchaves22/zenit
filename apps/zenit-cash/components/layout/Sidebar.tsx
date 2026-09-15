@@ -191,9 +191,11 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     },
     {
       icon: <PiggyBank size={20} />,
-      label: 'Orçamentos',
+      label: 'Orçamento',
       subItems: [
-        { label: 'Orçamentos', href: '/financial/budgets' },
+        { label: 'Visão Geral', href: '/financial/budgets?view=overview' },
+        { label: 'Plano de Disponibilidade', href: '/financial/budgets?view=availability' },
+        { label: 'Planejamento Mensal', href: '/financial/budgets?view=monthly' },
       ],
     },
     {
@@ -392,7 +394,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
             
             // Verificar se algum dos subitens corresponde à rota atual
             const isActive = menuItem.subItems.some(
-              subItem => subItem.href && router.pathname === subItem.href
+              subItem => subItem.href && router.pathname === subItem.href.split('?')[0]
             );
 
             return (

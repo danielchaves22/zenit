@@ -21,7 +21,7 @@ import FinancialTransactionService from './financial-transaction.service';
 import CreditCardReconciliationValueAnalysisService from './credit-card-reconciliation-value-analysis.service';
 
 const prisma = new PrismaClient();
-const PARSER_VERSION = 1;
+const PARSER_VERSION = 2;
 const ACTIVE_MUTATION_TTL_MS = 10 * 60 * 1000;
 
 export type CreditCardReconciliationSessionContext = {
@@ -133,7 +133,61 @@ function sha256(value: Buffer | string) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function itemIdentitySeed(item: ReconciliationPreviewItem) {
+type ItemIdentitySnapshot = Pick<
+  ReconciliationPreviewItem,
+  | 'kind'
+  | 'direction'
+  | 'amount'
+  | 'signedAmount'
+  | 'purchaseDate'
+  | 'datePrecision'
+  | 'installmentNumber'
+  | 'totalInstallments'
+  | 'sourceDescription'
+  | 'sourceSection'
+  | 'cardSuffix'
+  | 'canImport'
+  | 'nonImportableReason'
+> & {
+  id: string;
+  canImportAsCredit?: boolean;
+};
+
+function stableItemIdentitySeed(item: ItemIdentitySnapshot) {
+  return JSON.stringify({
+    kind: item.kind,
+    direction: item.direction,
+    amount: item.amount,
+    signedAmount: item.signedAmount,
+    purchaseDate: item.purchaseDate,
+    datePrecision: item.datePrecision,
+    installmentNumber: item.installmentNumber,
+    totalInstallments: item.totalInstallments,
+    sourceDescription: item.sourceDescription,
+    sourceSection: item.sourceSection,
+    cardSuffix: item.cardSuffix
+  });
+}
+
+function legacyItemIdentitySeed(item: ItemIdentitySnapshot) {
+  return JSON.stringify({
+    kind: item.kind,
+    direction: item.direction,
+    amount: item.amount,
+    signedAmount: item.signedAmount,
+    purchaseDate: item.purchaseDate,
+    datePrecision: item.datePrecision,
+    installmentNumber: item.installmentNumber,
+    totalInstallments: item.totalInstallments,
+    sourceDescription: item.sourceDescription,
+    sourceSection: item.sourceSection,
+    cardSuffix: item.cardSuffix,
+    canImport: item.canImport,
+    nonImportableReason: item.nonImportableReason
+  });
+}
+
+function transitionalCreditItemIdentitySeed(item: ItemIdentitySnapshot) {
   return JSON.stringify({
     kind: item.kind,
     direction: item.direction,
@@ -152,11 +206,14 @@ function itemIdentitySeed(item: ReconciliationPreviewItem) {
   });
 }
 
-function buildPersistedItemRecords(preview: ReconciliationPreviewResult) {
+function buildItemIdentityRecords(
+  items: ItemIdentitySnapshot[],
+  buildSeed: (item: ItemIdentitySnapshot) => string
+) {
   const occurrences = new Map<string, number>();
 
-  return preview.items.map((item, index) => {
-    const seed = itemIdentitySeed(item);
+  return items.map((item, index) => {
+    const seed = buildSeed(item);
     const occurrence = (occurrences.get(seed) || 0) + 1;
     const position = index + 1;
     occurrences.set(seed, occurrence);
@@ -164,10 +221,18 @@ function buildPersistedItemRecords(preview: ReconciliationPreviewResult) {
     return {
       sourceItemId: item.id,
       identityKey: sha256(`${seed}|occurrence:${occurrence}|position:${position}`),
-      position,
-      snapshot: asJson(item)
+      position
     };
   });
+}
+
+function buildPersistedItemRecords(preview: ReconciliationPreviewResult) {
+  const identities = buildItemIdentityRecords(preview.items, stableItemIdentitySeed);
+
+  return identities.map((identity, index) => ({
+    ...identity,
+    snapshot: asJson(preview.items[index])
+  }));
 }
 
 function buildMatchKeyUsage(items: ReconciliationPreviewItem[]) {
@@ -512,14 +577,12 @@ function sessionDto(session: any) {
   };
 }
 
-function progressDto(items: any[]) {
+function progressDto(items: any[], previewItems: ReconciliationPreviewItem[]) {
+  const previewBySourceId = new Map(previewItems.map((item) => [item.id, item]));
   const isTerminal = (item: any) => {
-    const snapshot = item.snapshot as {
-      canImport?: boolean;
-      canImportAsCredit?: boolean;
-    } | null;
+    const currentItem = previewBySourceId.get(item.sourceItemId);
     return (
-      (snapshot?.canImport === false && !snapshot.canImportAsCredit) ||
+      (currentItem?.canImport === false && !currentItem.canImportAsCredit) ||
       item.resolution !== CreditCardReconciliationItemResolution.PENDING
     );
   };
@@ -566,22 +629,44 @@ async function rebuildPersistedSessionPreview(
 }
 
 function assertPersistedPreviewIdentity(
-  session: { id: number; revision: number },
+  session: { id: number; revision: number; parserVersion: number },
   items: any[],
   preview: ReconciliationPreviewResult
 ) {
   const persistedBySourceId = new Map(
     items.map((item) => [item.sourceItemId, item])
   );
-  const currentIdentityBySourceId = new Map(
-    buildPersistedItemRecords(preview).map((item) => [item.sourceItemId, item.identityKey])
+  const persistedSnapshots = items.map((item) => ({
+    ...(item.snapshot as unknown as ItemIdentitySnapshot),
+    id: item.sourceItemId
+  }));
+  const currentStableIdentityBySourceId = new Map(
+    buildItemIdentityRecords(preview.items, stableItemIdentitySeed)
+      .map((item) => [item.sourceItemId, item.identityKey])
+  );
+  const persistedStableIdentityBySourceId = new Map(
+    buildItemIdentityRecords(persistedSnapshots, stableItemIdentitySeed)
+      .map((item) => [item.sourceItemId, item.identityKey])
+  );
+  const persistedStoredIdentityBySourceId = new Map(
+    buildItemIdentityRecords(
+      persistedSnapshots,
+      session.parserVersion >= PARSER_VERSION
+        ? stableItemIdentitySeed
+        : (item) => Object.prototype.hasOwnProperty.call(item, 'canImportAsCredit')
+          ? transitionalCreditItemIdentitySeed(item)
+          : legacyItemIdentitySeed(item)
+    ).map((item) => [item.sourceItemId, item.identityKey])
   );
 
   if (
     preview.items.length !== items.length ||
     preview.items.some((item) => !persistedBySourceId.has(item.id)) ||
     items.some(
-      (item) => currentIdentityBySourceId.get(item.sourceItemId) !== item.identityKey
+      (item) =>
+        persistedStoredIdentityBySourceId.get(item.sourceItemId) !== item.identityKey ||
+        persistedStableIdentityBySourceId.get(item.sourceItemId) !==
+          currentStableIdentityBySourceId.get(item.sourceItemId)
     )
   ) {
     throw new CreditCardReconciliationSessionError(
@@ -827,7 +912,7 @@ async function buildWorkspace(
         };
       })
     },
-    progress: progressDto(session.items),
+    progress: progressDto(session.items, workspacePreview.items),
     events: session.events.reverse().map((event) => ({
       id: event.id,
       itemId: event.item?.sourceItemId || null,
@@ -2649,7 +2734,8 @@ export default class CreditCardReconciliationSessionService {
 export const __private__ = {
   buildPersistedItemRecords,
   decodeFile,
-  itemIdentitySeed,
+  itemIdentitySeed: stableItemIdentitySeed,
+  legacyItemIdentitySeed,
   progressDto,
   sha256
 };

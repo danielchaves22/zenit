@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
   CreditCardInvoiceStatus,
   PrismaClient,
@@ -45,6 +46,41 @@ function nubankFile(rows: Array<[string, string, string]>) {
     'date,title,amount',
     ...rows.map(([date, title, amount]) => `${date},${title},"${amount}"`)
   ].join('\n')).toString('base64');
+}
+
+function buildV1IdentityKeys(
+  snapshots: any[],
+  options: { includeCanImportAsCredit: boolean }
+) {
+  const occurrences = new Map<string, number>();
+
+  return snapshots.map((snapshot, index) => {
+    const identity = {
+      kind: snapshot.kind,
+      direction: snapshot.direction,
+      amount: snapshot.amount,
+      signedAmount: snapshot.signedAmount,
+      purchaseDate: snapshot.purchaseDate,
+      datePrecision: snapshot.datePrecision,
+      installmentNumber: snapshot.installmentNumber,
+      totalInstallments: snapshot.totalInstallments,
+      sourceDescription: snapshot.sourceDescription,
+      sourceSection: snapshot.sourceSection,
+      cardSuffix: snapshot.cardSuffix,
+      canImport: snapshot.canImport,
+      ...(options.includeCanImportAsCredit
+        ? { canImportAsCredit: snapshot.canImportAsCredit }
+        : {}),
+      nonImportableReason: snapshot.nonImportableReason
+    };
+    const seed = JSON.stringify(identity);
+    const occurrence = (occurrences.get(seed) || 0) + 1;
+    occurrences.set(seed, occurrence);
+
+    return createHash('sha256')
+      .update(`${seed}|occurrence:${occurrence}|position:${index + 1}`)
+      .digest('hex');
+  });
 }
 
 function isPostgresNowaitLockError(error: unknown) {
@@ -333,6 +369,114 @@ describe('Credit-card reconciliation persisted sessions', () => {
       totalAmount: expect.anything()
     });
     expect(credit.creditCardInvoice?.totalAmount.toString()).toBe('-10');
+  });
+
+  it('resumes a v1 snapshot after parser evolution without losing its decisions', async () => {
+    const started = await CreditCardReconciliationSessionService.start(context, {
+      sourceType: 'NUBANK_CSV',
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileBase64: nubankFile([
+        ['2026-08-04', 'Mercado', '45,90'],
+        ['2026-08-05', 'Cashback recebido', '-10,00']
+      ]),
+      fileName: 'legacy-v1.csv'
+    });
+    const ignored = await CreditCardReconciliationSessionService.decide(
+      context,
+      started.session.id,
+      started.preview.items[0].id,
+      { expectedRevision: 1, decision: 'IGNORE' }
+    );
+    expect(ignored.session.revision).toBe(2);
+
+    const persistedItems = await prisma.creditCardReconciliationItem.findMany({
+      where: { sessionId: started.session.id },
+      orderBy: { position: 'asc' }
+    });
+    const legacySnapshots = persistedItems.map((item) => {
+      const snapshot = { ...(item.snapshot as any) };
+      delete snapshot.canImportAsCredit;
+      if (snapshot.direction === 'CREDIT') {
+        snapshot.nonImportableReason = 'Credito ou ajuste nao suportado pela conciliacao v1';
+      }
+      return snapshot;
+    });
+    const legacyIdentityKeys = buildV1IdentityKeys(legacySnapshots, {
+      includeCanImportAsCredit: false
+    });
+
+    await prisma.$transaction([
+      prisma.creditCardReconciliationSession.update({
+        where: { id: started.session.id },
+        data: { parserVersion: 1 }
+      }),
+      ...persistedItems.map((item, index) =>
+        prisma.creditCardReconciliationItem.update({
+          where: { id: item.id },
+          data: {
+            snapshot: legacySnapshots[index],
+            identityKey: legacyIdentityKeys[index]
+          }
+        })
+      )
+    ]);
+
+    const resumed = await CreditCardReconciliationSessionService.get(context, 2026, 8);
+    expect(resumed.session).toMatchObject({ id: started.session.id, revision: 2, parserVersion: 1 });
+    expect(resumed.progress).toMatchObject({ ignoredCount: 1, pendingCount: 1 });
+    expect(resumed.preview?.items[0].progress.resolution).toBe('IGNORED');
+    expect(resumed.preview?.items[1]).toMatchObject({
+      canImportAsCredit: true,
+      nonImportableReason: 'Credito ainda nao lancado'
+    });
+
+    const committed = await CreditCardReconciliationSessionService.commit(
+      context,
+      started.session.id,
+      2,
+      [{
+        itemId: started.preview.items[1].id,
+        action: 'IMPORT_CREDIT',
+        description: 'Cashback recebido',
+        creditKind: 'CASHBACK'
+      }]
+    );
+    expect(committed.session.revision).toBe(3);
+    expect(committed.progress).toMatchObject({ ignoredCount: 1, importedCount: 1, pendingCount: 0 });
+  });
+
+  it('resumes transitional v1 snapshots that already contain credit importability', async () => {
+    const started = await CreditCardReconciliationSessionService.start(context, {
+      sourceType: 'NUBANK_CSV',
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileBase64: nubankFile([['2026-08-05', 'Cashback recebido', '-10,00']]),
+      fileName: 'transitional-v1.csv'
+    });
+    const persistedItem = await prisma.creditCardReconciliationItem.findFirstOrThrow({
+      where: { sessionId: started.session.id }
+    });
+    const snapshot = persistedItem.snapshot as any;
+    const [transitionalIdentityKey] = buildV1IdentityKeys([snapshot], {
+      includeCanImportAsCredit: true
+    });
+
+    await prisma.$transaction([
+      prisma.creditCardReconciliationSession.update({
+        where: { id: started.session.id },
+        data: { parserVersion: 1 }
+      }),
+      prisma.creditCardReconciliationItem.update({
+        where: { id: persistedItem.id },
+        data: { identityKey: transitionalIdentityKey }
+      })
+    ]);
+
+    const resumed = await CreditCardReconciliationSessionService.get(context, 2026, 8);
+    expect(resumed.session).toMatchObject({ id: started.session.id, revision: 1, parserVersion: 1 });
+    expect(resumed.progress).toMatchObject({ pendingCount: 1 });
+    expect(resumed.preview?.items[0].canImportAsCredit).toBe(true);
   });
 
   it('resets OPEN evidence after the card becomes inactive and the target becomes settled', async () => {

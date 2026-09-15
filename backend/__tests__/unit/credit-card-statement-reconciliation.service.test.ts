@@ -584,6 +584,7 @@ describe('Credit card statement reconciliation service', () => {
       direction: 'CREDIT',
       amount: '0.06',
       canImport: false,
+      canImportAsCredit: true,
       sourceDescription: 'AJUSTE CRED PARC S JUROS',
       sourceSection: 'OTHER'
     });
@@ -622,6 +623,7 @@ describe('Credit card statement reconciliation service', () => {
     expect(parsed.items[1]).toMatchObject({
       kind: 'PAYMENT',
       canImport: false,
+      canImportAsCredit: false,
       direction: 'CREDIT',
       sourceDescription: 'PAGTO. POR DEB EM C/C',
       sourceSection: 'OTHER'

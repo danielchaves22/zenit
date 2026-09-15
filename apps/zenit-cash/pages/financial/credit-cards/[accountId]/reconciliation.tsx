@@ -16,6 +16,11 @@ import {
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import CategorySelect, { type CategoryOption } from '@/components/financial/CategorySelect';
+import {
+  CreditCardCreditModal,
+  type CreditCardCreditKind,
+  type CreditCardCreditPayload
+} from '@/components/financial/CreditCardCreditModal';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import {
   AutocompleteInput,
@@ -225,6 +230,7 @@ interface ReconciliationPreviewItem {
   sourceSection: string;
   cardSuffix: string | null;
   canImport: boolean;
+  canImportAsCredit: boolean;
   nonImportableReason: string | null;
   categorySuggestion: {
     categoryId: number | null;
@@ -365,7 +371,7 @@ interface ReconciliationWorkspace {
   commitResult?: ReconciliationCommitResult | null;
 }
 
-type ReconciliationCommitAction = 'IMPORT' | 'LINK_FIXED';
+type ReconciliationCommitAction = 'IMPORT' | 'IMPORT_CREDIT' | 'LINK_FIXED';
 
 interface ReconciliationItemDraft {
   description: string;
@@ -377,6 +383,8 @@ interface ReconciliationCommitSelection {
   action: ReconciliationCommitAction;
   description?: string;
   categoryId?: number;
+  creditKind?: CreditCardCreditKind;
+  refundOfTransactionId?: number;
 }
 
 const RECONCILIATION_SOURCE_CONFIG: Record<
@@ -477,6 +485,14 @@ function getStatusLabel(status: ReconciliationItemStatus) {
   return 'Nao importavel';
 }
 
+function getItemStatusLabel(item: ReconciliationPreviewItem) {
+  if (item.canImportAsCredit && getItemResolution(item) === 'PENDING') {
+    return 'Crédito não lançado';
+  }
+
+  return getStatusLabel(getDisplayedItemStatus(item));
+}
+
 function getStatusClasses(status: ReconciliationItemStatus) {
   if (status === 'OK') {
     return 'border-green-500/40 bg-green-500/10 text-green-200';
@@ -499,7 +515,7 @@ function getResolutionLabel(
 ) {
   switch (resolution) {
     case 'IMPORTED':
-      return 'Importado';
+      return resolutionData?.action === 'IMPORT_CREDIT' ? 'Crédito lançado' : 'Importado';
     case 'LINKED_FIXED':
       return 'Fixa vinculada';
     case 'CONFIRMED_EXISTING':
@@ -886,7 +902,7 @@ function getDisplayedItemStatus(
 function canIgnoreItem(item: ReconciliationPreviewItem) {
   return (
     item.status !== 'NOT_IMPORTABLE' &&
-    item.canImport &&
+    (item.canImport || item.canImportAsCredit) &&
     getItemResolution(item) === 'PENDING'
   );
 }
@@ -902,7 +918,7 @@ function buildProgressFromPreview(preview: ReconciliationPreview | null): Reconc
   const resolvedCount = preview.items.filter(
     (item) =>
       item.progress?.terminal ||
-      item.status === 'NOT_IMPORTABLE' ||
+      (item.status === 'NOT_IMPORTABLE' && !item.canImportAsCredit) ||
       getItemResolution(item) !== 'PENDING'
   ).length;
   const pendingCount = resolutions.length - resolvedCount;
@@ -1216,6 +1232,7 @@ interface CreditCardReconciliationSideBySideProps {
   onSelectPreviewItem: (itemId: string) => void;
   onSelectSystemTransaction: (itemId: string, transactionKey: string) => void;
   onToggleImportSelection: (itemId: string, checked: boolean) => void;
+  onAddCredit: (item: ReconciliationPreviewItem) => void;
   onConfirmExisting: (itemId: string, transactionId: number) => void;
   onUnconfirmExisting: (itemId: string) => void;
   onUnlinkFixed: (itemId: string) => void;
@@ -1564,6 +1581,7 @@ function CreditCardReconciliationSideBySide({
   onSelectPreviewItem,
   onSelectSystemTransaction,
   onToggleImportSelection,
+  onAddCredit,
   onConfirmExisting,
   onUnconfirmExisting,
   onUnlinkFixed,
@@ -1761,7 +1779,7 @@ function CreditCardReconciliationSideBySide({
                                 <span
                                   className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${getStatusClasses(getDisplayedItemStatus(item))}`}
                                 >
-                                  {getStatusLabel(getDisplayedItemStatus(item))}
+                                  {getItemStatusLabel(item)}
                                 </span>
                                 <span className="rounded-full border border-gray-700 px-2 py-0.5 text-[11px] text-gray-300">
                                   {getSectionLabel(item.sourceSection)}
@@ -1909,6 +1927,15 @@ function CreditCardReconciliationSideBySide({
             </div>
             {focusedItem && sessionStatus === 'OPEN' && (
               <div className="mt-3 flex flex-wrap gap-2">
+                {focusedResolution === 'PENDING' && focusedItem.canImportAsCredit && (
+                  <Button
+                    variant="accent"
+                    onClick={() => onAddCredit(focusedItem)}
+                    disabled={mutationInFlight}
+                  >
+                    Lançar como crédito
+                  </Button>
+                )}
                 {focusedResolution === 'PENDING' &&
                   focusedItem.status !== 'NOT_IMPORTABLE' &&
                   selectedSystemRow?.transaction.id && (
@@ -2153,6 +2180,7 @@ function CreditCardReconciliationPageInner() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
   const [committingItemIds, setCommittingItemIds] = useState<string[]>([]);
+  const [creditItem, setCreditItem] = useState<ReconciliationPreviewItem | null>(null);
   const [selectedTargetInvoiceKey, setSelectedTargetInvoiceKey] = useState('');
   const [targetInvoiceDetail, setTargetInvoiceDetail] =
     useState<ReconciliationTargetInvoiceDetail | null>(null);
@@ -3378,7 +3406,8 @@ function CreditCardReconciliationPageInner() {
 
   async function commitItems(
     itemIds: string[],
-    action: ReconciliationCommitAction = 'IMPORT'
+    action: ReconciliationCommitAction = 'IMPORT',
+    selectionOverride?: ReconciliationCommitSelection[]
   ) {
     if (!preview || !session || !selectedTargetInvoice) {
       addToast('Analise a fatura antes de processar os itens', 'error');
@@ -3406,7 +3435,7 @@ function CreditCardReconciliationPageInner() {
 
     let selectedItems: ReconciliationCommitSelection[] = [];
     try {
-      selectedItems = buildCommitPayload(itemIds, action);
+      selectedItems = selectionOverride || buildCommitPayload(itemIds, action);
     } catch (error: any) {
       addToast(error.message || 'Revise os dados selecionados antes de continuar', 'error');
       return;
@@ -3486,17 +3515,21 @@ function CreditCardReconciliationPageInner() {
         }
       }
       await fetchInvoices({ preserveCurrentOnError: true });
+      return true;
     } catch (error: any) {
       addToast(
         error.response?.data?.error ||
           (action === 'LINK_FIXED'
             ? 'Erro ao vincular item a fixa recorrente'
-          : 'Erro ao importar lancamentos'),
+            : action === 'IMPORT_CREDIT'
+              ? 'Erro ao lançar crédito'
+              : 'Erro ao importar lancamentos'),
         'error'
       );
       if (error.response?.data?.code === 'REVISION_CONFLICT') {
         await fetchReconciliationSession(selectedTargetInvoice);
       }
+      return false;
     } finally {
       if (isSingleItemCommit) {
         itemIds.forEach((itemId) => commitInFlightItemIdsRef.current.delete(itemId));
@@ -3507,6 +3540,27 @@ function CreditCardReconciliationPageInner() {
         batchCommitInFlightRef.current = false;
         setCommitLoading(false);
       }
+    }
+  }
+
+  async function handleCreditSubmit(payload: CreditCardCreditPayload) {
+    if (!creditItem) return;
+
+    const committed = await commitItems(
+      [creditItem.id],
+      'IMPORT_CREDIT',
+      [{
+        itemId: creditItem.id,
+        action: 'IMPORT_CREDIT',
+        description: payload.description,
+        categoryId: payload.categoryId,
+        creditKind: payload.creditKind,
+        refundOfTransactionId: payload.refundOfTransactionId
+      }]
+    );
+
+    if (committed) {
+      setCreditItem(null);
     }
   }
 
@@ -4227,6 +4281,7 @@ function CreditCardReconciliationPageInner() {
                   onSelectPreviewItem={handlePreviewItemFocus}
                   onSelectSystemTransaction={handleLocalSystemSelectionChange}
                   onToggleImportSelection={handleToggleSelection}
+                  onAddCredit={setCreditItem}
                   onConfirmExisting={(itemId, transactionId) =>
                     void updateItemDecision(itemId, 'CONFIRM_EXISTING', [transactionId])
                   }
@@ -4340,7 +4395,7 @@ function CreditCardReconciliationPageInner() {
                                   <span
                                     className={`rounded-full border px-2.5 py-1 text-xs font-medium ${getStatusClasses(getDisplayedItemStatus(item))}`}
                                   >
-                                    {getStatusLabel(getDisplayedItemStatus(item))}
+                                    {getItemStatusLabel(item)}
                                   </span>
                                   <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
                                     {getSectionLabel(item.sourceSection)}
@@ -4418,6 +4473,27 @@ function CreditCardReconciliationPageInner() {
                                       <RefreshCw size={14} className="animate-spin" />
                                     )}
                                     {itemCommitLoading ? 'Importando...' : 'Importar este item'}
+                                  </Button>
+                                )}
+                                {item.canImportAsCredit && resolution === 'PENDING' && (
+                                  <Button
+                                    variant="accent"
+                                    onClick={() => setCreditItem(item)}
+                                    disabled={
+                                      !sessionTargetReady ||
+                                      commitLoading ||
+                                      hasPendingSingleCommit ||
+                                      hasDecisionInFlight ||
+                                      sessionActionLoading !== null ||
+                                      sessionCompleted ||
+                                      itemCommitLoading
+                                    }
+                                    className="flex items-center gap-2 text-sm"
+                                  >
+                                    {itemCommitLoading && (
+                                      <RefreshCw size={14} className="animate-spin" />
+                                    )}
+                                    {itemCommitLoading ? 'Lançando...' : 'Lançar como crédito'}
                                   </Button>
                                 )}
                                 {canIgnoreItem(item) && (
@@ -4940,6 +5016,19 @@ function CreditCardReconciliationPageInner() {
         cancelText={confirmation.options.cancelText}
         type={confirmation.options.type}
         loading={confirmation.loading}
+      />
+      <CreditCardCreditModal
+        isOpen={Boolean(creditItem)}
+        accountId={accountId}
+        title="Lançar crédito da conciliação"
+        submitting={Boolean(creditItem && committingItemIds.includes(creditItem.id))}
+        initialDescription={creditItem?.sourceDescription || ''}
+        initialAmount={creditItem?.amount || '0'}
+        initialDate={(creditItem?.purchaseDate || preview?.statement.dueDate || '').slice(0, 10)}
+        initialCreditKind={creditItem?.kind === 'ADJUSTMENT' ? 'ADJUSTMENT' : 'REFUND'}
+        lockStatementFields
+        onClose={() => setCreditItem(null)}
+        onSubmit={handleCreditSubmit}
       />
     </DashboardLayout>
   );

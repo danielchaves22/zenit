@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CreditCardCreditKind } from '@prisma/client';
 
 const sourceTypeSchema = z.enum(['CAIXA_PDF', 'BRADESCO_CSV', 'NUBANK_CSV'], {
   errorMap: () => ({ message: 'Fonte de conciliacao invalida' })
@@ -29,7 +30,7 @@ const expectedRevisionSchema = z.coerce.number()
 
 const selectedItemSchema = z.object({
   itemId: z.string().trim().min(1, 'ID do item selecionado e obrigatorio').max(64),
-  action: z.enum(['IMPORT', 'LINK_FIXED']).optional().default('IMPORT'),
+  action: z.enum(['IMPORT', 'IMPORT_CREDIT', 'LINK_FIXED']).optional().default('IMPORT'),
   description: z.string()
     .trim()
     .max(255, 'Descricao do lancamento deve ter no maximo 255 caracteres')
@@ -37,9 +38,12 @@ const selectedItemSchema = z.object({
   categoryId: z.coerce.number()
     .int('Categoria do lancamento deve ser um numero inteiro')
     .positive('Categoria do lancamento deve ser positiva')
-    .optional()
+    .optional(),
+  creditKind: z.nativeEnum(CreditCardCreditKind).optional(),
+  refundOfTransactionId: z.coerce.number().int().positive().optional()
 }).superRefine((item, ctx) => {
-  if ((item.action || 'IMPORT') !== 'IMPORT') {
+  const action = item.action || 'IMPORT';
+  if (action === 'LINK_FIXED') {
     return;
   }
 
@@ -51,11 +55,40 @@ const selectedItemSchema = z.object({
     });
   }
 
-  if (!item.categoryId) {
+  if (action === 'IMPORT' && !item.categoryId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['categoryId'],
       message: 'Categoria do lancamento deve ser informada'
+    });
+  }
+
+
+  if (action === 'IMPORT_CREDIT' && !item.creditKind) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['creditKind'],
+      message: 'Natureza do credito deve ser informada'
+    });
+  }
+
+  if (
+    action === 'IMPORT_CREDIT' &&
+    item.creditKind === CreditCardCreditKind.REFUND &&
+    !item.refundOfTransactionId
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['refundOfTransactionId'],
+      message: 'Selecione a compra original do estorno'
+    });
+  }
+
+  if (item.creditKind !== CreditCardCreditKind.REFUND && item.refundOfTransactionId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['refundOfTransactionId'],
+      message: 'Somente estornos podem ser vinculados a uma compra'
     });
   }
 });

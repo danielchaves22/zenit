@@ -214,6 +214,7 @@ function previewItem({
     sourceSection: 'PURCHASES',
     cardSuffix: '1234',
     canImport: true,
+    canImportAsCredit: false,
     nonImportableReason: null,
     categorySuggestion: {
       categoryId: category.id,
@@ -673,6 +674,10 @@ describe('CreditCardReconciliationPage comparison views', () => {
         return Promise.resolve({ data: targetInvoiceDetail })
       }
 
+      if (url === '/financial/credit-cards/1/refundable-purchases') {
+        return Promise.resolve({ data: [] })
+      }
+
       if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
         return Promise.resolve({
           data: { session: null, preview: null, progress: null, events: [] }
@@ -693,6 +698,63 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('oferece lancamento individual para credito sem inclui-lo na selecao em massa', async () => {
+    const user = userEvent.setup()
+    const creditItem = {
+      ...previewItem({
+        id: 'bank-credit',
+        sequence: 1,
+        description: 'Estorno recebido',
+        amount: '40.00',
+        status: 'PENDING'
+      }),
+      kind: 'CREDIT',
+      direction: 'CREDIT',
+      signedAmount: '-40.00',
+      canImport: false,
+      canImportAsCredit: true,
+      nonImportableReason: 'Credito ainda nao lancado'
+    }
+    const creditPreview = {
+      ...preview,
+      items: [creditItem],
+      summary: {
+        ...preview.summary,
+        totalItems: 1,
+        pendingCount: 1,
+        importableCount: 0,
+        importableAmount: '0'
+      }
+    }
+    const creditWorkspace = buildWorkspace({ sourcePreview: creditPreview })
+
+    vi.mocked(api.post).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards/1/reconciliation/sessions') {
+        return Promise.resolve({ data: creditWorkspace })
+      }
+      return Promise.reject(new Error(`Unexpected POST request: ${url}`))
+    })
+
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Escolher arquivo')
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await waitFor(() => expect(fileInput).toBeEnabled())
+    await user.upload(fileInput, new File(['date,description,amount'], 'fatura.csv', {
+      type: 'text/csv'
+    }))
+    await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
+
+    expect(await screen.findByText('Crédito não lançado')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox')).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Lançar como crédito' }))
+    expect(
+      screen.getByRole('dialog', { name: 'Lançar crédito da conciliação' })
+    ).toBeInTheDocument()
+    expect(document.getElementById('credit-card-credit-amount')).toBeDisabled()
+    expect(document.getElementById('credit-card-credit-date')).toBeDisabled()
   })
 
   it('mantem a troca valida de arquivo e bloqueia nova escolha enquanto a previa esta pendente', async () => {

@@ -2,6 +2,7 @@ import request from 'supertest';
 import bcrypt from 'bcrypt';
 import {
   AppKey,
+  CreditCardCreditKind,
   FinancialTransactionImportSourceType,
   PrismaClient,
   TransactionStatus,
@@ -321,6 +322,104 @@ describe('Credit card invoices', () => {
     expect(card.creditLimit).toBe('1000');
     expect(card.statementClosingDay).toBe(10);
     expect(card.statementDueDay).toBe(15);
+  });
+
+  it('adds refunds to an invoice, reduces its total and restores the card limit', async () => {
+    const { purchaseDate } = buildCurrentCardCycleConfig();
+    const card = await createCreditCardAccount({ creditLimit: 1000 });
+    const createdPurchase = await FinancialTransactionService.createTransaction({
+      description: 'Compra com estorno',
+      amount: 100,
+      date: purchaseDate,
+      dueDate: purchaseDate,
+      effectiveDate: purchaseDate,
+      type: TransactionType.EXPENSE,
+      status: TransactionStatus.COMPLETED,
+      fromAccountId: card.id,
+      categoryId: expenseCategoryId,
+      companyId,
+      createdBy: userId
+    });
+    const purchase = Array.isArray(createdPurchase) ? createdPurchase[0]! : createdPurchase;
+    const invoice = await prisma.creditCardInvoice.findFirstOrThrow({
+      where: { accountId: card.id }
+    });
+
+    const creditResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${invoice.id}/credits`)
+      .set(authHeaders())
+      .send({
+        description: 'Estorno parcial',
+        amount: 40,
+        date: purchaseDate.toISOString(),
+        creditKind: CreditCardCreditKind.REFUND,
+        refundOfTransactionId: purchase.id
+      });
+
+    expect(creditResponse.status).toBe(201);
+    expect(creditResponse.body).toMatchObject({
+      type: TransactionType.INCOME,
+      toAccountId: card.id,
+      creditCardCreditKind: CreditCardCreditKind.REFUND,
+      refundOfTransactionId: purchase.id
+    });
+
+    const detailResponse = await request(app)
+      .get(`/api/financial/credit-card-invoices/${invoice.id}`)
+      .set(authHeaders());
+    expect(detailResponse.status).toBe(200);
+    expect(detailResponse.body).toMatchObject({
+      chargeAmount: '100',
+      creditAmount: '40',
+      totalAmount: '60'
+    });
+    expect(detailResponse.body.transactions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: purchase.id,
+        refundedAmount: '40',
+        refundStatus: 'PARTIALLY_REFUNDED'
+      })
+    ]));
+
+    const refreshedCard = await prisma.financialAccount.findUniqueOrThrow({
+      where: { id: card.id }
+    });
+    expect(refreshedCard.balance.toString()).toBe('-60');
+
+    const refundableResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/refundable-purchases`)
+      .set(authHeaders());
+    expect(refundableResponse.status).toBe(200);
+    expect(refundableResponse.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: purchase.id,
+        refundedAmount: '40',
+        remainingAmount: '60'
+      })
+    ]));
+
+    const excessiveRefundResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${invoice.id}/credits`)
+      .set(authHeaders())
+      .send({
+        description: 'Estorno acima do saldo',
+        amount: 60.01,
+        date: purchaseDate.toISOString(),
+        creditKind: CreditCardCreditKind.REFUND,
+        refundOfTransactionId: purchase.id
+      });
+    expect(excessiveRefundResponse.status).toBe(400);
+    expect(excessiveRefundResponse.body.error).toContain('excede o saldo restante');
+
+    await expect(FinancialTransactionService.updateTransaction(
+      purchase.id,
+      { amount: 39.99 },
+      companyId
+    )).rejects.toThrow('menor que o total ja estornado');
+    await expect(FinancialTransactionService.deleteTransaction(
+      purchase.id,
+      { companyId }
+    )).rejects.toThrow('possui estornos vinculados');
   });
 
   it('allows the same account name across different account types', async () => {

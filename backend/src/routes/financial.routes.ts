@@ -33,9 +33,11 @@ import {
 import { executeFinancialResetSchema } from '../validators/financial-reset.validator';
 import {
   creditCardFixedMaterializationSchema,
+  createCreditCardInvoiceCreditSchema,
   getCreditCardInvoiceSchema,
   getProjectedCreditCardInvoiceSchema,
   listCreditCardInvoicesSchema,
+  listRefundableCreditCardPurchasesSchema,
   payCreditCardInvoiceSchema,
   reopenCreditCardInvoiceSchema
 } from '../validators/credit-card-invoice.validator';
@@ -117,11 +119,13 @@ import {
   updateFixedTransaction
 } from '../controllers/fixed-transaction.controller';
 import {
+  createCreditCardInvoiceCredit,
   getCreditCardFixedMaterialization,
   getCreditCardInvoice,
   getProjectedCreditCardInvoice,
   listCreditCardInvoices,
   listCreditCards,
+  listRefundableCreditCardPurchases,
   materializeCreditCardFixedTransactions,
   payCreditCardInvoice,
   reopenCreditCardInvoice
@@ -212,6 +216,7 @@ router.post('/credit-cards/:accountId/reset', requireFeaturePermission('FINANCIA
 router.get('/credit-card-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(listCreditCardPurchasesSchema), getCreditCardPurchases);
 router.get('/installment-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), getInstallmentPurchases);
 router.get('/credit-cards/:accountId/invoices', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listCreditCardInvoicesSchema), listCreditCardInvoices);
+router.get('/credit-cards/:accountId/refundable-purchases', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(listRefundableCreditCardPurchasesSchema), listRefundableCreditCardPurchases);
 router.get(
   '/credit-cards/:accountId/invoices/:referenceYear/:referenceMonth/fixed-materialization',
   requireFeaturePermission('FINANCIAL_ACCOUNTS'),
@@ -237,6 +242,7 @@ router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/items/:
 router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/status', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(updateCreditCardReconciliationSessionStatusSchema, { source: ['body', 'params'] }), updateCreditCardReconciliationSessionStatus);
 router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/reset', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(resetCreditCardReconciliationSessionSchema, { source: ['body', 'params'] }), resetCreditCardReconciliationSession);
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
+router.post('/credit-card-invoices/:id/credits', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(createCreditCardInvoiceCreditSchema), createCreditCardInvoiceCredit);
 router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
 router.post('/credit-card-invoices/:id/reopen', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(reopenCreditCardInvoiceSchema), reopenCreditCardInvoice);
 

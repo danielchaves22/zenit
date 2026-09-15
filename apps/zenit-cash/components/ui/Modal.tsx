@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useId } from 'react';
 import { X } from 'lucide-react';
 
 interface ModalProps {
@@ -18,6 +18,7 @@ export function Modal({
   footer,
   loading = false
 }: ModalProps) {
+  const titleId = useId();
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen && !loading) {
@@ -53,9 +54,14 @@ export function Modal({
 
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div className="w-full max-w-md transform transition-all duration-300 ease-out">
-          <div className="bg-surface rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            className="bg-surface rounded-2xl shadow-2xl border border-gray-700 overflow-hidden"
+          >
             <div className="px-6 pt-6 pb-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">{title}</h3>
+              <h3 id={titleId} className="text-lg font-semibold text-white">{title}</h3>
               <button
                 onClick={onClose}
                 disabled={loading}

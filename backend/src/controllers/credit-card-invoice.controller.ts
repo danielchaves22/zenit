@@ -89,6 +89,66 @@ export async function getCreditCardInvoice(req: Request, res: Response) {
   }
 }
 
+export async function listRefundableCreditCardPurchases(req: Request, res: Response) {
+  try {
+    const { companyId } = getUserContext(req);
+    const purchases = await CreditCardInvoiceService.listRefundablePurchases({
+      accountId: Number(req.params.accountId),
+      companyId,
+      search: typeof req.query.search === 'string' ? req.query.search : null
+    });
+
+    return res.status(200).json(purchases);
+  } catch (error: any) {
+    logger.error('Erro ao listar compras disponiveis para estorno:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao listar compras disponiveis para estorno'
+    });
+  }
+}
+
+export async function createCreditCardInvoiceCredit(req: Request, res: Response) {
+  try {
+    const { companyId, userId, role } = getUserContext(req);
+    const invoiceId = Number(req.params.id);
+    const invoice = await CreditCardInvoiceService.getInvoiceById(invoiceId, companyId, false);
+
+    if (!invoice) {
+      return res.status(404).json({ error: 'Fatura nao encontrada' });
+    }
+
+    const hasAccess = await UserFinancialAccountAccessService.checkUserAccountAccess(
+      userId,
+      invoice.accountId,
+      role,
+      companyId
+    );
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Acesso negado a esta fatura' });
+    }
+
+    const credit = await CreditCardInvoiceService.createInvoiceCredit({
+      invoiceId,
+      description: req.body.description,
+      amount: req.body.amount,
+      date: req.body.date,
+      creditKind: req.body.creditKind,
+      refundOfTransactionId: req.body.refundOfTransactionId ?? null,
+      categoryId: req.body.categoryId ?? null,
+      notes: req.body.notes,
+      companyId,
+      userId
+    });
+
+    return res.status(201).json(credit);
+  } catch (error: any) {
+    logger.error('Erro ao adicionar credito a fatura:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao adicionar credito a fatura'
+    });
+  }
+}
+
 export async function getProjectedCreditCardInvoice(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);

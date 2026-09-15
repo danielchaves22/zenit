@@ -1,4 +1,6 @@
 import {
+  AccountType,
+  CreditCardCreditKind,
   CreditCardInvoiceStatus,
   Prisma,
   PrismaClient,
@@ -19,6 +21,10 @@ import {
   resolveCreditCardInvoiceStatus
 } from '../utils/credit-card';
 import { getBankIconPath } from '../catalogs/bank-catalog';
+import {
+  calculateCreditCardInvoiceTotals,
+  calculateCreditCardInvoiceTotalsByIds
+} from '../utils/credit-card-invoice-totals';
 
 const prisma = new PrismaClient();
 const CREDIT_CARD_RECONCILIATION_MUTATION_TTL_MS = 10 * 60 * 1000;
@@ -238,33 +244,13 @@ export default class CreditCardInvoiceService {
       return null;
     }
 
-    const [aggregate, externalSettlementCount] = await Promise.all([
-      prisma.financialTransaction.aggregate({
-        where: {
-          creditCardInvoiceId: invoiceId,
-          type: TransactionType.EXPENSE,
-          status: TransactionStatus.COMPLETED
-        },
-        _sum: {
-          amount: true
-        }
-      }),
-      prisma.financialTransaction.count({
-        where: {
-          creditCardInvoiceId: invoiceId,
-          type: TransactionType.EXPENSE,
-          status: TransactionStatus.COMPLETED,
-          isExternalCreditCardSettlement: true
-        }
-      })
-    ]);
-
-    const totalAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
+    const totals = await calculateCreditCardInvoiceTotals(prisma, invoiceId);
+    const totalAmount = totals.totalAmount;
     const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
     const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
-    const hasExternalSettlements = externalSettlementCount > 0;
+    const hasExternalSettlements = totals.externalSettlementCount > 0;
 
-    if (totalAmount.eq(0) && !paymentTransactionId && !hasExternalSettlements) {
+    if (totals.transactionCount === 0 && !paymentTransactionId && !hasExternalSettlements) {
       await prisma.creditCardInvoice.delete({
         where: { id: invoiceId }
       });
@@ -348,54 +334,17 @@ export default class CreditCardInvoiceService {
     }
 
     const invoiceIds = invoices.map((invoice) => invoice.id);
-    const [transactionTotals, externalSettlementCounts] = await Promise.all([
-      prisma.financialTransaction.groupBy({
-        by: ['creditCardInvoiceId'],
-        where: {
-          creditCardInvoiceId: { in: invoiceIds },
-          type: TransactionType.EXPENSE,
-          status: TransactionStatus.COMPLETED
-        },
-        _sum: {
-          amount: true
-        }
-      }),
-      prisma.financialTransaction.groupBy({
-        by: ['creditCardInvoiceId'],
-        where: {
-          creditCardInvoiceId: { in: invoiceIds },
-          type: TransactionType.EXPENSE,
-          status: TransactionStatus.COMPLETED,
-          isExternalCreditCardSettlement: true
-        },
-        _count: {
-          _all: true
-        }
-      })
-    ]);
-
-    const totalByInvoiceId = new Map(
-      transactionTotals
-        .filter((item) => item.creditCardInvoiceId !== null)
-        .map((item) => [
-          item.creditCardInvoiceId as number,
-          item._sum.amount ?? new Prisma.Decimal(0)
-        ])
-    );
-    const externalSettlementCountByInvoiceId = new Map(
-      externalSettlementCounts
-        .filter((item) => item.creditCardInvoiceId !== null)
-        .map((item) => [item.creditCardInvoiceId as number, item._count._all])
-    );
+    const totalsByInvoiceId = await calculateCreditCardInvoiceTotalsByIds(prisma, invoiceIds);
     const writeOperations: Prisma.PrismaPromise<unknown>[] = [];
 
     for (const invoice of invoices) {
-      const totalAmount = totalByInvoiceId.get(invoice.id) ?? new Prisma.Decimal(0);
+      const totals = totalsByInvoiceId.get(invoice.id)!;
+      const totalAmount = totals.totalAmount;
       const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
       const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
-      const hasExternalSettlements = (externalSettlementCountByInvoiceId.get(invoice.id) ?? 0) > 0;
+      const hasExternalSettlements = totals.externalSettlementCount > 0;
 
-      if (totalAmount.eq(0) && !paymentTransactionId && !hasExternalSettlements) {
+      if (totals.transactionCount === 0 && !paymentTransactionId && !hasExternalSettlements) {
         writeOperations.push(prisma.creditCardInvoice.delete({ where: { id: invoice.id } }));
         continue;
       }
@@ -1127,6 +1076,160 @@ export default class CreditCardInvoiceService {
     };
   }
 
+  static async createInvoiceCredit(params: {
+    invoiceId: number;
+    description: string;
+    amount: number | string;
+    date: Date;
+    creditKind: CreditCardCreditKind;
+    refundOfTransactionId?: number | null;
+    categoryId?: number | null;
+    notes?: string;
+    companyId: number;
+    userId: number;
+  }) {
+    const invoice = await prisma.creditCardInvoice.findFirst({
+      where: {
+        id: params.invoiceId,
+        account: { companyId: params.companyId }
+      },
+      include: {
+        paymentTransaction: {
+          select: { id: true, status: true }
+        },
+        account: {
+          select: { id: true, isActive: true, type: true }
+        }
+      }
+    });
+    if (!invoice) {
+      throw new Error('Fatura nao encontrada');
+    }
+    if (
+      invoice.status === CreditCardInvoiceStatus.PAID ||
+      invoice.paymentTransaction?.status === TransactionStatus.COMPLETED
+    ) {
+      throw new Error('Nao e possivel adicionar credito a uma fatura paga');
+    }
+    if (!invoice.account.isActive || invoice.account.type !== 'CREDIT_CARD') {
+      throw new Error('Cartao de credito inativo ou invalido');
+    }
+
+    const activeReconciliation = await prisma.creditCardReconciliationSession.findFirst({
+      where: {
+        accountId: invoice.accountId,
+        referenceYear: invoice.referenceYear,
+        referenceMonth: invoice.referenceMonth,
+        activeMutationToken: { not: null },
+        activeMutationAt: {
+          gt: new Date(Date.now() - CREDIT_CARD_RECONCILIATION_MUTATION_TTL_MS)
+        }
+      },
+      select: { id: true }
+    });
+    if (activeReconciliation) {
+      throw new Error(
+        'A conciliacao desta fatura esta em processamento. Aguarde antes de adicionar o credito.'
+      );
+    }
+
+    return FinancialTransactionService.createCreditCardCredit({
+      description: params.description,
+      amount: params.amount,
+      date: params.date,
+      creditKind: params.creditKind,
+      refundOfTransactionId: params.refundOfTransactionId ?? null,
+      categoryId: params.categoryId ?? null,
+      notes: params.notes,
+      accountId: invoice.accountId,
+      invoiceReference: {
+        referenceYear: invoice.referenceYear,
+        referenceMonth: invoice.referenceMonth,
+        closingDate: invoice.closingDate,
+        dueDate: invoice.dueDate
+      },
+      companyId: params.companyId,
+      createdBy: params.userId
+    });
+  }
+
+  static async listRefundablePurchases(params: {
+    accountId: number;
+    companyId: number;
+    search?: string | null;
+  }) {
+    const search = params.search?.trim() || '';
+    const purchases = await prisma.financialTransaction.findMany({
+      where: {
+        companyId: params.companyId,
+        fromAccountId: params.accountId,
+        fromAccount: {
+          type: AccountType.CREDIT_CARD,
+          isActive: true
+        },
+        type: TransactionType.EXPENSE,
+        status: { not: TransactionStatus.CANCELED },
+        archivedAt: null,
+        isExternalCreditCardSettlement: false,
+        ...(search
+          ? { description: { contains: search, mode: 'insensitive' as const } }
+          : {})
+      },
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        date: true,
+        installmentNumber: true,
+        totalInstallments: true,
+        category: {
+          select: { id: true, name: true, color: true }
+        },
+        creditCardInvoice: {
+          select: {
+            referenceYear: true,
+            referenceMonth: true,
+            status: true
+          }
+        },
+        refundCredits: {
+          where: {
+            creditCardCreditKind: CreditCardCreditKind.REFUND,
+            status: TransactionStatus.COMPLETED,
+            archivedAt: null
+          },
+          select: { amount: true }
+        }
+      },
+      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      take: 200
+    });
+
+    return purchases
+      .map((purchase) => {
+        const refundedAmount = purchase.refundCredits.reduce(
+          (sum, credit) => sum.plus(credit.amount),
+          new Prisma.Decimal(0)
+        );
+        const remainingAmount = purchase.amount.minus(refundedAmount);
+
+        return {
+          id: purchase.id,
+          description: purchase.description,
+          amount: purchase.amount.toString(),
+          refundedAmount: refundedAmount.toString(),
+          remainingAmount: remainingAmount.toString(),
+          date: purchase.date,
+          installmentNumber: purchase.installmentNumber,
+          totalInstallments: purchase.totalInstallments,
+          category: purchase.category,
+          creditCardInvoice: purchase.creditCardInvoice
+        };
+      })
+      .filter((purchase) => new Prisma.Decimal(purchase.remainingAmount).gt(0))
+      .slice(0, 50);
+  }
+
   static async listCreditCards(params: {
     companyId: number;
     accountIds?: number[];
@@ -1305,9 +1408,10 @@ export default class CreditCardInvoiceService {
       })
     ]);
 
-    const externalSettlements = invoices.length === 0
-      ? []
-      : await prisma.financialTransaction.groupBy({
+    const [externalSettlements, totalsByInvoiceId] = invoices.length === 0
+      ? [[], new Map<number, Awaited<ReturnType<typeof calculateCreditCardInvoiceTotals>>>()]
+      : await Promise.all([
+        prisma.financialTransaction.groupBy({
           by: ['creditCardInvoiceId'],
           where: {
             creditCardInvoiceId: {
@@ -1323,7 +1427,12 @@ export default class CreditCardInvoiceService {
           _count: {
             _all: true
           }
-        });
+        }),
+        calculateCreditCardInvoiceTotalsByIds(
+          prisma,
+          invoices.map((invoice) => invoice.id)
+        )
+      ]);
 
     const externalSettlementMap = new Map(
       externalSettlements.map((item) => [
@@ -1341,6 +1450,7 @@ export default class CreditCardInvoiceService {
       const projectionKey = buildProjectionKey(invoice.referenceYear, invoice.referenceMonth);
       const projectedTransactions = projectedBuckets.get(projectionKey)?.projectedTransactions ?? [];
       const fixedSubtotalValue = sumProjectedTransactionAmounts(projectedTransactions);
+      const totals = totalsByInvoiceId.get(invoice.id);
 
       mergedInvoices.set(projectionKey, {
         ...invoice,
@@ -1348,6 +1458,8 @@ export default class CreditCardInvoiceService {
         isProjected: false,
         hasProjectedTransactions: projectedTransactions.length > 0,
         itemsSubtotal: invoice.totalAmount.toString(),
+        chargeAmount: totals?.chargeAmount.toString() || '0',
+        creditAmount: totals?.creditAmount.toString() || '0',
         fixedSubtotal: fixedSubtotalValue.toString(),
         totalAmount: toDecimal(invoice.totalAmount).plus(fixedSubtotalValue).toString(),
         itemCount: invoice._count.transactions,
@@ -1381,6 +1493,8 @@ export default class CreditCardInvoiceService {
         isProjected: true,
         hasProjectedTransactions: true,
         itemsSubtotal: '0',
+        chargeAmount: '0',
+        creditAmount: '0',
         fixedSubtotal: fixedSubtotalValue.toString(),
         totalAmount: fixedSubtotalValue.toString(),
         itemCount: 0,
@@ -1443,6 +1557,37 @@ export default class CreditCardInvoiceService {
                 name: true,
                 color: true
               }
+            },
+            refundOfTransaction: {
+              select: {
+                id: true,
+                description: true,
+                amount: true,
+                date: true,
+                installmentNumber: true,
+                totalInstallments: true,
+                category: {
+                  select: { id: true, name: true, color: true }
+                },
+                creditCardInvoice: {
+                  select: { referenceYear: true, referenceMonth: true }
+                }
+              }
+            },
+            refundCredits: {
+              where: {
+                creditCardCreditKind: CreditCardCreditKind.REFUND,
+                status: TransactionStatus.COMPLETED,
+                archivedAt: null
+              },
+              select: {
+                id: true,
+                amount: true,
+                date: true,
+                creditCardInvoice: {
+                  select: { referenceYear: true, referenceMonth: true }
+                }
+              }
             }
           },
           orderBy: [
@@ -1472,6 +1617,41 @@ export default class CreditCardInvoiceService {
         })).get(projectionKey)?.projectedTransactions ?? []
       : [];
     const fixedSubtotalValue = sumProjectedTransactionAmounts(projectedTransactions);
+    const chargeAmount = invoice.transactions
+      .filter(
+        (transaction) =>
+          transaction.type === TransactionType.EXPENSE &&
+          transaction.status === TransactionStatus.COMPLETED
+      )
+      .reduce((sum, transaction) => sum.plus(transaction.amount), new Prisma.Decimal(0));
+    const creditAmount = invoice.transactions
+      .filter(
+        (transaction) =>
+          transaction.type === TransactionType.INCOME &&
+          transaction.creditCardCreditKind !== null &&
+          transaction.status === TransactionStatus.COMPLETED
+      )
+      .reduce((sum, transaction) => sum.plus(transaction.amount), new Prisma.Decimal(0));
+    const realTransactions = invoice.transactions.map((transaction) => {
+      const refundedAmount = transaction.refundCredits.reduce(
+        (sum, credit) => sum.plus(credit.amount),
+        new Prisma.Decimal(0)
+      );
+      const refundStatus = refundedAmount.eq(0)
+        ? null
+        : refundedAmount.gte(transaction.amount)
+          ? 'REFUNDED'
+          : 'PARTIALLY_REFUNDED';
+
+      return {
+        ...transaction,
+        refundedAmount: refundedAmount.toString(),
+        refundStatus,
+        isProjected: false,
+        isFixedProjection: false,
+        fixedTemplateId: null
+      };
+    });
 
     return {
       ...invoice,
@@ -1479,17 +1659,14 @@ export default class CreditCardInvoiceService {
       isProjected: false,
       hasProjectedTransactions: projectedTransactions.length > 0,
       itemsSubtotal: invoice.totalAmount.toString(),
+      chargeAmount: chargeAmount.toString(),
+      creditAmount: creditAmount.toString(),
       fixedSubtotal: fixedSubtotalValue.toString(),
       totalAmount: toDecimal(invoice.totalAmount).plus(fixedSubtotalValue).toString(),
       itemCount: invoice.transactions.length,
       fixedItemCount: projectedTransactions.length,
       transactions: [
-        ...invoice.transactions.map((transaction) => ({
-          ...transaction,
-          isProjected: false,
-          isFixedProjection: false,
-          fixedTemplateId: null
-        })),
+        ...realTransactions,
         ...projectedTransactions
       ],
       displayStatus: getDerivedInvoiceStatus(invoice.status, invoice.dueDate),
@@ -1540,6 +1717,8 @@ export default class CreditCardInvoiceService {
       isProjected: true,
       hasProjectedTransactions: true,
       itemsSubtotal: '0',
+      chargeAmount: '0',
+      creditAmount: '0',
       fixedSubtotal: fixedSubtotalValue.toString(),
       totalAmount: fixedSubtotalValue.toString(),
       itemCount: 0,
@@ -1667,17 +1846,8 @@ export default class CreditCardInvoiceService {
         );
       }
 
-      const aggregate = await tx.financialTransaction.aggregate({
-        where: {
-          creditCardInvoiceId: invoice.id,
-          type: TransactionType.EXPENSE,
-          status: TransactionStatus.COMPLETED
-        },
-        _sum: {
-          amount: true
-        }
-      });
-      const totalAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
+      const totals = await calculateCreditCardInvoiceTotals(tx, invoice.id);
+      const totalAmount = totals.totalAmount;
 
       if (totalAmount.lte(0)) {
         throw new Error('Fatura sem saldo para pagamento');

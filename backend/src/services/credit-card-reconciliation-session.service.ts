@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'crypto';
 import {
   AccountType,
+  CreditCardCreditKind,
   CreditCardInvoiceStatus,
   CreditCardReconciliationItemResolution,
   CreditCardReconciliationSessionStatus,
@@ -75,9 +76,11 @@ type StartSessionInput = {
 
 type CommitSelection = {
   itemId: string;
-  action?: 'IMPORT' | 'LINK_FIXED';
+  action?: 'IMPORT' | 'IMPORT_CREDIT' | 'LINK_FIXED';
   description?: string;
   categoryId?: number;
+  creditKind?: CreditCardCreditKind;
+  refundOfTransactionId?: number;
 };
 
 type ItemDecisionInput = {
@@ -144,6 +147,7 @@ function itemIdentitySeed(item: ReconciliationPreviewItem) {
     sourceSection: item.sourceSection,
     cardSuffix: item.cardSuffix,
     canImport: item.canImport,
+    canImportAsCredit: item.canImportAsCredit,
     nonImportableReason: item.nonImportableReason
   });
 }
@@ -510,8 +514,14 @@ function sessionDto(session: any) {
 
 function progressDto(items: any[]) {
   const isTerminal = (item: any) => {
-    const snapshot = item.snapshot as { canImport?: boolean } | null;
-    return snapshot?.canImport === false || item.resolution !== CreditCardReconciliationItemResolution.PENDING;
+    const snapshot = item.snapshot as {
+      canImport?: boolean;
+      canImportAsCredit?: boolean;
+    } | null;
+    return (
+      (snapshot?.canImport === false && !snapshot.canImportAsCredit) ||
+      item.resolution !== CreditCardReconciliationItemResolution.PENDING
+    );
   };
   const count = (resolution: CreditCardReconciliationItemResolution) =>
     items.filter((item) => item.resolution === resolution).length;
@@ -609,7 +619,9 @@ async function loadWorkspaceSession(
                   id: true,
                   companyId: true,
                   fromAccountId: true,
+                  toAccountId: true,
                   type: true,
+                  creditCardCreditKind: true,
                   status: true,
                   archivedAt: true,
                   isExternalCreditCardSettlement: true,
@@ -795,7 +807,7 @@ async function buildWorkspace(
       items: workspacePreview.items.map((item) => {
         const persisted = persistedBySourceId.get(item.id)!;
         const terminal =
-          item.canImport === false ||
+          (item.canImport === false && !item.canImportAsCredit) ||
           persisted.resolution !== CreditCardReconciliationItemResolution.PENDING;
 
         return {
@@ -835,8 +847,17 @@ function isOperationalTargetTransaction(
   return Boolean(
     transaction &&
       transaction.companyId === context.companyId &&
-      transaction.fromAccountId === context.accountId &&
-      transaction.type === TransactionType.EXPENSE &&
+      (
+        (
+          transaction.fromAccountId === context.accountId &&
+          transaction.type === TransactionType.EXPENSE
+        ) ||
+        (
+          transaction.toAccountId === context.accountId &&
+          transaction.type === TransactionType.INCOME &&
+          transaction.creditCardCreditKind
+        )
+      ) &&
       transaction.status !== TransactionStatus.CANCELED &&
       !transaction.archivedAt &&
       !transaction.isExternalCreditCardSettlement &&
@@ -1271,6 +1292,7 @@ function buildCommitOverrideFingerprint(
     projectedReason: projectedItem.reason,
     operationalMatchState: projectedItem.operationalMatchState || null,
     canImport: projectedItem.canImport,
+    canImportAsCredit: projectedItem.canImportAsCredit,
     matches
   }));
 }
@@ -2161,6 +2183,8 @@ export default class CreditCardReconciliationSessionService {
                   : null,
                 description: selectedInput.description || null,
                 categoryId: selectedInput.categoryId || null,
+                creditKind: selectedInput.creditKind || null,
+                refundOfTransactionId: selectedInput.refundOfTransactionId || null,
                 transactionIds: itemResult.createdTransactionIds
               }),
               resolvedAt,
@@ -2176,7 +2200,16 @@ export default class CreditCardReconciliationSessionService {
               where: {
                 id: { in: itemResult.createdTransactionIds },
                 companyId: context.companyId,
-                fromAccountId: context.accountId
+                ...(selectedInput.action === 'IMPORT_CREDIT'
+                  ? {
+                      toAccountId: context.accountId,
+                      type: TransactionType.INCOME,
+                      creditCardCreditKind: { not: null }
+                    }
+                  : {
+                      fromAccountId: context.accountId,
+                      type: TransactionType.EXPENSE
+                    })
               },
               include: {
                 creditCardInvoice: {
@@ -2358,12 +2391,22 @@ export default class CreditCardReconciliationSessionService {
       let transactions: any[] = [];
       if (input.decision === 'CONFIRM_EXISTING') {
         const transactionIds = Array.from(new Set(input.transactionIds || []));
+        const snapshot = item.snapshot as unknown as ReconciliationPreviewItem;
+        const accountAndTypeWhere = snapshot.direction === 'CREDIT'
+          ? {
+              toAccountId: context.accountId,
+              type: TransactionType.INCOME,
+              creditCardCreditKind: { not: null }
+            }
+          : {
+              fromAccountId: context.accountId,
+              type: TransactionType.EXPENSE
+            };
         transactions = await tx.financialTransaction.findMany({
           where: {
             id: { in: transactionIds },
             companyId: context.companyId,
-            fromAccountId: context.accountId,
-            type: TransactionType.EXPENSE,
+            ...accountAndTypeWhere,
             status: { not: TransactionStatus.CANCELED },
             archivedAt: null,
             isExternalCreditCardSettlement: false,

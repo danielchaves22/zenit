@@ -176,6 +176,14 @@ describe('CreditCardInvoicesPage', () => {
         return Promise.resolve({ data: invoiceDetail })
       }
 
+      if (url === '/financial/categories') {
+        return Promise.resolve({ data: [] })
+      }
+
+      if (url === '/financial/credit-cards/1/refundable-purchases') {
+        return Promise.resolve({ data: [] })
+      }
+
       return Promise.reject(new Error(`Unexpected GET request: ${url}`))
     })
   })
@@ -223,6 +231,20 @@ describe('CreditCardInvoicesPage', () => {
         ([url]) => url === '/financial/credit-card-invoices/101'
       )
     ).toHaveLength(1)
+  })
+
+  it('abre o formulario de credito apenas para uma fatura real nao paga', async () => {
+    const user = userEvent.setup()
+
+    render(<CreditCardInvoicesPage />)
+
+    const addCreditButton = await screen.findByRole('button', { name: 'Adicionar crédito' })
+    await user.click(addCreditButton)
+
+    expect(screen.getByRole('dialog', { name: 'Adicionar crédito à fatura' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Estorno' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cashback' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ajuste' })).toBeInTheDocument()
   })
 
   it('verifica e corrige parcialmente as fixas ausentes preservando a fatura selecionada', async () => {

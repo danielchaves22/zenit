@@ -29,6 +29,7 @@ interface CreditCardInvoiceCsvTransaction {
   isProjected?: boolean;
   isFixedProjection?: boolean;
   fixedTemplateId?: number | null;
+  creditCardCreditKind?: 'REFUND' | 'CASHBACK' | 'ADJUSTMENT' | null;
   category?: {
     name: string;
   } | null;
@@ -45,6 +46,8 @@ interface CreditCardInvoiceCsvInvoice {
   fixedItemCount?: number;
   itemsSubtotal?: string;
   fixedSubtotal?: string;
+  chargeAmount?: string;
+  creditAmount?: string;
   isProjected?: boolean;
   hasProjectedTransactions?: boolean;
   settlementType?: string | null;
@@ -202,6 +205,18 @@ function formatInstallmentLabel(
 }
 
 function buildInvoiceTransactionTypeLabel(transaction: CreditCardInvoiceCsvTransaction) {
+  if (transaction.creditCardCreditKind === 'REFUND') {
+    return 'Estorno';
+  }
+
+  if (transaction.creditCardCreditKind === 'CASHBACK') {
+    return 'Cashback';
+  }
+
+  if (transaction.creditCardCreditKind === 'ADJUSTMENT') {
+    return 'Ajuste de credito';
+  }
+
   if (transaction.isFixedProjection) {
     return 'Fixa projetada';
   }
@@ -375,6 +390,8 @@ export function buildCreditCardInvoiceCsv({
       ['Fechamento', formatOptionalCalendarDate(invoice.closingDate)],
       ['Vencimento', formatOptionalCalendarDate(invoice.dueDate)],
       ['Valor_total', formatCsvAmount(invoice.totalAmount)],
+      ['Total_compras', formatCsvAmount(invoice.chargeAmount || 0)],
+      ['Total_creditos', formatCsvAmount(invoice.creditAmount || 0)],
       ['Subtotal_itens', formatCsvAmount(invoice.itemsSubtotal || 0)],
       ['Subtotal_fixas', formatCsvAmount(invoice.fixedSubtotal || 0)],
       ['Quantidade_itens', invoice.itemCount],
@@ -422,7 +439,11 @@ export function buildCreditCardInvoiceCsv({
       },
       {
         header: 'Valor',
-        getValue: (transaction) => formatCsvAmount(transaction.amount)
+        getValue: (transaction) => formatCsvAmount(
+          transaction.creditCardCreditKind
+            ? Number(transaction.amount) * -1
+            : transaction.amount
+        )
       },
       {
         header: 'Data_compra',

@@ -2,6 +2,7 @@
 import { logger } from '../utils/logger';
 import {
   AccountType,
+  CreditCardCreditKind,
   CreditCardInvoiceStatus,
   CreditCardInvoiceSettlementType,
   FinancialAccountPurpose,
@@ -22,6 +23,7 @@ import {
   buildOperationalTransactionWhere,
   type IgnoredTransactionState
 } from '../utils/financial-transaction-query';
+import { calculateCreditCardInvoiceTotals } from '../utils/credit-card-invoice-totals';
 
 import { randomUUID } from 'crypto';
 
@@ -271,6 +273,8 @@ export default class FinancialTransactionService {
     allowMissingAccount?: boolean;
     creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
     creditCardInvoiceAnchorInstallmentNumber?: number | null;
+    creditCardCreditKind?: CreditCardCreditKind | null;
+    refundOfTransactionId?: number | null;
   }, existingTx?: Prisma.TransactionClient, options?: TransactionExecutionOptions): Promise<FinancialTransaction | FinancialTransaction[]> {
     const installmentCount = data.installmentCount && data.installmentCount > 0
       ? data.installmentCount
@@ -361,6 +365,128 @@ export default class FinancialTransactionService {
     }
 
     return repeatTimes === 1 ? transactions[0] : transactions;
+  }
+
+  static async createCreditCardCredit(
+    data: {
+      description: string;
+      amount: number | string;
+      date: Date;
+      creditKind: CreditCardCreditKind;
+      refundOfTransactionId?: number | null;
+      categoryId?: number | null;
+      notes?: string;
+      importSourceType?: FinancialTransactionImportSourceType | null;
+      importSourceDescription?: string | null;
+      accountId: number;
+      invoiceReference: CreditCardInvoiceReference;
+      companyId: number;
+      createdBy: number;
+    },
+    existingTx?: Prisma.TransactionClient,
+    options?: TransactionExecutionOptions
+  ): Promise<FinancialTransaction> {
+    const execute = async (tx: Prisma.TransactionClient) => {
+      const amount = parseDecimal(data.amount);
+      if (amount.lte(0)) {
+        throw new Error('O valor do credito deve ser positivo');
+      }
+
+      const card = await tx.financialAccount.findFirst({
+        where: {
+          id: data.accountId,
+          companyId: data.companyId,
+          type: AccountType.CREDIT_CARD,
+          isActive: true
+        },
+        select: { id: true }
+      });
+      if (!card) {
+        throw new Error('Cartao de credito ativo nao encontrado');
+      }
+
+      if (data.creditKind === CreditCardCreditKind.REFUND) {
+        if (!data.refundOfTransactionId) {
+          throw new Error('Selecione a compra original do estorno');
+        }
+
+        const original = await tx.financialTransaction.findFirst({
+          where: {
+            id: data.refundOfTransactionId,
+            companyId: data.companyId,
+            fromAccountId: data.accountId,
+            type: TransactionType.EXPENSE,
+            status: { not: TransactionStatus.CANCELED },
+            archivedAt: null,
+            isExternalCreditCardSettlement: false
+          },
+          select: {
+            amount: true,
+            refundCredits: {
+              where: {
+                creditCardCreditKind: CreditCardCreditKind.REFUND,
+                status: TransactionStatus.COMPLETED,
+                archivedAt: null
+              },
+              select: { amount: true }
+            }
+          }
+        });
+        if (!original) {
+          throw new Error('Compra original nao encontrada neste cartao');
+        }
+
+        const refundedAmount = original.refundCredits.reduce(
+          (sum, refund) => sum.plus(refund.amount),
+          new Prisma.Decimal(0)
+        );
+        const remainingAmount = original.amount.minus(refundedAmount);
+        if (amount.gt(remainingAmount)) {
+          throw new Error(
+            `O estorno excede o saldo restante da compra (${remainingAmount.toFixed(2)})`
+          );
+        }
+      } else if (data.refundOfTransactionId) {
+        throw new Error('Somente estornos podem ser vinculados a uma compra');
+      }
+
+      const created = await this.createSingleTransaction({
+        description: data.description,
+        amount: amount.toString(),
+        date: data.date,
+        dueDate: data.date,
+        effectiveDate: data.date,
+        type: TransactionType.INCOME,
+        status: TransactionStatus.COMPLETED,
+        notes: data.notes,
+        importSourceType: data.importSourceType ?? null,
+        importSourceDescription: data.importSourceDescription ?? null,
+        toAccountId: data.accountId,
+        categoryId: data.categoryId ?? null,
+        companyId: data.companyId,
+        createdBy: data.createdBy,
+        creditCardInvoiceReference: {
+          ...data.invoiceReference,
+          accountId: data.accountId,
+          allowExternalSettlement: false,
+          allowPaidInvoiceSettlement: false
+        },
+        creditCardCreditKind: data.creditKind,
+        refundOfTransactionId: data.refundOfTransactionId ?? null
+      }, tx, options);
+
+      return created;
+    };
+
+    if (existingTx) {
+      return execute(existingTx);
+    }
+
+    return prisma.$transaction(execute, {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: 30000,
+      maxWait: 10000
+    });
   }
 
   private static async validateCategoryAssignmentTx(
@@ -652,6 +778,8 @@ export default class FinancialTransactionService {
     occurrenceKey?: string | null;
     allowMissingAccount?: boolean;
     creditCardInvoiceReference?: CreditCardInvoiceReferenceInput | null;
+    creditCardCreditKind?: CreditCardCreditKind | null;
+    refundOfTransactionId?: number | null;
   }, existingTx?: Prisma.TransactionClient, options?: TransactionExecutionOptions): Promise<FinancialTransaction> {
 
     const startTime = Date.now();
@@ -851,6 +979,10 @@ export default class FinancialTransactionService {
           occurrenceKey: data.occurrenceKey ?? null,
           creditCardInvoice: creditCardInvoiceId
             ? { connect: { id: creditCardInvoiceId } }
+            : undefined,
+          creditCardCreditKind: data.creditCardCreditKind ?? null,
+          refundOfTransaction: data.refundOfTransactionId
+            ? { connect: { id: data.refundOfTransactionId } }
             : undefined,
           isExternalCreditCardSettlement,
           company: { connect: { id: data.companyId } },
@@ -1328,33 +1460,13 @@ export default class FinancialTransactionService {
       return;
     }
 
-    const [aggregate, externalSettlementCount] = await Promise.all([
-      tx.financialTransaction.aggregate({
-        where: {
-          creditCardInvoiceId: invoiceId,
-          type: TransactionType.EXPENSE,
-          status: TransactionStatus.COMPLETED
-        },
-        _sum: {
-          amount: true
-        }
-      }),
-      tx.financialTransaction.count({
-        where: {
-          creditCardInvoiceId: invoiceId,
-          type: TransactionType.EXPENSE,
-          status: TransactionStatus.COMPLETED,
-          isExternalCreditCardSettlement: true
-        }
-      })
-    ]);
-
-    const totalAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
+    const totals = await calculateCreditCardInvoiceTotals(tx, invoiceId);
+    const totalAmount = totals.totalAmount;
     const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
     const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
-    const hasExternalSettlements = externalSettlementCount > 0;
+    const hasExternalSettlements = totals.externalSettlementCount > 0;
 
-    if (totalAmount.eq(0) && !paymentTransactionId && !hasExternalSettlements) {
+    if (totals.transactionCount === 0 && !paymentTransactionId && !hasExternalSettlements) {
       await tx.creditCardInvoice.delete({
         where: { id: invoiceId }
       });
@@ -1600,6 +1712,93 @@ export default class FinancialTransactionService {
       throw new Error('Transacoes arquivadas precisam ser desarquivadas antes da exclusao');
     }
 
+    const linkedRefunds = await tx.financialTransaction.aggregate({
+      where: {
+        refundOfTransactionId: originalTxn.id,
+        creditCardCreditKind: CreditCardCreditKind.REFUND,
+        status: TransactionStatus.COMPLETED,
+        archivedAt: null
+      },
+      _sum: { amount: true },
+      _count: { _all: true }
+    });
+    const refundedAmount = linkedRefunds._sum.amount ?? new Prisma.Decimal(0);
+    if (linkedRefunds._count._all > 0) {
+      const nextAmount = data.amount === undefined
+        ? new Prisma.Decimal(originalTxn.amount)
+        : parseDecimal(data.amount);
+      const nextType = data.type ?? originalTxn.type;
+      const nextStatus = data.status ?? originalTxn.status;
+      const nextFromAccountId = data.fromAccountId === undefined
+        ? originalTxn.fromAccountId
+        : data.fromAccountId;
+
+      if (
+        nextType !== TransactionType.EXPENSE ||
+        nextStatus === TransactionStatus.CANCELED ||
+        nextFromAccountId !== originalTxn.fromAccountId
+      ) {
+        throw new Error('A compra possui estornos vinculados e nao pode ter sua natureza, cartao ou status alterados');
+      }
+      if (nextAmount.lt(refundedAmount)) {
+        throw new Error(`O valor da compra nao pode ser menor que o total ja estornado (${refundedAmount.toFixed(2)})`);
+      }
+    }
+
+    if (originalTxn.creditCardCreditKind) {
+      const nextAmount = data.amount === undefined
+        ? new Prisma.Decimal(originalTxn.amount)
+        : parseDecimal(data.amount);
+      const nextType = data.type ?? originalTxn.type;
+      const nextToAccountId = data.toAccountId === undefined
+        ? originalTxn.toAccountId
+        : data.toAccountId;
+
+      if (nextAmount.lte(0)) {
+        throw new Error('O valor do credito deve ser positivo');
+      }
+      if (
+        nextType !== TransactionType.INCOME ||
+        nextToAccountId !== originalTxn.toAccountId ||
+        (data.fromAccountId !== undefined && data.fromAccountId !== null)
+      ) {
+        throw new Error('A natureza e o cartao de um credito de fatura nao podem ser alterados');
+      }
+
+      if (
+        originalTxn.creditCardCreditKind === CreditCardCreditKind.REFUND &&
+        originalTxn.refundOfTransactionId &&
+        (data.status ?? originalTxn.status) === TransactionStatus.COMPLETED
+      ) {
+        const [originalPurchase, otherRefunds] = await Promise.all([
+          tx.financialTransaction.findUnique({
+            where: { id: originalTxn.refundOfTransactionId },
+            select: { amount: true, fromAccountId: true }
+          }),
+          tx.financialTransaction.aggregate({
+            where: {
+              refundOfTransactionId: originalTxn.refundOfTransactionId,
+              creditCardCreditKind: CreditCardCreditKind.REFUND,
+              status: TransactionStatus.COMPLETED,
+              archivedAt: null,
+              id: { not: originalTxn.id }
+            },
+            _sum: { amount: true }
+          })
+        ]);
+        if (!originalPurchase || originalPurchase.fromAccountId !== originalTxn.toAccountId) {
+          throw new Error('Compra original do estorno nao encontrada neste cartao');
+        }
+
+        const otherRefundedAmount = otherRefunds._sum.amount ?? new Prisma.Decimal(0);
+        if (otherRefundedAmount.plus(nextAmount).gt(originalPurchase.amount)) {
+          throw new Error(
+            `O estorno excede o saldo restante da compra (${originalPurchase.amount.minus(otherRefundedAmount).toFixed(2)})`
+          );
+        }
+      }
+    }
+
     const accountsToLock = new Set<number>();
     if (originalTxn.fromAccountId) accountsToLock.add(originalTxn.fromAccountId);
     if (originalTxn.toAccountId) accountsToLock.add(originalTxn.toAccountId);
@@ -1721,6 +1920,13 @@ export default class FinancialTransactionService {
   ): Promise<void> {
     if (originalTxn.companyId !== companyId) {
       throw new Error(`Transaction ${originalTxn.id} does not belong to company ${companyId}`);
+    }
+
+    const linkedRefundCount = await tx.financialTransaction.count({
+      where: { refundOfTransactionId: originalTxn.id }
+    });
+    if (linkedRefundCount > 0) {
+      throw new Error('A compra possui estornos vinculados. Exclua os estornos antes de excluir a compra');
     }
 
     const accountsToLock = new Set<number>();
@@ -2634,7 +2840,13 @@ export default class FinancialTransactionService {
         ? prisma.financialTransaction.findMany({
             where: {
               companyId,
-              type: TransactionType.EXPENSE,
+              OR: [
+                { type: TransactionType.EXPENSE },
+                {
+                  type: TransactionType.INCOME,
+                  creditCardCreditKind: { not: null }
+                }
+              ],
               creditCardInvoiceId: { not: null },
               ...(hasCategoryIdsFilter
                 ? {
@@ -2661,7 +2873,8 @@ export default class FinancialTransactionService {
             },
             select: {
               creditCardInvoiceId: true,
-              amount: true
+              amount: true,
+              creditCardCreditKind: true
             }
           })
         : Promise.resolve([])
@@ -2676,7 +2889,9 @@ export default class FinancialTransactionService {
       matchingRealInvoiceAmounts.set(
         transaction.creditCardInvoiceId,
         (matchingRealInvoiceAmounts.get(transaction.creditCardInvoiceId) ?? new Prisma.Decimal(0)).plus(
-          parseDecimal(transaction.amount)
+          transaction.creditCardCreditKind
+            ? parseDecimal(transaction.amount).negated()
+            : parseDecimal(transaction.amount)
         )
       );
     }
@@ -4096,23 +4311,34 @@ export default class FinancialTransactionService {
 
     const operationalTransactionWhere = buildOperationalTransactionWhere();
 
-    const incomeAggregate = await prisma.financialTransaction.aggregate({
-      where: {
-        ...transactionWhere,
-        type: 'INCOME',
-        ...operationalTransactionWhere
-      },
-      _sum: { amount: true }
-    });
-
-    const expenseAggregate = await prisma.financialTransaction.aggregate({
-      where: {
-        ...transactionWhere,
-        type: 'EXPENSE',
-        ...operationalTransactionWhere
-      },
-      _sum: { amount: true }
-    });
+    const [incomeAggregate, expenseAggregate, creditCardCreditAggregate] = await Promise.all([
+      prisma.financialTransaction.aggregate({
+        where: {
+          ...transactionWhere,
+          type: 'INCOME',
+          creditCardCreditKind: null,
+          ...operationalTransactionWhere
+        },
+        _sum: { amount: true }
+      }),
+      prisma.financialTransaction.aggregate({
+        where: {
+          ...transactionWhere,
+          type: 'EXPENSE',
+          ...operationalTransactionWhere
+        },
+        _sum: { amount: true }
+      }),
+      prisma.financialTransaction.aggregate({
+        where: {
+          ...transactionWhere,
+          type: 'INCOME',
+          creditCardCreditKind: { not: null },
+          ...operationalTransactionWhere
+        },
+        _sum: { amount: true }
+      })
+    ]);
 
     const topExpenseCategories = await prisma.financialTransaction.groupBy({
       by: ['categoryId'],
@@ -4149,7 +4375,8 @@ export default class FinancialTransactionService {
       });
 
     const income = Number(incomeAggregate._sum.amount || 0);
-    const expense = Number(expenseAggregate._sum.amount || 0);
+    const expense = Number(expenseAggregate._sum.amount || 0) -
+      Number(creditCardCreditAggregate._sum.amount || 0);
 
     const balance = income - expense;
 

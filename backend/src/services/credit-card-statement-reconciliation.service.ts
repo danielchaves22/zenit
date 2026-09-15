@@ -1,5 +1,6 @@
 import {
   AccountType,
+  CreditCardCreditKind,
   CreditCardInvoiceStatus,
   Prisma,
   PrismaClient,
@@ -64,6 +65,7 @@ type ParsedStatementItem = {
   sourceSection: string;
   cardSuffix: string | null;
   canImport: boolean;
+  canImportAsCredit: boolean;
   nonImportableReason: string | null;
   rawLine: string;
 };
@@ -92,6 +94,7 @@ type ExistingTransactionCandidate = {
   occurrenceKey: string | null;
   description: string;
   amount: Prisma.Decimal;
+  direction?: StatementDirection;
   date: Date;
   installmentNumber: number | null;
   totalInstallments: number | null;
@@ -146,6 +149,7 @@ export type ReconciliationPreviewItem = {
   sourceSection: string;
   cardSuffix: string | null;
   canImport: boolean;
+  canImportAsCredit: boolean;
   nonImportableReason: string | null;
   operationalMatchState?:
     | 'SUPPRESSED'
@@ -852,15 +856,20 @@ function resolveImportability(
   direction: StatementDirection
 ) {
   if (direction === 'CREDIT') {
+    const canImportAsCredit = kind === 'CREDIT' || kind === 'ADJUSTMENT';
     return {
       canImport: false,
-      nonImportableReason: 'Credito ou ajuste nao suportado pela conciliacao v1'
+      canImportAsCredit,
+      nonImportableReason: canImportAsCredit
+        ? 'Credito ainda nao lancado'
+        : 'Pagamento de fatura e apenas informativo'
     };
   }
 
   if (kind === 'BALANCE') {
     return {
       canImport: false,
+      canImportAsCredit: false,
       nonImportableReason: 'Saldo de fatura anterior e apenas informativo'
     };
   }
@@ -868,12 +877,14 @@ function resolveImportability(
   if (kind === 'PAYMENT') {
     return {
       canImport: false,
+      canImportAsCredit: false,
       nonImportableReason: 'Pagamento de fatura nao e importado por esta rotina'
     };
   }
 
   return {
     canImport: true,
+    canImportAsCredit: false,
     nonImportableReason: null
   };
 }
@@ -886,6 +897,7 @@ function resolveImportabilityWithAmount(
   if (parseDecimal(amount).lte(0)) {
     return {
       canImport: false,
+      canImportAsCredit: false,
       nonImportableReason: 'Lancamento com valor zero nao pode ser importado'
     };
   }
@@ -931,7 +943,7 @@ function parseCaixaStatementLine(params: {
       direction,
       Boolean(installmentMatch)
     );
-    const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+    const { canImport, canImportAsCredit, nonImportableReason } = resolveImportabilityWithAmount(
       kind,
       direction,
       amount
@@ -955,6 +967,7 @@ function parseCaixaStatementLine(params: {
       sourceSection: section,
       cardSuffix,
       canImport,
+      canImportAsCredit,
       nonImportableReason,
       rawLine: line
     };
@@ -978,7 +991,7 @@ function parseCaixaStatementLine(params: {
         direction,
         true
       );
-      const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+      const { canImport, canImportAsCredit, nonImportableReason } = resolveImportabilityWithAmount(
         kind,
         direction,
         amount
@@ -1009,6 +1022,7 @@ function parseCaixaStatementLine(params: {
         sourceSection: section,
         cardSuffix,
         canImport,
+        canImportAsCredit,
         nonImportableReason,
         rawLine: line
       };
@@ -1034,7 +1048,7 @@ function parseCaixaStatementLine(params: {
       direction,
       Boolean(parcelMatch)
     );
-    const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+    const { canImport, canImportAsCredit, nonImportableReason } = resolveImportabilityWithAmount(
       kind,
       direction,
       amount
@@ -1065,6 +1079,7 @@ function parseCaixaStatementLine(params: {
       sourceSection: section,
       cardSuffix,
       canImport,
+      canImportAsCredit,
       nonImportableReason,
       rawLine: line
     };
@@ -1281,7 +1296,7 @@ function parseCaixaOpenStatementLine(params: {
     direction,
     Boolean(installmentMatch)
   );
-  const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+  const { canImport, canImportAsCredit, nonImportableReason } = resolveImportabilityWithAmount(
     kind,
     direction,
     amount
@@ -1305,6 +1320,7 @@ function parseCaixaOpenStatementLine(params: {
     sourceSection: getStatementSourceSection(kind),
     cardSuffix: params.cardSuffix,
     canImport,
+    canImportAsCredit,
     nonImportableReason,
     rawLine: params.line
   };
@@ -1493,7 +1509,7 @@ function parseBradescoStatementLine(params: {
     direction,
     Boolean(installmentMatch)
   );
-  const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+  const { canImport, canImportAsCredit, nonImportableReason } = resolveImportabilityWithAmount(
     kind,
     direction,
     amount
@@ -1516,6 +1532,7 @@ function parseBradescoStatementLine(params: {
     sourceSection: getStatementSourceSection(kind),
     cardSuffix: params.cardSuffix,
     canImport,
+    canImportAsCredit,
     nonImportableReason,
     rawLine: params.line
   };
@@ -1646,7 +1663,7 @@ function parseNubankStatementLine(params: {
     direction,
     Boolean(installmentMatch)
   );
-  const { canImport, nonImportableReason } = resolveImportabilityWithAmount(
+  const { canImport, canImportAsCredit, nonImportableReason } = resolveImportabilityWithAmount(
     kind,
     direction,
     amount
@@ -1669,6 +1686,7 @@ function parseNubankStatementLine(params: {
     sourceSection: getStatementSourceSection(kind),
     cardSuffix: null,
     canImport,
+    canImportAsCredit,
     nonImportableReason,
     rawLine: params.line
   };
@@ -1769,13 +1787,17 @@ function classifyMatches(
   referenceMonth: number,
   fixedDescriptionAliases: FixedDescriptionAliasMap = new Map()
 ): MatchClassification {
-  if (!item.canImport) {
+  if (!item.canImport && !item.canImportAsCredit) {
     return {
       status: 'NOT_IMPORTABLE',
       reason: 'NON_IMPORTABLE',
       matchedTransactions: []
     };
   }
+
+  candidates = candidates.filter(
+    (candidate) => (candidate.direction ?? 'DEBIT') === item.direction
+  );
 
   const amount = parseDecimal(item.amount);
   const importInstallments = normalizeInstallmentSignature(
@@ -2037,8 +2059,17 @@ async function loadCandidateTransactions(params: {
     db.financialTransaction.findMany({
       where: {
         companyId: params.companyId,
-        fromAccountId: params.accountId,
-        type: TransactionType.EXPENSE,
+        OR: [
+          {
+            fromAccountId: params.accountId,
+            type: TransactionType.EXPENSE
+          },
+          {
+            toAccountId: params.accountId,
+            type: TransactionType.INCOME,
+            creditCardCreditKind: { not: null }
+          }
+        ],
         status: {
           not: TransactionStatus.CANCELED
         },
@@ -2060,6 +2091,8 @@ async function loadCandidateTransactions(params: {
         purchaseGroupId: true,
         importSourceType: true,
         importSourceDescription: true,
+        type: true,
+        creditCardCreditKind: true,
         creditCardInvoice: {
           select: {
             id: true,
@@ -2130,6 +2163,10 @@ function mapInvoiceTransactionToCandidate(params: {
     occurrenceKey: params.transaction.occurrenceKey ?? null,
     description: params.transaction.description,
     amount: new Prisma.Decimal(params.transaction.amount.toString()),
+    direction:
+      params.transaction.type === TransactionType.INCOME && params.transaction.creditCardCreditKind
+        ? 'CREDIT'
+        : 'DEBIT',
     date: new Date(params.transaction.date),
     installmentNumber: params.transaction.installmentNumber ?? null,
     totalInstallments: params.transaction.totalInstallments ?? null,
@@ -2172,7 +2209,13 @@ async function loadTargetInvoiceCandidates(params: {
         dueDate: true,
         transactions: {
           where: {
-            type: TransactionType.EXPENSE,
+            OR: [
+              { type: TransactionType.EXPENSE },
+              {
+                type: TransactionType.INCOME,
+                creditCardCreditKind: { not: null }
+              }
+            ],
             status: { not: TransactionStatus.CANCELED },
             archivedAt: null,
             isExternalCreditCardSettlement: false
@@ -2188,7 +2231,9 @@ async function loadTargetInvoiceCandidates(params: {
             purchaseGroupId: true,
             importSourceType: true,
             importSourceDescription: true,
-            occurrenceKey: true
+            occurrenceKey: true,
+            type: true,
+            creditCardCreditKind: true
           }
         }
       }
@@ -2377,6 +2422,7 @@ async function loadProjectedFixedCandidates(params: {
       occurrenceKey: candidate.occurrenceKey,
       description: candidate.description,
       amount: candidate.amount,
+      direction: 'DEBIT' as const,
       date: candidate.occurrenceDate,
       installmentNumber: null,
       totalInstallments: null,
@@ -2515,6 +2561,7 @@ function buildPreviewItems(
       sourceSection: item.sourceSection,
       cardSuffix: item.cardSuffix,
       canImport: item.canImport,
+      canImportAsCredit: item.canImportAsCredit,
       nonImportableReason: item.nonImportableReason,
       categorySuggestion: categorySuggestions.get(item.id) || {
         categoryId: null,
@@ -2589,7 +2636,7 @@ function buildValueComparison(
     }
   }
 
-  const comparableItems = items.filter((item) => item.canImport);
+  const comparableItems = items.filter((item) => item.canImport || item.canImportAsCredit);
   const missingItems: ReconciliationValueComparisonItem[] = [];
   const ambiguousItems: ReconciliationValueComparisonItem[] = [];
   const amountDivergences: ReconciliationValueComparisonMatch[] = [];
@@ -2603,7 +2650,7 @@ function buildValueComparison(
       missingItems.push({
         itemId: item.id,
         description: item.sourceDescription,
-        amount: item.amount
+        amount: item.signedAmount
       });
       continue;
     }
@@ -2613,7 +2660,7 @@ function buildValueComparison(
       ambiguousItems.push({
         itemId: item.id,
         description: item.sourceDescription,
-        amount: item.amount
+        amount: item.signedAmount
       });
       continue;
     }
@@ -2623,14 +2670,17 @@ function buildValueComparison(
       missingItems.push({
         itemId: item.id,
         description: item.sourceDescription,
-        amount: item.amount
+        amount: item.signedAmount
       });
       continue;
     }
 
     pairedCount += 1;
     pairedCandidateKeys.add(candidate.matchKey);
-    const difference = candidate.amount.minus(parseDecimal(item.amount));
+    const candidateAmount = candidate.direction === 'CREDIT'
+      ? candidate.amount.negated()
+      : candidate.amount;
+    const difference = candidateAmount.minus(parseDecimal(item.signedAmount));
     if (difference.isZero()) {
       exactAmountCount += 1;
       continue;
@@ -2639,8 +2689,8 @@ function buildValueComparison(
     amountDivergences.push({
       itemId: item.id,
       sourceDescription: item.sourceDescription,
-      fileAmount: item.amount,
-      zenitAmount: candidate.amount.toString(),
+      fileAmount: item.signedAmount,
+      zenitAmount: candidateAmount.toString(),
       differenceAmount: difference.toString(),
       matchKey: candidate.matchKey,
       transactionId: candidate.id,
@@ -2657,9 +2707,11 @@ function buildValueComparison(
     matchKey: candidate.matchKey,
     transactionId: candidate.id,
     description: candidate.description,
-    amount: candidate.amount.toString()
+    amount: candidate.direction === 'CREDIT'
+      ? candidate.amount.negated().toString()
+      : candidate.amount.toString()
   }));
-  const comparableAmount = sumAmounts(comparableItems, (item) => parseDecimal(item.amount));
+  const comparableAmount = sumAmounts(comparableItems, (item) => parseDecimal(item.signedAmount));
   const debitItems = items.filter(
     (item) => item.direction === 'DEBIT' && item.kind !== 'BALANCE' && item.kind !== 'PAYMENT'
   );
@@ -2668,7 +2720,10 @@ function buildValueComparison(
   );
   const paymentItems = items.filter((item) => item.kind === 'PAYMENT');
   const balanceItems = items.filter((item) => item.kind === 'BALANCE');
-  const zenitTotal = sumAmounts(targetCandidates, (candidate) => candidate.amount);
+  const zenitTotal = sumAmounts(
+    targetCandidates,
+    (candidate) => candidate.direction === 'CREDIT' ? candidate.amount.negated() : candidate.amount
+  );
   const difference = zenitTotal.minus(comparableAmount);
   const amountDivergenceTotal = sumAmounts(
     amountDivergences,
@@ -2868,9 +2923,11 @@ export default class CreditCardStatementReconciliationService {
     forceLinkFixedItemIds?: string[];
     selectedItems: Array<{
       itemId: string;
-      action?: 'IMPORT' | 'LINK_FIXED';
+      action?: 'IMPORT' | 'IMPORT_CREDIT' | 'LINK_FIXED';
       description?: string;
       categoryId?: number;
+      creditKind?: CreditCardCreditKind;
+      refundOfTransactionId?: number;
     }>;
   }): Promise<ReconciliationCommitResult> {
     const account = await ensureCreditCardAccount(
@@ -2939,7 +2996,10 @@ export default class CreditCardStatementReconciliationService {
 
       const action = selectedInput.action || 'IMPORT';
 
-      if (!item.canImport) {
+      const canImportSelectedAction = action === 'IMPORT_CREDIT'
+        ? item.canImportAsCredit
+        : item.canImport;
+      if (!canImportSelectedAction) {
         results.push({
           itemId,
           status: 'SKIPPED_NOT_IMPORTABLE',
@@ -2956,6 +3016,16 @@ export default class CreditCardStatementReconciliationService {
         statement.referenceMonth,
         fixedDescriptionAliases
       );
+
+      if (action === 'IMPORT_CREDIT' && !selectedInput.creditKind) {
+        results.push({
+          itemId,
+          status: 'FAILED',
+          message: 'Natureza do credito deve ser informada',
+          createdTransactionIds: []
+        });
+        continue;
+      }
 
       if (action === 'LINK_FIXED') {
         if (!isFixedAliasEligibleItem(item)) {
@@ -3043,7 +3113,7 @@ export default class CreditCardStatementReconciliationService {
         continue;
       }
 
-      if (!selectedInput.categoryId) {
+      if (action === 'IMPORT' && !selectedInput.categoryId) {
         results.push({
           itemId,
           status: 'FAILED',
@@ -3076,6 +3146,59 @@ export default class CreditCardStatementReconciliationService {
       }
 
       try {
+        if (action === 'IMPORT_CREDIT') {
+          const transaction = await FinancialTransactionService.createCreditCardCredit({
+            description,
+            amount: item.amount,
+            date: item.createDate,
+            creditKind: selectedInput.creditKind!,
+            refundOfTransactionId: selectedInput.refundOfTransactionId ?? null,
+            categoryId: selectedInput.categoryId ?? null,
+            notes: buildImportNote(params.sourceType, item),
+            importSourceType: params.sourceType,
+            importSourceDescription: item.sourceDescription,
+            accountId: params.accountId,
+            invoiceReference: importedStatementInvoiceReference,
+            companyId: params.companyId,
+            createdBy: params.userId
+          }, params.existingTx, {
+            deferPostCommitEffects: params.deferPostCommitEffects
+          });
+
+          candidates = [{
+            matchKey: `transaction:${transaction.id}`,
+            matchSource: 'TRANSACTION',
+            id: transaction.id,
+            fixedTemplateId: null,
+            occurrenceKey: null,
+            description: transaction.description,
+            amount: new Prisma.Decimal(transaction.amount.toString()),
+            direction: 'CREDIT',
+            date: transaction.date,
+            installmentNumber: transaction.installmentNumber,
+            totalInstallments: transaction.totalInstallments,
+            status: transaction.status,
+            purchaseGroupId: transaction.purchaseGroupId,
+            importSourceType: params.sourceType,
+            importSourceDescription: item.sourceDescription,
+            creditCardInvoice: {
+              id: transaction.creditCardInvoiceId ?? 0,
+              referenceYear: statement.referenceYear,
+              referenceMonth: statement.referenceMonth,
+              status: CreditCardInvoiceStatus.OPEN,
+              dueDate: importedStatementInvoiceReference.dueDate
+            }
+          }, ...candidates];
+
+          results.push({
+            itemId,
+            status: 'CREATED',
+            message: 'Credito lancado com sucesso',
+            createdTransactionIds: [transaction.id]
+          });
+          continue;
+        }
+
         const created = await FinancialTransactionService.createTransaction({
           description,
           amount: Number(item.amount),
@@ -3113,6 +3236,7 @@ export default class CreditCardStatementReconciliationService {
               occurrenceKey: null,
               description: transaction.description,
               amount: new Prisma.Decimal(transaction.amount.toString()),
+              direction: 'DEBIT',
               date: transaction.date,
               installmentNumber: transaction.installmentNumber,
               totalInstallments: transaction.totalInstallments,

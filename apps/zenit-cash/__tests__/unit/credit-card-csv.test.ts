@@ -24,9 +24,11 @@ describe('buildCreditCardInvoiceCsv', () => {
         dueDate: '2026-06-20',
         totalAmount: '123.45',
         status: 'OPEN',
-        itemCount: 1,
+        itemCount: 2,
         fixedItemCount: 0,
         itemsSubtotal: '123.45',
+        chargeAmount: '163.45',
+        creditAmount: '40',
         fixedSubtotal: '0',
         isProjected: false,
         hasProjectedTransactions: false,
@@ -46,6 +48,15 @@ describe('buildCreditCardInvoiceCsv', () => {
             category: {
               name: 'Alimentacao'
             }
+          },
+          {
+            id: 11,
+            description: 'Cashback promocional',
+            amount: '40',
+            date: '2026-06-02',
+            dueDate: '2026-06-20',
+            creditCardCreditKind: 'CASHBACK',
+            category: null
           }
         ]
       }
@@ -55,10 +66,13 @@ describe('buildCreditCardInvoiceCsv', () => {
     expect(csv).toContain('Cartao;Visa Platinum');
     expect(csv).toContain('Referencia;06/2026');
     expect(csv).toContain('Status;Aberta');
+    expect(csv).toContain('Total_compras;163,45');
+    expect(csv).toContain('Total_creditos;40,00');
     expect(csv).toContain(
       'Descricao;Categoria;Parcela;Valor;Data_compra;Data_vencimento;Lancamento_id;Tipo;Observacoes'
     );
     expect(csv).toContain('"Mercado ""Central"" (2 de 3)";Alimentacao;2/3;123,45;01/06/2026;20/06/2026;10;Historico externo;Liquidada fora do sistema');
+    expect(csv).toContain('Cashback promocional;;;-40,00;02/06/2026;20/06/2026;11;Cashback;');
   });
 });
 

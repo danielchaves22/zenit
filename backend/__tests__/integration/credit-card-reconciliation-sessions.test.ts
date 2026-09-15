@@ -275,6 +275,66 @@ describe('Credit-card reconciliation persisted sessions', () => {
     expect((await CreditCardReconciliationSessionService.get(context, 2026, 8)).session).toBeNull();
   });
 
+  it('imports an eligible statement credit as a durable invoice credit', async () => {
+    const started = await CreditCardReconciliationSessionService.start(context, {
+      sourceType: 'NUBANK_CSV',
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileBase64: nubankFile([['2026-08-05', 'Cashback recebido', '-10,00']]),
+      fileName: 'credit.csv'
+    });
+    const item = started.preview.items[0];
+
+    expect(item).toMatchObject({
+      direction: 'CREDIT',
+      canImport: false,
+      canImportAsCredit: true
+    });
+
+    const committed = await CreditCardReconciliationSessionService.commit(
+      context,
+      started.session.id,
+      1,
+      [{
+        itemId: item.id,
+        action: 'IMPORT_CREDIT',
+        description: 'Cashback recebido',
+        creditKind: 'CASHBACK'
+      }]
+    );
+
+    expect(committed.commitResult.summary).toMatchObject({ createdCount: 1, failedCount: 0 });
+    expect(committed.progress).toMatchObject({ importedCount: 1, pendingCount: 0 });
+    expect(committed.preview.items[0].progress).toMatchObject({
+      resolution: 'IMPORTED',
+      resolutionData: expect.objectContaining({
+        action: 'IMPORT_CREDIT',
+        creditKind: 'CASHBACK'
+      })
+    });
+
+    const credit = await prisma.financialTransaction.findFirstOrThrow({
+      where: {
+        companyId,
+        toAccountId: accountId,
+        creditCardCreditKind: 'CASHBACK'
+      },
+      include: { creditCardInvoice: true }
+    });
+    expect(credit).toMatchObject({
+      type: 'INCOME',
+      status: 'COMPLETED',
+      amount: expect.anything()
+    });
+    expect(credit.amount.toString()).toBe('10');
+    expect(credit.creditCardInvoice).toMatchObject({
+      referenceYear: 2026,
+      referenceMonth: 8,
+      totalAmount: expect.anything()
+    });
+    expect(credit.creditCardInvoice?.totalAmount.toString()).toBe('-10');
+  });
+
   it('resets OPEN evidence after the card becomes inactive and the target becomes settled', async () => {
     const started = await CreditCardReconciliationSessionService.start(context, {
       sourceType: 'NUBANK_CSV',

@@ -535,8 +535,14 @@ export default class FinancialDashboardService {
           AND: [
             ...sharedFilters,
             {
-              type: TransactionType.EXPENSE,
               creditCardInvoiceId: { not: null },
+              OR: [
+                { type: TransactionType.EXPENSE },
+                {
+                  type: TransactionType.INCOME,
+                  creditCardCreditKind: { not: null }
+                }
+              ],
               creditCardInvoice: {
                 is: {
                   dueDate: {
@@ -549,6 +555,8 @@ export default class FinancialDashboardService {
           ]
         },
         select: {
+          type: true,
+          creditCardCreditKind: true,
           amount: true,
           recurringTransactionId: true,
           categoryId: true,
@@ -594,7 +602,9 @@ export default class FinancialDashboardService {
       rows.push({
         type: TransactionType.EXPENSE,
         source: 'CREDIT_CARD',
-        amount: toDecimal(transaction.amount),
+        amount: transaction.creditCardCreditKind
+          ? toDecimal(transaction.amount).negated()
+          : toDecimal(transaction.amount),
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
         categoryColor: buildCategoryColor(transaction.category),
@@ -1102,8 +1112,14 @@ export default class FinancialDashboardService {
           AND: [
             ...sharedFilters,
             {
-              type: TransactionType.EXPENSE,
               creditCardInvoiceId: { not: null },
+              OR: [
+                { type: TransactionType.EXPENSE },
+                {
+                  type: TransactionType.INCOME,
+                  creditCardCreditKind: { not: null }
+                }
+              ],
               creditCardInvoice: {
                 is: {
                   dueDate: {
@@ -1116,6 +1132,8 @@ export default class FinancialDashboardService {
           ]
         },
         select: {
+          type: true,
+          creditCardCreditKind: true,
           amount: true,
           categoryId: true,
           category: {
@@ -1217,7 +1235,9 @@ export default class FinancialDashboardService {
         continue;
       }
 
-      const amount = toDecimal(transaction.amount);
+      const amount = transaction.creditCardCreditKind
+        ? toDecimal(transaction.amount).negated()
+        : toDecimal(transaction.amount);
       totals.expenseTotal = totals.expenseTotal.plus(amount);
       addCategorySeriesAmount(transaction.categoryId, monthKey, amount);
     }

@@ -68,6 +68,12 @@ enum CreditCardInvoiceSettlementType {
   EXTERNAL
 }
 
+enum CreditCardCreditKind {
+  REFUND
+  CASHBACK
+  ADJUSTMENT
+}
+
 enum CreditCardReconciliationSessionStatus {
   OPEN
   COMPLETED
@@ -528,6 +534,10 @@ model FinancialTransaction {
   category        FinancialCategory?   @relation(fields: [categoryId], references: [id])
   creditCardInvoiceId Int?
   creditCardInvoice   CreditCardInvoice? @relation("InvoiceTransactions", fields: [creditCardInvoiceId], references: [id], onDelete: SetNull)
+  creditCardCreditKind CreditCardCreditKind?
+  refundOfTransactionId Int?
+  refundOfTransaction FinancialTransaction? @relation("CreditCardRefunds", fields: [refundOfTransactionId], references: [id], onDelete: Restrict)
+  refundCredits FinancialTransaction[] @relation("CreditCardRefunds")
   isExternalCreditCardSettlement Boolean @default(false)
   companyId       Int
   company         Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -559,6 +569,8 @@ model FinancialTransaction {
   @@index([installmentPlanId])
   @@index([creditCardInvoiceId])
   @@index([companyId, creditCardInvoiceId], map: "idx_ft_company_invoice")
+  @@index([refundOfTransactionId])
+  @@index([creditCardInvoiceId, creditCardCreditKind], map: "idx_ft_invoice_credit_kind")
   @@index([companyId, entryKind])
   @@index([companyId, archivedAt])
   

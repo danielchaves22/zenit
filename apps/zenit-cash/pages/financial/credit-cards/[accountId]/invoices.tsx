@@ -10,10 +10,15 @@ import {
   RefreshCw,
   Maximize,
   Minimize,
+  Plus,
   Receipt,
   Scale
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import {
+  CreditCardCreditModal,
+  type CreditCardCreditPayload
+} from '@/components/financial/CreditCardCreditModal';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
@@ -75,6 +80,8 @@ interface CreditCardInvoiceListItem {
   itemCount: number;
   fixedItemCount?: number;
   itemsSubtotal?: string;
+  chargeAmount?: string;
+  creditAmount?: string;
   fixedSubtotal?: string;
   isProjected?: boolean;
   hasProjectedTransactions?: boolean;
@@ -109,6 +116,14 @@ interface InvoiceTransactionItem {
   isProjected?: boolean;
   isFixedProjection?: boolean;
   fixedTemplateId?: number | null;
+  type?: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  creditCardCreditKind?: 'REFUND' | 'CASHBACK' | 'ADJUSTMENT' | null;
+  refundedAmount?: string;
+  refundStatus?: 'REFUNDED' | 'PARTIALLY_REFUNDED' | null;
+  refundOfTransaction?: {
+    id: number;
+    description: string;
+  } | null;
   category?: {
     id: number;
     name: string;
@@ -315,6 +330,8 @@ function InvoicesPageInner() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [paying, setPaying] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [creditSubmitting, setCreditSubmitting] = useState(false);
   const [isFixedMaterializationModalOpen, setIsFixedMaterializationModalOpen] = useState(false);
   const [fixedMaterializationLoading, setFixedMaterializationLoading] = useState(false);
   const [fixedMaterializationSubmitting, setFixedMaterializationSubmitting] = useState(false);
@@ -350,6 +367,12 @@ function InvoicesPageInner() {
     !invoiceDetail.isProjected &&
     !invoiceDetail.hasProjectedTransactions &&
     !invoiceDetail.paymentTransaction &&
+    invoiceDetail.status !== 'PAID'
+  );
+  const canAddCreditToSelectedInvoice = Boolean(
+    invoiceDetail &&
+    invoiceDetail.id &&
+    !invoiceDetail.isProjected &&
     invoiceDetail.status !== 'PAID'
   );
   const canReopenSelectedInvoice = Boolean(
@@ -603,6 +626,34 @@ function InvoicesPageInner() {
       addToast(error.response?.data?.error || 'Erro ao pagar fatura', 'error');
     } finally {
       setPaying(false);
+    }
+  }
+
+  async function handleAddInvoiceCredit(payload: CreditCardCreditPayload) {
+    if (!invoiceDetail?.id) {
+      addToast('Selecione uma fatura real para adicionar o crédito', 'error');
+      return;
+    }
+
+    setCreditSubmitting(true);
+    try {
+      await api.post(`/financial/credit-card-invoices/${invoiceDetail.id}/credits`, {
+        ...payload,
+        date: toIsoDateString(payload.date)
+      });
+      addToast('Crédito adicionado à fatura', 'success');
+      setIsCreditModalOpen(false);
+      await Promise.all([
+        fetchInvoiceDetail(invoiceDetail),
+        fetchPageData({
+          referenceYear: invoiceDetail.referenceYear,
+          referenceMonth: invoiceDetail.referenceMonth
+        })
+      ]);
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao adicionar crédito à fatura', 'error');
+    } finally {
+      setCreditSubmitting(false);
     }
   }
 
@@ -1298,7 +1349,7 @@ function InvoicesPageInner() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                           <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
                             <div className="text-xs uppercase tracking-wide text-gray-400">
                               Valor total
@@ -1309,13 +1360,21 @@ function InvoicesPageInner() {
                           </div>
                           <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
                             <div className="text-xs uppercase tracking-wide text-gray-400">
-                              Subtotal itens
+                              Compras
                             </div>
                             <div className="mt-1.5 text-lg font-semibold text-white">
-                              {formatCurrency(invoiceDetail.itemsSubtotal || 0)}
+                              {formatCurrency(invoiceDetail.chargeAmount || invoiceDetail.itemsSubtotal || 0)}
                             </div>
                             <div className="mt-1 text-xs text-gray-400">
                               {invoiceDetail.itemCount} item{invoiceDetail.itemCount === 1 ? '' : 's'}
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-green-800/70 bg-green-950/20 px-4 py-3">
+                            <div className="text-xs uppercase tracking-wide text-green-300">
+                              Créditos
+                            </div>
+                            <div className="mt-1.5 text-lg font-semibold text-green-300">
+                              - {formatCurrency(invoiceDetail.creditAmount || 0)}
                             </div>
                           </div>
                           <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
@@ -1475,8 +1534,19 @@ function InvoicesPageInner() {
                         )}
 
                         <div>
-                          <div className="mb-3">
+                          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                             <h3 className="text-lg font-semibold text-white">Itens da fatura</h3>
+                            {canAddCreditToSelectedInvoice && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => setIsCreditModalOpen(true)}
+                                className="flex items-center gap-2"
+                              >
+                                <Plus size={16} />
+                                Adicionar crédito
+                              </Button>
+                            )}
                           </div>
 
                           <div className="overflow-hidden rounded-lg border border-gray-700">
@@ -1493,7 +1563,11 @@ function InvoicesPageInner() {
                                 {invoiceDetail.transactions.map((transaction) => (
                                   <tr
                                     key={transaction.id ?? `projected-${transaction.fixedTemplateId}-${transaction.description}`}
-                                    className="border-t border-gray-700 text-sm text-gray-300"
+                                    className={`border-t border-gray-700 text-sm ${
+                                      transaction.creditCardCreditKind
+                                        ? 'bg-green-950/10 text-green-100'
+                                        : 'text-gray-300'
+                                    }`}
                                   >
                                     <td className="px-3 py-3">
                                       <div className="font-medium text-white">
@@ -1506,6 +1580,29 @@ function InvoicesPageInner() {
                                       {transaction.isExternalCreditCardSettlement && (
                                         <div className="mt-1 text-xs text-amber-300">
                                           Liquidada fora do sistema
+                                        </div>
+                                      )}
+                                      {transaction.creditCardCreditKind && (
+                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                                          <span className="rounded-full border border-green-700 bg-green-900/20 px-2 py-0.5 text-green-200">
+                                            {transaction.creditCardCreditKind === 'REFUND'
+                                              ? 'Estorno'
+                                              : transaction.creditCardCreditKind === 'CASHBACK'
+                                                ? 'Cashback'
+                                                : 'Ajuste de crédito'}
+                                          </span>
+                                          {transaction.refundOfTransaction && (
+                                            <span className="text-gray-400">
+                                              de {transaction.refundOfTransaction.description}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                      {transaction.refundStatus && (
+                                        <div className="mt-1 text-xs text-green-300">
+                                          {transaction.refundStatus === 'REFUNDED'
+                                            ? 'Compra totalmente estornada'
+                                            : `Compra parcialmente estornada (${formatCurrency(transaction.refundedAmount || 0)})`}
                                         </div>
                                       )}
                                       {transaction.isFixedProjection && (
@@ -1523,7 +1620,7 @@ function InvoicesPageInner() {
                                           href={`/financial/transactions/${transaction.id}`}
                                           className="mt-1 inline-block text-xs text-accent hover:text-accent-hover"
                                         >
-                                          Abrir compra
+                                          {transaction.creditCardCreditKind ? 'Abrir crédito' : 'Abrir compra'}
                                         </Link>
                                       )}
                                     </td>
@@ -1549,8 +1646,10 @@ function InvoicesPageInner() {
                                         ? `${transaction.installmentNumber}/${transaction.totalInstallments}`
                                         : '-'}
                                     </td>
-                                    <td className="px-3 py-3 text-right font-medium text-white">
-                                      {formatCurrency(transaction.amount)}
+                                    <td className={`px-3 py-3 text-right font-medium ${
+                                      transaction.creditCardCreditKind ? 'text-green-300' : 'text-white'
+                                    }`}>
+                                      {transaction.creditCardCreditKind ? '- ' : ''}{formatCurrency(transaction.amount)}
                                     </td>
                                   </tr>
                                 ))}
@@ -1881,6 +1980,14 @@ function InvoicesPageInner() {
                 </div>
               </div>
             </Modal>
+
+            <CreditCardCreditModal
+              isOpen={Boolean(isCreditModalOpen && canAddCreditToSelectedInvoice)}
+              accountId={accountId}
+              submitting={creditSubmitting}
+              onClose={() => setIsCreditModalOpen(false)}
+              onSubmit={handleAddInvoiceCredit}
+            />
 
             <ConfirmationModal
               isOpen={confirmation.isOpen}

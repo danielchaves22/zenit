@@ -348,6 +348,18 @@ describe('Credit-card reconciliation persisted sessions', () => {
         creditKind: 'CASHBACK'
       })
     });
+    expect(committed.preview.valueComparison).toMatchObject({
+      status: 'MATCHED',
+      file: {
+        comparableAmount: '-10',
+        comparableItemCount: 1
+      },
+      zenit: {
+        totalAmount: '-10',
+        itemCount: 1
+      },
+      differenceAmount: '0'
+    });
 
     const credit = await prisma.financialTransaction.findFirstOrThrow({
       where: {

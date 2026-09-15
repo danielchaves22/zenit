@@ -2123,6 +2123,10 @@ async function loadCandidateTransactions(params: {
       ...candidate,
       matchKey: `transaction:${candidate.id}`,
       matchSource: 'TRANSACTION' as const,
+      direction:
+        candidate.type === TransactionType.INCOME && candidate.creditCardCreditKind
+          ? 'CREDIT' as const
+          : 'DEBIT' as const,
       fixedTemplateId: null,
       occurrenceKey: null
     })),

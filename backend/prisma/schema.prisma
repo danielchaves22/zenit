@@ -206,6 +206,24 @@ enum BudgetEntryAllocationMode {
   EXTRA
 }
 
+enum FinancialProvisionKind {
+  ONE_TIME
+  ANNUAL
+}
+
+enum FinancialProvisionStatus {
+  ACTIVE
+  COMPLETED
+  CANCELED
+}
+
+enum FinancialProvisionEntryType {
+  INITIAL_BALANCE
+  CONTRIBUTION
+  WITHDRAWAL
+  USE
+}
+
 enum AssistantMode {
   OPERATOR
   SPECIALIST
@@ -281,6 +299,8 @@ model User {
   processStatusChanges   ProcessStatusHistory[] @relation("ProcessStatusHistoryChangedBy")
   personalWorkspaceOwned Company?             @relation("PersonalWorkspaceOwner")
   budgets                Budget[]
+  financialProvisionsCreated FinancialProvision[]
+  financialProvisionEntriesCreated FinancialProvisionEntry[]
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -330,6 +350,7 @@ model Company {
   budgets             Budget[]
   monthlyCategoryBudgets MonthlyCategoryBudget[]
   recurringMonthlyCategoryBudgets RecurringMonthlyCategoryBudget[]
+  financialProvisions FinancialProvision[]
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -496,6 +517,7 @@ model FinancialCategory {
   recurringTransactions RecurringTransaction[]
   monthlyBudgets  MonthlyCategoryBudget[]
   recurringMonthlyBudgets RecurringMonthlyCategoryBudget[]
+  financialProvisions FinancialProvision[]
 
   @@unique([name, parentId, companyId])
   @@index([companyId])
@@ -1082,6 +1104,54 @@ model RecurringMonthlyCategoryBudget {
   @@unique([companyId, categoryId, startMonth], name: "unique_recurring_monthly_category_budget_start")
   @@index([companyId, startMonth, endMonth])
   @@index([categoryId])
+}
+
+model FinancialProvision {
+  id             Int                      @id @default(autoincrement())
+  companyId      Int
+  createdBy      Int
+  categoryId     Int
+  name           String
+  notes          String?
+  kind           FinancialProvisionKind
+  status         FinancialProvisionStatus @default(ACTIVE)
+  expectedAmount Decimal                  @db.Decimal(15, 2)
+  reservedAmount Decimal                  @db.Decimal(15, 2) @default(0)
+  startMonth     DateTime
+  targetDate     DateTime
+  completedAt    DateTime?
+  canceledAt     DateTime?
+  lastUsedAt     DateTime?
+  lastUsedAmount Decimal?                 @db.Decimal(15, 2)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  company        Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdByUser  User                     @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+  category       FinancialCategory        @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  entries        FinancialProvisionEntry[]
+
+  @@index([companyId, status, targetDate])
+  @@index([categoryId])
+  @@index([createdBy])
+}
+
+model FinancialProvisionEntry {
+  id                   Int                         @id @default(autoincrement())
+  provisionId          Int
+  createdBy             Int
+  type                  FinancialProvisionEntryType
+  amount                Decimal                     @db.Decimal(15, 2)
+  reservedAmountChange  Decimal                     @db.Decimal(15, 2)
+  occurredAt            DateTime
+  notes                 String?
+  createdAt             DateTime                    @default(now())
+
+  provision             FinancialProvision          @relation(fields: [provisionId], references: [id], onDelete: Cascade)
+  createdByUser         User                        @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([provisionId, occurredAt])
+  @@index([createdBy])
 }
 
 model Process {

@@ -70,6 +70,12 @@ import {
   replaceMonthlyCategoryBudgetSchema
 } from '../validators/monthly-category-budget.validator';
 import {
+  createFinancialProvisionEntrySchema,
+  createFinancialProvisionSchema,
+  updateFinancialProvisionSchema,
+  useFinancialProvisionSchema
+} from '../validators/financial-provision.validator';
+import {
   createAccount,
   getAccounts,
   getAccountById,
@@ -151,6 +157,14 @@ import {
   getMonthlyCategoryBudget,
   replaceMonthlyCategoryBudget
 } from '../controllers/monthly-category-budget.controller';
+import {
+  addFinancialProvisionEntry,
+  cancelFinancialProvision,
+  createFinancialProvision,
+  listFinancialProvisions,
+  updateFinancialProvision,
+  useFinancialProvision
+} from '../controllers/financial-provision.controller';
 import {
   analyzeCreditCardReconciliationValues,
   commitCreditCardReconciliationSession,
@@ -296,6 +310,29 @@ router.post(
   validate(endRecurringMonthlyCategoryBudgetSchema, { source: 'body' }),
   endRecurringMonthlyCategoryBudget
 );
+
+router.get('/budgets/provisions', listFinancialProvisions);
+router.post(
+  '/budgets/provisions',
+  validate(createFinancialProvisionSchema, { source: 'body' }),
+  createFinancialProvision
+);
+router.put(
+  '/budgets/provisions/:id',
+  validate(updateFinancialProvisionSchema, { source: 'body' }),
+  updateFinancialProvision
+);
+router.post(
+  '/budgets/provisions/:id/entries',
+  validate(createFinancialProvisionEntrySchema, { source: 'body' }),
+  addFinancialProvisionEntry
+);
+router.post(
+  '/budgets/provisions/:id/use',
+  validate(useFinancialProvisionSchema, { source: 'body' }),
+  useFinancialProvision
+);
+router.post('/budgets/provisions/:id/cancel', cancelFinancialProvision);
 
 router.get(
   '/dashboard/monthly',

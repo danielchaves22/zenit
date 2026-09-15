@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import React from 'react';
 
-export type BudgetSectionView = 'overview' | 'availability' | 'monthly';
+export type BudgetSectionView = 'overview' | 'availability' | 'monthly' | 'provisions';
 
 const tabs: Array<{ view: BudgetSectionView; label: string }> = [
   { view: 'overview', label: 'Visão geral' },
   { view: 'availability', label: 'Plano de disponibilidade' },
-  { view: 'monthly', label: 'Planejamento mensal' }
+  { view: 'monthly', label: 'Planejamento mensal' },
+  { view: 'provisions', label: 'Provisões' }
 ];
 
 export function BudgetSectionTabs({

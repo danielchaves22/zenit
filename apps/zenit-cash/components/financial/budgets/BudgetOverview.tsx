@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, PiggyBank, Target, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowRight, CalendarClock, PiggyBank, Target, TrendingDown, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -9,6 +9,10 @@ import {
   MonthlyCategoryBudgetResponse,
   getMonthlyCategoryBudget
 } from '@/lib/monthly-category-budgets';
+import {
+  FinancialProvisionListResponse,
+  getFinancialProvisions
+} from '@/lib/financial-provisions';
 import {
   BudgetListResponse,
   fetchBudgets,
@@ -27,6 +31,7 @@ export function BudgetOverview({ month }: { month: string }) {
   const { addToast } = useToast();
   const [availability, setAvailability] = useState<BudgetListResponse | null>(null);
   const [monthly, setMonthly] = useState<MonthlyCategoryBudgetResponse | null>(null);
+  const [provisions, setProvisions] = useState<FinancialProvisionListResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,13 +40,15 @@ export function BudgetOverview({ month }: { month: string }) {
     async function loadOverview() {
       setLoading(true);
       try {
-        const [availabilityResponse, monthlyResponse] = await Promise.all([
+        const [availabilityResponse, monthlyResponse, provisionResponse] = await Promise.all([
           fetchBudgets(),
-          getMonthlyCategoryBudget(month)
+          getMonthlyCategoryBudget(month),
+          getFinancialProvisions()
         ]);
         if (!cancelled) {
           setAvailability(availabilityResponse);
           setMonthly(monthlyResponse);
+          setProvisions(provisionResponse);
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -67,7 +74,8 @@ export function BudgetOverview({ month }: { month: string }) {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Skeleton className="h-72 rounded-xl" />
         <Skeleton className="h-72 rounded-xl" />
         <Skeleton className="h-72 rounded-xl" />
       </div>
@@ -76,7 +84,7 @@ export function BudgetOverview({ month }: { month: string }) {
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Card className="flex h-full flex-col">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -177,6 +185,63 @@ export function BudgetOverview({ month }: { month: string }) {
             <Link href={{ pathname: '/financial/budgets', query: { view: 'monthly', month } }}>
               <Button variant="outline" className="inline-flex items-center gap-2">
                 {hasMonthlyPlan ? 'Abrir planejamento mensal' : 'Planejar este mês'}
+                <ArrowRight size={16} />
+              </Button>
+            </Link>
+          </div>
+        </Card>
+
+        <Card className="flex h-full flex-col">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-violet-300">
+                Provisões
+              </p>
+              <h2 className="mt-2 text-xl font-semibold text-white">
+                O que preciso reservar para despesas futuras?
+              </h2>
+            </div>
+            <CalendarClock className="shrink-0 text-violet-300" size={26} />
+          </div>
+
+          {(provisions?.summary.activeCount || 0) > 0 ? (
+            <>
+              <div className="mt-6 grid grid-cols-2 gap-3">
+                <OverviewMetric
+                  label="Aporte mensal"
+                  value={formatMoney(provisions?.summary.monthlyContributionAmount || 0)}
+                />
+                <OverviewMetric
+                  label="Já reservado"
+                  value={formatMoney(provisions?.summary.reservedAmount || 0)}
+                />
+                <OverviewMetric
+                  label="Ainda falta"
+                  value={formatMoney(provisions?.summary.remainingAmount || 0)}
+                />
+                <OverviewMetric
+                  label="Provisões ativas"
+                  value={String(provisions?.summary.activeCount || 0)}
+                  tone={(provisions?.summary.overdueCount || 0) > 0 ? 'danger' : 'neutral'}
+                />
+              </div>
+              {(provisions?.summary.overdueCount || 0) > 0 && (
+                <div className="mt-4 flex items-start gap-3 rounded-lg border border-red-800/70 bg-red-950/30 p-3 text-sm text-red-200">
+                  <TrendingUp size={18} />
+                  <span>{provisions?.summary.overdueCount} provisão(ões) com prazo vencido.</span>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="mt-6 rounded-lg border border-dashed border-gray-700 p-5 text-sm text-gray-400">
+              Nenhuma despesa futura está sendo provisionada ainda.
+            </div>
+          )}
+
+          <div className="mt-auto pt-6">
+            <Link href={{ pathname: '/financial/budgets', query: { view: 'provisions', month } }}>
+              <Button variant="outline" className="inline-flex items-center gap-2">
+                {(provisions?.summary.activeCount || 0) > 0 ? 'Abrir provisões' : 'Criar provisão'}
                 <ArrowRight size={16} />
               </Button>
             </Link>

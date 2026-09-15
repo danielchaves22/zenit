@@ -196,6 +196,7 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
         { label: 'Visão Geral', href: '/financial/budgets?view=overview' },
         { label: 'Plano de Disponibilidade', href: '/financial/budgets?view=availability' },
         { label: 'Planejamento Mensal', href: '/financial/budgets?view=monthly' },
+        { label: 'Provisões', href: '/financial/budgets?view=provisions' },
       ],
     },
     {

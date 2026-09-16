@@ -9,6 +9,7 @@ import {
   requireCompanyOwnerOrAdmin
 } from '../middlewares/company-ownership.middleware';
 import { requireFeaturePermission } from '../middlewares/feature-permission.middleware';
+import { requireWorkspacePlanningAccess } from '../middlewares/workspace-planning-access.middleware';
 import { validate } from '../middlewares/validate.middleware';
 import {
   createAccountSchema,
@@ -304,47 +305,63 @@ router.put(
 
 router.get(
   '/budgets/monthly',
+  requireWorkspacePlanningAccess('READ'),
   validate(getMonthlyCategoryBudgetSchema, { source: 'query' }),
   getMonthlyCategoryBudget
 );
 router.put(
   '/budgets/monthly',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(replaceMonthlyCategoryBudgetSchema, { source: 'body' }),
   replaceMonthlyCategoryBudget
 );
 router.post(
   '/budgets/monthly/items',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(createMonthlyCategoryBudgetSchema, { source: 'body' }),
   createMonthlyCategoryBudget
 );
 router.post(
   '/budgets/monthly/recurring/:id/end',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(endRecurringMonthlyCategoryBudgetSchema, { source: 'body' }),
   endRecurringMonthlyCategoryBudget
 );
 
-router.get('/budgets/provisions', listFinancialProvisions);
+router.get(
+  '/budgets/provisions',
+  requireWorkspacePlanningAccess('READ'),
+  listFinancialProvisions
+);
 router.post(
   '/budgets/provisions',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(createFinancialProvisionSchema, { source: 'body' }),
   createFinancialProvision
 );
 router.put(
   '/budgets/provisions/:id',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(updateFinancialProvisionSchema, { source: 'body' }),
   updateFinancialProvision
 );
 router.post(
   '/budgets/provisions/:id/entries',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(createFinancialProvisionEntrySchema, { source: 'body' }),
   addFinancialProvisionEntry
 );
 router.post(
   '/budgets/provisions/:id/use',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(useFinancialProvisionSchema, { source: 'body' }),
   useFinancialProvision
 );
-router.post('/budgets/provisions/:id/cancel', cancelFinancialProvision);
+router.post(
+  '/budgets/provisions/:id/cancel',
+  requireWorkspacePlanningAccess('MANAGE'),
+  cancelFinancialProvision
+);
 
 router.get(
   '/budgets/planning-analysis/preview',

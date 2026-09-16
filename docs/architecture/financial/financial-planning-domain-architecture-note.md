@@ -157,6 +157,26 @@ snapshot ja criado. Os campos sao opcionais no banco apenas para manter leitura
 compativel de snapshots anteriores a esta politica; novos registros sempre os
 preenchem.
 
+### Autorizacao do planejamento compartilhado
+
+Planejamento Mensal por Categoria e Provisoes pertencem ao workspace. A politica
+de acesso distingue consulta de gestao:
+
+- todo membro do workspace com acesso efetivo ao Zenit Cash pode consultar os
+  controles compartilhados;
+- somente `ADMIN`, `SUPERUSER` ou o proprietario do workspace pode criar, alterar,
+  encerrar, movimentar ou cancelar esses controles;
+- a capacidade efetiva e devolvida nas consultas como `access.canRead` e
+  `access.canManage`, para que a interface apresente o modo somente leitura sem
+  reproduzir a regra de autorizacao;
+- permissoes de contas e categorias nao concedem implicitamente permissao de
+  planejamento, pois representam responsabilidades de dominio diferentes.
+
+O middleware de tenant e o acesso ao aplicativo continuam sendo pre-condicoes.
+A politica acima nao se aplica ao Plano de Disponibilidade, que e individual por
+usuario, nem ao Diagnostico Financeiro, que exige o proprietario do workspace
+pessoal correspondente.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -222,9 +242,9 @@ que deveriam representar a mesma situacao financeira.
 
 ## Proximos passos
 
-Lint, testes reproduziveis, caracterizacao dos calculos atuais, integridade do
-snapshot e seu historico auditavel ja foram consolidados. Permanecem:
+Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
+planejamento compartilhado, integridade do snapshot e seu historico auditavel ja
+foram consolidados. Permanecem:
 
-1. Definir politica de autorizacao para planejamento e provisoes empresariais.
-2. Centralizar calendario financeiro, valores assinados e formulas de provisao.
-3. Unificar a projecao mensal consumida por dashboard e planejamento.
+1. Centralizar calendario financeiro, valores assinados e formulas de provisao.
+2. Unificar a projecao mensal consumida por dashboard e planejamento.

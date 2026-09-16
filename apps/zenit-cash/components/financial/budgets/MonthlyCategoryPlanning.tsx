@@ -329,6 +329,7 @@ export function MonthlyCategoryPlanning({
   }, []);
   const currentSignature = useMemo(() => allocationSignature(draft), [draft]);
   const isDirty = currentSignature !== savedSignature;
+  const canManage = plan?.access.canManage ?? false;
 
   const draftSummary = useMemo(() => {
     return draft.reduce(
@@ -575,24 +576,32 @@ export function MonthlyCategoryPlanning({
             </p>
           </InfoModalButton>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleCopyPrevious} className="inline-flex items-center gap-2">
-            <Copy size={16} />
-            Copiar mês anterior
-          </Button>
-          <Button
-            variant="accent"
-            onClick={handleSave}
-            disabled={!isDirty || saving}
-            className="inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            Salvar planejamento
-          </Button>
-        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={handleCopyPrevious} className="inline-flex items-center gap-2">
+              <Copy size={16} />
+              Copiar mês anterior
+            </Button>
+            <Button
+              variant="accent"
+              onClick={handleSave}
+              disabled={!isDirty || saving}
+              className="inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+              Salvar planejamento
+            </Button>
+          </div>
+        )}
       </div>
 
-      {isDirty && (
+      {!canManage && (
+        <div className="mb-4 rounded-lg border border-blue-900/70 bg-blue-950/20 px-4 py-3 text-sm text-blue-200">
+          Você pode consultar este planejamento. Somente gestores do workspace podem alterá-lo.
+        </div>
+      )}
+
+      {canManage && isDirty && (
         <div className="mb-4 rounded-lg border border-amber-800/70 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
           Há alterações no rascunho. Os indicadores definitivos serão recalculados ao salvar.
         </div>
@@ -609,104 +618,106 @@ export function MonthlyCategoryPlanning({
         />
       </div>
 
-      <Card className="mb-6">
-        <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,1fr)_auto]">
-          <CategorySelect
-            label="Categoria ou grupo"
-            categories={availableCreationCategories}
-            value={creationDraft.categoryId}
-            onChange={(categoryId) =>
-              setCreationDraft((current) => ({ ...current, categoryId, includeChildren: true }))
-            }
-            placeholder="Selecione uma categoria de despesa"
-            emptyLabel="Selecione uma categoria"
-          />
-          <CurrencyInput
-            id="new-monthly-budget-limit"
-            label="Limite mensal"
-            value={creationDraft.limitAmount}
-            onChange={(limitAmount) =>
-              setCreationDraft((current) => ({ ...current, limitAmount }))
-            }
-            selectOnFocus
-            className="mb-0"
-          />
-          <div>
-            <label htmlFor="monthly-budget-kind" className="mb-1 block text-sm font-medium text-gray-300">
-              Tipo
-            </label>
-            <select
-              id="monthly-budget-kind"
-              value={creationDraft.kind}
-              onChange={(event) =>
-                setCreationDraft((current) => ({
-                  ...current,
-                  kind: event.target.value as MonthlyCategoryBudgetKind
-                }))
+      {canManage && (
+        <Card className="mb-6">
+          <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.35fr)_minmax(0,0.75fr)_minmax(0,0.85fr)_minmax(0,1fr)_auto]">
+            <CategorySelect
+              label="Categoria ou grupo"
+              categories={availableCreationCategories}
+              value={creationDraft.categoryId}
+              onChange={(categoryId) =>
+                setCreationDraft((current) => ({ ...current, categoryId, includeChildren: true }))
               }
-              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
-            >
-              <option value="ONE_TIME">Somente em um mês</option>
-              <option value="FIXED_MONTHLY">Fixo mensal</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="monthly-budget-start-month" className="mb-1 block text-sm font-medium text-gray-300">
-              {creationDraft.kind === 'FIXED_MONTHLY' ? 'Começa em' : 'Mês do planejamento'}
-            </label>
-            <select
-              id="monthly-budget-start-month"
-              value={creationDraft.month}
-              onChange={(event) => {
-                const nextMonth = event.target.value;
-                setCreationPlan(nextMonth === month ? plan : null);
-                setCreationDraft((current) => ({
-                  ...current,
-                  month: nextMonth,
-                  categoryId: ''
-                }));
-              }}
-              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
-            >
-              {monthOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button
-            variant="accent"
-            onClick={() => void handleCreatePlanning()}
-            disabled={
-              creating ||
-              !creationPlan ||
-              !creationDraft.categoryId ||
-              Number(creationDraft.limitAmount) <= 0
-            }
-            className="mb-0 inline-flex min-h-10 items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-            Criar
-          </Button>
-        </div>
-        {selectedCreationCategory && (selectedCreationCategory._count?.children || 0) > 0 && (
-          <label className="mt-3 flex items-center gap-2 text-xs text-gray-400">
-            <input
-              type="checkbox"
-              checked={creationDraft.includeChildren}
-              onChange={(event) =>
-                setCreationDraft((current) => ({
-                  ...current,
-                  includeChildren: event.target.checked
-                }))
-              }
-              className="rounded border-gray-600 bg-[#1e2126]"
+              placeholder="Selecione uma categoria de despesa"
+              emptyLabel="Selecione uma categoria"
             />
-            Incluir subcategorias deste grupo
-          </label>
-        )}
-      </Card>
+            <CurrencyInput
+              id="new-monthly-budget-limit"
+              label="Limite mensal"
+              value={creationDraft.limitAmount}
+              onChange={(limitAmount) =>
+                setCreationDraft((current) => ({ ...current, limitAmount }))
+              }
+              selectOnFocus
+              className="mb-0"
+            />
+            <div>
+              <label htmlFor="monthly-budget-kind" className="mb-1 block text-sm font-medium text-gray-300">
+                Tipo
+              </label>
+              <select
+                id="monthly-budget-kind"
+                value={creationDraft.kind}
+                onChange={(event) =>
+                  setCreationDraft((current) => ({
+                    ...current,
+                    kind: event.target.value as MonthlyCategoryBudgetKind
+                  }))
+                }
+                className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
+              >
+                <option value="ONE_TIME">Somente em um mês</option>
+                <option value="FIXED_MONTHLY">Fixo mensal</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="monthly-budget-start-month" className="mb-1 block text-sm font-medium text-gray-300">
+                {creationDraft.kind === 'FIXED_MONTHLY' ? 'Começa em' : 'Mês do planejamento'}
+              </label>
+              <select
+                id="monthly-budget-start-month"
+                value={creationDraft.month}
+                onChange={(event) => {
+                  const nextMonth = event.target.value;
+                  setCreationPlan(nextMonth === month ? plan : null);
+                  setCreationDraft((current) => ({
+                    ...current,
+                    month: nextMonth,
+                    categoryId: ''
+                  }));
+                }}
+                className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
+              >
+                {monthOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              variant="accent"
+              onClick={() => void handleCreatePlanning()}
+              disabled={
+                creating ||
+                !creationPlan ||
+                !creationDraft.categoryId ||
+                Number(creationDraft.limitAmount) <= 0
+              }
+              className="mb-0 inline-flex min-h-10 items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {creating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+              Criar
+            </Button>
+          </div>
+          {selectedCreationCategory && (selectedCreationCategory._count?.children || 0) > 0 && (
+            <label className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+              <input
+                type="checkbox"
+                checked={creationDraft.includeChildren}
+                onChange={(event) =>
+                  setCreationDraft((current) => ({
+                    ...current,
+                    includeChildren: event.target.checked
+                  }))
+                }
+                className="rounded border-gray-600 bg-[#1e2126]"
+              />
+              Incluir subcategorias deste grupo
+            </label>
+          )}
+        </Card>
+      )}
 
       {draft.length === 0 ? (
         <Card>
@@ -732,6 +743,7 @@ export function MonthlyCategoryPlanning({
                 allocation={allocation}
                 item={item}
                 month={month}
+                readOnly={!canManage}
                 onChange={(patch) => updateAllocation(allocation.categoryId, patch)}
                 onRemove={() =>
                   setDraft((current) =>
@@ -786,6 +798,7 @@ function CategoryBudgetRow({
   allocation,
   item,
   month,
+  readOnly,
   onChange,
   onRemove,
   onEndRecurring
@@ -794,6 +807,7 @@ function CategoryBudgetRow({
   allocation: DraftAllocation;
   item?: MonthlyCategoryBudgetItem;
   month: string;
+  readOnly: boolean;
   onChange: (patch: Partial<DraftAllocation>) => void;
   onRemove: () => void;
   onEndRecurring?: () => void;
@@ -857,8 +871,9 @@ function CategoryBudgetRow({
                   <input
                     type="checkbox"
                     checked={allocation.includeChildren}
+                    disabled={readOnly}
                     onChange={(event) => onChange({ includeChildren: event.target.checked })}
-                    className="rounded border-gray-600 bg-[#1e2126]"
+                    className="rounded border-gray-600 bg-[#1e2126] disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   Incluir subcategorias deste grupo
                 </label>
@@ -875,6 +890,7 @@ function CategoryBudgetRow({
                 label="Limite mensal"
                 value={allocation.limitAmount}
                 onChange={(limitAmount) => onChange({ limitAmount })}
+                disabled={readOnly}
                 selectOnFocus
                 className="mb-0 w-48"
               />
@@ -883,12 +899,13 @@ function CategoryBudgetRow({
                   Aplicar alteração
                   <select
                     value={allocation.recurringChangeScope}
+                    disabled={readOnly}
                     onChange={(event) =>
                       onChange({
                         recurringChangeScope: event.target.value as RecurringBudgetChangeScope
                       })
                     }
-                    className="mt-1 w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    className="mt-1 w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <option value="MONTH_ONLY">Somente em {formatMonthLabel(month)}</option>
                     <option value="FROM_MONTH">Neste e nos próximos meses</option>
@@ -896,20 +913,22 @@ function CategoryBudgetRow({
                 </label>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onRemove}
-              className="mt-6 rounded-lg border border-gray-700 p-2 text-gray-400 transition-colors hover:border-red-800 hover:bg-red-950/30 hover:text-red-300"
-              aria-label={
-                isRecurring
-                  ? `Remover ${category.name} somente deste mês`
-                  : `Remover ${category.name} do planejamento`
-              }
-              title={isRecurring ? 'Remover somente deste mês' : 'Remover planejamento'}
-            >
-              <Trash2 size={18} />
-            </button>
-            {onEndRecurring && (
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={onRemove}
+                className="mt-6 rounded-lg border border-gray-700 p-2 text-gray-400 transition-colors hover:border-red-800 hover:bg-red-950/30 hover:text-red-300"
+                aria-label={
+                  isRecurring
+                    ? `Remover ${category.name} somente deste mês`
+                    : `Remover ${category.name} do planejamento`
+                }
+                title={isRecurring ? 'Remover somente deste mês' : 'Remover planejamento'}
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
+            {!readOnly && onEndRecurring && (
               <button
                 type="button"
                 onClick={onEndRecurring}

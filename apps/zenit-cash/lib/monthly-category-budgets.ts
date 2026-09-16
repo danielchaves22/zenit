@@ -31,6 +31,10 @@ export interface MonthlyCategoryBudgetItem {
 }
 
 export interface MonthlyCategoryBudgetResponse {
+  access: {
+    canRead: boolean;
+    canManage: boolean;
+  };
   month: string;
   statsAvailable: boolean;
   historicalMonthsUsed: number;

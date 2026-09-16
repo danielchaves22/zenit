@@ -67,6 +67,10 @@ export interface FinancialProvisionSummary {
 }
 
 export interface FinancialProvisionListResponse {
+  access: {
+    canRead: boolean;
+    canManage: boolean;
+  };
   summary: FinancialProvisionSummary;
   items: FinancialProvision[];
 }

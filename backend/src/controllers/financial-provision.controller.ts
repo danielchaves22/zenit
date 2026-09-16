@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import FinancialProvisionService from '../services/financial-provision.service';
+import { getWorkspacePlanningCapabilities } from '../policies/workspace-planning-access.policy';
 import {
   CreateFinancialProvisionBody,
   CreateFinancialProvisionEntryBody,
@@ -28,7 +29,14 @@ function getProvisionId(req: Request): number {
 export async function listFinancialProvisions(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
-    return res.status(200).json(await FinancialProvisionService.list(companyId));
+    const provisions = await FinancialProvisionService.list(companyId);
+    return res.status(200).json({
+      ...provisions,
+      access: getWorkspacePlanningCapabilities({
+        role: req.user.role,
+        isCompanyOwner: req.user.isCompanyOwner
+      })
+    });
   } catch (error: any) {
     return res.status(400).json({
       error: error.message || 'Erro ao carregar provisões'

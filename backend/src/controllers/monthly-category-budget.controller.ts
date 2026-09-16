@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import MonthlyCategoryBudgetService from '../services/monthly-category-budget.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
+import { getWorkspacePlanningCapabilities } from '../policies/workspace-planning-access.policy';
 import {
   CreateMonthlyCategoryBudgetBody,
   EndRecurringMonthlyCategoryBudgetBody,
@@ -43,6 +44,16 @@ async function resolveAccess(req: Request) {
   return { companyId, userId, accessFilter, accessibleAccountIds };
 }
 
+function withPlanningAccess<T extends object>(req: Request, payload: T) {
+  return {
+    ...payload,
+    access: getWorkspacePlanningCapabilities({
+      role: req.user.role,
+      isCompanyOwner: req.user.isCompanyOwner
+    })
+  };
+}
+
 export async function getMonthlyCategoryBudget(req: Request, res: Response) {
   try {
     const { month, planOnly } = req.query as unknown as GetMonthlyCategoryBudgetQuery;
@@ -53,7 +64,7 @@ export async function getMonthlyCategoryBudget(req: Request, res: Response) {
       planOnly
     });
 
-    return res.status(200).json(plan);
+    return res.status(200).json(withPlanningAccess(req, plan));
   } catch (error: any) {
     return res.status(400).json({
       error: error.message || 'Erro ao carregar planejamento mensal'
@@ -77,7 +88,7 @@ export async function replaceMonthlyCategoryBudget(req: Request, res: Response) 
       month
     });
 
-    return res.status(200).json(plan);
+    return res.status(200).json(withPlanningAccess(req, plan));
   } catch (error: any) {
     return res.status(400).json({
       error: error.message || 'Erro ao salvar planejamento mensal'
@@ -100,7 +111,7 @@ export async function createMonthlyCategoryBudget(req: Request, res: Response) {
       month: input.month
     });
 
-    return res.status(201).json(plan);
+    return res.status(201).json(withPlanningAccess(req, plan));
   } catch (error: any) {
     return res.status(400).json({
       error: error.message || 'Erro ao criar planejamento mensal'
@@ -129,7 +140,7 @@ export async function endRecurringMonthlyCategoryBudget(req: Request, res: Respo
       month
     });
 
-    return res.status(200).json(plan);
+    return res.status(200).json(withPlanningAccess(req, plan));
   } catch (error: any) {
     return res.status(400).json({
       error: error.message || 'Erro ao encerrar planejamento fixo'

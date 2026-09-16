@@ -105,6 +105,7 @@ vi.mock('@/components/ui/Button', () => ({
 }));
 
 const emptyResponse = {
+  access: { canRead: true as const, canManage: true },
   summary: {
     activeCount: 0,
     fundedCount: 0,
@@ -149,6 +150,7 @@ const provision = {
 };
 
 const responseWithProvision = {
+  access: { canRead: true as const, canManage: true },
   summary: {
     activeCount: 1,
     fundedCount: 0,
@@ -235,5 +237,23 @@ describe('FinancialProvisions', () => {
     await user.click(screen.getByRole('button', { name: 'Cancelar provisão' }));
 
     await waitFor(() => expect(cancelMock).toHaveBeenCalledWith(20));
+  });
+
+  it('keeps provisions visible without exposing management actions to read-only members', async () => {
+    getMock.mockResolvedValue({
+      ...responseWithProvision,
+      access: { canRead: true, canManage: false }
+    });
+
+    render(<FinancialProvisions />);
+
+    expect(
+      await screen.findByText(/Somente gestores do workspace podem alterá-las/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('IPVA')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Nova provisão' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Registrar aporte' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument();
   });
 });

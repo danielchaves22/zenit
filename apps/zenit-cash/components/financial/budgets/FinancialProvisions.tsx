@@ -220,6 +220,7 @@ export function FinancialProvisions() {
     if (filter === 'ALL') return data?.items || [];
     return (data?.items || []).filter((item) => item.status === filter);
   }, [data, filter]);
+  const canManage = data?.access.canManage ?? false;
 
   function openCreate() {
     setDraft(emptyDraft());
@@ -408,11 +409,19 @@ export function FinancialProvisions() {
             </p>
           </InfoModalButton>
         </div>
-        <Button variant="accent" onClick={openCreate} className="inline-flex items-center gap-2">
-          <Plus size={17} />
-          Nova provisão
-        </Button>
+        {canManage && (
+          <Button variant="accent" onClick={openCreate} className="inline-flex items-center gap-2">
+            <Plus size={17} />
+            Nova provisão
+          </Button>
+        )}
       </div>
+
+      {!canManage && (
+        <div className="rounded-lg border border-blue-900/70 bg-blue-950/20 px-4 py-3 text-sm text-blue-200">
+          Você pode consultar as provisões. Somente gestores do workspace podem alterá-las.
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <SummaryMetric
@@ -445,7 +454,7 @@ export function FinancialProvisions() {
         saldo de nenhuma conta.
       </div>
 
-      {editorOpen && (
+      {canManage && editorOpen && (
         <ProvisionEditor
           draft={draft}
           setDraft={setDraft}
@@ -502,6 +511,7 @@ export function FinancialProvisions() {
               activity={activity?.provisionId === provision.id ? activity : null}
               setActivity={setActivity}
               saving={saving}
+              canManage={canManage}
               onEdit={() => openEdit(provision)}
               onOpenActivity={(kind) => openActivity(provision, kind)}
               onSubmitActivity={submitActivity}
@@ -657,6 +667,7 @@ function ProvisionCard({
   activity,
   setActivity,
   saving,
+  canManage,
   onEdit,
   onOpenActivity,
   onSubmitActivity,
@@ -666,6 +677,7 @@ function ProvisionCard({
   activity: ActivityDraft | null;
   setActivity: React.Dispatch<React.SetStateAction<ActivityDraft | null>>;
   saving: boolean;
+  canManage: boolean;
   onEdit: () => void;
   onOpenActivity: (kind: ActivityKind) => void;
   onSubmitActivity: (event: React.FormEvent) => void;
@@ -729,7 +741,7 @@ function ProvisionCard({
 
       {provision.notes && <p className="mt-4 text-sm text-gray-400">{provision.notes}</p>}
 
-      {isActive && (
+      {isActive && canManage && (
         <div className="mt-5 flex flex-wrap gap-2">
           <Button variant="accent" onClick={() => onOpenActivity('CONTRIBUTION')}>
             Registrar aporte
@@ -749,7 +761,7 @@ function ProvisionCard({
         </div>
       )}
 
-      {activity && (
+      {canManage && activity && (
         <form onSubmit={onSubmitActivity} className="mt-5 rounded-lg border border-gray-700 bg-[#11161d] p-4">
           <div className="mb-3 flex items-center justify-between">
             <h4 className="font-medium text-white">

@@ -69,17 +69,20 @@ vi.mock('@/components/ui/CurrencyInput', () => ({
   CurrencyInput: ({
     label,
     value,
-    onChange
+    onChange,
+    disabled
   }: {
     label: string;
     value: string;
     onChange: (value: string) => void;
+    disabled?: boolean;
   }) => (
     <label>
       <span>{label}</span>
       <input
         aria-label={label}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
@@ -108,6 +111,7 @@ vi.mock('@/utils/categoryIcons', () => ({
 
 function emptyPlan(month: string) {
   return {
+    access: { canRead: true as const, canManage: true },
     month,
     statsAvailable: true,
     historicalMonthsUsed: 6,
@@ -288,5 +292,23 @@ describe('MonthlyCategoryPlanning', () => {
 
     await user.click(screen.getByRole('button', { name: 'Salvar planejamento' }));
     await waitFor(() => expect(replacePlanMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the company plan visible without exposing management actions to read-only members', async () => {
+    getPlanMock.mockResolvedValue({
+      ...planWithFuel('2026-09'),
+      access: { canRead: true, canManage: false }
+    });
+
+    render(<MonthlyCategoryPlanning month="2026-09" />);
+
+    expect(
+      await screen.findByText(/Somente gestores do workspace podem alterá-lo/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText('Combustível')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Salvar planejamento' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Criar' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Remover Combustível do planejamento')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Limite mensal')).toBeDisabled();
   });
 });

@@ -4,6 +4,23 @@ const dotenv = require('dotenv');
 
 const backendRoot = path.resolve(__dirname, '..');
 const testEnvPath = path.join(backendRoot, '.env.test');
+const defaultTestConnectionLimit = '5';
+
+function withTestConnectionLimit(databaseUrl) {
+  if (!databaseUrl) return databaseUrl;
+
+  const parsedUrl = new URL(databaseUrl);
+  if (!['postgres:', 'postgresql:'].includes(parsedUrl.protocol)) return databaseUrl;
+  if (parsedUrl.searchParams.has('connection_limit')) return databaseUrl;
+
+  const configuredLimit = process.env.TEST_DATABASE_CONNECTION_LIMIT || defaultTestConnectionLimit;
+  if (!/^\d+$/.test(configuredLimit) || Number(configuredLimit) < 1) {
+    throw new Error('TEST_DATABASE_CONNECTION_LIMIT must be a positive integer.');
+  }
+
+  parsedUrl.searchParams.set('connection_limit', configuredLimit);
+  return parsedUrl.toString();
+}
 
 function loadTestEnv(options = {}) {
   const { required = true } = options;
@@ -21,6 +38,7 @@ function loadTestEnv(options = {}) {
   dotenv.config({ path: testEnvPath, override: true });
   // Allow a disposable local database without rewriting the developer's .env.test.
   if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  process.env.DATABASE_URL = withTestConnectionLimit(process.env.DATABASE_URL);
   process.env.NODE_ENV = 'test';
   return true;
 }
@@ -55,5 +73,6 @@ module.exports = {
   backendRoot,
   testEnvPath,
   loadTestEnv,
-  assertSafeTestDatabase
+  assertSafeTestDatabase,
+  withTestConnectionLimit
 };

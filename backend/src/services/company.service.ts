@@ -1,9 +1,9 @@
+import prisma from '../lib/prisma';
 import { AppKey, Company, Prisma, PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import FinancialStructureService from './financial-structure.service';
 import AppAccessService from './app-access.service';
 
-const prisma = new PrismaClient();
 
 type PrismaExecutor = PrismaClient | Prisma.TransactionClient;
 

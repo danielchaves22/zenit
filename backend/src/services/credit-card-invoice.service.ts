@@ -1,9 +1,9 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   CreditCardCreditKind,
   CreditCardInvoiceStatus,
   Prisma,
-  PrismaClient,
   RecurringFrequency,
   TransactionStatus,
   TransactionType
@@ -26,7 +26,6 @@ import {
   calculateCreditCardInvoiceTotalsByIds
 } from '../utils/credit-card-invoice-totals';
 
-const prisma = new PrismaClient();
 const CREDIT_CARD_RECONCILIATION_MUTATION_TTL_MS = 10 * 60 * 1000;
 
 function formatInvoiceLabel(referenceMonth: number, referenceYear: number) {

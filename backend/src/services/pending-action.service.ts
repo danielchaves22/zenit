@@ -1,10 +1,10 @@
-import { AssistantPendingActionStatus, AssistantPendingActionType, PrismaClient, Role } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { AssistantPendingActionStatus, AssistantPendingActionType, Role } from '@prisma/client';
 import { DraftTransactionSummary, PendingAction, pendingActionSchema } from '@zenit/assistant-contracts';
 import { z } from 'zod';
 import FinancialTransactionService from './financial-transaction.service';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
 
-const prisma = new PrismaClient();
 
 const draftTransactionPayloadSchema = z.object({
   description: z.string().min(1),

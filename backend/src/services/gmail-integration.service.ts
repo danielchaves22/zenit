@@ -1,12 +1,11 @@
-﻿import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import jwt from 'jsonwebtoken';
 import { INTEGRATIONS_CONFIG, JWT_SECRET } from '../config';
 import { decryptSecret, encryptSecret } from '../utils/secret-crypto';
 import GmailClientService from './gmail-client.service';
 import EmailIngestionService from './email-ingestion.service';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 type OAuthStatePayload = {
   companyId: number;

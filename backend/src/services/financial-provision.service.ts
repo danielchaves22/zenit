@@ -1,3 +1,4 @@
+import prisma from '../lib/prisma';
 import {
   FinancialProvisionEntryType,
   FinancialProvisionKind,
@@ -7,7 +8,6 @@ import {
   TransactionType
 } from '@prisma/client';
 
-const prisma = new PrismaClient();
 
 type ProvisionClient = PrismaClient | Prisma.TransactionClient;
 

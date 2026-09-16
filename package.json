@@ -8,9 +8,11 @@
   ],
   "scripts": {
     "build:assistant-contracts": "npm --workspace packages/assistant-contracts run build",
+    "lint:backend": "npm --workspace backend run lint",
     "test:backend": "npm --workspace backend run test:unit && npm --workspace backend run test:integration",
     "test:zenit-cash": "npm --workspace apps/zenit-cash run typecheck && npm --workspace apps/zenit-cash run test",
-    "verify": "npm run test:backend && npm run test:zenit-cash",
+    "verify:static": "npm run lint:backend && npm run build:backend && npm --workspace backend run test:unit && npm run test:zenit-cash",
+    "verify": "npm run verify:static && npm --workspace backend run test:integration && npm run build:zenit-cash",
     "build:backend": "npm --workspace backend run build",
     "build:zenit-cash": "npm --workspace apps/zenit-cash run build",
     "build:zenit-cash-mobile": "npm --workspace apps/zenit-cash-mobile run typecheck",

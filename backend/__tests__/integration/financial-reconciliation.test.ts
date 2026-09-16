@@ -185,13 +185,21 @@ describe('Financial reconciliation adjustments', () => {
   });
 
   it('ignores balance adjustments in financial summary but keeps them in account movement reports', async () => {
+    const referenceDate = new Date();
+    const reportStartDate = new Date(referenceDate.getTime() - 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const reportEndDate = new Date(referenceDate.getTime() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+
     const operationalExpenseResponse = await request(app)
       .post('/api/financial/transactions')
       .set(authHeaders())
       .send({
         description: 'Despesa operacional',
         amount: 200,
-        date: '2026-05-10T12:00:00.000Z',
+        date: referenceDate.toISOString(),
         type: 'EXPENSE',
         status: 'COMPLETED',
         fromAccountId: accountId,
@@ -215,8 +223,8 @@ describe('Financial reconciliation adjustments', () => {
       .get('/api/financial/summary')
       .set(authHeaders())
       .query({
-        startDate: '2026-05-01',
-        endDate: '2026-05-31'
+        startDate: reportStartDate,
+        endDate: reportEndDate
       });
 
     expect(summaryResponse.status).toBe(200);
@@ -230,8 +238,8 @@ describe('Financial reconciliation adjustments', () => {
       .get('/api/financial/reports/financial-account-movement')
       .set(authHeaders())
       .query({
-        startDate: '2026-05-01',
-        endDate: '2026-05-31',
+        startDate: reportStartDate,
+        endDate: reportEndDate,
         financialAccountIds: accountId.toString(),
         groupBy: 'day'
       });

@@ -1,3 +1,4 @@
+import prisma from '../lib/prisma';
 import {
   PersonalAdjustmentPace,
   PersonalCategoryFlexibility,
@@ -5,12 +6,10 @@ import {
   PersonalPlanningContext,
   PersonalPlanningStyle,
   Prisma,
-  PrismaClient,
   TransactionType
 } from '@prisma/client';
 import PersonalWorkspaceService from './personal-workspace.service';
 
-const prisma = new PrismaClient();
 
 export type PersonalFinancialProfileState =
   | 'NOT_CONFIGURED'

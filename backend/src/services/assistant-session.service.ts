@@ -1,7 +1,7 @@
-import { AssistantMessageRole, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { AssistantMessageRole } from '@prisma/client';
 import { AssistantSessionHistory, PendingAction, pendingActionSchema } from '@zenit/assistant-contracts';
 
-const prisma = new PrismaClient();
 
 function toIso(value: Date): string {
   return value.toISOString();

@@ -1,7 +1,7 @@
-﻿import {
+import prisma from '../lib/prisma';
+import {
   AccountType,
   Prisma,
-  PrismaClient,
   RecurringFrequency,
   RecurringTransaction,
   TransactionStatus,
@@ -14,7 +14,6 @@ import {
   resolveCreditCardInvoiceReference
 } from '../utils/credit-card';
 
-const prisma = new PrismaClient();
 
 const SUPPORTED_FIXED_TYPES: TransactionType[] = [TransactionType.INCOME, TransactionType.EXPENSE];
 
@@ -289,7 +288,9 @@ function isMaterializationConcurrencyError(error: any): boolean {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function waitForMaterializedOccurrence(companyId: number, occurrenceKey: string, attempts = 10, delayMs = 50) {

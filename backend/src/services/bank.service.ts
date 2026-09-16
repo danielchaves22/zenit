@@ -1,7 +1,7 @@
-import { Bank, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { Bank } from '@prisma/client';
 import { BANK_CATALOG, getBankIconOptions, getBankIconPath } from '../catalogs/bank-catalog';
 
-const prisma = new PrismaClient();
 
 const AVAILABLE_ICON_SLUGS = new Set(BANK_CATALOG.map((item) => item.iconSlug));
 

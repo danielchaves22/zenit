@@ -1,9 +1,9 @@
+import prisma from '../lib/prisma';
 import { Request, Response } from 'express';
-import { PrismaClient, TransactionType } from '@prisma/client';
+import { TransactionType } from '@prisma/client';
 import { ListCategoriesQuery } from '../validators/financial-category.validator';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 function getUserContext(req: Request): { companyId: number; userId: number } {
   // @ts-ignore - O middleware ja validou a existencia desses valores

@@ -1,9 +1,9 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   CreditCardCreditKind,
   CreditCardInvoiceStatus,
   Prisma,
-  PrismaClient,
   TransactionStatus,
   TransactionType
 } from '@prisma/client';
@@ -21,7 +21,6 @@ import {
   resolveCreditCardInvoiceStatus
 } from '../utils/credit-card';
 
-const prisma = new PrismaClient();
 const pdfParse: (dataBuffer: Buffer) => Promise<{ text: string }> = require('pdf-parse');
 const CAIXA_BANK_CODE = 'CAIXA_ECONOMICA_FEDERAL';
 const BRADESCO_BANK_CODE = 'BRADESCO';
@@ -301,7 +300,7 @@ export class CreditCardReconciliationItemCommitError extends Error {
 }
 
 function normalizePdfText(value: string): string {
-  return value.replace(/\u0000/g, '').replace(/\u00a0/g, ' ');
+  return value.split('\u0000').join('').replace(/\u00a0/g, ' ');
 }
 
 function normalizeInlineWhitespace(value: string): string {

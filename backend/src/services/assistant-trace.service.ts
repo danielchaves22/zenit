@@ -1,6 +1,6 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { Prisma } from '@prisma/client';
 
-const prisma = new PrismaClient();
 
 export default class AssistantTraceService {
   static async recordToolTrace(params: {

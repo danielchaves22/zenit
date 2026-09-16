@@ -26,8 +26,8 @@ describe('Cash budget sync', () => {
   const now = new Date();
   const startIso = toCanonicalDayIso(now, 0);
   const endIso = toCanonicalDayIso(now, 4);
-  const laterIso = new Date(Date.UTC(2026, 5, 19, 18, 0, 0, 0)).toISOString();
-  const laterStillIso = new Date(Date.UTC(2026, 5, 20, 18, 0, 0, 0)).toISOString();
+  const laterIso = new Date(new Date(startIso).getTime() + 60 * 60 * 1000).toISOString();
+  const laterStillIso = new Date(new Date(startIso).getTime() + 2 * 60 * 60 * 1000).toISOString();
 
   const authHeaders = () => ({
     Authorization: `Bearer ${token}`,

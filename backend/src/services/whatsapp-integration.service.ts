@@ -1,6 +1,6 @@
+import prisma from '../lib/prisma';
 import {
   AppKey,
-  PrismaClient,
   Role,
   WhatsAppBindingChallengeStatus,
   WhatsAppMessageDirection,
@@ -15,7 +15,6 @@ import WhatsAppCloudApiService from './whatsapp-cloud-api.service';
 import { INTEGRATIONS_CONFIG } from '../config';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 type CompanyChannelAccess = {
   allowed: boolean;

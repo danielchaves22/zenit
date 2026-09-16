@@ -1,4 +1,5 @@
-﻿import { PrismaClient, FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 import {
   AccountType,
@@ -27,7 +28,6 @@ import { calculateCreditCardInvoiceTotals } from '../utils/credit-card-invoice-t
 
 import { randomUUID } from 'crypto';
 
-const prisma = new PrismaClient();
 type PurchaseScope = 'SINGLE' | 'FUTURE' | 'PURCHASE';
 type TransactionExecutionOptions = {
   deferPostCommitEffects?: boolean;
@@ -843,7 +843,9 @@ export default class FinancialTransactionService {
             error: error.message
           });
 
-          await new Promise(resolve => setTimeout(resolve, backoffMs));
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, backoffMs);
+          });
           continue;
         }
 

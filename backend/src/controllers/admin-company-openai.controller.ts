@@ -1,10 +1,9 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 import { Request, Response } from 'express';
 import OpenAiIntegrationService from '../services/openai-integration.service';
 import { logAuditEvent } from '../utils/audit-logger';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 function getActorContext(req: Request): { actorUserId: number; actorRole: string; actorCompanyId: number } {
   // @ts-ignore - populated by middlewares

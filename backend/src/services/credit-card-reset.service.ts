@@ -1,3 +1,4 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   FinancialAccountPurpose,
@@ -10,7 +11,6 @@ import cacheService from './cache.service';
 import { logger } from '../utils/logger';
 import { parseDecimal } from '../utils/money';
 
-const prisma = new PrismaClient();
 
 type CreditCardResetTarget = {
   id: number;

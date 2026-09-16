@@ -1,4 +1,5 @@
-import { PrismaClient, TransactionStatus, TransactionType } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { TransactionStatus, TransactionType } from '@prisma/client';
 import {
   LEGACY_OPENAI_MODEL_FALLBACK,
   resolveOpenAiModel,
@@ -7,7 +8,6 @@ import {
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 import OpenAiIntegrationService from './openai-integration.service';
 
-const prisma = new PrismaClient();
 
 type SuggestibleStatementItem = {
   id: string;

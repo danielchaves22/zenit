@@ -1,3 +1,4 @@
+import prisma from '../lib/prisma';
 import {
   CalculationRuleSet,
   CalculationVerbaTemplate,
@@ -19,7 +20,6 @@ import {
   InitialCalculationInputs
 } from './initial-calculation.engine';
 
-const prisma = new PrismaClient();
 
 function toInputJson(
   value?: Record<string, unknown> | null

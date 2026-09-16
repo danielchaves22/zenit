@@ -1,10 +1,9 @@
+import prisma from '../lib/prisma';
 // backend/src/controllers/company.controller.ts - SUPERUSER PODE LER SUAS EMPRESAS
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import CompanyService from '../services/company.service';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 /**
  * Extrai do token o role e companyId do usuário autenticado.

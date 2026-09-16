@@ -1,12 +1,11 @@
+import prisma from '../lib/prisma';
 import {
   Process as DomainProcess,
   ProcessOriginType,
   ProcessStatus,
-  Prisma,
-  PrismaClient
+  Prisma
 } from '@prisma/client';
 
-const prisma = new PrismaClient();
 
 function normalizeOptionalString(value?: string | null): string | null {
   if (value === undefined || value === null) return null;

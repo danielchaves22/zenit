@@ -1,7 +1,7 @@
-import { PrismaClient, TransactionType } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { TransactionType } from '@prisma/client';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 export default class DefaultService {
   static async setDefaultAccount(accountId: number, companyId: number): Promise<void> {

@@ -1,8 +1,8 @@
-﻿import { AiProvider, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { AiProvider } from '@prisma/client';
 import { DEFAULT_OPENAI_MODEL, resolveOpenAiModel } from '../constants/openai';
 import { decryptSecret, encryptSecret } from '../utils/secret-crypto';
 
-const prisma = new PrismaClient();
 
 type OpenAiCredentialSummary = {
   id: number;

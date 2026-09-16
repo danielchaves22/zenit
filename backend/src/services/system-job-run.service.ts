@@ -1,7 +1,7 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 export type SystemJobRunStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'PARTIAL';
 

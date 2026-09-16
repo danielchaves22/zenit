@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 
-const prisma = new PrismaClient();
 
 export async function getUserPreference(userId: number) {
   return prisma.userPreference.findUnique({ where: { userId } });

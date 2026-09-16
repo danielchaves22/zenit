@@ -1,15 +1,14 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   CreditCardInvoiceStatus,
   Prisma,
-  PrismaClient,
   RecurringFrequency,
   TransactionType
 } from '@prisma/client';
 import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transaction.service';
 import SystemJobRunService from './system-job-run.service';
 
-const prisma = new PrismaClient();
 
 const FIXED_MATERIALIZER_JOB = 'fixed-transaction-materializer';
 

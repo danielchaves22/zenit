@@ -1,11 +1,11 @@
+import prisma from '../lib/prisma';
 import { Request, Response } from 'express';
-import { AppKey, PrismaClient, Role } from '@prisma/client';
+import { AppKey, Role } from '@prisma/client';
 import UserService from '../services/user.service';
 import { logger } from '../utils/logger';
 import AppAccessService from '../services/app-access.service';
 import { toPrismaAppKey } from '../constants/app-access';
 
-const prisma = new PrismaClient();
 const EQUINOX_COMPANY_CODE = 0;
 
 type CompanyMembershipInput = {

@@ -1,7 +1,7 @@
-import { PrismaClient, Prisma, Role, User } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { Prisma, Role, User } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
-const prisma = new PrismaClient();
 
 /**
  * Parâmetros para criação de usuário.

@@ -1,13 +1,12 @@
+import prisma from '../lib/prisma';
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
-import { PrismaClient } from '@prisma/client';
 import { generateToken, generateRefreshToken, verifyToken } from '../utils/jwt';
 import { logger } from '../utils/logger';
 import { resetLoginAttempts, recordFailedLogin } from '../middlewares/rate-limit.middleware';
 import AppAccessService from '../services/app-access.service';
 import { APP_HEADER, toPrismaAppKey, toHeaderAppKey } from '../constants/app-access';
 
-const prisma = new PrismaClient();
 
 function getClientIP(req: Request): string {
   return req.ip || req.connection.remoteAddress || 'unknown';

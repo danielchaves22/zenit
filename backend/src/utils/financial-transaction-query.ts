@@ -29,10 +29,18 @@ export function buildIgnoredTransactionWhere(
 export function buildOperationalTransactionWhere(options?: {
   ignoredState?: IgnoredTransactionState;
   includeBudgetTransactions?: boolean;
+  includeBalanceAdjustments?: boolean;
 }): Prisma.FinancialTransactionWhereInput {
   const filters: Prisma.FinancialTransactionWhereInput[] = [
     {
-      entryKind: FinancialTransactionEntryKind.NORMAL
+      entryKind: options?.includeBalanceAdjustments
+        ? {
+            in: [
+              FinancialTransactionEntryKind.NORMAL,
+              FinancialTransactionEntryKind.BALANCE_ADJUSTMENT
+            ]
+          }
+        : FinancialTransactionEntryKind.NORMAL
     }
   ];
 

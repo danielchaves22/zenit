@@ -1,15 +1,14 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   FinancialAccountPurpose,
   Prisma,
-  PrismaClient,
   RecurringFrequency,
   TransactionType
 } from '@prisma/client';
 import cacheService from './cache.service';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 export type FinancialResetPreview = {
   preserved: {

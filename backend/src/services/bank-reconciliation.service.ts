@@ -1,4 +1,5 @@
-import { BankStatementItem, FinancialTransaction, Prisma, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { BankStatementItem, FinancialTransaction, Prisma } from '@prisma/client';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
 import FinancialTransactionService from './financial-transaction.service';
 import { BankStatement, calendarDate, hash, normalizeDescription, parseBankStatement } from './bank-statement-parser';
@@ -7,7 +8,6 @@ import { readBankFeedback, signBankFeedback } from './bank-reconciliation-feedba
 import { suggestBankMatchByAi } from './bank-reconciliation-ai.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
-const prisma = new PrismaClient();
 type Db = Prisma.TransactionClient;
 export interface BankContext { accountId: number; companyId: number; userId: number; role: string }
 export interface BankLinkInput {

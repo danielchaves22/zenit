@@ -1,10 +1,10 @@
-﻿import { Prisma, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { Prisma } from '@prisma/client';
 import { decryptSecret, encryptSecret } from '../utils/secret-crypto';
 import GmailClientService, { GmailMessage, GmailMessagePayload } from './gmail-client.service';
 import LegalEmailExtractionService from './legal-email-extraction.service';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 type SyncMode = 'manual' | 'polling' | 'push';
 

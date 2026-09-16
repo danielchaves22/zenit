@@ -1,10 +1,10 @@
-import { AppKey, PrismaClient, Role } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { AppKey, Role } from '@prisma/client';
 import AppAccessService from './app-access.service';
 import CompanyService from './company.service';
 import FinancialStructureService from './financial-structure.service';
 import { normalizeTimeZone } from '../utils/time-zone';
 
-const prisma = new PrismaClient();
 
 type PersonalWorkspaceResult = {
   companyId: number;

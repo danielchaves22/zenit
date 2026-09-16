@@ -1,7 +1,7 @@
+import prisma from '../lib/prisma';
 import { AppKey, Prisma, PrismaClient } from '@prisma/client'
 import { APP_HEADER_BY_KEY } from '../constants/app-access'
 
-const prisma = new PrismaClient()
 type PrismaExecutor = PrismaClient | Prisma.TransactionClient
 
 export interface AppAccessView {

@@ -1,10 +1,9 @@
-﻿import { Request, Response } from 'express';
+import prisma from '../lib/prisma';
+import { Request, Response } from 'express';
 import { INTEGRATIONS_CONFIG } from '../config';
-import { PrismaClient } from '@prisma/client';
 import EmailIngestionService from '../services/email-ingestion.service';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 function parsePubSubData(data: string | undefined): any {
   if (!data) return null;

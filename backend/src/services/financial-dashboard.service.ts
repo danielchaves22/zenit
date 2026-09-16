@@ -1,9 +1,9 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   CreditCardInvoiceStatus,
   FinancialAccountPurpose,
   Prisma,
-  PrismaClient,
   RecurringFrequency,
   TransactionStatus,
   TransactionType
@@ -13,7 +13,6 @@ import UserVariableProjectionPreferenceService from './user-variable-projection-
 import { resolveCreditCardInvoiceReference } from '../utils/credit-card';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
-const prisma = new PrismaClient();
 
 type DashboardSource =
   | 'AD_HOC_MATERIALIZED'

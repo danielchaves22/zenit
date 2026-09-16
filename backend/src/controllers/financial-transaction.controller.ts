@@ -252,7 +252,7 @@ export async function getTransactionById(req: Request, res: Response) {
       return res.status(404).json({ error: 'TransaÃ§Ã£o nÃ£o encontrada' });
     }
 
-    // Verificar se pertence Ã  empresa do usuÃ¡rio
+    // Verificar se pertence a empresa do usuario
     const { companyId } = getUserContext(req);
     if (transaction.companyId !== companyId) {
       return res.status(403).json({ error: 'Acesso negado' });
@@ -280,7 +280,7 @@ export async function updateTransaction(req: Request, res: Response) {
 
     const { companyId } = getUserContext(req);
 
-    // Verificar se a transaÃ§Ã£o existe e pertence Ã  empresa
+    // Verificar se a transacao existe e pertence a empresa
     const existingTransaction = await FinancialTransactionService.getTransactionById(id);
     
     if (!existingTransaction) {
@@ -350,7 +350,7 @@ export async function updateTransactionStatus(req: Request, res: Response) {
 
     const { companyId } = getUserContext(req);
 
-    // Verificar se a transaÃ§Ã£o existe e pertence Ã  empresa
+    // Verificar se a transacao existe e pertence a empresa
     const existingTransaction = await FinancialTransactionService.getTransactionById(id);
     
     if (!existingTransaction) {
@@ -455,7 +455,7 @@ export async function deleteTransaction(req: Request, res: Response) {
 
     const { companyId } = getUserContext(req);
 
-    // Verificar se a transaÃ§Ã£o existe e pertence Ã  empresa
+    // Verificar se a transacao existe e pertence a empresa
     const existingTransaction = await FinancialTransactionService.getTransactionById(id);
     
     if (!existingTransaction) {

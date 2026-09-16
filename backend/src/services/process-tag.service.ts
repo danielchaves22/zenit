@@ -1,6 +1,6 @@
-﻿import { PrismaClient, ProcessTag } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { ProcessTag } from '@prisma/client';
 
-const prisma = new PrismaClient();
 
 export default class ProcessTagService {
   static async createTag(companyId: number, name: string): Promise<ProcessTag> {

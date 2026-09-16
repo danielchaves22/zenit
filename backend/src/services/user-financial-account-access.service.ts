@@ -1,8 +1,7 @@
+import prisma from '../lib/prisma';
 // backend/src/services/user-financial-account-access.service.ts
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 
-const prisma = new PrismaClient();
 
 export default class UserFinancialAccountAccessService {
   

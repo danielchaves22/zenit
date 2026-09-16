@@ -1,11 +1,11 @@
+import prisma from '../lib/prisma';
 // backend/src/services/financial-account-movement-report.service.ts
-import { AccountType, PrismaClient } from '@prisma/client';
+import { AccountType } from '@prisma/client';
 import { logger } from '../utils/logger';
 import PDFGeneratorService from './pdf-generator.service';
 import ExcelGeneratorService from './excel-generator.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
-const prisma = new PrismaClient();
 
 interface ReportFilters {
   companyId: number;
@@ -90,7 +90,7 @@ export default class FinancialAccountMovementReportService {
           lte: endDate
         },
         status: 'COMPLETED',
-        ...buildOperationalTransactionWhere(),
+        ...buildOperationalTransactionWhere({ includeBalanceAdjustments: true }),
         OR: [
           { fromAccountId: { in: financialAccountIds } },
           { toAccountId: { in: financialAccountIds } }

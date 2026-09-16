@@ -1,7 +1,7 @@
+import prisma from '../lib/prisma';
 import { Prisma, PrismaClient, TransactionType } from '@prisma/client';
 import FinancialDashboardService from './financial-dashboard.service';
 
-const prisma = new PrismaClient();
 
 type RecurringChangeScope = 'MONTH_ONLY' | 'FROM_MONTH';
 type PlanningKind = 'ONE_TIME' | 'FIXED_MONTHLY';

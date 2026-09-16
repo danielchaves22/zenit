@@ -5,9 +5,9 @@ type: rfc
 product: zenit-cash
 audience: product
 visibility: internal
-status: draft
+status: active
 owner: product
-last_reviewed: 2026-06-09
+last_reviewed: 2026-09-16
 summary: Referencia interna de posicionamento, prioridades de roadmap e papel do assistente IA no Zenit Cash.
 tags:
   - rfc
@@ -17,6 +17,7 @@ tags:
   - assistant
   - whatsapp
 related:
+  - /docs/architecture/financial/financial-planning-domain
   - /docs/products/zenit-cash/fixed-transactions
   - /docs/products/zenit-cash/availability-accounts-ofx-reconciliation
   - /docs/architecture/assistant/assistant-runtime-architecture-note
@@ -26,9 +27,11 @@ related:
 
 ## Objetivo
 
-Registrar uma direcao possivel para o Zenit Cash como referencia interna de produto.
+Registrar a direcao atual do Zenit Cash como referencia interna de produto.
 
-Este documento nao representa uma decisao definitiva nem um compromisso de execucao. Ele consolida uma tese de posicionamento, prioridades de roadmap e o papel esperado do assistente IA para apoiar discussoes futuras.
+Este documento consolida o posicionamento, os guardrails de evolucao, as prioridades
+de roadmap e o papel esperado da IA. O roadmap continua sujeito a revisao, mas a
+direcao pessoal primeiro e a preservacao da base para MEIs sao decisoes atuais.
 
 ## Contexto
 
@@ -36,26 +39,33 @@ O Zenit Cash ja possui uma base funcional relevante em contas, categorias, lanca
 
 Ao mesmo tempo, o mercado possui apps financeiros generalistas com preco baixo e proposta ampla. Competir apenas como "app financeiro com IA" tende a ser uma disputa fraca em diferenciacao.
 
-Existe, porem, uma oportunidade mais clara em duas frentes complementares:
+Existe, porem, uma oportunidade mais clara em frentes complementares:
 
 - uma base operacional forte, confiavel e auditavel para controle financeiro real;
-- um especialista financeiro particular com IA, apoiado nos dados reais do usuario e acessado por chat.
+- uma experiencia pessoal que transforme registros em previsibilidade e melhores decisoes;
+- uma arquitetura de workspace que continue viavel para MEIs e pequenas operacoes;
+- inteligencia aplicada sobre dados confirmados, sem substituir regras financeiras auditaveis.
 
 ## Hipotese de posicionamento
 
-Uma direcao promissora para o produto e:
+O posicionamento atual do produto e:
 
-**Zenit e um backoffice financeiro leve para pequenas operacoes brasileiras que precisam conciliar cartoes e contas com seguranca, identificar divergencias e fechar o financeiro sem ERP pesado.**
+**Zenit e uma plataforma de controle e planejamento financeiro pessoal que transforma movimentacoes confiaveis em previsibilidade e decisoes, preservando uma base de workspace capaz de atender MEIs sem se tornar um ERP pesado.**
 
-Essa hipotese desloca o produto de um app financeiro pessoal generico para uma ferramenta de operacao, revisao e fechamento.
+A experiencia e desenhada primeiro para uso pessoal. Propriedade, autorizacao e
+modelagem operacional nao devem, contudo, pressupor que todo workspace tera para
+sempre um unico usuario.
 
 ## Guardrails de produto
 
-Se essa direcao for seguida, as prioridades devem respeitar os seguintes principios:
+As prioridades devem respeitar os seguintes principios:
 
 - a base financeira e a fonte de verdade operacional;
-- a IA e uma camada de apoio, organizacao, execucao assistida e visao;
-- conciliacao e fechamento valem mais do que dashboards cosmeticos;
+- a experiencia pessoal nao deve introduzir limites tecnicos que inviabilizem MEIs;
+- planejamento, provisao e projecao devem ter significados distintos e consistentes;
+- previsibilidade e decisoes valem mais do que dashboards cosmeticos;
+- conciliacao e fechamento continuam essenciais para a confiabilidade dos dados;
+- a IA e uma camada de apoio e explicacao sobre regras deterministicas;
 - o produto nao deve depender de "chat bonito" sem dados confiaveis por tras;
 - o WhatsApp pode ser canal principal de uso cotidiano, mas nao substitui a experiencia web para fluxos densos.
 
@@ -72,13 +82,23 @@ Camada responsavel por confiabilidade, auditabilidade e execucao:
 - conciliacao por arquivo;
 - historico e trilha de revisao.
 
-### 2. Especialista financeiro particular com IA
+### 2. Planejamento e saude financeira
+
+Camada responsavel por transformar a base operacional em decisoes:
+
+- Plano de Disponibilidade;
+- Planejamento Mensal por Categoria;
+- Provisoes para despesas futuras;
+- diagnostico financeiro por objetivo;
+- projecoes mensais e explicacao da qualidade dos dados.
+
+### 3. Especialista financeiro particular com IA
 
 Camada responsavel por frequencia de uso, organizacao e valor percebido:
 
 - conversas por chat sobre saude financeira;
 - criacao assistida de lancamentos;
-- criacao e revisao de orcamentos;
+- explicacao e comparacao de propostas de orcamento;
 - consultas financeiras simples;
 - orientacao sobre compras e compromissos;
 - leitura contextual da situacao real do usuario;
@@ -111,59 +131,50 @@ Sem essa base, a camada de IA tende a produzir orientacao fraca. Com essa base, 
 
 ## Roadmap de produto orientativo
 
-### P0. Consolidacao da base ja existente
+### P0. Consolidacao semantica e tecnica
 
-Manter e amadurecer o que ja existe:
+Organizar a base antes de nova expansao funcional:
 
-- contas, categorias e lancamentos;
-- compras no cartao, parcelas, faturas e projecoes;
-- conciliacao de cartao por arquivo;
-- transacoes fixas;
-- assistente com rascunho e confirmacao.
+- documentar linguagem, propriedade e invariantes financeiras;
+- restaurar quality gates reproduziveis;
+- caracterizar comportamentos atuais antes de refatorar;
+- centralizar politicas de calendario, valores e reconhecimento;
+- fechar lacunas de autorizacao, idempotencia e concorrencia;
+- preservar contratos e rotinas operacionais funcionais.
 
 O foco desta fase e robustez e consistencia, nao expansao lateral.
 
-### P1. Conciliacao de contas de disponibilidade via OFX
+### P1. Experiencia pessoal de planejamento
 
-Proxima prioridade mais aderente ao posicionamento:
+Consolidar o uso dos controles ja criados:
 
-- importacao OFX generica para contas de disponibilidade;
-- tela de conciliacao com estados `OK`, `SIMILAR`, `PENDENTE` e `NAO_IMPORTAVEL`;
-- criacao individual e em lote de pendentes;
-- persistencia de metadados de origem para auditoria e apoio ao matching;
-- criterios de comparacao baseados em data, valor, direcao, conta e identificador do arquivo quando houver.
+- tornar a visao geral orientada a decisoes;
+- manter Plano de Disponibilidade, Planejamento Mensal e Provisoes conceitualmente separados;
+- apresentar projecoes futuras por competencia;
+- identificar bases incompletas ou desatualizadas;
+- confirmar um diagnostico financeiro auditavel antes de gerar propostas.
 
-Esta fase fecha o ciclo de uma dor operacional central: identificar o que passou em conta e ainda nao virou lancamento.
+### P2. Recomendacao deterministica de orcamento
 
-### P2. Central de conciliacao
+Gerar cenarios explicaveis a partir de objetivo, compromissos, provisoes,
+historico, prioridades e limites protegidos. A aplicacao de um cenario sempre
+ocorre como rascunho revisavel e confirmado pelo usuario.
 
-Unificar conciliacoes em uma visao operacional:
+### P3. Inteligencia e explicacao
 
-- pendencias por conta e cartao;
-- filtros por periodo, origem, status e conta;
-- historico de importacoes;
-- reprocessamento e consulta de importacoes anteriores;
-- trilha de auditoria de criacao, revisao e descarte.
+Usar IA para explicar diagnosticos, comparar cenarios e destacar informacoes
+relevantes. A IA nao define totais financeiros nem aplica alteracoes diretamente.
 
-### P3. Fechamento mensal
+### P4. Operacao e fechamento para MEIs
 
-Transformar o sistema em ferramenta de fechamento:
+Amadurecer a experiencia compartilhada sem antecipar um ERP:
 
+- autorizacao de planejamento por workspace;
 - checklist de fechamento do periodo;
 - saldo esperado versus saldo real por conta;
 - faturas conciliadas e pendencias abertas;
 - itens sem categoria ou sem revisao;
 - visao de "mes pronto para fechar" versus "mes com pendencias".
-
-### P4. Automacao e inteligencia
-
-Expandir a camada de apoio:
-
-- sugestao de categoria e descricao mais fortes;
-- regras baseadas no historico da empresa ou do usuario;
-- pre-selecao automatica de pendentes;
-- sugestoes proativas de ajustes e correcoes;
-- explicacoes mais contextualizadas da situacao financeira.
 
 ### P5. Integracoes mais amplas
 
@@ -176,12 +187,13 @@ Expandir canais e automacao quando a rotina central estiver madura:
 
 ## O que nao deve ser prioridade central
 
-Enquanto a tese acima estiver em avaliacao, estas frentes nao devem liderar o roadmap:
+Estas frentes nao devem liderar o roadmap:
 
-- virar app financeiro pessoal generico;
+- competir como app financeiro pessoal generico sem metodologia propria;
 - competir so por dashboard, visual ou IA conversacional;
 - investir cedo em features amplas de lifestyle financeiro;
-- expandir para muitos modulos sem consolidar conciliacao e fechamento.
+- antecipar um ERP para cobrir necessidades empresariais ainda nao demonstradas;
+- expandir para muitos modulos sem consolidar planejamento, conciliacao e fechamento.
 
 ## Direcao para WhatsApp
 
@@ -264,10 +276,19 @@ Se esta direcao estiver correta, o Zenit deve melhorar principalmente:
 - aumento da frequencia de uso por interacoes simples e recorrentes;
 - percepcao de controle e visao futura do usuario.
 
-## Perguntas que este RFC deixa em aberto
+## Decisoes atuais e pontos em aberto
 
-- o foco principal do produto sera empresa pequena, operacao familiar ou uso pessoal premium;
-- o assistente sera um modulo de apoio ou uma interface principal do Zenit;
+Decisoes atuais:
+
+- a experiencia sera pessoal primeiro;
+- dados operacionais permanecem vinculados ao workspace;
+- perfil e aconselhamento pessoais pertencem ao usuario em seu workspace pessoal;
+- IA permanece como apoio, nao como fonte da matematica financeira;
+- a base deve continuar extensivel para MEIs e pequenas equipes.
+
+Pontos em aberto:
+
+- quando o assistente deve evoluir de consulta para uma interface principal;
 - a camada de WhatsApp sera apenas canal conversacional ou tambem canal forte de notificacao operacional;
 - Open Finance entra como prioridade comercial ou apenas como acelerador futuro.
 
@@ -278,6 +299,6 @@ Este RFC deve ser tratado como referencia de rumo, nao como plano fechado.
 O valor principal deste material e preservar uma linha de pensamento coerente para futuras decisoes de produto:
 
 - base financeira forte;
-- conciliacao e fechamento como eixo operacional;
+- planejamento, conciliacao e fechamento como eixos complementares;
 - especialista financeiro IA como camada de uso diario e orientacao contextual;
 - WhatsApp como canal natural de captura, consulta, notificacao e conversa.

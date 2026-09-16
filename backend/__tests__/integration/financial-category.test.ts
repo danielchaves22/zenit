@@ -164,7 +164,7 @@ describe('Financial categories', () => {
         name: `Categoria Receita ${Date.now()}`,
         type: 'INCOME',
         color: '#22C55E',
-        icon: 'coins'
+        icon: 'handCoins'
       });
 
     expect(incomeResponse.status).toBe(201);

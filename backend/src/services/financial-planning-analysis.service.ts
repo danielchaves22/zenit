@@ -1,10 +1,10 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   FinancialPlanningObjectiveKind,
   FinancialPlanningSnapshotStatus,
   FinancialProvisionStatus,
   Prisma,
-  PrismaClient,
   RecurringFrequency,
   TransactionStatus,
   TransactionType
@@ -12,7 +12,6 @@ import {
 import PersonalFinancialProfileService from './personal-financial-profile.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
-const prisma = new PrismaClient();
 
 export type FinancialPlanningSourceKind =
   | 'FIXED_INCOME'

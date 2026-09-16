@@ -1,8 +1,8 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   AssistantMode,
   AssistantPendingActionType,
-  PrismaClient,
   Role,
   TransactionStatus,
   TransactionType
@@ -21,7 +21,6 @@ import {
 } from '../constants/category-icons';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
-const prisma = new PrismaClient();
 
 const createTransactionDraftArgsSchema = z.object({
   description: z.string().trim().min(1).max(255),

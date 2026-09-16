@@ -1,10 +1,10 @@
-import { AssistantMessageRole, AssistantMode, AssistantTurnStatus, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { AssistantMessageRole, AssistantMode, AssistantTurnStatus } from '@prisma/client';
 import { AssistantAction, AssistantCard, AssistantStreamEvent, AssistantTurnResponse, PendingAction } from '@zenit/assistant-contracts';
 import AssistantMessageService from './assistant-message.service';
 import AssistantSessionService from './assistant-session.service';
 import LlmRuntimeService from './llm-runtime.service';
 
-const prisma = new PrismaClient();
 
 function splitMessageIntoDeltas(message: string): string[] {
   const normalized = message.trim();

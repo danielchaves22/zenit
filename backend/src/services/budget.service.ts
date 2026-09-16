@@ -1,3 +1,4 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   Budget,
@@ -9,7 +10,6 @@ import {
   Company,
   FinancialAccountPurpose,
   Prisma,
-  PrismaClient,
   TransactionStatus,
   TransactionType
 } from '@prisma/client';
@@ -24,7 +24,6 @@ import {
   resolveTimeZone
 } from '../utils/time-zone';
 
-const prisma = new PrismaClient();
 
 type BudgetEntrySyncInput = {
   clientKey: string;

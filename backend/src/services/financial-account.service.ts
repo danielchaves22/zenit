@@ -1,17 +1,16 @@
+import prisma from '../lib/prisma';
 import {
   AccountType,
   FinancialAccount,
   FinancialAccountPurpose,
   FinancialTransactionEntryKind,
-  Prisma,
-  PrismaClient
+  Prisma
 } from '@prisma/client';
 import { logger } from '../utils/logger';
 import cacheService from './cache.service';
 import BankService from './bank.service';
 import { parseDecimal } from '../utils/money';
 
-const prisma = new PrismaClient();
 
 function getAccountTypeLabel(type: AccountType): string {
   const labels: Record<AccountType, string> = {

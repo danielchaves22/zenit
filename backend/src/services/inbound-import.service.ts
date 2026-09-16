@@ -1,12 +1,11 @@
+import prisma from '../lib/prisma';
 import {
   InboundImport,
   InboundImportDestinationType,
   InboundImportSourceType,
-  Prisma,
-  PrismaClient
+  Prisma
 } from '@prisma/client';
 
-const prisma = new PrismaClient();
 
 export default class InboundImportService {
   static async createInboundImport(data: {

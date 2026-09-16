@@ -1,4 +1,5 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import OpenAiIntegrationService from './openai-integration.service';
 import { resolveOpenAiModel } from '../constants/openai';
@@ -6,7 +7,6 @@ import { hash } from './bank-statement-parser';
 import { BankCandidate, MatchItem, day } from './bank-reconciliation-matching';
 import type { BankContext } from './bank-reconciliation.service';
 
-const prisma = new PrismaClient();
 const PROMPT_VERSION = 'bank-match-v3';
 const responseSchema = z.object({ candidateKey: z.string().nullable(), reason: z.string().max(500) });
 type SuggestResult = { candidates: BankCandidate[]; cacheId?: number; message?: string };

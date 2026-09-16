@@ -1,3 +1,4 @@
+import prisma from '../lib/prisma';
 import { createHash, randomUUID } from 'crypto';
 import {
   AccountType,
@@ -20,7 +21,6 @@ import CreditCardStatementReconciliationService, {
 import FinancialTransactionService from './financial-transaction.service';
 import CreditCardReconciliationValueAnalysisService from './credit-card-reconciliation-value-analysis.service';
 
-const prisma = new PrismaClient();
 const PARSER_VERSION = 2;
 const ACTIVE_MUTATION_TTL_MS = 10 * 60 * 1000;
 

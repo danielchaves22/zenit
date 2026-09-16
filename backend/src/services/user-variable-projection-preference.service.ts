@@ -1,6 +1,6 @@
-import { PrismaClient, TransactionType } from '@prisma/client';
+import prisma from '../lib/prisma';
+import { TransactionType } from '@prisma/client';
 
-const prisma = new PrismaClient();
 
 const MAX_TRACKED_EXPENSE_CATEGORIES = 10;
 const DEFAULT_SMALL_SLICE_THRESHOLD_PERCENT = 3;

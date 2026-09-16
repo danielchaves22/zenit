@@ -9,6 +9,7 @@ import {
 } from '@/components/financial/budgets/BudgetSectionTabs';
 import { MonthlyCategoryPlanning } from '@/components/financial/budgets/MonthlyCategoryPlanning';
 import { FinancialProvisions } from '@/components/financial/budgets/FinancialProvisions';
+import { GuidedPlanning } from '@/components/financial/budgets/GuidedPlanning';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
@@ -22,7 +23,10 @@ function getCurrentMonthKey(): string {
 
 function normalizeView(value: string | string[] | undefined): BudgetSectionView {
   const candidate = Array.isArray(value) ? value[0] : value;
-  return candidate === 'availability' || candidate === 'monthly' || candidate === 'provisions'
+  return candidate === 'availability' ||
+    candidate === 'monthly' ||
+    candidate === 'provisions' ||
+    candidate === 'guided'
     ? candidate
     : 'overview';
 }
@@ -101,7 +105,7 @@ function BudgetsPageInner() {
         <h1 className="text-2xl font-semibold text-white">Orçamento</h1>
         <InfoModalButton modalTitle="Sobre o Orçamento" buttonLabel="Ajuda sobre o Orçamento">
           <p>
-            O Orçamento reúne três controles complementares para transformar sua movimentação
+            O Orçamento reúne controles complementares para transformar sua movimentação
             financeira em decisões.
           </p>
           <p>
@@ -117,6 +121,10 @@ function BudgetsPageInner() {
             despesas futuras previsíveis.
           </p>
           <p>
+            <strong className="text-white">Planejamento Orientado:</strong> prepara e confirma a
+            base financeira que será usada em futuras sugestões de orçamento.
+          </p>
+          <p>
             Os limites mensais não alteram o saldo do Plano de Disponibilidade nem criam lançamentos.
             Eles representam uma intenção comparada aos gastos existentes.
           </p>
@@ -125,7 +133,7 @@ function BudgetsPageInner() {
 
       <BudgetSectionTabs activeView={view} month={month} />
 
-      {view !== 'availability' && view !== 'provisions' && (
+      {view !== 'availability' && view !== 'provisions' && view !== 'guided' && (
         <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-gray-700 bg-surface px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <CalendarDays size={18} className="text-accent" />
@@ -161,6 +169,7 @@ function BudgetsPageInner() {
         <MonthlyCategoryPlanning month={month} onMonthChange={changeMonth} />
       )}
       {view === 'provisions' && <FinancialProvisions />}
+      {view === 'guided' && <GuidedPlanning />}
     </DashboardLayout>
   );
 }

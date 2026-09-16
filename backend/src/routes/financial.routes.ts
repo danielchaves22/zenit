@@ -76,6 +76,10 @@ import {
   useFinancialProvisionSchema
 } from '../validators/financial-provision.validator';
 import {
+  confirmFinancialPlanningAnalysisSchema,
+  previewFinancialPlanningAnalysisSchema
+} from '../validators/financial-planning-analysis.validator';
+import {
   createAccount,
   getAccounts,
   getAccountById,
@@ -165,6 +169,10 @@ import {
   updateFinancialProvision,
   useFinancialProvision
 } from '../controllers/financial-provision.controller';
+import {
+  confirmFinancialPlanningAnalysis,
+  previewFinancialPlanningAnalysis
+} from '../controllers/financial-planning-analysis.controller';
 import {
   analyzeCreditCardReconciliationValues,
   commitCreditCardReconciliationSession,
@@ -333,6 +341,17 @@ router.post(
   useFinancialProvision
 );
 router.post('/budgets/provisions/:id/cancel', cancelFinancialProvision);
+
+router.get(
+  '/budgets/planning-analysis/preview',
+  validate(previewFinancialPlanningAnalysisSchema, { source: 'query' }),
+  previewFinancialPlanningAnalysis
+);
+router.post(
+  '/budgets/planning-analysis/snapshots',
+  validate(confirmFinancialPlanningAnalysisSchema, { source: 'body' }),
+  confirmFinancialPlanningAnalysis
+);
 
 router.get(
   '/dashboard/monthly',

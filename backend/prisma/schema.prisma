@@ -251,6 +251,14 @@ enum PersonalCategoryFlexibility {
   FLEXIBLE
 }
 
+enum FinancialPlanningObjectiveKind {
+  MONTHLY_SAVINGS
+}
+
+enum FinancialPlanningSnapshotStatus {
+  CONFIRMED
+}
+
 enum AssistantMode {
   OPERATOR
   SPECIALIST
@@ -329,6 +337,7 @@ model User {
   financialProvisionsCreated FinancialProvision[]
   financialProvisionEntriesCreated FinancialProvisionEntry[]
   personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileOwner")
+  financialPlanningSnapshots FinancialPlanningSnapshot[] @relation("FinancialPlanningSnapshotOwner")
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -380,6 +389,7 @@ model Company {
   recurringMonthlyCategoryBudgets RecurringMonthlyCategoryBudget[]
   financialProvisions FinancialProvision[]
   personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileWorkspace")
+  financialPlanningSnapshots FinancialPlanningSnapshot[] @relation("FinancialPlanningSnapshotWorkspace")
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -1236,6 +1246,39 @@ model PersonalFinancialProfileRevision {
 
   @@unique([profileId, version], name: "unique_personal_financial_profile_revision")
   @@index([profileId, createdAt])
+}
+
+model FinancialPlanningSnapshot {
+  id                            Int                             @id @default(autoincrement())
+  ownerUserId                   Int
+  personalWorkspaceId           Int
+  objectiveKind                 FinancialPlanningObjectiveKind @default(MONTHLY_SAVINGS)
+  targetMonthlySavings          Decimal                         @db.Decimal(15, 2)
+  historyMonths                 Int
+  historyStartDate              DateTime
+  historyEndDate                DateTime
+  profileVersion                Int
+  methodologyVersion            Int                             @default(1)
+  dataQualityScore              Int
+  dataQuality                   Json
+  sourceSnapshot                Json
+  selectedSourceKeys            Json
+  totals                        Json
+  monthlyIncome                 Decimal                         @db.Decimal(15, 2)
+  monthlyCommittedExpenses      Decimal                         @db.Decimal(15, 2)
+  monthlyVariableExpenses       Decimal                         @db.Decimal(15, 2)
+  monthlyProvisionContribution  Decimal                         @db.Decimal(15, 2)
+  monthlyAvailableBeforeGoal    Decimal                         @db.Decimal(15, 2)
+  monthlyBalanceAfterGoal       Decimal                         @db.Decimal(15, 2)
+  status                        FinancialPlanningSnapshotStatus @default(CONFIRMED)
+  confirmedAt                   DateTime                        @default(now())
+  createdAt                     DateTime                        @default(now())
+
+  ownerUser                     User                            @relation("FinancialPlanningSnapshotOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  personalWorkspace             Company                         @relation("FinancialPlanningSnapshotWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Cascade)
+
+  @@index([ownerUserId, createdAt])
+  @@index([personalWorkspaceId, createdAt])
 }
 
 model Process {

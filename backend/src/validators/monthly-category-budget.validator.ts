@@ -6,19 +6,11 @@ const monthKeySchema = z
   .refine((value) => {
     const [year, month] = value.split('-').map(Number);
     return year >= 2000 && month >= 1 && month <= 12;
-  }, 'Mês inválido')
-  .refine((value) => {
-    const today = new Date();
-    const maximumDate = new Date(today.getFullYear(), today.getMonth() + 24, 1, 12, 0, 0, 0);
-    const maximumMonth = `${maximumDate.getFullYear()}-${String(maximumDate.getMonth() + 1).padStart(2, '0')}`;
-    return value <= maximumMonth;
-  }, 'O planejamento pode ser criado com até 24 meses de antecedência');
+  }, 'Mês inválido');
 
-const mutableMonthKeySchema = monthKeySchema.refine((value) => {
-  const today = new Date();
-  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
-  return value >= currentMonth;
-}, 'O planejamento não pode alterar meses anteriores');
+// Limites relativos ao mês atual são regras de domínio e dependem do timezone
+// do workspace. Eles são aplicados pelo serviço depois da validação estrutural.
+const mutableMonthKeySchema = monthKeySchema;
 
 const planOnlySchema = z
   .enum(['true', 'false'])

@@ -1,10 +1,12 @@
 import prisma from '../lib/prisma';
 import { Prisma, PrismaClient, TransactionType } from '@prisma/client';
 import FinancialDashboardService from './financial-dashboard.service';
+import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import {
   addFinancialMonths,
+  assertFinancialPlanningMonth,
   formatFinancialMonthKey,
-  parseFinancialMonthKey
+  FinancialCalendarContext
 } from '../utils/financial-calendar';
 
 
@@ -53,9 +55,21 @@ type MonthlyDashboardCategoryTotal = {
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
 
-function currentMonthKey(): string {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+async function resolvePlanningMonth(params: {
+  companyId: number;
+  month: string;
+  mutable: boolean;
+  at?: Date;
+}): Promise<{ calendar: FinancialCalendarContext; referenceMonth: Date }> {
+  const calendar = await WorkspaceFinancialCalendarService.getContext(
+    params.companyId,
+    params.at
+  );
+  const referenceMonth = assertFinancialPlanningMonth(params.month, calendar, {
+    mutable: params.mutable
+  });
+
+  return { calendar, referenceMonth };
 }
 
 function toDecimal(value: Prisma.Decimal | string | number | null | undefined): Prisma.Decimal {
@@ -337,13 +351,19 @@ export default class MonthlyCategoryBudgetService {
     limitAmount: string;
     includeChildren: boolean;
     kind: PlanningKind;
+    at?: Date;
   }): Promise<void> {
+    const { referenceMonth } = await resolvePlanningMonth({
+      companyId: params.companyId,
+      month: params.month,
+      mutable: true,
+      at: params.at
+    });
     const categories = await this.listExpenseCategories(params.companyId);
     const { categoryById, childrenByParentId } = buildCategoryMaps(categories);
     if (!categoryById.has(params.categoryId)) {
       throw new Error('A categoria de despesa não pertence a esta empresa');
     }
-    const referenceMonth = parseFinancialMonthKey(params.month);
     const effectiveAllocations = await listEffectiveAllocations({
       client: prisma,
       companyId: params.companyId,
@@ -443,11 +463,17 @@ export default class MonthlyCategoryBudgetService {
     companyId: number;
     month: string;
     allocations: AllocationInput[];
+    at?: Date;
   }): Promise<void> {
+    const { referenceMonth } = await resolvePlanningMonth({
+      companyId: params.companyId,
+      month: params.month,
+      mutable: true,
+      at: params.at
+    });
     const categories = await this.listExpenseCategories(params.companyId);
     const { categoryById, childrenByParentId } = buildCategoryMaps(categories);
     assertNoCoverageOverlap(params.allocations, categoryById, childrenByParentId);
-    const referenceMonth = parseFinancialMonthKey(params.month);
     const activeRecurringBudgets = await prisma.recurringMonthlyCategoryBudget.findMany({
       where: {
         companyId: params.companyId,
@@ -608,8 +634,14 @@ export default class MonthlyCategoryBudgetService {
     companyId: number;
     recurringBudgetId: number;
     month: string;
+    at?: Date;
   }): Promise<void> {
-    const referenceMonth = parseFinancialMonthKey(params.month);
+    const { referenceMonth } = await resolvePlanningMonth({
+      companyId: params.companyId,
+      month: params.month,
+      mutable: true,
+      at: params.at
+    });
     const recurringBudget = await prisma.recurringMonthlyCategoryBudget.findFirst({
       where: { id: params.recurringBudgetId, companyId: params.companyId }
     });
@@ -640,14 +672,20 @@ export default class MonthlyCategoryBudgetService {
     userId: number;
     month: string;
     planOnly?: boolean;
+    at?: Date;
   } & AccessContext) {
-    const referenceMonth = parseFinancialMonthKey(params.month);
+    const { calendar, referenceMonth } = await resolvePlanningMonth({
+      companyId: params.companyId,
+      month: params.month,
+      mutable: false,
+      at: params.at
+    });
     const allocations = await listEffectiveAllocations({
       client: prisma,
       companyId: params.companyId,
       referenceMonth
     });
-    const statsAvailable = !params.planOnly && params.month >= currentMonthKey();
+    const statsAvailable = !params.planOnly && params.month >= calendar.currentMonthKey;
     if (!statsAvailable || allocations.length === 0) {
       return buildEmptyResponse({ month: params.month, allocations, statsAvailable });
     }
@@ -672,13 +710,15 @@ export default class MonthlyCategoryBudgetService {
         userId: params.userId,
         month: params.month,
         accessibleAccountIds: params.accessibleAccountIds,
-        accessFilter: params.accessFilter
+        accessFilter: params.accessFilter,
+        calendarContext: calendar
       }),
       FinancialDashboardService.getHistoryDashboard({
         companyId: params.companyId,
         months: 7,
         categoryIds: [...selectedCategoryIds],
-        accessFilter: params.accessFilter
+        accessFilter: params.accessFilter,
+        calendarContext: calendar
       })
     ]);
 

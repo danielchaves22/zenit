@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
+import FinancialDashboardService from '../../src/services/financial-dashboard.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -266,6 +267,52 @@ describe('Financial dashboard', () => {
       }
     });
     await prisma.$disconnect();
+  });
+
+  it('uses one workspace month at a timezone boundary across dashboard views', async () => {
+    const boundaryInstant = new Date('2026-01-01T02:30:00.000Z');
+    await prisma.company.update({
+      where: { id: primaryCompanyId },
+      data: { timeZone: 'America/Sao_Paulo' }
+    });
+
+    try {
+      const monthly = await FinancialDashboardService.getMonthlyDashboard({
+        companyId: primaryCompanyId,
+        userId: primaryUserId,
+        month: '2025-12',
+        at: boundaryInstant
+      });
+      expect(monthly.month).toBe('2025-12');
+
+      await expect(
+        FinancialDashboardService.getMonthlyDashboard({
+          companyId: primaryCompanyId,
+          userId: primaryUserId,
+          month: '2025-11',
+          at: boundaryInstant
+        })
+      ).rejects.toThrow('Não é permitido consultar meses anteriores ao atual');
+
+      const history = await FinancialDashboardService.getHistoryDashboard({
+        companyId: primaryCompanyId,
+        months: 2,
+        at: boundaryInstant
+      });
+      expect(history.monthlyTotals.map((item) => item.month)).toEqual(['2025-11', '2025-12']);
+      expect(history.monthlyTotals.at(-1)?.isPartialCurrentMonth).toBe(true);
+
+      const structural = await FinancialDashboardService.getStructuralDashboard({
+        companyId: primaryCompanyId,
+        at: boundaryInstant
+      });
+      expect(structural.referenceDate).toBe('2025-12-31T12:00:00.000Z');
+    } finally {
+      await prisma.company.update({
+        where: { id: primaryCompanyId },
+        data: { timeZone: null }
+      });
+    }
   });
 
   it('stores variable projection preferences per user and per company, enforcing the max of 10 categories', async () => {

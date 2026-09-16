@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
+import MonthlyCategoryBudgetService from '../../src/services/monthly-category-budget.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -161,6 +162,53 @@ describe('Monthly category budget', () => {
     await prisma.company.deleteMany({ where: { id: { in: [companyId, otherCompanyId] } } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.$disconnect();
+  });
+
+  it('uses the workspace timezone to validate the current planning month', async () => {
+    const boundaryInstant = new Date('2026-01-01T02:30:00.000Z');
+    await prisma.company.update({
+      where: { id: companyId },
+      data: { timeZone: 'America/Sao_Paulo' }
+    });
+
+    try {
+      await MonthlyCategoryBudgetService.createPlanning({
+        companyId,
+        month: '2025-12',
+        categoryId: siblingCategoryId,
+        limitAmount: '150.00',
+        includeChildren: true,
+        kind: 'ONE_TIME',
+        at: boundaryInstant
+      });
+
+      const saved = await prisma.monthlyCategoryBudget.findFirstOrThrow({
+        where: { companyId, categoryId: siblingCategoryId }
+      });
+      expect(saved.referenceMonth.toISOString()).toBe('2025-12-01T12:00:00.000Z');
+
+      await expect(
+        MonthlyCategoryBudgetService.replacePlan({
+          companyId,
+          month: '2025-11',
+          allocations: [],
+          at: boundaryInstant
+        })
+      ).rejects.toThrow('O planejamento não pode alterar meses anteriores');
+
+      const plan = await MonthlyCategoryBudgetService.getPlan({
+        companyId,
+        userId,
+        month: '2025-12',
+        at: boundaryInstant
+      });
+      expect(plan.statsAvailable).toBe(true);
+    } finally {
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { timeZone: null }
+      });
+    }
   });
 
   it('saves and atomically replaces a company-scoped monthly plan', async () => {

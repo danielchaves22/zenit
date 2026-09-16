@@ -57,11 +57,13 @@ function withPlanningAccess<T extends object>(req: Request, payload: T) {
 export async function getMonthlyCategoryBudget(req: Request, res: Response) {
   try {
     const { month, planOnly } = req.query as unknown as GetMonthlyCategoryBudgetQuery;
+    const at = new Date();
     const context = await resolveAccess(req);
     const plan = await MonthlyCategoryBudgetService.getPlan({
       ...context,
       month,
-      planOnly
+      planOnly,
+      at
     });
 
     return res.status(200).json(withPlanningAccess(req, plan));
@@ -75,17 +77,20 @@ export async function getMonthlyCategoryBudget(req: Request, res: Response) {
 export async function replaceMonthlyCategoryBudget(req: Request, res: Response) {
   try {
     const { month, allocations } = req.body as ReplaceMonthlyCategoryBudgetBody;
+    const at = new Date();
     const context = await resolveAccess(req);
 
     await MonthlyCategoryBudgetService.replacePlan({
       companyId: context.companyId,
       month,
-      allocations
+      allocations,
+      at
     });
 
     const plan = await MonthlyCategoryBudgetService.getPlan({
       ...context,
-      month
+      month,
+      at
     });
 
     return res.status(200).json(withPlanningAccess(req, plan));
@@ -99,16 +104,19 @@ export async function replaceMonthlyCategoryBudget(req: Request, res: Response) 
 export async function createMonthlyCategoryBudget(req: Request, res: Response) {
   try {
     const input = req.body as CreateMonthlyCategoryBudgetBody;
+    const at = new Date();
     const context = await resolveAccess(req);
 
     await MonthlyCategoryBudgetService.createPlanning({
       companyId: context.companyId,
-      ...input
+      ...input,
+      at
     });
 
     const plan = await MonthlyCategoryBudgetService.getPlan({
       ...context,
-      month: input.month
+      month: input.month,
+      at
     });
 
     return res.status(201).json(withPlanningAccess(req, plan));
@@ -127,17 +135,20 @@ export async function endRecurringMonthlyCategoryBudget(req: Request, res: Respo
     }
 
     const { month } = req.body as EndRecurringMonthlyCategoryBudgetBody;
+    const at = new Date();
     const context = await resolveAccess(req);
 
     await MonthlyCategoryBudgetService.endRecurringPlanning({
       companyId: context.companyId,
       recurringBudgetId,
-      month
+      month,
+      at
     });
 
     const plan = await MonthlyCategoryBudgetService.getPlan({
       ...context,
-      month
+      month,
+      at
     });
 
     return res.status(200).json(withPlanningAccess(req, plan));

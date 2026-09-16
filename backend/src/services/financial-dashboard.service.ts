@@ -10,8 +10,15 @@ import {
 } from '@prisma/client';
 import FixedTransactionService from './fixed-transaction.service';
 import UserVariableProjectionPreferenceService from './user-variable-projection-preference.service';
+import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import { resolveCreditCardInvoiceReference } from '../utils/credit-card';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
+import {
+  addFinancialMonths,
+  FinancialCalendarContext,
+  formatFinancialMonthKey,
+  parseFinancialMonthKey
+} from '../utils/financial-calendar';
 
 
 type DashboardSource =
@@ -64,39 +71,21 @@ type MonthlyComputation = {
   variableProjectionItems: VariableProjectionItem[];
 };
 
-function parseMonthKey(month: string): Date {
-  if (!/^\d{4}-\d{2}$/.test(month)) {
-    throw new Error('Mês inválido. Use o formato YYYY-MM');
-  }
-
-  const [year, monthValue] = month.split('-').map(Number);
-  return new Date(year, monthValue - 1, 1, 12, 0, 0, 0);
-}
-
 function startOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
 function endOfMonth(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-}
-
-function startOfDay(date: Date): Date {
-  const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
-  return normalized;
-}
-
-function formatMonthKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0, 23, 59, 59, 999)
+  );
 }
 
 function isSameMonth(left: Date, right: Date): boolean {
-  return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth();
-}
-
-function addMonths(date: Date, months: number): Date {
-  return new Date(date.getFullYear(), date.getMonth() + months, 1, 12, 0, 0, 0);
+  return (
+    left.getUTCFullYear() === right.getUTCFullYear() &&
+    left.getUTCMonth() === right.getUTCMonth()
+  );
 }
 
 function buildRelevantMonthWhere(startDate: Date, endDate: Date): Prisma.FinancialTransactionWhereInput {
@@ -245,8 +234,9 @@ export default class FinancialDashboardService {
   private static async getStructuralSummary(params: {
     companyId: number;
     accessibleAccountIds?: number[];
+    referenceDate: Date;
   }) {
-    const referenceDate = startOfDay(new Date());
+    const referenceDate = params.referenceDate;
     const activeFixedTemplates = await prisma.recurringTransaction.groupBy({
       by: ['type'],
       where: {
@@ -328,8 +318,17 @@ export default class FinancialDashboardService {
   static async getStructuralDashboard(params: {
     companyId: number;
     accessibleAccountIds?: number[];
+    calendarContext?: FinancialCalendarContext;
+    at?: Date;
   }) {
-    return this.getStructuralSummary(params);
+    const calendar =
+      params.calendarContext ??
+      (await WorkspaceFinancialCalendarService.getContext(params.companyId, params.at));
+    return this.getStructuralSummary({
+      companyId: params.companyId,
+      accessibleAccountIds: params.accessibleAccountIds,
+      referenceDate: calendar.businessDate
+    });
   }
 
   private static async getTrackedExpenseCategories(params: {
@@ -370,14 +369,14 @@ export default class FinancialDashboardService {
     trackedCategoryIds: number[];
     accessibleAccountIds?: number[];
     accessFilter?: Prisma.FinancialTransactionWhereInput;
-    referenceDate?: Date;
+    referenceDate: Date;
   }): Promise<Map<number, Prisma.Decimal>> {
     const {
       companyId,
       trackedCategoryIds,
       accessibleAccountIds,
       accessFilter,
-      referenceDate = new Date()
+      referenceDate
     } = params;
 
     const result = new Map<number, Prisma.Decimal>();
@@ -391,8 +390,8 @@ export default class FinancialDashboardService {
     }
 
     const currentMonthStart = startOfMonth(referenceDate);
-    const historyStart = startOfMonth(addMonths(currentMonthStart, -6));
-    const historyEnd = endOfMonth(addMonths(currentMonthStart, -1));
+    const historyStart = startOfMonth(addFinancialMonths(currentMonthStart, -6));
+    const historyEnd = endOfMonth(addFinancialMonths(currentMonthStart, -1));
 
     const baseWhere: Prisma.FinancialTransactionWhereInput = {
       companyId,
@@ -612,7 +611,9 @@ export default class FinancialDashboardService {
       });
     }
 
-    const previousMonthStart = startOfMonth(addMonths(monthStart, -1));
+    // FixedTransactionService still uses local calendar accessors internally.
+    // Noon UTC preserves the intended calendar month across supported hosts.
+    const previousMonthStart = addFinancialMonths(monthStart, -1);
     const projectionCutoff = isCurrentMonth
       ? FixedTransactionService.getProjectionCutoffDate(currentDate)
       : monthStart;
@@ -744,7 +745,7 @@ export default class FinancialDashboardService {
     knownRows: DashboardKnownRow[];
     variableProjectionItems: VariableProjectionItem[];
   }): MonthlyComputation {
-    const monthKey = formatMonthKey(params.monthStart);
+    const monthKey = formatFinancialMonthKey(params.monthStart);
     const isCurrentMonth = isSameMonth(params.monthStart, params.currentDate);
     let incomeTotal = new Prisma.Decimal(0);
     let realizedIncome = new Prisma.Decimal(0);
@@ -801,10 +802,15 @@ export default class FinancialDashboardService {
     month: string;
     accessibleAccountIds?: number[];
     accessFilter?: Prisma.FinancialTransactionWhereInput;
+    calendarContext?: FinancialCalendarContext;
+    at?: Date;
   }) {
-    const currentDate = new Date();
+    const calendar =
+      params.calendarContext ??
+      (await WorkspaceFinancialCalendarService.getContext(params.companyId, params.at));
+    const currentDate = calendar.businessDate;
     const currentMonthStart = startOfMonth(currentDate);
-    const requestedMonthStart = startOfMonth(parseMonthKey(params.month));
+    const requestedMonthStart = startOfMonth(parseFinancialMonthKey(params.month));
     const requestedMonthEnd = endOfMonth(requestedMonthStart);
 
     if (requestedMonthStart < currentMonthStart) {
@@ -845,7 +851,7 @@ export default class FinancialDashboardService {
         accessFilter: params.accessFilter
       });
       const variableProjectionItems = this.buildVariableProjectionItems({
-        monthKey: formatMonthKey(monthCursor),
+        monthKey: formatFinancialMonthKey(monthCursor),
         trackedCategories,
         historicalAverageByCategoryId,
         knownRows
@@ -863,7 +869,7 @@ export default class FinancialDashboardService {
       }
 
       carryOverAmount = computation.projectedEndingBalance;
-      monthCursor = addMonths(monthCursor, 1);
+      monthCursor = startOfMonth(addFinancialMonths(monthCursor, 1));
     }
 
     if (!targetComputation) {
@@ -984,8 +990,8 @@ export default class FinancialDashboardService {
       isCurrentMonth: targetComputation.isCurrentMonth,
       period: {
         month: targetComputation.month,
-        startDate: startOfMonth(parseMonthKey(targetComputation.month)).toISOString(),
-        endDate: endOfMonth(parseMonthKey(targetComputation.month)).toISOString()
+        startDate: startOfMonth(parseFinancialMonthKey(targetComputation.month)).toISOString(),
+        endDate: endOfMonth(parseFinancialMonthKey(targetComputation.month)).toISOString()
       },
       carryOver: {
         amount: toMoneyString(targetComputation.carryOverAmount),
@@ -1054,11 +1060,18 @@ export default class FinancialDashboardService {
     months?: number;
     categoryIds?: number[];
     accessFilter?: Prisma.FinancialTransactionWhereInput;
+    calendarContext?: FinancialCalendarContext;
+    at?: Date;
   }) {
-    const currentDate = new Date();
+    const calendar =
+      params.calendarContext ??
+      (await WorkspaceFinancialCalendarService.getContext(params.companyId, params.at));
+    const currentDate = calendar.businessDate;
     const totalMonths = Math.min(Math.max(params.months ?? 12, 1), 24);
     const currentMonthStart = startOfMonth(currentDate);
-    const rangeStart = startOfMonth(addMonths(currentMonthStart, -(totalMonths - 1)));
+    const rangeStart = startOfMonth(
+      addFinancialMonths(currentMonthStart, -(totalMonths - 1))
+    );
     const rangeEnd = endOfMonth(currentMonthStart);
     const operationalWhere = buildOperationalTransactionWhere();
     const sharedFilters: Prisma.FinancialTransactionWhereInput[] = [
@@ -1183,7 +1196,7 @@ export default class FinancialDashboardService {
     const selectedCategoryMap = new Map(selectedCategories.map((category) => [category.id, category]));
 
     for (let index = 0; index < totalMonths; index += 1) {
-      const monthKey = formatMonthKey(addMonths(rangeStart, index));
+      const monthKey = formatFinancialMonthKey(addFinancialMonths(rangeStart, index));
       monthTotals.set(monthKey, {
         incomeTotal: new Prisma.Decimal(0),
         expenseTotal: new Prisma.Decimal(0)
@@ -1205,7 +1218,7 @@ export default class FinancialDashboardService {
 
     for (const transaction of materializedNonCard) {
       const relevantDate = transaction.dueDate || transaction.date;
-      const monthKey = formatMonthKey(relevantDate);
+      const monthKey = formatFinancialMonthKey(relevantDate);
       const totals = monthTotals.get(monthKey);
 
       if (!totals) {
@@ -1227,7 +1240,7 @@ export default class FinancialDashboardService {
         continue;
       }
 
-      const monthKey = formatMonthKey(transaction.creditCardInvoice.dueDate);
+      const monthKey = formatFinancialMonthKey(transaction.creditCardInvoice.dueDate);
       const totals = monthTotals.get(monthKey);
 
       if (!totals) {
@@ -1247,7 +1260,7 @@ export default class FinancialDashboardService {
         month,
         incomeTotal: toMoneyString(totals.incomeTotal),
         expenseTotal: toMoneyString(totals.expenseTotal),
-        isPartialCurrentMonth: month === formatMonthKey(currentMonthStart)
+        isPartialCurrentMonth: month === formatFinancialMonthKey(currentMonthStart)
       })),
       categorySeries: selectedCategories.map((category) => ({
         categoryId: category.id,

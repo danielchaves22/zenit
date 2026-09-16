@@ -188,11 +188,16 @@ Conversao, formatacao e aritmetica de meses ficam centralizadas em funcoes puras
 Datas mensais persistidas sao lidas em UTC e o mes atual deve ser derivado do
 timezone explicito do workspace, nunca implicitamente do timezone do servidor.
 
-O Planejamento Mensal por Categoria e o primeiro consumidor migrado para a
-representacao canonica. Neste recorte, foram preservadas as regras atuais de
-disponibilidade de estatisticas e mutacao. A adocao do mes corrente do workspace
-sera feita junto com dashboard e validadores, para que nao existam dois conceitos
-de "mes atual" no mesmo fluxo durante a transicao.
+Dashboard mensal, historico, visao estrutural e Planejamento Mensal por Categoria
+compartilham um unico contexto de calendario por operacao. Esse contexto resolve o
+timezone cadastrado no workspace, a data de negocio, o mes atual e o limite de 24
+meses do planejamento. Workspaces legados sem timezone valido usam UTC como
+fallback de compatibilidade.
+
+Validadores HTTP verificam apenas formato e estrutura. Regras temporais que
+dependem do workspace, como impedir alteracoes em meses passados, pertencem ao
+servico de dominio. Assim, chamadas HTTP e chamadas internas aplicam a mesma
+politica e nao dependem do timezone do servidor.
 
 ### Historico auditavel do diagnostico
 
@@ -263,7 +268,7 @@ Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot e seu historico auditavel ja
 foram consolidados. Permanecem:
 
-1. Aplicar o mes corrente do workspace de forma atomica em dashboard,
-   planejamento e validadores.
+1. Aplicar o calendario do workspace aos consumidores remanescentes em que o
+   conceito de mes atual seja relevante, especialmente provisoes e diagnostico.
 2. Centralizar valores assinados e formulas de provisao.
 3. Unificar a projecao mensal consumida por dashboard e planejamento.

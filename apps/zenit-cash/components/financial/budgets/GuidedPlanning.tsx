@@ -186,12 +186,24 @@ export function GuidedPlanning() {
         objectiveKind: 'MONTHLY_SAVINGS',
         targetMonthlySavings,
         historyMonths,
-        selectedSourceKeys: Array.from(selectedKeys)
+        selectedSourceKeys: Array.from(selectedKeys),
+        basisHash: preview.basisHash
       });
       setConfirmedSnapshot(snapshot);
       addToast('Diagnóstico financeiro confirmado', 'success');
     } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao confirmar diagnóstico financeiro', 'error');
+      const response = error.response?.data as FinancialPlanningApiError | undefined;
+      if (response?.code === 'FINANCIAL_PLANNING_PREVIEW_STALE') {
+        try {
+          const refreshed = await getFinancialPlanningPreview(historyMonths);
+          setPreview(refreshed);
+          setSelectedKeys(new Set(refreshed.defaultSelectedSourceKeys));
+          setConfirmedSnapshot(null);
+        } catch {
+          // The confirmation error remains the most useful message for this interaction.
+        }
+      }
+      addToast(response?.error || 'Erro ao confirmar diagnóstico financeiro', 'error');
     } finally {
       setSaving(false);
     }

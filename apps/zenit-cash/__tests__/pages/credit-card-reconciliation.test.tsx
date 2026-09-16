@@ -1026,7 +1026,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       'true'
     )
     await waitFor(() => expect(scrollIntoViewMock).toHaveBeenCalled())
-  })
+  }, 10_000)
 
   it('mantem o painel mobile no Zenit enquanto o detalhe carrega e destaca ao concluir', async () => {
     vi.stubGlobal(

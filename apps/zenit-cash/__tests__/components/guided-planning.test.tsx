@@ -117,6 +117,8 @@ const sources = [
 
 const preview = {
   workspace: { id: 10, name: 'Workspace pessoal de Ana' },
+  methodologyVersion: 1,
+  basisHash: 'a'.repeat(64),
   profile: {
     version: 2,
     financialDataCoverage: 'FULL' as const,
@@ -146,6 +148,7 @@ const snapshot = {
   historyEndDate: '2026-08-31',
   profileVersion: 2,
   methodologyVersion: 1,
+  basisHash: 'a'.repeat(64),
   dataQualityScore: 92,
   dataQuality,
   sources: sources.map((source) => ({ ...source, selected: source.key !== 'HISTORICAL_CATEGORY:3' })),
@@ -186,7 +189,8 @@ describe('GuidedPlanning', () => {
         objectiveKind: 'MONTHLY_SAVINGS',
         targetMonthlySavings: '1000.00',
         historyMonths: 6,
-        selectedSourceKeys: ['RECURRING_TRANSACTION:1', 'RECURRING_TRANSACTION:2']
+        selectedSourceKeys: ['RECURRING_TRANSACTION:1', 'RECURRING_TRANSACTION:2'],
+        basisHash: 'a'.repeat(64)
       });
     });
     expect(await screen.findByText('Retrato confirmado')).toBeInTheDocument();
@@ -210,6 +214,34 @@ describe('GuidedPlanning', () => {
     expect(link).toHaveAttribute(
       'href',
       '/profile/financial?returnTo=%2Ffinancial%2Fbudgets%3Fview%3Dguided'
+    );
+  });
+
+  it('refreshes the preview when the reviewed financial basis became stale', async () => {
+    const user = userEvent.setup();
+    const refreshedPreview = { ...preview, basisHash: 'b'.repeat(64) };
+    getMock.mockResolvedValueOnce(preview).mockResolvedValueOnce(refreshedPreview);
+    confirmMock.mockRejectedValueOnce({
+      response: {
+        data: {
+          code: 'FINANCIAL_PLANNING_PREVIEW_STALE',
+          error: 'Os dados financeiros mudaram desde a prévia'
+        }
+      }
+    });
+    render(<GuidedPlanning />);
+
+    await screen.findByText('Workspace pessoal de Ana');
+    await user.clear(screen.getByLabelText('Quanto deseja economizar por mês?'));
+    await user.type(screen.getByLabelText('Quanto deseja economizar por mês?'), '1000.00');
+    await user.click(screen.getByRole('checkbox', { name: 'Considerar Lazer' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar retrato financeiro' }));
+
+    await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('checkbox', { name: 'Considerar Lazer' })).toBeChecked();
+    expect(addToastMock).toHaveBeenCalledWith(
+      'Os dados financeiros mudaram desde a prévia',
+      'error'
     );
   });
 });

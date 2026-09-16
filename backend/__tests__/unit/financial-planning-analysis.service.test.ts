@@ -92,4 +92,32 @@ describe('FinancialPlanningAnalysisService current calculation contract', () => 
 
     expect(contribution.toFixed(2)).toBe('0.00');
   });
+
+  it('hashes equivalent objects deterministically regardless of key order', () => {
+    expect(__private__.hashCanonicalPayload({ b: 2, a: { d: 4, c: 3 } })).toBe(
+      __private__.hashCanonicalPayload({ a: { c: 3, d: 4 }, b: 2 })
+    );
+  });
+
+  it('treats source selection order as irrelevant for confirmation idempotency', () => {
+    const base = {
+      ownerUserId: 1,
+      personalWorkspaceId: 2,
+      basisHash: 'a'.repeat(64),
+      objectiveKind: 'MONTHLY_SAVINGS' as const,
+      targetMonthlySavings: '1000.00'
+    };
+
+    expect(
+      __private__.buildConfirmationHash({
+        ...base,
+        selectedSourceKeys: ['source-b', 'source-a']
+      })
+    ).toBe(
+      __private__.buildConfirmationHash({
+        ...base,
+        selectedSourceKeys: ['source-a', 'source-b']
+      })
+    );
+  });
 });

@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma';
+import { createHash } from 'crypto';
 import {
   AccountType,
   FinancialPlanningObjectiveKind,
@@ -12,6 +13,7 @@ import {
 import PersonalFinancialProfileService from './personal-financial-profile.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 
+const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 1;
 
 export type FinancialPlanningSourceKind =
   | 'FIXED_INCOME'
@@ -59,6 +61,42 @@ function money(value: Prisma.Decimal | string | number): Prisma.Decimal {
 
 function moneyString(value: Prisma.Decimal | string | number): string {
   return money(value).toFixed(2);
+}
+
+function compareCanonicalStrings(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => compareCanonicalStrings(left, right))
+        .map(([key, item]) => [key, canonicalize(item)])
+    );
+  }
+  return value;
+}
+
+function hashCanonicalPayload(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
+}
+
+function buildConfirmationHash(params: {
+  ownerUserId: number;
+  personalWorkspaceId: number;
+  basisHash: string;
+  objectiveKind: FinancialPlanningObjectiveKind;
+  targetMonthlySavings: string;
+  selectedSourceKeys: string[];
+}): string {
+  return hashCanonicalPayload({
+    ...params,
+    selectedSourceKeys: [...params.selectedSourceKeys].sort()
+  });
 }
 
 function startOfCurrentMonth(): Date {
@@ -189,6 +227,7 @@ function serializeSnapshot(snapshot: any) {
     historyEndDate: formatDateKey(snapshot.historyEndDate),
     profileVersion: snapshot.profileVersion,
     methodologyVersion: snapshot.methodologyVersion,
+    basisHash: snapshot.basisHash ?? null,
     dataQualityScore: snapshot.dataQualityScore,
     dataQuality: snapshot.dataQuality,
     sources: snapshot.sourceSnapshot,
@@ -627,6 +666,37 @@ export default class FinancialPlanningAnalysisService {
     const defaultSelectedSourceKeys = sources
       .filter((source) => source.selectedByDefault)
       .map((source) => source.key);
+    const period = {
+      historyMonths: params.historyMonths,
+      startDate: formatDateKey(historyStart),
+      endDate: formatDateKey(historyEnd)
+    };
+    const basisDataQuality = {
+      score: dataQuality.score,
+      rating: dataQuality.rating,
+      requestedMonths: dataQuality.requestedMonths,
+      monthsWithData: dataQuality.monthsWithData,
+      historyTransactionCount: dataQuality.historyTransactionCount,
+      expenseTransactionCount: dataQuality.expenseTransactionCount,
+      categorizedExpenseCount: dataQuality.categorizedExpenseCount,
+      breakdown: dataQuality.breakdown.map(({ key, points, maximum }) => ({
+        key,
+        points,
+        maximum
+      })),
+      issues: dataQuality.issues.map(({ code, severity }) => ({ code, severity }))
+    };
+    const basisHash = hashCanonicalPayload({
+      ownerUserId: params.userId,
+      personalWorkspaceId: workspace.id,
+      profileVersion: profile.version,
+      methodologyVersion: FINANCIAL_PLANNING_METHODOLOGY_VERSION,
+      period,
+      dataQuality: basisDataQuality,
+      sources: [...sources]
+        .sort((left, right) => compareCanonicalStrings(left.key, right.key))
+        .map(({ detail: _detail, ...source }) => source)
+    });
 
     return {
       workspace,
@@ -635,11 +705,9 @@ export default class FinancialPlanningAnalysisService {
         financialDataCoverage: profile.financialDataCoverage,
         lastReviewedAt: profile.lastReviewedAt
       },
-      period: {
-        historyMonths: params.historyMonths,
-        startDate: formatDateKey(historyStart),
-        endDate: formatDateKey(historyEnd)
-      },
+      methodologyVersion: FINANCIAL_PLANNING_METHODOLOGY_VERSION,
+      basisHash,
+      period,
       dataQuality,
       sources,
       defaultSelectedSourceKeys,
@@ -660,8 +728,16 @@ export default class FinancialPlanningAnalysisService {
     historyMonths: number;
     targetMonthlySavings: string;
     selectedSourceKeys: string[];
+    basisHash: string;
   }) {
     const prepared = await this.build(params);
+    if (params.basisHash !== prepared.basisHash) {
+      throw new FinancialPlanningAnalysisError(
+        'Os dados financeiros mudaram desde a prévia. Revise a base atualizada antes de confirmar',
+        'FINANCIAL_PLANNING_PREVIEW_STALE',
+        409
+      );
+    }
     const availableKeys = new Set(prepared.sources.map((source) => source.key));
     if (params.selectedSourceKeys.some((key) => !availableKeys.has(key))) {
       throw new FinancialPlanningAnalysisError(
@@ -689,39 +765,82 @@ export default class FinancialPlanningAnalysisService {
       ...source,
       selected: selected.has(source.key)
     }));
-
-    const snapshot = await prisma.financialPlanningSnapshot.create({
-      data: {
-        ownerUserId: params.userId,
-        personalWorkspaceId: params.companyId,
-        objectiveKind: FinancialPlanningObjectiveKind.MONTHLY_SAVINGS,
-        targetMonthlySavings: target,
-        historyMonths: params.historyMonths,
-        historyStartDate: prepared.rawPeriod.historyStart,
-        historyEndDate: prepared.rawPeriod.historyEnd,
-        profileVersion: prepared.profile.version,
-        methodologyVersion: 1,
-        dataQualityScore: prepared.dataQuality.score,
-        dataQuality: prepared.dataQuality as Prisma.InputJsonValue,
-        sourceSnapshot: sourceSnapshot as Prisma.InputJsonValue,
-        selectedSourceKeys: params.selectedSourceKeys as Prisma.InputJsonValue,
-        totals: totals as Prisma.InputJsonValue,
-        monthlyIncome: totals.monthlyIncome,
-        monthlyCommittedExpenses: totals.monthlyCommittedExpenses,
-        monthlyVariableExpenses: totals.monthlyVariableExpenses,
-        monthlyProvisionContribution: totals.monthlyProvisionContribution,
-        monthlyAvailableBeforeGoal: totals.monthlyAvailableBeforeGoal,
-        monthlyBalanceAfterGoal: totals.monthlyBalanceAfterGoal,
-        status: FinancialPlanningSnapshotStatus.CONFIRMED
-      }
+    const confirmationHash = buildConfirmationHash({
+      ownerUserId: params.userId,
+      personalWorkspaceId: prepared.workspace.id,
+      basisHash: prepared.basisHash,
+      objectiveKind: FinancialPlanningObjectiveKind.MONTHLY_SAVINGS,
+      targetMonthlySavings: moneyString(target),
+      selectedSourceKeys: params.selectedSourceKeys
     });
+    const existing = await prisma.financialPlanningSnapshot.findUnique({
+      where: { confirmationHash }
+    });
+    if (existing) {
+      if (
+        existing.ownerUserId !== params.userId ||
+        existing.personalWorkspaceId !== prepared.workspace.id
+      ) {
+        throw new FinancialPlanningAnalysisError(
+          'Não foi possível confirmar a integridade do diagnóstico financeiro',
+          'FINANCIAL_PLANNING_INTEGRITY_CONFLICT',
+          409
+        );
+      }
+      return { snapshot: serializeSnapshot(existing), created: false };
+    }
 
-    return serializeSnapshot(snapshot);
+    try {
+      const snapshot = await prisma.financialPlanningSnapshot.create({
+        data: {
+          ownerUserId: params.userId,
+          personalWorkspaceId: prepared.workspace.id,
+          objectiveKind: FinancialPlanningObjectiveKind.MONTHLY_SAVINGS,
+          targetMonthlySavings: target,
+          historyMonths: params.historyMonths,
+          historyStartDate: prepared.rawPeriod.historyStart,
+          historyEndDate: prepared.rawPeriod.historyEnd,
+          profileVersion: prepared.profile.version,
+          methodologyVersion: FINANCIAL_PLANNING_METHODOLOGY_VERSION,
+          basisHash: prepared.basisHash,
+          confirmationHash,
+          dataQualityScore: prepared.dataQuality.score,
+          dataQuality: prepared.dataQuality as Prisma.InputJsonValue,
+          sourceSnapshot: sourceSnapshot as Prisma.InputJsonValue,
+          selectedSourceKeys: params.selectedSourceKeys as Prisma.InputJsonValue,
+          totals: totals as Prisma.InputJsonValue,
+          monthlyIncome: totals.monthlyIncome,
+          monthlyCommittedExpenses: totals.monthlyCommittedExpenses,
+          monthlyVariableExpenses: totals.monthlyVariableExpenses,
+          monthlyProvisionContribution: totals.monthlyProvisionContribution,
+          monthlyAvailableBeforeGoal: totals.monthlyAvailableBeforeGoal,
+          monthlyBalanceAfterGoal: totals.monthlyBalanceAfterGoal,
+          status: FinancialPlanningSnapshotStatus.CONFIRMED
+        }
+      });
+
+      return { snapshot: serializeSnapshot(snapshot), created: true };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const concurrentSnapshot = await prisma.financialPlanningSnapshot.findUnique({
+          where: { confirmationHash }
+        });
+        if (
+          concurrentSnapshot?.ownerUserId === params.userId &&
+          concurrentSnapshot.personalWorkspaceId === prepared.workspace.id
+        ) {
+          return { snapshot: serializeSnapshot(concurrentSnapshot), created: false };
+        }
+      }
+      throw error;
+    }
   }
 }
 
 export const __private__ = {
+  buildConfirmationHash,
   calculateTotals,
+  hashCanonicalPayload,
   monthlyRecurringAmount,
   provisionMonthlyContribution
 };

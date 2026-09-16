@@ -64,6 +64,7 @@ export interface FinancialPlanningSnapshot {
   historyEndDate: string;
   profileVersion: number;
   methodologyVersion: number;
+  basisHash: string | null;
   dataQualityScore: number;
   dataQuality: FinancialPlanningDataQuality;
   sources: Array<FinancialPlanningSource & { selected: boolean }>;
@@ -76,6 +77,8 @@ export interface FinancialPlanningSnapshot {
 
 export interface FinancialPlanningPreview {
   workspace: { id: number; name: string };
+  methodologyVersion: number;
+  basisHash: string;
   profile: {
     version: number;
     financialDataCoverage: 'FULL' | 'PARTIAL';
@@ -95,6 +98,8 @@ export interface FinancialPlanningApiError {
     | 'PERSONAL_WORKSPACE_REQUIRED'
     | 'FINANCIAL_PROFILE_REQUIRED'
     | 'FINANCIAL_PROFILE_OUTDATED'
+    | 'FINANCIAL_PLANNING_PREVIEW_STALE'
+    | 'FINANCIAL_PLANNING_INTEGRITY_CONFLICT'
     | 'INVALID_SOURCE_SELECTION'
     | 'INCOME_SOURCE_REQUIRED';
 }
@@ -113,6 +118,7 @@ export async function confirmFinancialPlanningSnapshot(input: {
   targetMonthlySavings: string;
   historyMonths: number;
   selectedSourceKeys: string[];
+  basisHash: string;
 }): Promise<FinancialPlanningSnapshot> {
   const response = await api.post('/financial/budgets/planning-analysis/snapshots', input);
   return response.data as FinancialPlanningSnapshot;

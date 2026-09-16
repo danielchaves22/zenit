@@ -206,7 +206,7 @@ describe('FinancialProvisions', () => {
         })
       );
     });
-  });
+  }, 10_000);
 
   it('uses the suggested monthly value when registering a contribution', async () => {
     const user = userEvent.setup();

@@ -39,14 +39,14 @@ export async function confirmFinancialPlanningAnalysis(req: Request, res: Respon
   try {
     const context = getUserContext(req);
     const input = req.body as ConfirmFinancialPlanningAnalysisBody;
-    return res.status(201).json(
-      await FinancialPlanningAnalysisService.confirm({
-        ...context,
-        historyMonths: input.historyMonths,
-        targetMonthlySavings: input.targetMonthlySavings,
-        selectedSourceKeys: input.selectedSourceKeys
-      })
-    );
+    const result = await FinancialPlanningAnalysisService.confirm({
+      ...context,
+      historyMonths: input.historyMonths,
+      targetMonthlySavings: input.targetMonthlySavings,
+      selectedSourceKeys: input.selectedSourceKeys,
+      basisHash: input.basisHash
+    });
+    return res.status(result.created ? 201 : 200).json(result.snapshot);
   } catch (error: any) {
     return sendError(res, error, 'Erro ao confirmar diagnóstico financeiro');
   }

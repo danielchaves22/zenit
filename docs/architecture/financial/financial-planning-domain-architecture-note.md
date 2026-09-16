@@ -139,6 +139,24 @@ substituir a validacao final do servidor.
 - Diferencas intencionais entre visao de caixa, competencia e planejamento devem
   aparecer no nome da politica e no contrato retornado.
 
+### Integridade do diagnostico confirmado
+
+A previa do diagnostico possui um `basisHash` SHA-256 deterministico. A
+identificacao vincula usuario, workspace pessoal, versao do perfil, versao da
+metodologia, periodo, indicadores objetivos de qualidade e as fontes financeiras
+disponiveis. Textos puramente apresentacionais nao fazem parte do hash.
+
+A confirmacao deve reenviar o `basisHash` revisado. O backend recompõe a base no
+mesmo contexto autorizado e rejeita a operacao com conflito quando os dados
+mudaram. O hash nao e credencial nem substitui a autorizacao de usuario e tenant.
+
+Uma segunda identificacao deterministica combina a base, o objetivo, a meta e as
+fontes selecionadas. O indice unico de `confirmationHash` torna retries e
+confirmacoes concorrentes idempotentes: uma confirmacao equivalente retorna o
+snapshot ja criado. Os campos sao opcionais no banco apenas para manter leitura
+compativel de snapshots anteriores a esta politica; novos registros sempre os
+preenchem.
+
 ### Quality gates
 
 Um lote financeiro somente esta concluido quando:
@@ -191,9 +209,10 @@ que deveriam representar a mesma situacao financeira.
 
 ## Proximos passos
 
-1. Restaurar lint e execucao reproduzivel dos testes de integracao.
-2. Adicionar testes de caracterizacao dos calculos atuais que devem permanecer.
-3. Definir politica de autorizacao para planejamento e provisoes.
-4. Centralizar calendario financeiro, valores assinados e formulas de provisao.
-5. Adicionar identificacao da base e idempotencia ao snapshot.
-6. Unificar a projecao mensal consumida por dashboard e planejamento.
+Lint, testes reproduziveis, caracterizacao dos calculos atuais e integridade do
+snapshot ja foram consolidados. Permanecem:
+
+1. Definir politica de autorizacao para planejamento e provisoes empresariais.
+2. Centralizar calendario financeiro, valores assinados e formulas de provisao.
+3. Unificar a projecao mensal consumida por dashboard e planejamento.
+4. Expor historico auditavel dos diagnosticos sem permitir sua mutacao.

@@ -1259,6 +1259,8 @@ model FinancialPlanningSnapshot {
   historyEndDate                DateTime
   profileVersion                Int
   methodologyVersion            Int                             @default(1)
+  basisHash                     String?                         @db.VarChar(64)
+  confirmationHash              String?                         @unique @db.VarChar(64)
   dataQualityScore              Int
   dataQuality                   Json
   sourceSnapshot                Json

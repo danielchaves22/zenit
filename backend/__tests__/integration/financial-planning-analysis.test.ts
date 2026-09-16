@@ -410,7 +410,8 @@ describe('Financial planning analysis preparation', () => {
         objectiveKind: 'MONTHLY_SAVINGS',
         targetMonthlySavings: '1000.00',
         historyMonths: 3,
-        selectedSourceKeys: preview.body.defaultSelectedSourceKeys
+        selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+        basisHash: preview.body.basisHash
       });
 
     expect(response.status).toBe(201);
@@ -418,6 +419,8 @@ describe('Financial planning analysis preparation', () => {
       objectiveKind: 'MONTHLY_SAVINGS',
       targetMonthlySavings: '1000.00',
       profileVersion: 1,
+      methodologyVersion: 1,
+      basisHash: preview.body.basisHash,
       dataQualityScore: 100,
       status: 'CONFIRMED',
       totals: {
@@ -434,6 +437,8 @@ describe('Financial planning analysis preparation', () => {
     });
     expect(stored?.ownerUserId).toBe(userId);
     expect(stored?.personalWorkspaceId).toBe(personalWorkspaceId);
+    expect(stored?.basisHash).toBe(preview.body.basisHash);
+    expect(stored?.confirmationHash).toMatch(/^[a-f0-9]{64}$/);
     expect(Array.isArray(stored?.sourceSnapshot)).toBe(true);
   });
 
@@ -452,11 +457,89 @@ describe('Financial planning analysis preparation', () => {
         objectiveKind: 'MONTHLY_SAVINGS',
         targetMonthlySavings: '1000.00',
         historyMonths: 3,
-        selectedSourceKeys: withoutIncome
+        selectedSourceKeys: withoutIncome,
+        basisHash: preview.body.basisHash
       });
 
     expect(response.status).toBe(400);
     expect(response.body.code).toBe('INCOME_SOURCE_REQUIRED');
+  });
+
+  it('rejects confirmation when the financial basis changed after preview', async () => {
+    const preview = await request(app)
+      .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+      .set(personalHeaders());
+
+    await prisma.recurringTransaction.update({
+      where: { id: recurringIncomeId },
+      data: { amount: 10500 }
+    });
+
+    try {
+      const response = await request(app)
+        .post('/api/financial/budgets/planning-analysis/snapshots')
+        .set(personalHeaders())
+        .send({
+          objectiveKind: 'MONTHLY_SAVINGS',
+          targetMonthlySavings: '1000.00',
+          historyMonths: 3,
+          selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+          basisHash: preview.body.basisHash
+        });
+
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('FINANCIAL_PLANNING_PREVIEW_STALE');
+    } finally {
+      await prisma.recurringTransaction.update({
+        where: { id: recurringIncomeId },
+        data: { amount: 10000 }
+      });
+    }
+  });
+
+  it('returns the same snapshot when an equivalent confirmation is repeated', async () => {
+    const preview = await request(app)
+      .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+      .set(personalHeaders());
+    const input = {
+      objectiveKind: 'MONTHLY_SAVINGS',
+      targetMonthlySavings: '1250.00',
+      historyMonths: 3,
+      selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+      basisHash: preview.body.basisHash
+    };
+
+    const [first, concurrent] = await Promise.all([
+      request(app)
+        .post('/api/financial/budgets/planning-analysis/snapshots')
+        .set(personalHeaders())
+        .send(input),
+      request(app)
+        .post('/api/financial/budgets/planning-analysis/snapshots')
+        .set(personalHeaders())
+        .send(input)
+    ]);
+    const repeated = await request(app)
+      .post('/api/financial/budgets/planning-analysis/snapshots')
+      .set(personalHeaders())
+      .send({
+        ...input,
+        selectedSourceKeys: [...input.selectedSourceKeys].reverse()
+      });
+
+    expect([first.status, concurrent.status].sort()).toEqual([200, 201]);
+    expect(concurrent.body.id).toBe(first.body.id);
+    expect(repeated.status).toBe(200);
+    expect(repeated.body.id).toBe(first.body.id);
+    expect(
+      await prisma.financialPlanningSnapshot.count({
+        where: {
+          ownerUserId: userId,
+          confirmationHash: { not: null },
+          targetMonthlySavings: 1250
+        }
+      })
+    ).toBe(1);
   });
 
   it('blocks the feature in a business workspace', async () => {

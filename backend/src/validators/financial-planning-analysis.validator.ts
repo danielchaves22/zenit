@@ -25,6 +25,9 @@ export const confirmFinancialPlanningAnalysisSchema = z
     objectiveKind: z.literal('MONTHLY_SAVINGS').optional().default('MONTHLY_SAVINGS'),
     targetMonthlySavings: targetMonthlySavingsSchema,
     historyMonths: historyMonthsSchema,
+    basisHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/, 'Identificação da base financeira inválida'),
     selectedSourceKeys: z
       .array(z.string().trim().min(1).max(180))
       .max(500, 'Selecione no máximo 500 fontes')

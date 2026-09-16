@@ -542,20 +542,97 @@ describe('Financial planning analysis preparation', () => {
     ).toBe(1);
   });
 
+  it('lists immutable snapshots with cursor pagination and loads full audit details on demand', async () => {
+    const preview = await request(app)
+      .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+      .set(personalHeaders());
+    const createdIds: number[] = [];
+    for (const targetMonthlySavings of ['1400.00', '1500.00', '1600.00']) {
+      const created = await request(app)
+        .post('/api/financial/budgets/planning-analysis/snapshots')
+        .set(personalHeaders())
+        .send({
+          objectiveKind: 'MONTHLY_SAVINGS',
+          targetMonthlySavings,
+          historyMonths: 3,
+          selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+          basisHash: preview.body.basisHash
+        });
+      expect(created.status).toBe(201);
+      createdIds.push(created.body.id);
+    }
+
+    const firstPage = await request(app)
+      .get('/api/financial/budgets/planning-analysis/snapshots?limit=2')
+      .set(personalHeaders());
+
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.items.map((item: { id: number }) => item.id)).toEqual([
+      createdIds[2],
+      createdIds[1]
+    ]);
+    expect(firstPage.body.nextCursor).toBe(createdIds[1]);
+    expect(firstPage.body.items[0]).toMatchObject({
+      targetMonthlySavings: '1600.00',
+      selectedSourceCount: preview.body.defaultSelectedSourceKeys.length,
+      status: 'CONFIRMED'
+    });
+    expect(firstPage.body.items[0]).not.toHaveProperty('sources');
+    expect(firstPage.body.items[0]).not.toHaveProperty('dataQuality');
+
+    const secondPage = await request(app)
+      .get(
+        `/api/financial/budgets/planning-analysis/snapshots?limit=2&cursor=${firstPage.body.nextCursor}`
+      )
+      .set(personalHeaders());
+
+    expect(secondPage.status).toBe(200);
+    expect(secondPage.body.items[0].id).toBe(createdIds[0]);
+    expect(
+      secondPage.body.items.every((item: { id: number }) => item.id < firstPage.body.nextCursor)
+    ).toBe(true);
+
+    const detail = await request(app)
+      .get(`/api/financial/budgets/planning-analysis/snapshots/${createdIds[2]}`)
+      .set(personalHeaders());
+
+    expect(detail.status).toBe(200);
+    expect(detail.body).toMatchObject({
+      id: createdIds[2],
+      targetMonthlySavings: '1600.00',
+      basisHash: preview.body.basisHash
+    });
+    expect(detail.body.sources).toEqual(expect.any(Array));
+    expect(detail.body.dataQuality).toMatchObject({ score: 100, rating: 'HIGH' });
+
+    const missing = await request(app)
+      .get('/api/financial/budgets/planning-analysis/snapshots/2147483647')
+      .set(personalHeaders());
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe('FINANCIAL_PLANNING_SNAPSHOT_NOT_FOUND');
+  });
+
   it('blocks the feature in a business workspace', async () => {
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'X-Company-Id': String(businessCompanyId),
+      [APP_KEY_HEADER]: APP_KEY_VALUE
+    };
     const response = await request(app)
       .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
-      .set({
-        Authorization: `Bearer ${token}`,
-        'X-Company-Id': String(businessCompanyId),
-        [APP_KEY_HEADER]: APP_KEY_VALUE
-      });
+      .set(headers);
 
     expect(response.status).toBe(403);
     expect(response.body.code).toBe('PERSONAL_WORKSPACE_REQUIRED');
+
+    const history = await request(app)
+      .get('/api/financial/budgets/planning-analysis/snapshots')
+      .set(headers);
+    expect(history.status).toBe(403);
+    expect(history.body.code).toBe('PERSONAL_WORKSPACE_REQUIRED');
   });
 
-  it('requires a fresh profile after a new expense category is created', async () => {
+  it('requires a fresh profile for new analyses while preserving snapshot history access', async () => {
     await prisma.financialCategory.create({
       data: {
         companyId: personalWorkspaceId,
@@ -571,5 +648,11 @@ describe('Financial planning analysis preparation', () => {
 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe('FINANCIAL_PROFILE_OUTDATED');
+
+    const history = await request(app)
+      .get('/api/financial/budgets/planning-analysis/snapshots?limit=1')
+      .set(personalHeaders());
+    expect(history.status).toBe(200);
+    expect(history.body.items).toHaveLength(1);
   });
 });

@@ -16,6 +16,7 @@ import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
+import { FinancialPlanningSnapshotHistory } from './FinancialPlanningSnapshotHistory';
 import {
   FinancialPlanningApiError,
   FinancialPlanningPreview,
@@ -222,36 +223,39 @@ export function GuidedPlanning() {
   if (gateError) {
     const requiresProfile = gateError.code !== 'PERSONAL_WORKSPACE_REQUIRED';
     return (
-      <Card className="mx-auto max-w-2xl">
-        <div className="flex items-start gap-4">
-          <div className="rounded-full bg-amber-950/50 p-3 text-amber-300">
-            {requiresProfile ? <ClipboardCheck size={24} /> : <LockKeyhole size={24} />}
+      <div className="space-y-5">
+        <Card className="mx-auto max-w-2xl">
+          <div className="flex items-start gap-4">
+            <div className="rounded-full bg-amber-950/50 p-3 text-amber-300">
+              {requiresProfile ? <ClipboardCheck size={24} /> : <LockKeyhole size={24} />}
+            </div>
+            <div className="flex-1">
+              <h2 className="text-xl font-semibold text-white">
+                {requiresProfile ? 'Perfil financeiro necessário' : 'Use seu workspace pessoal'}
+              </h2>
+              <p className="mt-2 text-sm text-gray-400">{gateError.error}</p>
+              {requiresProfile ? (
+                <Link
+                  href={{
+                    pathname: '/profile/financial',
+                    query: { returnTo: '/financial/budgets?view=guided' }
+                  }}
+                  className="mt-5 inline-flex rounded bg-accent px-3 py-2 font-semibold text-white transition-colors hover:bg-accent-hover"
+                >
+                  {gateError.code === 'FINANCIAL_PROFILE_OUTDATED'
+                    ? 'Revisar perfil financeiro'
+                    : 'Configurar perfil financeiro'}
+                </Link>
+              ) : (
+                <p className="mt-4 rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
+                  Troque o workspace ativo pelo seu workspace pessoal no seletor do Zenit.
+                </p>
+              )}
+            </div>
           </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold text-white">
-              {requiresProfile ? 'Perfil financeiro necessário' : 'Use seu workspace pessoal'}
-            </h2>
-            <p className="mt-2 text-sm text-gray-400">{gateError.error}</p>
-            {requiresProfile ? (
-              <Link
-                href={{
-                  pathname: '/profile/financial',
-                  query: { returnTo: '/financial/budgets?view=guided' }
-                }}
-                className="mt-5 inline-flex rounded bg-accent px-3 py-2 font-semibold text-white transition-colors hover:bg-accent-hover"
-              >
-                {gateError.code === 'FINANCIAL_PROFILE_OUTDATED'
-                  ? 'Revisar perfil financeiro'
-                  : 'Configurar perfil financeiro'}
-              </Link>
-            ) : (
-              <p className="mt-4 rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
-                Troque o workspace ativo pelo seu workspace pessoal no seletor do Zenit.
-              </p>
-            )}
-          </div>
-        </div>
-      </Card>
+        </Card>
+        {requiresProfile && <FinancialPlanningSnapshotHistory />}
+      </div>
     );
   }
 
@@ -496,6 +500,7 @@ export function GuidedPlanning() {
           )}
         </div>
       </div>
+      <FinancialPlanningSnapshotHistory />
     </div>
   );
 }

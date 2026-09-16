@@ -157,6 +157,19 @@ snapshot ja criado. Os campos sao opcionais no banco apenas para manter leitura
 compativel de snapshots anteriores a esta politica; novos registros sempre os
 preenchem.
 
+### Historico auditavel do diagnostico
+
+Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
+cursor decrescente e retorna apenas resumo, totais, versoes, qualidade e
+identificacao da base. Fontes e indicadores completos sao carregados sob demanda
+ao consultar um snapshot especifico, evitando repetir payloads historicos grandes.
+
+Tanto a listagem quanto o detalhe exigem que o usuario seja proprietario do
+workspace pessoal ativo. A consulta nao exige que o perfil atual continue pronto:
+um perfil ausente ou desatualizado bloqueia novas analises, mas nao apaga nem
+oculta a evidencia anteriormente confirmada. Nao existem rotas de atualizacao ou
+exclusao desses snapshots.
+
 ### Quality gates
 
 Um lote financeiro somente esta concluido quando:
@@ -209,10 +222,9 @@ que deveriam representar a mesma situacao financeira.
 
 ## Proximos passos
 
-Lint, testes reproduziveis, caracterizacao dos calculos atuais e integridade do
-snapshot ja foram consolidados. Permanecem:
+Lint, testes reproduziveis, caracterizacao dos calculos atuais, integridade do
+snapshot e seu historico auditavel ja foram consolidados. Permanecem:
 
 1. Definir politica de autorizacao para planejamento e provisoes empresariais.
 2. Centralizar calendario financeiro, valores assinados e formulas de provisao.
 3. Unificar a projecao mensal consumida por dashboard e planejamento.
-4. Expor historico auditavel dos diagnosticos sem permitir sua mutacao.

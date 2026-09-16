@@ -4,9 +4,11 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GuidedPlanning } from '@/components/financial/budgets/GuidedPlanning';
 
-const { addToastMock, confirmMock, getMock } = vi.hoisted(() => ({
+const { addToastMock, confirmMock, detailMock, getMock, historyMock } = vi.hoisted(() => ({
   addToastMock: vi.fn(),
   confirmMock: vi.fn(),
+  detailMock: vi.fn(),
+  historyMock: vi.fn(),
   getMock: vi.fn()
 }));
 
@@ -63,7 +65,9 @@ vi.mock('@/lib/financial-planning-analysis', async () => {
   return {
     ...actual,
     getFinancialPlanningPreview: (...args: unknown[]) => getMock(...args),
-    confirmFinancialPlanningSnapshot: (...args: unknown[]) => confirmMock(...args)
+    confirmFinancialPlanningSnapshot: (...args: unknown[]) => confirmMock(...args),
+    getFinancialPlanningSnapshots: (...args: unknown[]) => historyMock(...args),
+    getFinancialPlanningSnapshot: (...args: unknown[]) => detailMock(...args)
   };
 });
 
@@ -171,6 +175,11 @@ describe('GuidedPlanning', () => {
     vi.clearAllMocks();
     getMock.mockResolvedValue(preview);
     confirmMock.mockResolvedValue(snapshot);
+    historyMock.mockResolvedValue({
+      items: [{ ...snapshot, selectedSourceCount: snapshot.selectedSourceKeys.length }],
+      nextCursor: null
+    });
+    detailMock.mockResolvedValue(snapshot);
   });
 
   it('lets the user choose sources before confirming an immutable snapshot', async () => {
@@ -243,5 +252,24 @@ describe('GuidedPlanning', () => {
       'Os dados financeiros mudaram desde a prévia',
       'error'
     );
+  });
+
+  it('loads the immutable diagnosis history and its audit details on demand', async () => {
+    const user = userEvent.setup();
+    render(<GuidedPlanning />);
+
+    await screen.findByText('Workspace pessoal de Ana');
+    await user.click(screen.getByRole('button', { name: 'Ver histórico' }));
+
+    await waitFor(() => {
+      expect(historyMock).toHaveBeenCalledWith({ limit: 10 });
+    });
+    const snapshotButton = await screen.findByRole('button', { name: /Snapshot #50/ });
+    await user.click(snapshotButton);
+
+    await waitFor(() => expect(detailMock).toHaveBeenCalledWith(50));
+    expect(await screen.findByText('Identificador da base')).toBeInTheDocument();
+    expect(screen.getAllByText('Salário')).toHaveLength(2);
+    expect(screen.getByText('v2')).toBeInTheDocument();
   });
 });

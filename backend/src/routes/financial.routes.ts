@@ -77,6 +77,8 @@ import {
 } from '../validators/financial-provision.validator';
 import {
   confirmFinancialPlanningAnalysisSchema,
+  getFinancialPlanningSnapshotSchema,
+  listFinancialPlanningSnapshotsSchema,
   previewFinancialPlanningAnalysisSchema
 } from '../validators/financial-planning-analysis.validator';
 import {
@@ -171,6 +173,8 @@ import {
 } from '../controllers/financial-provision.controller';
 import {
   confirmFinancialPlanningAnalysis,
+  getFinancialPlanningSnapshot,
+  listFinancialPlanningSnapshots,
   previewFinancialPlanningAnalysis
 } from '../controllers/financial-planning-analysis.controller';
 import {
@@ -346,6 +350,16 @@ router.get(
   '/budgets/planning-analysis/preview',
   validate(previewFinancialPlanningAnalysisSchema, { source: 'query' }),
   previewFinancialPlanningAnalysis
+);
+router.get(
+  '/budgets/planning-analysis/snapshots',
+  validate(listFinancialPlanningSnapshotsSchema, { source: 'query' }),
+  listFinancialPlanningSnapshots
+);
+router.get(
+  '/budgets/planning-analysis/snapshots/:id',
+  validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
+  getFinancialPlanningSnapshot
 );
 router.post(
   '/budgets/planning-analysis/snapshots',

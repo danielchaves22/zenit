@@ -75,6 +75,29 @@ export interface FinancialPlanningSnapshot {
   createdAt: string;
 }
 
+export interface FinancialPlanningSnapshotSummary {
+  id: number;
+  objectiveKind: 'MONTHLY_SAVINGS';
+  targetMonthlySavings: string;
+  historyMonths: number;
+  historyStartDate: string;
+  historyEndDate: string;
+  profileVersion: number;
+  methodologyVersion: number;
+  basisHash: string | null;
+  dataQualityScore: number;
+  selectedSourceCount: number;
+  totals: FinancialPlanningTotals;
+  status: 'CONFIRMED';
+  confirmedAt: string;
+  createdAt: string;
+}
+
+export interface FinancialPlanningSnapshotPage {
+  items: FinancialPlanningSnapshotSummary[];
+  nextCursor: number | null;
+}
+
 export interface FinancialPlanningPreview {
   workspace: { id: number; name: string };
   methodologyVersion: number;
@@ -100,6 +123,7 @@ export interface FinancialPlanningApiError {
     | 'FINANCIAL_PROFILE_OUTDATED'
     | 'FINANCIAL_PLANNING_PREVIEW_STALE'
     | 'FINANCIAL_PLANNING_INTEGRITY_CONFLICT'
+    | 'FINANCIAL_PLANNING_SNAPSHOT_NOT_FOUND'
     | 'INVALID_SOURCE_SELECTION'
     | 'INCOME_SOURCE_REQUIRED';
 }
@@ -121,5 +145,20 @@ export async function confirmFinancialPlanningSnapshot(input: {
   basisHash: string;
 }): Promise<FinancialPlanningSnapshot> {
   const response = await api.post('/financial/budgets/planning-analysis/snapshots', input);
+  return response.data as FinancialPlanningSnapshot;
+}
+
+export async function getFinancialPlanningSnapshots(params?: {
+  cursor?: number;
+  limit?: number;
+}): Promise<FinancialPlanningSnapshotPage> {
+  const response = await api.get('/financial/budgets/planning-analysis/snapshots', { params });
+  return response.data as FinancialPlanningSnapshotPage;
+}
+
+export async function getFinancialPlanningSnapshot(
+  snapshotId: number
+): Promise<FinancialPlanningSnapshot> {
+  const response = await api.get(`/financial/budgets/planning-analysis/snapshots/${snapshotId}`);
   return response.data as FinancialPlanningSnapshot;
 }

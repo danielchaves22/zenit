@@ -4,6 +4,8 @@ import FinancialPlanningAnalysisService, {
 } from '../services/financial-planning-analysis.service';
 import {
   ConfirmFinancialPlanningAnalysisBody,
+  GetFinancialPlanningSnapshotParams,
+  ListFinancialPlanningSnapshotsQuery,
   PreviewFinancialPlanningAnalysisQuery
 } from '../validators/financial-planning-analysis.validator';
 
@@ -49,5 +51,36 @@ export async function confirmFinancialPlanningAnalysis(req: Request, res: Respon
     return res.status(result.created ? 201 : 200).json(result.snapshot);
   } catch (error: any) {
     return sendError(res, error, 'Erro ao confirmar diagnóstico financeiro');
+  }
+}
+
+export async function listFinancialPlanningSnapshots(req: Request, res: Response) {
+  try {
+    const context = getUserContext(req);
+    const query = req.query as unknown as ListFinancialPlanningSnapshotsQuery;
+    return res.status(200).json(
+      await FinancialPlanningAnalysisService.listSnapshots({
+        ...context,
+        cursor: query.cursor,
+        limit: query.limit
+      })
+    );
+  } catch (error: any) {
+    return sendError(res, error, 'Erro ao consultar histórico de diagnósticos financeiros');
+  }
+}
+
+export async function getFinancialPlanningSnapshot(req: Request, res: Response) {
+  try {
+    const context = getUserContext(req);
+    const params = req.params as unknown as GetFinancialPlanningSnapshotParams;
+    return res.status(200).json(
+      await FinancialPlanningAnalysisService.getSnapshot({
+        ...context,
+        snapshotId: params.id
+      })
+    );
+  } catch (error: any) {
+    return sendError(res, error, 'Erro ao consultar diagnóstico financeiro');
   }
 }

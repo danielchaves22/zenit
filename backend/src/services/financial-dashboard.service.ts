@@ -13,6 +13,7 @@ import UserVariableProjectionPreferenceService from './user-variable-projection-
 import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import { resolveCreditCardInvoiceReference } from '../utils/credit-card';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
+import { getCreditCardInvoiceSignedAmount } from '../utils/financial-transaction-amount';
 import {
   addFinancialMonths,
   FinancialCalendarContext,
@@ -600,9 +601,7 @@ export default class FinancialDashboardService {
       rows.push({
         type: TransactionType.EXPENSE,
         source: 'CREDIT_CARD',
-        amount: transaction.creditCardCreditKind
-          ? toDecimal(transaction.amount).negated()
-          : toDecimal(transaction.amount),
+        amount: getCreditCardInvoiceSignedAmount(transaction),
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
         categoryColor: buildCategoryColor(transaction.category),
@@ -1247,9 +1246,7 @@ export default class FinancialDashboardService {
         continue;
       }
 
-      const amount = transaction.creditCardCreditKind
-        ? toDecimal(transaction.amount).negated()
-        : toDecimal(transaction.amount);
+      const amount = getCreditCardInvoiceSignedAmount(transaction);
       totals.expenseTotal = totals.expenseTotal.plus(amount);
       addCategorySeriesAmount(transaction.categoryId, monthKey, amount);
     }

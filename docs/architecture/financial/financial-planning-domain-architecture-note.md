@@ -214,6 +214,22 @@ workspace e o mes alvo. A divisao e arredondada para cima em centavos, garantind
 que o total previsto seja alcancado sem que telas diferentes apresentem valores
 divergentes. Provisoes integralmente financiadas nunca geram contribuicao negativa.
 
+### Perspectivas canonicas de valor
+
+O valor persistido de uma transacao representa magnitude e permanece positivo.
+O sinal e derivado conforme a pergunta financeira, sem gravar despesas negativas:
+
+- no workspace, receita e positiva, despesa e negativa e transferencia interna e
+  neutra;
+- em uma conta, saida e negativa e entrada e positiva, inclusive nos dois lados
+  de uma transferencia;
+- em uma fatura, compra aumenta a obrigacao e credito explicito de estorno,
+  cashback ou ajuste a reduz.
+
+Essas perspectivas sao funcoes puras distintas. Um tipo generico de ajuste nao
+deve substituir a natureza economica especifica de pagamento, cashback, estorno
+ou desconto.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -283,5 +299,5 @@ Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot e seu historico auditavel ja
 foram consolidados. Permanecem:
 
-1. Centralizar valores assinados.
+1. Centralizar as regras de reconhecimento de valores realizados e pagos.
 2. Unificar a projecao mensal consumida por dashboard e planejamento.

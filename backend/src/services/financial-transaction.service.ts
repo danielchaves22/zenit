@@ -25,6 +25,7 @@ import {
   type IgnoredTransactionState
 } from '../utils/financial-transaction-query';
 import { calculateCreditCardInvoiceTotals } from '../utils/credit-card-invoice-totals';
+import { getCreditCardInvoiceSignedAmount } from '../utils/financial-transaction-amount';
 
 import { randomUUID } from 'crypto';
 
@@ -2891,9 +2892,7 @@ export default class FinancialTransactionService {
       matchingRealInvoiceAmounts.set(
         transaction.creditCardInvoiceId,
         (matchingRealInvoiceAmounts.get(transaction.creditCardInvoiceId) ?? new Prisma.Decimal(0)).plus(
-          transaction.creditCardCreditKind
-            ? parseDecimal(transaction.amount).negated()
-            : parseDecimal(transaction.amount)
+          getCreditCardInvoiceSignedAmount(transaction)
         )
       );
     }

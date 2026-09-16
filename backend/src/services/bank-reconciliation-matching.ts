@@ -1,5 +1,6 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, TransactionType } from '@prisma/client';
 import { hash, normalizeDescription } from './bank-statement-parser';
+import { getAccountSignedTransactionAmount } from '../utils/financial-transaction-amount';
 
 export interface MatchItem { id: number; date: Date; amount: Prisma.Decimal | string; description: string }
 export interface MatchTransaction {
@@ -45,10 +46,12 @@ export const sumCents = (values: number[]) => values.reduce((sum, value) => {
 export const idsKey = (ids: number[]) => [...ids].sort((a, b) => a - b).join(',');
 export const dayDistance = (a: string, b: string) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
 export function signedTransactionAmount(t: Pick<MatchTransaction, 'amount' | 'type' | 'fromAccountId' | 'toAccountId'>, accountId: number): number {
-  if (t.fromAccountId === accountId && t.toAccountId === accountId) return 0;
-  if (t.fromAccountId === accountId && (t.type === 'EXPENSE' || t.type === 'TRANSFER')) return -cents(t.amount);
-  if (t.toAccountId === accountId && (t.type === 'INCOME' || t.type === 'TRANSFER')) return cents(t.amount);
-  return 0;
+  return cents(
+    getAccountSignedTransactionAmount(
+      { ...t, type: t.type as TransactionType },
+      accountId
+    )
+  );
 }
 export function similarity(a: string, b: string): number {
   const x = new Set(normalizeDescription(a).split(' ').filter(w => w.length > 2));

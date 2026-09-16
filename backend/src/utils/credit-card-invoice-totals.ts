@@ -1,9 +1,17 @@
 import {
-  CreditCardCreditKind,
   Prisma,
   TransactionStatus,
   TransactionType
 } from '@prisma/client';
+import {
+  getCreditCardInvoiceSignedAmount,
+  isCreditCardInvoiceCredit
+} from './financial-transaction-amount';
+
+export {
+  getCreditCardInvoiceSignedAmount,
+  isCreditCardInvoiceCredit
+} from './financial-transaction-amount';
 
 type InvoiceTotalsClient = {
   financialTransaction: Prisma.TransactionClient['financialTransaction'];
@@ -27,23 +35,6 @@ function zeroTotals(): CreditCardInvoiceTotals {
     transactionCount: 0,
     externalSettlementCount: 0
   };
-}
-
-export function isCreditCardInvoiceCredit(transaction: {
-  creditCardCreditKind?: CreditCardCreditKind | null;
-}) {
-  return transaction.creditCardCreditKind !== null && transaction.creditCardCreditKind !== undefined;
-}
-
-export function getCreditCardInvoiceSignedAmount(transaction: {
-  amount: Prisma.Decimal | string | number;
-  creditCardCreditKind?: CreditCardCreditKind | null;
-}) {
-  const amount = transaction.amount instanceof Prisma.Decimal
-    ? transaction.amount
-    : new Prisma.Decimal(transaction.amount);
-
-  return isCreditCardInvoiceCredit(transaction) ? amount.negated() : amount;
 }
 
 export async function calculateCreditCardInvoiceTotals(

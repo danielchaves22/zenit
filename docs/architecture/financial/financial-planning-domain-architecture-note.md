@@ -177,6 +177,23 @@ A politica acima nao se aplica ao Plano de Disponibilidade, que e individual por
 usuario, nem ao Diagnostico Financeiro, que exige o proprietario do workspace
 pessoal correspondente.
 
+### Calendario financeiro canonico
+
+Meses financeiros usam a chave de dominio `YYYY-MM`. Quando uma entidade mensal
+precisa ser persistida como `DateTime`, sua representacao canonica e o primeiro
+dia do mes ao meio-dia em UTC. A hora nao representa um instante economico; ela
+evita que conversoes acidentais atravessem a fronteira do dia ou do mes.
+
+Conversao, formatacao e aritmetica de meses ficam centralizadas em funcoes puras.
+Datas mensais persistidas sao lidas em UTC e o mes atual deve ser derivado do
+timezone explicito do workspace, nunca implicitamente do timezone do servidor.
+
+O Planejamento Mensal por Categoria e o primeiro consumidor migrado para a
+representacao canonica. Neste recorte, foram preservadas as regras atuais de
+disponibilidade de estatisticas e mutacao. A adocao do mes corrente do workspace
+sera feita junto com dashboard e validadores, para que nao existam dois conceitos
+de "mes atual" no mesmo fluxo durante a transicao.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -246,5 +263,7 @@ Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot e seu historico auditavel ja
 foram consolidados. Permanecem:
 
-1. Centralizar calendario financeiro, valores assinados e formulas de provisao.
-2. Unificar a projecao mensal consumida por dashboard e planejamento.
+1. Aplicar o mes corrente do workspace de forma atomica em dashboard,
+   planejamento e validadores.
+2. Centralizar valores assinados e formulas de provisao.
+3. Unificar a projecao mensal consumida por dashboard e planejamento.

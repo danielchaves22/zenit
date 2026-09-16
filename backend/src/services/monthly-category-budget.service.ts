@@ -1,6 +1,11 @@
 import prisma from '../lib/prisma';
 import { Prisma, PrismaClient, TransactionType } from '@prisma/client';
 import FinancialDashboardService from './financial-dashboard.service';
+import {
+  addFinancialMonths,
+  formatFinancialMonthKey,
+  parseFinancialMonthKey
+} from '../utils/financial-calendar';
 
 
 type RecurringChangeScope = 'MONTH_ONLY' | 'FROM_MONTH';
@@ -47,20 +52,6 @@ type MonthlyDashboardCategoryTotal = {
 };
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
-
-function parseReferenceMonth(month: string): Date {
-  const [year, monthValue] = month.split('-').map(Number);
-  return new Date(Date.UTC(year, monthValue - 1, 1, 12, 0, 0, 0));
-}
-
-function monthKeyFromDate(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function previousMonthDate(month: string): Date {
-  const [year, monthValue] = month.split('-').map(Number);
-  return new Date(Date.UTC(year, monthValue - 2, 1, 12, 0, 0, 0));
-}
 
 function currentMonthKey(): string {
   const today = new Date();
@@ -189,7 +180,7 @@ async function listEffectiveAllocations(params: {
       includeChildren: monthlyBudget?.includeChildren ?? recurringBudget.includeChildren,
       origin: monthlyBudget ? 'FIXED_OVERRIDE' : 'FIXED_MONTHLY',
       baseLimitAmount: recurringBudget.limitAmount,
-      recurrenceStartMonth: monthKeyFromDate(recurringBudget.startMonth)
+      recurrenceStartMonth: formatFinancialMonthKey(recurringBudget.startMonth)
     });
   });
 
@@ -333,7 +324,7 @@ export default class MonthlyCategoryBudgetService {
       ).some((categoryId) => candidateCoverage.has(categoryId));
       if (overlaps) {
         throw new Error(
-          `${category.name} conflita com ${monthlyBudget.category.name} em ${monthKeyFromDate(monthlyBudget.referenceMonth)}`
+          `${category.name} conflita com ${monthlyBudget.category.name} em ${formatFinancialMonthKey(monthlyBudget.referenceMonth)}`
         );
       }
     }
@@ -352,7 +343,7 @@ export default class MonthlyCategoryBudgetService {
     if (!categoryById.has(params.categoryId)) {
       throw new Error('A categoria de despesa não pertence a esta empresa');
     }
-    const referenceMonth = parseReferenceMonth(params.month);
+    const referenceMonth = parseFinancialMonthKey(params.month);
     const effectiveAllocations = await listEffectiveAllocations({
       client: prisma,
       companyId: params.companyId,
@@ -456,7 +447,7 @@ export default class MonthlyCategoryBudgetService {
     const categories = await this.listExpenseCategories(params.companyId);
     const { categoryById, childrenByParentId } = buildCategoryMaps(categories);
     assertNoCoverageOverlap(params.allocations, categoryById, childrenByParentId);
-    const referenceMonth = parseReferenceMonth(params.month);
+    const referenceMonth = parseFinancialMonthKey(params.month);
     const activeRecurringBudgets = await prisma.recurringMonthlyCategoryBudget.findMany({
       where: {
         companyId: params.companyId,
@@ -546,7 +537,7 @@ export default class MonthlyCategoryBudgetService {
 
         await transaction.recurringMonthlyCategoryBudget.update({
           where: { id: recurringBudget.id },
-          data: { endMonth: previousMonthDate(params.month) }
+          data: { endMonth: addFinancialMonths(referenceMonth, -1) }
         });
         const nextRecurringBudget = await transaction.recurringMonthlyCategoryBudget.create({
           data: {
@@ -618,7 +609,7 @@ export default class MonthlyCategoryBudgetService {
     recurringBudgetId: number;
     month: string;
   }): Promise<void> {
-    const referenceMonth = parseReferenceMonth(params.month);
+    const referenceMonth = parseFinancialMonthKey(params.month);
     const recurringBudget = await prisma.recurringMonthlyCategoryBudget.findFirst({
       where: { id: params.recurringBudgetId, companyId: params.companyId }
     });
@@ -638,7 +629,7 @@ export default class MonthlyCategoryBudgetService {
       } else {
         await transaction.recurringMonthlyCategoryBudget.update({
           where: { id: recurringBudget.id },
-          data: { endMonth: previousMonthDate(params.month) }
+          data: { endMonth: addFinancialMonths(referenceMonth, -1) }
         });
       }
     });
@@ -650,7 +641,7 @@ export default class MonthlyCategoryBudgetService {
     month: string;
     planOnly?: boolean;
   } & AccessContext) {
-    const referenceMonth = parseReferenceMonth(params.month);
+    const referenceMonth = parseFinancialMonthKey(params.month);
     const allocations = await listEffectiveAllocations({
       client: prisma,
       companyId: params.companyId,

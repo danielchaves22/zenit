@@ -853,7 +853,7 @@ model CreditCardReconciliationSession {
   items          CreditCardReconciliationItem[]
   events         CreditCardReconciliationEvent[]
 
-  @@unique([accountId, referenceYear, referenceMonth], name: "unique_credit_card_reconciliation_session")
+  @@unique([accountId, referenceYear, referenceMonth], name: "unique_credit_card_reconciliation_session", map: "unique_credit_card_reconciliation_session")
   @@index([accountId, status])
   @@index([activeMutationAt])
 }
@@ -875,8 +875,8 @@ model CreditCardReconciliationItem {
   transactions   CreditCardReconciliationItemTransaction[]
   events         CreditCardReconciliationEvent[]
 
-  @@unique([sessionId, sourceItemId], name: "unique_credit_card_reconciliation_source_item")
-  @@unique([sessionId, identityKey], name: "unique_credit_card_reconciliation_item_identity")
+  @@unique([sessionId, sourceItemId], name: "unique_credit_card_reconciliation_source_item", map: "unique_credit_card_reconciliation_source_item")
+  @@unique([sessionId, identityKey], name: "unique_credit_card_reconciliation_item_identity", map: "unique_credit_card_reconciliation_item_identity")
   @@index([sessionId, resolution])
 }
 
@@ -889,8 +889,8 @@ model CreditCardReconciliationItemTransaction {
   transactionSnapshot Json
   createdAt           DateTime                        @default(now())
 
-  @@unique([itemId, transactionId], name: "unique_credit_card_reconciliation_item_transaction")
-  @@unique([transactionId], name: "unique_credit_card_reconciliation_transaction_claim")
+  @@unique([itemId, transactionId], name: "unique_credit_card_reconciliation_item_transaction", map: "unique_credit_card_reconciliation_item_transaction")
+  @@unique([transactionId], name: "unique_credit_card_reconciliation_transaction_claim", map: "unique_credit_card_reconciliation_transaction_claim")
 }
 
 model CreditCardReconciliationEvent {
@@ -1141,8 +1141,8 @@ model RecurringMonthlyCategoryBudget {
   category        FinancialCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   monthlyAdjustments MonthlyCategoryBudget[]
 
-  @@unique([companyId, categoryId, startMonth], name: "unique_recurring_monthly_category_budget_start")
-  @@index([companyId, startMonth, endMonth])
+  @@unique([companyId, categoryId, startMonth], name: "unique_recurring_monthly_category_budget_start", map: "RecurringMonthlyCategoryBudget_companyId_categoryId_startMonth_")
+  @@index([companyId, startMonth, endMonth], map: "RecurringMonthlyCategoryBudget_companyId_startMonth_endMonth_id")
   @@index([categoryId])
 }
 
@@ -1231,7 +1231,7 @@ model PersonalFinancialCategoryPreference {
   profile              PersonalFinancialProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
   category             FinancialCategory           @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
-  @@unique([profileId, categoryId], name: "unique_personal_financial_category_preference")
+  @@unique([profileId, categoryId], name: "unique_personal_financial_category_preference", map: "unique_personal_financial_category_preference")
   @@index([categoryId])
 }
 
@@ -1244,7 +1244,7 @@ model PersonalFinancialProfileRevision {
 
   profile   PersonalFinancialProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
-  @@unique([profileId, version], name: "unique_personal_financial_profile_revision")
+  @@unique([profileId, version], name: "unique_personal_financial_profile_revision", map: "unique_personal_financial_profile_revision")
   @@index([profileId, createdAt])
 }
 
@@ -1708,7 +1708,7 @@ model WhatsAppBindingCompanyContext {
   company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   assistantSession AssistantSession @relation(fields: [assistantSessionId], references: [id], onDelete: Cascade)
 
-  @@unique([bindingId, companyId], name: "unique_whatsapp_binding_company_context")
+  @@unique([bindingId, companyId], name: "unique_whatsapp_binding_company_context", map: "unique_whatsapp_binding_company_context")
   @@index([companyId, updatedAt])
 }
 

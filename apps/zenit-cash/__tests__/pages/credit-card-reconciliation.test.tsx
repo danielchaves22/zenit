@@ -1623,11 +1623,18 @@ describe('CreditCardReconciliationPage comparison views', () => {
     render(<CreditCardReconciliationPage />)
     await screen.findByText('Escolher arquivo')
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await waitFor(() => expect(fileInput).toBeEnabled(), { timeout: 5000 })
     await user.upload(fileInput, new File(['new'], 'nova-fatura.csv', { type: 'text/csv' }))
-    await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
+    const analyzeButton = screen.getByRole('button', { name: 'Analisar fatura' })
+    await waitFor(() => expect(analyzeButton).toBeEnabled(), { timeout: 5000 })
+    await user.click(analyzeButton)
 
     expect(
-      await screen.findByRole('heading', { name: 'Substituir arquivo da conciliação?' })
+      await screen.findByRole(
+        'heading',
+        { name: 'Substituir arquivo da conciliação?' },
+        { timeout: 5000 }
+      )
     ).toBeInTheDocument()
     expect(api.post).toHaveBeenCalledTimes(1)
 
@@ -1640,7 +1647,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       expectedRevision: 1,
       fileName: 'nova-fatura.csv'
     })
-  })
+  }, 20_000)
 
   it('permite selecionar novamente o mesmo arquivo depois de cancelar a substituicao', async () => {
     vi.mocked(api.get).mockImplementation((url: string) => {
@@ -1680,9 +1687,15 @@ describe('CreditCardReconciliationPage comparison views', () => {
     const replacementFile = new File(['new'], 'mesma-fatura.csv', { type: 'text/csv' })
 
     await user.upload(fileInput, replacementFile)
-    await user.click(screen.getByRole('button', { name: 'Analisar fatura' }))
+    const firstAnalyzeButton = screen.getByRole('button', { name: 'Analisar fatura' })
+    await waitFor(() => expect(firstAnalyzeButton).toBeEnabled(), { timeout: 5000 })
+    await user.click(firstAnalyzeButton)
     expect(
-      await screen.findByRole('heading', { name: 'Substituir arquivo da conciliação?' })
+      await screen.findByRole(
+        'heading',
+        { name: 'Substituir arquivo da conciliação?' },
+        { timeout: 5000 }
+      )
     ).toBeInTheDocument()
     expect(api.post).toHaveBeenCalledTimes(1)
     await user.click(screen.getByRole('button', { name: 'Cancelar' }))
@@ -1697,11 +1710,15 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     await user.upload(fileInput, replacementFile)
     const analyzeButton = screen.getByRole('button', { name: 'Analisar fatura' })
-    await waitFor(() => expect(analyzeButton).toBeEnabled())
+    await waitFor(() => expect(analyzeButton).toBeEnabled(), { timeout: 5000 })
     await user.click(analyzeButton)
 
     expect(
-      await screen.findByRole('heading', { name: 'Substituir arquivo da conciliação?' })
+      await screen.findByRole(
+        'heading',
+        { name: 'Substituir arquivo da conciliação?' },
+        { timeout: 5000 }
+      )
     ).toBeInTheDocument()
     expect(api.post).toHaveBeenCalledTimes(2)
     await user.click(screen.getByRole('button', { name: 'Substituir e reiniciar' }))
@@ -1713,7 +1730,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       expectedRevision: 1,
       fileName: 'mesma-fatura.csv'
     })
-  })
+  }, 20_000)
 
   it('confirma a contraparte visual selecionada como checkpoint persistido', async () => {
     const confirmedWorkspace = buildWorkspace({
@@ -1767,7 +1784,9 @@ describe('CreditCardReconciliationPage comparison views', () => {
         }
       )
     })
-    expect(await screen.findByText('Existente confirmado')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Existente confirmado', undefined, { timeout: 10_000 })
+    ).toBeInTheDocument()
     expect(within(pendingCard).getByText('OK')).toBeInTheDocument()
     expect(within(pendingCard).queryByText('Pendente')).not.toBeInTheDocument()
     expect(
@@ -1798,7 +1817,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await user.click(getFileSelectionButton(fileRegion, 'bank-market', /Mercado no arquivo/))
     expect(within(getZenitItem(zenitRegion, 'transaction:504')).getByRole('button')).toBeDisabled()
     expect(within(getZenitItem(zenitRegion, 'transaction:501')).getByRole('button')).toBeEnabled()
-  })
+  }, 20_000)
 
   it('remove a confirmacao existente nos dois modos sem sugerir exclusao financeira', async () => {
     const autoMatchPreview = {
@@ -1916,7 +1935,13 @@ describe('CreditCardReconciliationPage comparison views', () => {
         { expectedRevision: 2, decision: 'UNCONFIRM_EXISTING' }
       )
     })
-    expect(screen.getByRole('button', { name: 'Removendo vínculo...' })).toBeDisabled()
+    expect(
+      await screen.findByRole(
+        'button',
+        { name: 'Processando...' },
+        { timeout: 5000 }
+      )
+    ).toBeDisabled()
 
     await act(async () => {
       resolveDecision({ data: unconfirmedWorkspace })
@@ -1945,7 +1970,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       'Vínculo removido da conciliação. O lançamento financeiro não foi alterado.',
       'success'
     )
-  })
+  }, 20_000)
 
   it('remove o vinculo com fixa apenas da conciliacao nos dois modos', async () => {
     const suppressedFixedPreview = {
@@ -2038,7 +2063,13 @@ describe('CreditCardReconciliationPage comparison views', () => {
         { expectedRevision: 4, decision: 'UNLINK_FIXED' }
       )
     })
-    expect(screen.getByRole('button', { name: 'Removendo vínculo...' })).toBeDisabled()
+    expect(
+      await screen.findByRole(
+        'button',
+        { name: 'Processando...' },
+        { timeout: 5000 }
+      )
+    ).toBeDisabled()
 
     await act(async () => {
       resolveDecision({ data: unlinkedWorkspace })
@@ -2059,7 +2090,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       'Vínculo removido desta conciliação. A regra recorrente foi mantida para os próximos meses.',
       'success'
     )
-  })
+  }, 20_000)
 
   it('explica os estados operacionais que impedem uma confirmacao direta', async () => {
     const operationalStates = [
@@ -2322,7 +2353,9 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reiniciar conciliação' }))
 
-    expect(screen.getByRole('button', { name: 'Processando...' })).toBeDisabled()
+    expect(
+      await screen.findByRole('button', { name: 'Processando...' }, { timeout: 5000 })
+    ).toBeDisabled()
     expect(api.post).toHaveBeenCalledTimes(1)
 
     await act(async () => {

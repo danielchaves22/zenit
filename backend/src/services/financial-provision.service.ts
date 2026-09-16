@@ -7,6 +7,15 @@ import {
   PrismaClient,
   TransactionType
 } from '@prisma/client';
+import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
+import {
+  addFinancialMonths,
+  FinancialCalendarContext,
+  formatFinancialDateKey,
+  formatFinancialMonthKey,
+  parseFinancialDateKey,
+  parseFinancialMonthKey
+} from '../utils/financial-calendar';
 
 
 type ProvisionClient = PrismaClient | Prisma.TransactionClient;
@@ -21,46 +30,26 @@ type ProvisionInput = {
   notes?: string | null;
 };
 
-function parseMonthKey(value: string): Date {
-  const [year, month] = value.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, 1, 12, 0, 0, 0));
-}
+type FinancialProvisionValidationIssue = {
+  field: 'startMonth' | 'targetDate' | 'occurredAt';
+  message: string;
+};
 
-function parseDateKey(value?: string): Date {
-  if (!value) {
-    const today = new Date();
-    return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0));
+export class FinancialProvisionValidationError extends Error {
+  constructor(readonly issues: FinancialProvisionValidationIssue[]) {
+    super(issues[0]?.message ?? 'Dados da provisão inválidos');
   }
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
-}
-
-function currentMonth(): Date {
-  const today = new Date();
-  return new Date(Date.UTC(today.getFullYear(), today.getMonth(), 1, 12, 0, 0, 0));
 }
 
 function firstOfMonth(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 12, 0, 0, 0));
+  return parseFinancialMonthKey(formatFinancialMonthKey(date));
 }
 
-function addMonths(date: Date, amount: number): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + amount, 1, 12, 0, 0, 0));
-}
-
-function addYearClamped(date: Date): Date {
-  const nextYear = date.getUTCFullYear() + 1;
+function addYearsClamped(date: Date, amount: number): Date {
+  const nextYear = date.getUTCFullYear() + amount;
   const month = date.getUTCMonth();
   const lastDay = new Date(Date.UTC(nextYear, month + 1, 0)).getUTCDate();
   return new Date(Date.UTC(nextYear, month, Math.min(date.getUTCDate(), lastDay), 12, 0, 0, 0));
-}
-
-function formatMonthKey(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function formatDateKey(date: Date): string {
-  return `${formatMonthKey(date)}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 function toMoney(value: Prisma.Decimal | string | number): Prisma.Decimal {
@@ -71,9 +60,14 @@ function moneyString(value: Prisma.Decimal | string | number): string {
   return toMoney(value).toFixed(2);
 }
 
-function monthsAvailable(startMonth: Date, targetDate: Date): number {
+function monthsAvailable(
+  startMonth: Date,
+  targetDate: Date,
+  calendar: FinancialCalendarContext
+): number {
   const targetMonth = firstOfMonth(targetDate);
-  const effectiveStart = startMonth > currentMonth() ? startMonth : currentMonth();
+  const currentMonth = parseFinancialMonthKey(calendar.currentMonthKey);
+  const effectiveStart = startMonth > currentMonth ? startMonth : currentMonth;
   const difference =
     (targetMonth.getUTCFullYear() - effectiveStart.getUTCFullYear()) * 12 +
     targetMonth.getUTCMonth() -
@@ -85,12 +79,13 @@ function monthlyContribution(
   expectedAmount: Prisma.Decimal,
   reservedAmount: Prisma.Decimal,
   startMonth: Date,
-  targetDate: Date
+  targetDate: Date,
+  calendar: FinancialCalendarContext
 ): Prisma.Decimal {
   const remaining = Prisma.Decimal.max(expectedAmount.minus(reservedAmount), 0);
   if (remaining.isZero()) return new Prisma.Decimal(0);
   return remaining
-    .div(monthsAvailable(startMonth, targetDate))
+    .div(monthsAvailable(startMonth, targetDate, calendar))
     .toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
 }
 
@@ -99,16 +94,16 @@ function derivedState(provision: {
   expectedAmount: Prisma.Decimal;
   reservedAmount: Prisma.Decimal;
   targetDate: Date;
-}): 'PLANNED' | 'IN_PROGRESS' | 'FUNDED' | 'OVERDUE' | 'COMPLETED' | 'CANCELED' {
+}, calendar: FinancialCalendarContext): 'PLANNED' | 'IN_PROGRESS' | 'FUNDED' | 'OVERDUE' | 'COMPLETED' | 'CANCELED' {
   if (provision.status === FinancialProvisionStatus.COMPLETED) return 'COMPLETED';
   if (provision.status === FinancialProvisionStatus.CANCELED) return 'CANCELED';
   if (provision.reservedAmount.greaterThanOrEqualTo(provision.expectedAmount)) return 'FUNDED';
-  if (provision.targetDate < parseDateKey()) return 'OVERDUE';
+  if (provision.targetDate < calendar.businessDate) return 'OVERDUE';
   if (provision.reservedAmount.greaterThan(0)) return 'IN_PROGRESS';
   return 'PLANNED';
 }
 
-function serializeProvision(provision: any) {
+function serializeProvision(provision: any, calendar: FinancialCalendarContext) {
   const expectedAmount = toMoney(provision.expectedAmount);
   const reservedAmount = toMoney(provision.reservedAmount);
   const remainingAmount = Prisma.Decimal.max(expectedAmount.minus(reservedAmount), 0);
@@ -122,22 +117,28 @@ function serializeProvision(provision: any) {
     notes: provision.notes,
     kind: provision.kind,
     status: provision.status,
-    state: derivedState(provision),
+    state: derivedState(provision, calendar),
     category: provision.category,
     expectedAmount: moneyString(expectedAmount),
     reservedAmount: moneyString(reservedAmount),
     remainingAmount: moneyString(remainingAmount),
     monthlyContributionAmount: moneyString(
       provision.status === FinancialProvisionStatus.ACTIVE
-        ? monthlyContribution(expectedAmount, reservedAmount, provision.startMonth, provision.targetDate)
+        ? monthlyContribution(
+            expectedAmount,
+            reservedAmount,
+            provision.startMonth,
+            provision.targetDate,
+            calendar
+          )
         : 0
     ),
     progressPercent,
     monthsRemaining: provision.status === FinancialProvisionStatus.ACTIVE
-      ? monthsAvailable(provision.startMonth, provision.targetDate)
+      ? monthsAvailable(provision.startMonth, provision.targetDate, calendar)
       : 0,
-    startMonth: formatMonthKey(provision.startMonth),
-    targetDate: formatDateKey(provision.targetDate),
+    startMonth: formatFinancialMonthKey(provision.startMonth),
+    targetDate: formatFinancialDateKey(provision.targetDate),
     completedAt: provision.completedAt?.toISOString() ?? null,
     canceledAt: provision.canceledAt?.toISOString() ?? null,
     lastUsedAt: provision.lastUsedAt?.toISOString() ?? null,
@@ -149,7 +150,7 @@ function serializeProvision(provision: any) {
       type: entry.type,
       amount: moneyString(entry.amount),
       reservedAmountChange: moneyString(entry.reservedAmountChange),
-      occurredAt: formatDateKey(entry.occurredAt),
+      occurredAt: formatFinancialDateKey(entry.occurredAt),
       notes: entry.notes,
       createdAt: entry.createdAt.toISOString()
     }))
@@ -186,17 +187,78 @@ async function lockProvision(client: Prisma.TransactionClient, id: number, compa
   return provision;
 }
 
-function validatePeriod(input: ProvisionInput) {
-  const startMonth = parseMonthKey(input.startMonth);
-  const targetDate = parseDateKey(input.targetDate);
+function maximumProvisionDate(calendar: FinancialCalendarContext): Date {
+  return addYearsClamped(calendar.businessDate, 10);
+}
+
+function validatePeriod(
+  input: ProvisionInput,
+  calendar: FinancialCalendarContext,
+  options: { mutableStartMonth: boolean }
+) {
+  const startMonth = parseFinancialMonthKey(input.startMonth);
+  const targetDate = parseFinancialDateKey(input.targetDate);
+  const maximumDate = maximumProvisionDate(calendar);
+  const issues: FinancialProvisionValidationIssue[] = [];
+
+  if (startMonth.getUTCFullYear() < 2000) {
+    issues.push({ field: 'startMonth', message: 'Mês inválido' });
+  }
+  if (options.mutableStartMonth && input.startMonth < calendar.currentMonthKey) {
+    issues.push({
+      field: 'startMonth',
+      message: 'O mês inicial não pode estar no passado'
+    });
+  }
+  if (input.startMonth > formatFinancialMonthKey(maximumDate)) {
+    issues.push({
+      field: 'startMonth',
+      message: 'Use um mês dentro dos próximos 10 anos'
+    });
+  }
+  if (targetDate < calendar.businessDate) {
+    issues.push({
+      field: 'targetDate',
+      message: 'A data prevista não pode estar no passado'
+    });
+  }
+  if (targetDate > maximumDate) {
+    issues.push({
+      field: 'targetDate',
+      message: 'Use uma data dentro dos próximos 10 anos'
+    });
+  }
   if (startMonth > firstOfMonth(targetDate)) {
-    throw new Error('O mês inicial deve ser anterior ou igual à data prevista');
+    issues.push({
+      field: 'startMonth',
+      message: 'O mês inicial deve ser anterior ou igual à data prevista'
+    });
+  }
+  if (issues.length > 0) {
+    throw new FinancialProvisionValidationError(issues);
   }
   return { startMonth, targetDate };
 }
 
+function resolveOccurredAt(
+  occurredAt: string | undefined,
+  calendar: FinancialCalendarContext
+): Date {
+  const resolved = occurredAt ? parseFinancialDateKey(occurredAt) : calendar.businessDate;
+  if (resolved > calendar.businessDate) {
+    throw new FinancialProvisionValidationError([
+      {
+        field: 'occurredAt',
+        message: 'Não é possível confirmar uma movimentação futura'
+      }
+    ]);
+  }
+  return resolved;
+}
+
 export default class FinancialProvisionService {
-  static async list(companyId: number) {
+  static async list(companyId: number, at: Date = new Date()) {
+    const calendar = await WorkspaceFinancialCalendarService.getContext(companyId, at);
     const provisions = await prisma.financialProvision.findMany({
       where: { companyId },
       include: {
@@ -205,7 +267,7 @@ export default class FinancialProvisionService {
       },
       orderBy: [{ status: 'asc' }, { targetDate: 'asc' }, { id: 'asc' }]
     });
-    const items = provisions.map(serializeProvision);
+    const items = provisions.map((provision) => serializeProvision(provision, calendar));
     const active = provisions.filter((item) => item.status === FinancialProvisionStatus.ACTIVE);
     const totals = active.reduce(
       (result, item) => {
@@ -215,10 +277,16 @@ export default class FinancialProvisionService {
           Prisma.Decimal.max(item.expectedAmount.minus(item.reservedAmount), 0)
         );
         result.monthly = result.monthly.plus(
-          monthlyContribution(item.expectedAmount, item.reservedAmount, item.startMonth, item.targetDate)
+          monthlyContribution(
+            item.expectedAmount,
+            item.reservedAmount,
+            item.startMonth,
+            item.targetDate,
+            calendar
+          )
         );
         if (item.reservedAmount.greaterThanOrEqualTo(item.expectedAmount)) result.funded += 1;
-        if (derivedState(item) === 'OVERDUE') result.overdue += 1;
+        if (derivedState(item, calendar) === 'OVERDUE') result.overdue += 1;
         return result;
       },
       {
@@ -249,9 +317,16 @@ export default class FinancialProvisionService {
     companyId: number;
     userId: number;
     input: ProvisionInput & { initialReservedAmount?: string };
+    at?: Date;
   }) {
+    const calendar = await WorkspaceFinancialCalendarService.getContext(
+      params.companyId,
+      params.at
+    );
+    const { startMonth, targetDate } = validatePeriod(params.input, calendar, {
+      mutableStartMonth: true
+    });
     await assertExpenseCategory(prisma, params.companyId, params.input.categoryId);
-    const { startMonth, targetDate } = validatePeriod(params.input);
     const expectedAmount = toMoney(params.input.expectedAmount);
     const initialReservedAmount = toMoney(params.input.initialReservedAmount ?? 0);
     if (initialReservedAmount.greaterThan(expectedAmount)) {
@@ -281,22 +356,32 @@ export default class FinancialProvisionService {
             type: FinancialProvisionEntryType.INITIAL_BALANCE,
             amount: initialReservedAmount,
             reservedAmountChange: initialReservedAmount,
-            occurredAt: parseDateKey(),
+            occurredAt: calendar.businessDate,
             notes: 'Valor já reservado informado na criação'
           }
         });
       }
       return provision.id;
     });
-    return serializeProvision(await findProvision(prisma, provisionId, params.companyId));
+    return serializeProvision(
+      await findProvision(prisma, provisionId, params.companyId),
+      calendar
+    );
   }
 
   static async update(params: {
     id: number;
     companyId: number;
     input: ProvisionInput;
+    at?: Date;
   }) {
-    const { startMonth, targetDate } = validatePeriod(params.input);
+    const calendar = await WorkspaceFinancialCalendarService.getContext(
+      params.companyId,
+      params.at
+    );
+    const { startMonth, targetDate } = validatePeriod(params.input, calendar, {
+      mutableStartMonth: false
+    });
     const expectedAmount = toMoney(params.input.expectedAmount);
     const provisionId = await prisma.$transaction(async (transaction) => {
       await assertExpenseCategory(transaction, params.companyId, params.input.categoryId);
@@ -321,7 +406,10 @@ export default class FinancialProvisionService {
       });
       return existing.id;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    return serializeProvision(await findProvision(prisma, provisionId, params.companyId));
+    return serializeProvision(
+      await findProvision(prisma, provisionId, params.companyId),
+      calendar
+    );
   }
 
   static async addEntry(params: {
@@ -332,7 +420,13 @@ export default class FinancialProvisionService {
     amount: string;
     occurredAt?: string;
     notes?: string | null;
+    at?: Date;
   }) {
+    const calendar = await WorkspaceFinancialCalendarService.getContext(
+      params.companyId,
+      params.at
+    );
+    const occurredAt = resolveOccurredAt(params.occurredAt, calendar);
     const provisionId = await prisma.$transaction(async (transaction) => {
       const provision = await lockProvision(transaction, params.id, params.companyId);
       if (provision.status !== FinancialProvisionStatus.ACTIVE) {
@@ -357,13 +451,16 @@ export default class FinancialProvisionService {
             : FinancialProvisionEntryType.WITHDRAWAL,
           amount,
           reservedAmountChange: change,
-          occurredAt: parseDateKey(params.occurredAt),
+          occurredAt,
           notes: params.notes?.trim() || null
         }
       });
       return provision.id;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    return serializeProvision(await findProvision(prisma, provisionId, params.companyId));
+    return serializeProvision(
+      await findProvision(prisma, provisionId, params.companyId),
+      calendar
+    );
   }
 
   static async use(params: {
@@ -373,14 +470,19 @@ export default class FinancialProvisionService {
     actualAmount: string;
     occurredAt?: string;
     notes?: string | null;
+    at?: Date;
   }) {
+    const calendar = await WorkspaceFinancialCalendarService.getContext(
+      params.companyId,
+      params.at
+    );
+    const occurredAt = resolveOccurredAt(params.occurredAt, calendar);
     const provisionId = await prisma.$transaction(async (transaction) => {
       const provision = await lockProvision(transaction, params.id, params.companyId);
       if (provision.status !== FinancialProvisionStatus.ACTIVE) {
         throw new Error('Apenas provisões ativas podem ser utilizadas');
       }
       const actualAmount = toMoney(params.actualAmount);
-      const occurredAt = parseDateKey(params.occurredAt);
       const consumedReservedAmount = provision.kind === FinancialProvisionKind.ONE_TIME
         ? provision.reservedAmount
         : Prisma.Decimal.min(provision.reservedAmount, actualAmount);
@@ -395,9 +497,9 @@ export default class FinancialProvisionService {
 
       if (provision.kind === FinancialProvisionKind.ANNUAL) {
         do {
-          targetDate = addYearClamped(targetDate);
+          targetDate = addYearsClamped(targetDate, 1);
         } while (targetDate <= occurredAt);
-        startMonth = addMonths(firstOfMonth(occurredAt), 1);
+        startMonth = addFinancialMonths(firstOfMonth(occurredAt), 1);
         status = FinancialProvisionStatus.ACTIVE;
         completedAt = null;
       }
@@ -427,10 +529,17 @@ export default class FinancialProvisionService {
       });
       return provision.id;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    return serializeProvision(await findProvision(prisma, provisionId, params.companyId));
+    return serializeProvision(
+      await findProvision(prisma, provisionId, params.companyId),
+      calendar
+    );
   }
 
-  static async cancel(params: { id: number; companyId: number }) {
+  static async cancel(params: { id: number; companyId: number; at?: Date }) {
+    const calendar = await WorkspaceFinancialCalendarService.getContext(
+      params.companyId,
+      params.at
+    );
     const provisionId = await prisma.$transaction(async (transaction) => {
       const existing = await lockProvision(transaction, params.id, params.companyId);
       if (existing.status !== FinancialProvisionStatus.ACTIVE) {
@@ -438,10 +547,13 @@ export default class FinancialProvisionService {
       }
       await transaction.financialProvision.update({
         where: { id: existing.id },
-        data: { status: FinancialProvisionStatus.CANCELED, canceledAt: parseDateKey() }
+        data: { status: FinancialProvisionStatus.CANCELED, canceledAt: calendar.businessDate }
       });
       return existing.id;
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    return serializeProvision(await findProvision(prisma, provisionId, params.companyId));
+    return serializeProvision(
+      await findProvision(prisma, provisionId, params.companyId),
+      calendar
+    );
   }
 }

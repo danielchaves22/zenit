@@ -2,8 +2,10 @@ import {
   addFinancialMonths,
   assertFinancialPlanningMonth,
   buildFinancialCalendarContext,
+  formatFinancialDateKey,
   formatFinancialMonthKey,
   getFinancialMonthKeyInTimeZone,
+  parseFinancialDateKey,
   parseFinancialMonthKey
 } from '../../src/utils/financial-calendar';
 
@@ -18,6 +20,20 @@ describe('financial calendar', () => {
       expect(() => parseFinancialMonthKey(monthKey)).toThrow(
         'Mês inválido. Use o formato YYYY-MM'
       );
+    }
+  );
+
+  it('parses and formats date-only financial keys without depending on the host timezone', () => {
+    const date = parseFinancialDateKey('2026-01-31');
+
+    expect(date.toISOString()).toBe('2026-01-31T12:00:00.000Z');
+    expect(formatFinancialDateKey(date)).toBe('2026-01-31');
+  });
+
+  it.each(['2026-1-01', '2026-02-30', '2025-02-29', 'invalid'])(
+    'rejects the invalid date key %s',
+    (dateKey) => {
+      expect(() => parseFinancialDateKey(dateKey)).toThrow(/Data/);
     }
   );
 

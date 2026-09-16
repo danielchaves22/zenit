@@ -1,27 +1,5 @@
 import { z } from 'zod';
 
-function currentDateKey(): string {
-  const today = new Date();
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
-    today.getDate()
-  ).padStart(2, '0')}`;
-}
-
-function currentMonthKey(): string {
-  return currentDateKey().slice(0, 7);
-}
-
-function maximumDateKey(): string {
-  const today = new Date();
-  return `${today.getFullYear() + 10}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
-    today.getDate()
-  ).padStart(2, '0')}`;
-}
-
-function maximumMonthKey(): string {
-  return maximumDateKey().slice(0, 7);
-}
-
 function isValidDateKey(value: string): boolean {
   const [year, month, day] = value.split('-').map(Number);
   const parsed = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
@@ -50,28 +28,19 @@ const baseMonthKeySchema = z
   .string()
   .regex(/^\d{4}-\d{2}$/, 'Mês deve estar no formato YYYY-MM')
   .refine((value) => {
-    const month = Number(value.slice(5));
-    return month >= 1 && month <= 12;
-  }, 'Mês inválido')
-  .refine((value) => value <= maximumMonthKey(), 'Use um mês dentro dos próximos 10 anos');
+    const [year, month] = value.split('-').map(Number);
+    return year >= 2000 && month >= 1 && month <= 12;
+  }, 'Mês inválido');
 
-const newMonthKeySchema = baseMonthKeySchema.refine(
-  (value) => value >= currentMonthKey(),
-  'O mês inicial não pode estar no passado'
-);
-
-const futureDateSchema = z
+const dateKeySchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve estar no formato YYYY-MM-DD')
-  .refine(isValidDateKey, 'Data inválida')
-  .refine((value) => value >= currentDateKey(), 'A data prevista não pode estar no passado')
-  .refine((value) => value <= maximumDateKey(), 'Use uma data dentro dos próximos 10 anos');
+  .refine(isValidDateKey, 'Data inválida');
 
-const occurredAtSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve estar no formato YYYY-MM-DD')
-  .refine(isValidDateKey, 'Data inválida')
-  .refine((value) => value <= currentDateKey(), 'Não é possível confirmar uma movimentação futura');
+// Limites relativos a hoje dependem do timezone do workspace. O serviço de
+// domínio os aplica com um único contexto de calendário para toda a operação.
+const futureDateSchema = dateKeySchema;
+const occurredAtSchema = dateKeySchema;
 
 const provisionFields = {
   name: z.string().trim().min(2, 'Nome deve ter pelo menos 2 caracteres').max(100),
@@ -96,7 +65,7 @@ function validatePeriod(
 }
 
 export const createFinancialProvisionSchema = z
-  .object({ ...provisionFields, startMonth: newMonthKeySchema })
+  .object({ ...provisionFields, startMonth: baseMonthKeySchema })
   .extend({ initialReservedAmount: optionalMoneySchema.optional().default('0') })
   .superRefine(validatePeriod);
 

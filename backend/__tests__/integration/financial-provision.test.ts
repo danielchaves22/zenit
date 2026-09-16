@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { AppKey, PrismaClient, TransactionType } from '@prisma/client';
 import app from '../../src/app';
+import FinancialProvisionService from '../../src/services/financial-provision.service';
 import { generateToken } from '../../src/utils/jwt';
 
 const prisma = new PrismaClient();
@@ -151,6 +152,75 @@ describe('Financial provisions', () => {
       });
   }
 
+  it('uses the workspace business date consistently at a timezone boundary', async () => {
+    const boundaryInstant = new Date('2026-01-01T02:30:00.000Z');
+    await prisma.company.update({
+      where: { id: companyId },
+      data: { timeZone: 'America/Sao_Paulo' }
+    });
+
+    try {
+      const provision = await FinancialProvisionService.create({
+        companyId,
+        userId,
+        at: boundaryInstant,
+        input: {
+          name: 'Virada de ano',
+          categoryId: expenseCategoryId,
+          kind: 'ONE_TIME',
+          expectedAmount: '1200.00',
+          initialReservedAmount: '200.00',
+          startMonth: '2025-12',
+          targetDate: '2025-12-31'
+        }
+      });
+
+      expect(provision).toMatchObject({
+        state: 'IN_PROGRESS',
+        monthsRemaining: 1,
+        startMonth: '2025-12',
+        targetDate: '2025-12-31'
+      });
+      expect(provision.entries[0].occurredAt).toBe('2025-12-31');
+
+      const listed = await FinancialProvisionService.list(companyId, boundaryInstant);
+      expect(listed.summary.overdueCount).toBe(0);
+
+      await expect(
+        FinancialProvisionService.addEntry({
+          id: provision.id,
+          companyId,
+          userId,
+          type: 'CONTRIBUTION',
+          amount: '10.00',
+          occurredAt: '2026-01-01',
+          at: boundaryInstant
+        })
+      ).rejects.toThrow('Não é possível confirmar uma movimentação futura');
+
+      await expect(
+        FinancialProvisionService.create({
+          companyId,
+          userId,
+          at: boundaryInstant,
+          input: {
+            name: 'Mês anterior',
+            categoryId: expenseCategoryId,
+            kind: 'ONE_TIME',
+            expectedAmount: '100.00',
+            startMonth: '2025-11',
+            targetDate: '2025-12-31'
+          }
+        })
+      ).rejects.toThrow('O mês inicial não pode estar no passado');
+    } finally {
+      await prisma.company.update({
+        where: { id: companyId },
+        data: { timeZone: null }
+      });
+    }
+  });
+
   it('creates and lists a company-scoped provision with its initial balance', async () => {
     const createResponse = await createProvision();
 
@@ -183,6 +253,21 @@ describe('Financial provisions', () => {
       remainingAmount: '1000.00'
     });
     expect(listResponse.body.items).toHaveLength(1);
+  });
+
+  it('preserves the HTTP validation contract for workspace-relative dates', async () => {
+    const response = await createProvision({ startMonth: '2000-01' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: 'Validation failed',
+      details: [
+        {
+          field: 'startMonth',
+          message: 'O mês inicial não pode estar no passado'
+        }
+      ]
+    });
   });
 
   it('records contributions and withdrawals without allowing a negative reserved amount', async () => {

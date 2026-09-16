@@ -5,6 +5,7 @@ import {
 } from './time-zone';
 
 const FINANCIAL_MONTH_KEY_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
+const FINANCIAL_DATE_KEY_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 export type FinancialCalendarContext = Readonly<{
   timeZone: string;
@@ -35,12 +36,43 @@ export function parseFinancialMonthKey(monthKey: string): Date {
 }
 
 /**
+ * Converts a YYYY-MM-DD domain key to the canonical database representation
+ * used by date-only financial records: the requested day at noon UTC.
+ */
+export function parseFinancialDateKey(dateKey: string): Date {
+  const match = FINANCIAL_DATE_KEY_PATTERN.exec(dateKey);
+  if (!match) {
+    throw new Error('Data inválida. Use o formato YYYY-MM-DD');
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    throw new Error('Data financeira inválida');
+  }
+
+  return date;
+}
+
+/**
  * Formats a canonical month Date as its YYYY-MM domain key. Month-only Dates
  * are read in UTC so the host machine timezone cannot change their identity.
  */
 export function formatFinancialMonthKey(date: Date): string {
   assertValidDate(date);
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+export function formatFinancialDateKey(date: Date): string {
+  assertValidDate(date);
+  return `${formatFinancialMonthKey(date)}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 export function addFinancialMonths(date: Date, amount: number): Date {

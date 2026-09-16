@@ -205,6 +205,15 @@ calendario: a janela historica e a contribuicao mensal de provisoes derivam da
 data de negocio do workspace. Snapshots v1 permanecem imutaveis e identificados
 com a metodologia original; nao existe regravacao retroativa do historico.
 
+### Calculo canonico das provisoes
+
+O valor mensal necessario para financiar uma provisao e calculado por uma funcao
+pura compartilhada pela propria provisao e pelo diagnostico. A funcao considera
+o saldo ainda nao reservado, o primeiro mes efetivo entre inicio e mes atual do
+workspace e o mes alvo. A divisao e arredondada para cima em centavos, garantindo
+que o total previsto seja alcancado sem que telas diferentes apresentem valores
+divergentes. Provisoes integralmente financiadas nunca geram contribuicao negativa.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -274,5 +283,5 @@ Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot e seu historico auditavel ja
 foram consolidados. Permanecem:
 
-1. Centralizar valores assinados e formulas de provisao.
+1. Centralizar valores assinados.
 2. Unificar a projecao mensal consumida por dashboard e planejamento.

@@ -20,6 +20,7 @@ import {
   formatFinancialMonthKey,
   parseFinancialMonthKey
 } from '../utils/financial-calendar';
+import { calculateProvisionMonthlyContribution } from '../utils/financial-provision-calculator';
 
 const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 2;
 
@@ -132,39 +133,6 @@ function recurringFrequencyLabel(frequency: RecurringFrequency): string {
     YEARLY: 'Anual'
   };
   return labels[frequency];
-}
-
-function monthsAvailable(
-  startMonth: Date,
-  targetDate: Date,
-  calendar: FinancialCalendarContext
-): number {
-  const current = parseFinancialMonthKey(calendar.currentMonthKey);
-  const effectiveStart = startMonth > current ? startMonth : current;
-  const difference =
-    (targetDate.getUTCFullYear() - effectiveStart.getUTCFullYear()) * 12 +
-    targetDate.getUTCMonth() -
-    effectiveStart.getUTCMonth();
-  return Math.max(1, difference);
-}
-
-function provisionMonthlyContribution(
-  provision: {
-    expectedAmount: Prisma.Decimal;
-    reservedAmount: Prisma.Decimal;
-    startMonth: Date;
-    targetDate: Date;
-  },
-  calendar: FinancialCalendarContext
-): Prisma.Decimal {
-  const remaining = Prisma.Decimal.max(
-    provision.expectedAmount.minus(provision.reservedAmount),
-    0
-  );
-  if (remaining.isZero()) return new Prisma.Decimal(0);
-  return remaining
-    .div(monthsAvailable(provision.startMonth, provision.targetDate, calendar))
-    .toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
 }
 
 function lastDate(values: Array<Date | null | undefined>): Date | null {
@@ -561,7 +529,7 @@ export default class FinancialPlanningAnalysisService {
     });
 
     provisions.forEach((provision) => {
-      const contribution = provisionMonthlyContribution(provision, calendar);
+      const contribution = calculateProvisionMonthlyContribution(provision, calendar);
       if (contribution.isZero()) return;
       sources.push({
         key: `PROVISION:${provision.id}`,
@@ -962,6 +930,5 @@ export const __private__ = {
   buildConfirmationHash,
   calculateTotals,
   hashCanonicalPayload,
-  monthlyRecurringAmount,
-  provisionMonthlyContribution
+  monthlyRecurringAmount
 };

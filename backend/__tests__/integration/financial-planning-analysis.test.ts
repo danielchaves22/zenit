@@ -10,6 +10,7 @@ import {
 } from '@prisma/client';
 import app from '../../src/app';
 import FinancialPlanningAnalysisService from '../../src/services/financial-planning-analysis.service';
+import FinancialProvisionService from '../../src/services/financial-provision.service';
 import { generateToken } from '../../src/utils/jwt';
 
 const prisma = new PrismaClient();
@@ -420,6 +421,17 @@ describe('Financial planning analysis preparation', () => {
       expect(
         saoPaulo.sources.find((source) => source.label === `${suffix}-provision`)
       ).toMatchObject({ monthlyAmount: '300.00' });
+      const saoPauloProvisionList = await FinancialProvisionService.list(
+        personalWorkspaceId,
+        boundaryInstant
+      );
+      const saoPauloProvision = saoPauloProvisionList.items.find(
+        (item) => item.id === provision.id
+      );
+      expect(saoPauloProvision?.monthlyContributionAmount).toBe('300.00');
+      expect(
+        saoPaulo.sources.find((source) => source.label === `${suffix}-provision`)?.monthlyAmount
+      ).toBe(saoPauloProvision?.monthlyContributionAmount);
       expect(
         saoPaulo.sources.find(
           (source) => source.key === `HISTORICAL_CATEGORY:${variableCategoryId}`
@@ -444,6 +456,15 @@ describe('Financial planning analysis preparation', () => {
       expect(
         utc.sources.find((source) => source.label === `${suffix}-provision`)
       ).toMatchObject({ monthlyAmount: '450.00' });
+      const utcProvisionList = await FinancialProvisionService.list(
+        personalWorkspaceId,
+        boundaryInstant
+      );
+      const utcProvision = utcProvisionList.items.find((item) => item.id === provision.id);
+      expect(utcProvision?.monthlyContributionAmount).toBe('450.00');
+      expect(
+        utc.sources.find((source) => source.label === `${suffix}-provision`)?.monthlyAmount
+      ).toBe(utcProvision?.monthlyContributionAmount);
       expect(
         utc.sources.find(
           (source) => source.key === `HISTORICAL_CATEGORY:${variableCategoryId}`

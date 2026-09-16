@@ -16,6 +16,10 @@ import {
   parseFinancialDateKey,
   parseFinancialMonthKey
 } from '../utils/financial-calendar';
+import {
+  calculateProvisionMonthlyContribution,
+  calculateProvisionMonthsAvailable
+} from '../utils/financial-provision-calculator';
 
 
 type ProvisionClient = PrismaClient | Prisma.TransactionClient;
@@ -60,35 +64,6 @@ function moneyString(value: Prisma.Decimal | string | number): string {
   return toMoney(value).toFixed(2);
 }
 
-function monthsAvailable(
-  startMonth: Date,
-  targetDate: Date,
-  calendar: FinancialCalendarContext
-): number {
-  const targetMonth = firstOfMonth(targetDate);
-  const currentMonth = parseFinancialMonthKey(calendar.currentMonthKey);
-  const effectiveStart = startMonth > currentMonth ? startMonth : currentMonth;
-  const difference =
-    (targetMonth.getUTCFullYear() - effectiveStart.getUTCFullYear()) * 12 +
-    targetMonth.getUTCMonth() -
-    effectiveStart.getUTCMonth();
-  return Math.max(1, difference);
-}
-
-function monthlyContribution(
-  expectedAmount: Prisma.Decimal,
-  reservedAmount: Prisma.Decimal,
-  startMonth: Date,
-  targetDate: Date,
-  calendar: FinancialCalendarContext
-): Prisma.Decimal {
-  const remaining = Prisma.Decimal.max(expectedAmount.minus(reservedAmount), 0);
-  if (remaining.isZero()) return new Prisma.Decimal(0);
-  return remaining
-    .div(monthsAvailable(startMonth, targetDate, calendar))
-    .toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
-}
-
 function derivedState(provision: {
   status: FinancialProvisionStatus;
   expectedAmount: Prisma.Decimal;
@@ -124,18 +99,20 @@ function serializeProvision(provision: any, calendar: FinancialCalendarContext) 
     remainingAmount: moneyString(remainingAmount),
     monthlyContributionAmount: moneyString(
       provision.status === FinancialProvisionStatus.ACTIVE
-        ? monthlyContribution(
-            expectedAmount,
-            reservedAmount,
-            provision.startMonth,
-            provision.targetDate,
+        ? calculateProvisionMonthlyContribution(
+            {
+              expectedAmount,
+              reservedAmount,
+              startMonth: provision.startMonth,
+              targetDate: provision.targetDate
+            },
             calendar
           )
         : 0
     ),
     progressPercent,
     monthsRemaining: provision.status === FinancialProvisionStatus.ACTIVE
-      ? monthsAvailable(provision.startMonth, provision.targetDate, calendar)
+      ? calculateProvisionMonthsAvailable(provision, calendar)
       : 0,
     startMonth: formatFinancialMonthKey(provision.startMonth),
     targetDate: formatFinancialDateKey(provision.targetDate),
@@ -277,13 +254,7 @@ export default class FinancialProvisionService {
           Prisma.Decimal.max(item.expectedAmount.minus(item.reservedAmount), 0)
         );
         result.monthly = result.monthly.plus(
-          monthlyContribution(
-            item.expectedAmount,
-            item.reservedAmount,
-            item.startMonth,
-            item.targetDate,
-            calendar
-          )
+          calculateProvisionMonthlyContribution(item, calendar)
         );
         if (item.reservedAmount.greaterThanOrEqualTo(item.expectedAmount)) result.funded += 1;
         if (derivedState(item, calendar) === 'OVERDUE') result.overdue += 1;

@@ -200,6 +200,11 @@ dependem do workspace, como impedir alteracoes em meses passados, pertencem ao
 servico de dominio. Assim, chamadas HTTP e chamadas internas aplicam a mesma
 politica e nao dependem do timezone do servidor.
 
+O diagnostico financeiro usa a metodologia v2 a partir da adocao desse
+calendario: a janela historica e a contribuicao mensal de provisoes derivam da
+data de negocio do workspace. Snapshots v1 permanecem imutaveis e identificados
+com a metodologia original; nao existe regravacao retroativa do historico.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -269,7 +274,5 @@ Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot e seu historico auditavel ja
 foram consolidados. Permanecem:
 
-1. Aplicar o calendario do workspace ao diagnostico, consumidor remanescente em
-   que o conceito de mes atual ainda depende do relogio do servidor.
-2. Centralizar valores assinados e formulas de provisao.
-3. Unificar a projecao mensal consumida por dashboard e planejamento.
+1. Centralizar valores assinados e formulas de provisao.
+2. Unificar a projecao mensal consumida por dashboard e planejamento.

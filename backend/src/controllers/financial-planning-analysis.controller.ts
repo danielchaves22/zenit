@@ -26,10 +26,12 @@ export async function previewFinancialPlanningAnalysis(req: Request, res: Respon
   try {
     const context = getUserContext(req);
     const query = req.query as unknown as PreviewFinancialPlanningAnalysisQuery;
+    const at = new Date();
     return res.status(200).json(
       await FinancialPlanningAnalysisService.preview({
         ...context,
-        historyMonths: query.historyMonths
+        historyMonths: query.historyMonths,
+        at
       })
     );
   } catch (error: any) {
@@ -41,12 +43,14 @@ export async function confirmFinancialPlanningAnalysis(req: Request, res: Respon
   try {
     const context = getUserContext(req);
     const input = req.body as ConfirmFinancialPlanningAnalysisBody;
+    const at = new Date();
     const result = await FinancialPlanningAnalysisService.confirm({
       ...context,
       historyMonths: input.historyMonths,
       targetMonthlySavings: input.targetMonthlySavings,
       selectedSourceKeys: input.selectedSourceKeys,
-      basisHash: input.basisHash
+      basisHash: input.basisHash,
+      at
     });
     return res.status(result.created ? 201 : 200).json(result.snapshot);
   } catch (error: any) {

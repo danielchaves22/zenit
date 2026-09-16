@@ -9,6 +9,7 @@ import {
   TransactionType
 } from '@prisma/client';
 import app from '../../src/app';
+import FinancialPlanningAnalysisService from '../../src/services/financial-planning-analysis.service';
 import { generateToken } from '../../src/utils/jwt';
 
 const prisma = new PrismaClient();
@@ -344,6 +345,124 @@ describe('Financial planning analysis preparation', () => {
     await prisma.$disconnect();
   });
 
+  it('uses the workspace month for the historical window and provision contribution', async () => {
+    const boundaryInstant = new Date('2026-01-01T02:30:00.000Z');
+    const suffix = `calendar-boundary-${Date.now()}`;
+    const originalWorkspace = await prisma.company.findUniqueOrThrow({
+      where: { id: personalWorkspaceId },
+      select: { timeZone: true }
+    });
+    let provisionId: number | null = null;
+
+    try {
+      await prisma.company.update({
+        where: { id: personalWorkspaceId },
+        data: { timeZone: 'America/Sao_Paulo' }
+      });
+      await prisma.financialTransaction.createMany({
+        data: [
+          {
+            companyId: personalWorkspaceId,
+            createdBy: userId,
+            description: `${suffix}-november`,
+            amount: 111,
+            date: new Date('2025-11-15T12:00:00.000Z'),
+            effectiveDate: new Date('2025-11-15T12:00:00.000Z'),
+            type: TransactionType.EXPENSE,
+            status: TransactionStatus.COMPLETED,
+            fromAccountId: checkingAccountId,
+            categoryId: variableCategoryId
+          },
+          {
+            companyId: personalWorkspaceId,
+            createdBy: userId,
+            description: `${suffix}-december`,
+            amount: 222,
+            date: new Date('2025-12-15T12:00:00.000Z'),
+            effectiveDate: new Date('2025-12-15T12:00:00.000Z'),
+            type: TransactionType.EXPENSE,
+            status: TransactionStatus.COMPLETED,
+            fromAccountId: checkingAccountId,
+            categoryId: variableCategoryId
+          }
+        ]
+      });
+      const provision = await prisma.financialProvision.create({
+        data: {
+          companyId: personalWorkspaceId,
+          createdBy: userId,
+          categoryId: expenseCategoryId,
+          name: `${suffix}-provision`,
+          kind: 'ONE_TIME',
+          status: 'ACTIVE',
+          expectedAmount: 900,
+          reservedAmount: 0,
+          startMonth: new Date('2025-12-01T12:00:00.000Z'),
+          targetDate: new Date('2026-03-20T12:00:00.000Z')
+        }
+      });
+      provisionId = provision.id;
+
+      const saoPaulo = await FinancialPlanningAnalysisService.preview({
+        userId,
+        companyId: personalWorkspaceId,
+        historyMonths: 2,
+        at: boundaryInstant
+      });
+      expect(saoPaulo).toMatchObject({
+        methodologyVersion: 2,
+        period: {
+          historyMonths: 2,
+          startDate: '2025-10-01',
+          endDate: '2025-11-30'
+        }
+      });
+      expect(
+        saoPaulo.sources.find((source) => source.label === `${suffix}-provision`)
+      ).toMatchObject({ monthlyAmount: '300.00' });
+      expect(
+        saoPaulo.sources.find(
+          (source) => source.key === `HISTORICAL_CATEGORY:${variableCategoryId}`
+        )
+      ).toMatchObject({ monthlyAmount: '111.00' });
+
+      await prisma.company.update({
+        where: { id: personalWorkspaceId },
+        data: { timeZone: 'UTC' }
+      });
+      const utc = await FinancialPlanningAnalysisService.preview({
+        userId,
+        companyId: personalWorkspaceId,
+        historyMonths: 2,
+        at: boundaryInstant
+      });
+      expect(utc.period).toEqual({
+        historyMonths: 2,
+        startDate: '2025-11-01',
+        endDate: '2025-12-31'
+      });
+      expect(
+        utc.sources.find((source) => source.label === `${suffix}-provision`)
+      ).toMatchObject({ monthlyAmount: '450.00' });
+      expect(
+        utc.sources.find(
+          (source) => source.key === `HISTORICAL_CATEGORY:${variableCategoryId}`
+        )
+      ).toMatchObject({ monthlyAmount: '166.50' });
+    } finally {
+      await prisma.financialTransaction.deleteMany({
+        where: { companyId: personalWorkspaceId, description: { startsWith: suffix } }
+      });
+      if (provisionId) {
+        await prisma.financialProvision.deleteMany({ where: { id: provisionId } });
+      }
+      await prisma.company.update({
+        where: { id: personalWorkspaceId },
+        data: { timeZone: originalWorkspace.timeZone }
+      });
+    }
+  });
+
   it('builds a transparent preview without double-counting fixed and installment history', async () => {
     const response = await request(app)
       .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
@@ -419,7 +538,7 @@ describe('Financial planning analysis preparation', () => {
       objectiveKind: 'MONTHLY_SAVINGS',
       targetMonthlySavings: '1000.00',
       profileVersion: 1,
-      methodologyVersion: 1,
+      methodologyVersion: 2,
       basisHash: preview.body.basisHash,
       dataQualityScore: 100,
       status: 'CONFIRMED',

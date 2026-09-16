@@ -3,6 +3,7 @@ import {
   FinancialPlanningSource,
   __private__
 } from '../../src/services/financial-planning-analysis.service';
+import { buildFinancialCalendarContext } from '../../src/utils/financial-calendar';
 
 function source(
   key: string,
@@ -22,10 +23,6 @@ function source(
 }
 
 describe('FinancialPlanningAnalysisService current calculation contract', () => {
-  afterEach(() => {
-    jest.useRealTimers();
-  });
-
   it('sums only selected sources and keeps committed, variable and provision values separate', () => {
     const sources: FinancialPlanningSource[] = [
       source('income', 'FIXED_INCOME', '5000.00'),
@@ -68,29 +65,60 @@ describe('FinancialPlanningAnalysisService current calculation contract', () => 
   );
 
   it('preserves the current provision contribution and rounds upward to cents', () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+    const calendar = buildFinancialCalendarContext(
+      'UTC',
+      new Date('2026-01-15T12:00:00.000Z')
+    );
 
-    const contribution = __private__.provisionMonthlyContribution({
-      expectedAmount: new Prisma.Decimal('1000.00'),
-      reservedAmount: new Prisma.Decimal('0.00'),
-      startMonth: new Date('2026-01-01T00:00:00.000Z'),
-      targetDate: new Date('2026-04-20T00:00:00.000Z')
-    });
+    const contribution = __private__.provisionMonthlyContribution(
+      {
+        expectedAmount: new Prisma.Decimal('1000.00'),
+        reservedAmount: new Prisma.Decimal('0.00'),
+        startMonth: new Date('2026-01-01T00:00:00.000Z'),
+        targetDate: new Date('2026-04-20T00:00:00.000Z')
+      },
+      calendar
+    );
 
     expect(contribution.toFixed(2)).toBe('333.34');
   });
 
   it('does not produce a negative contribution when the provision is already funded', () => {
-    jest.useFakeTimers().setSystemTime(new Date('2026-01-15T12:00:00.000Z'));
+    const calendar = buildFinancialCalendarContext(
+      'UTC',
+      new Date('2026-01-15T12:00:00.000Z')
+    );
 
-    const contribution = __private__.provisionMonthlyContribution({
-      expectedAmount: new Prisma.Decimal('1000.00'),
-      reservedAmount: new Prisma.Decimal('1200.00'),
-      startMonth: new Date('2026-01-01T00:00:00.000Z'),
-      targetDate: new Date('2026-04-20T00:00:00.000Z')
-    });
+    const contribution = __private__.provisionMonthlyContribution(
+      {
+        expectedAmount: new Prisma.Decimal('1000.00'),
+        reservedAmount: new Prisma.Decimal('1200.00'),
+        startMonth: new Date('2026-01-01T00:00:00.000Z'),
+        targetDate: new Date('2026-04-20T00:00:00.000Z')
+      },
+      calendar
+    );
 
     expect(contribution.toFixed(2)).toBe('0.00');
+  });
+
+  it('uses the explicit workspace month when calculating provision contributions', () => {
+    const instant = new Date('2026-01-01T02:30:00.000Z');
+    const saoPaulo = buildFinancialCalendarContext('America/Sao_Paulo', instant);
+    const utc = buildFinancialCalendarContext('UTC', instant);
+    const provision = {
+      expectedAmount: new Prisma.Decimal('1000.00'),
+      reservedAmount: new Prisma.Decimal('0.00'),
+      startMonth: new Date('2025-12-01T12:00:00.000Z'),
+      targetDate: new Date('2026-03-20T12:00:00.000Z')
+    };
+
+    expect(__private__.provisionMonthlyContribution(provision, saoPaulo).toFixed(2)).toBe(
+      '333.34'
+    );
+    expect(__private__.provisionMonthlyContribution(provision, utc).toFixed(2)).toBe(
+      '500.00'
+    );
   });
 
   it('hashes equivalent objects deterministically regardless of key order', () => {

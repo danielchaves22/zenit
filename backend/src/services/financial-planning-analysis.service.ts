@@ -11,9 +11,17 @@ import {
   TransactionType
 } from '@prisma/client';
 import PersonalFinancialProfileService from './personal-financial-profile.service';
+import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
+import {
+  addFinancialMonths,
+  FinancialCalendarContext,
+  formatFinancialDateKey,
+  formatFinancialMonthKey,
+  parseFinancialMonthKey
+} from '../utils/financial-calendar';
 
-const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 1;
+const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 2;
 
 export type FinancialPlanningSourceKind =
   | 'FIXED_INCOME'
@@ -53,6 +61,7 @@ export class FinancialPlanningAnalysisError extends Error {
 type AnalysisContext = {
   workspace: { id: number; name: string };
   profile: NonNullable<Awaited<ReturnType<typeof PersonalFinancialProfileService.get>>['profile']>;
+  calendar: FinancialCalendarContext;
 };
 
 function money(value: Prisma.Decimal | string | number): Prisma.Decimal {
@@ -99,23 +108,8 @@ function buildConfirmationHash(params: {
   });
 }
 
-function startOfCurrentMonth(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
-}
-
-function addMonths(date: Date, months: number): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1, 0, 0, 0, 0));
-}
-
-function formatDateKey(date: Date): string {
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
-    date.getUTCDate()
-  ).padStart(2, '0')}`;
-}
-
-function formatMonthKey(date: Date): string {
-  return formatDateKey(date).slice(0, 7);
+function startOfMonth(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
 function monthlyRecurringAmount(amount: Prisma.Decimal, frequency: RecurringFrequency): Prisma.Decimal {
@@ -140,8 +134,12 @@ function recurringFrequencyLabel(frequency: RecurringFrequency): string {
   return labels[frequency];
 }
 
-function monthsAvailable(startMonth: Date, targetDate: Date): number {
-  const current = startOfCurrentMonth();
+function monthsAvailable(
+  startMonth: Date,
+  targetDate: Date,
+  calendar: FinancialCalendarContext
+): number {
+  const current = parseFinancialMonthKey(calendar.currentMonthKey);
   const effectiveStart = startMonth > current ? startMonth : current;
   const difference =
     (targetDate.getUTCFullYear() - effectiveStart.getUTCFullYear()) * 12 +
@@ -150,19 +148,22 @@ function monthsAvailable(startMonth: Date, targetDate: Date): number {
   return Math.max(1, difference);
 }
 
-function provisionMonthlyContribution(provision: {
-  expectedAmount: Prisma.Decimal;
-  reservedAmount: Prisma.Decimal;
-  startMonth: Date;
-  targetDate: Date;
-}): Prisma.Decimal {
+function provisionMonthlyContribution(
+  provision: {
+    expectedAmount: Prisma.Decimal;
+    reservedAmount: Prisma.Decimal;
+    startMonth: Date;
+    targetDate: Date;
+  },
+  calendar: FinancialCalendarContext
+): Prisma.Decimal {
   const remaining = Prisma.Decimal.max(
     provision.expectedAmount.minus(provision.reservedAmount),
     0
   );
   if (remaining.isZero()) return new Prisma.Decimal(0);
   return remaining
-    .div(monthsAvailable(provision.startMonth, provision.targetDate))
+    .div(monthsAvailable(provision.startMonth, provision.targetDate, calendar))
     .toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
 }
 
@@ -223,8 +224,8 @@ function serializeSnapshot(snapshot: any) {
     objectiveKind: snapshot.objectiveKind,
     targetMonthlySavings: moneyString(snapshot.targetMonthlySavings),
     historyMonths: snapshot.historyMonths,
-    historyStartDate: formatDateKey(snapshot.historyStartDate),
-    historyEndDate: formatDateKey(snapshot.historyEndDate),
+    historyStartDate: formatFinancialDateKey(snapshot.historyStartDate),
+    historyEndDate: formatFinancialDateKey(snapshot.historyEndDate),
     profileVersion: snapshot.profileVersion,
     methodologyVersion: snapshot.methodologyVersion,
     basisHash: snapshot.basisHash ?? null,
@@ -248,8 +249,8 @@ function serializeSnapshotSummary(snapshot: any) {
     objectiveKind: snapshot.objectiveKind,
     targetMonthlySavings: moneyString(snapshot.targetMonthlySavings),
     historyMonths: snapshot.historyMonths,
-    historyStartDate: formatDateKey(snapshot.historyStartDate),
-    historyEndDate: formatDateKey(snapshot.historyEndDate),
+    historyStartDate: formatFinancialDateKey(snapshot.historyStartDate),
+    historyEndDate: formatFinancialDateKey(snapshot.historyEndDate),
     profileVersion: snapshot.profileVersion,
     methodologyVersion: snapshot.methodologyVersion,
     basisHash: snapshot.basisHash ?? null,
@@ -282,10 +283,17 @@ export default class FinancialPlanningAnalysisService {
     return workspace;
   }
 
-  private static async context(userId: number, companyId: number): Promise<AnalysisContext> {
+  private static async context(
+    userId: number,
+    companyId: number,
+    at?: Date
+  ): Promise<AnalysisContext> {
     const workspace = await this.ownedPersonalWorkspace(userId, companyId);
 
-    const profileResponse = await PersonalFinancialProfileService.get(userId);
+    const [profileResponse, calendar] = await Promise.all([
+      PersonalFinancialProfileService.get(userId),
+      WorkspaceFinancialCalendarService.getContext(workspace.id, at)
+    ]);
     if (
       profileResponse.personalWorkspace.id !== workspace.id ||
       !profileResponse.profile ||
@@ -301,13 +309,26 @@ export default class FinancialPlanningAnalysisService {
       );
     }
 
-    return { workspace, profile: profileResponse.profile };
+    return { workspace, profile: profileResponse.profile, calendar };
   }
 
-  private static async build(params: { userId: number; companyId: number; historyMonths: number }) {
-    const { workspace, profile } = await this.context(params.userId, params.companyId);
-    const historyEndExclusive = startOfCurrentMonth();
-    const historyStart = addMonths(historyEndExclusive, -params.historyMonths);
+  private static async build(params: {
+    userId: number;
+    companyId: number;
+    historyMonths: number;
+    at?: Date;
+  }) {
+    const { workspace, profile, calendar } = await this.context(
+      params.userId,
+      params.companyId,
+      params.at
+    );
+    const historyEndExclusive = startOfMonth(
+      parseFinancialMonthKey(calendar.currentMonthKey)
+    );
+    const historyStart = startOfMonth(
+      addFinancialMonths(historyEndExclusive, -params.historyMonths)
+    );
     const historyEnd = new Date(historyEndExclusive.getTime() - 1);
 
     const [recurring, installmentPlans, cardInstallments, provisions, history, latestSnapshot] =
@@ -456,7 +477,7 @@ export default class FinancialPlanningAnalysisService {
         categoryId: item.category?.id ?? null,
         categoryName: item.category?.name ?? null,
         flexibility: item.category ? preferenceByCategory.get(item.category.id) ?? null : null,
-        endDate: item.endDate ? formatDateKey(item.endDate) : null
+        endDate: item.endDate ? formatFinancialDateKey(item.endDate) : null
       }
     }));
 
@@ -475,14 +496,14 @@ export default class FinancialPlanningAnalysisService {
         origin: 'NON_CARD_INSTALLMENT',
         label: plan.description,
         detail: `${plan.transactions.length} parcela(s) pendente(s)${
-          endingAt ? ` · até ${formatMonthKey(endingAt)}` : ''
+          endingAt ? ` · até ${formatFinancialMonthKey(endingAt)}` : ''
         }`,
         monthlyAmount: moneyString(average),
         selectedByDefault: true,
         metadata: {
           installmentPlanId: plan.id,
           remainingInstallments: plan.transactions.length,
-          endingAt: endingAt ? formatDateKey(endingAt) : null,
+          endingAt: endingAt ? formatFinancialDateKey(endingAt) : null,
           accountId: representative.fromAccount?.id ?? null,
           accountName: representative.fromAccount?.name ?? null,
           categoryId: representative.category?.id ?? null,
@@ -527,7 +548,7 @@ export default class FinancialPlanningAnalysisService {
         metadata: {
           purchaseGroupId,
           remainingInstallments: transactions.length,
-          endingAt: endingAt ? formatDateKey(endingAt) : null,
+          endingAt: endingAt ? formatFinancialDateKey(endingAt) : null,
           accountId: representative.fromAccount.id,
           accountName: representative.fromAccount.name,
           categoryId: representative.category?.id ?? null,
@@ -540,14 +561,14 @@ export default class FinancialPlanningAnalysisService {
     });
 
     provisions.forEach((provision) => {
-      const contribution = provisionMonthlyContribution(provision);
+      const contribution = provisionMonthlyContribution(provision, calendar);
       if (contribution.isZero()) return;
       sources.push({
         key: `PROVISION:${provision.id}`,
         kind: 'PROVISION',
         origin: 'PROVISION',
         label: provision.name,
-        detail: `${provision.category.name} · objetivo em ${formatMonthKey(provision.targetDate)}`,
+        detail: `${provision.category.name} · objetivo em ${formatFinancialMonthKey(provision.targetDate)}`,
         monthlyAmount: moneyString(contribution),
         selectedByDefault: true,
         metadata: {
@@ -555,14 +576,16 @@ export default class FinancialPlanningAnalysisService {
           categoryId: provision.category.id,
           categoryName: provision.category.name,
           flexibility: preferenceByCategory.get(provision.category.id) ?? null,
-          targetDate: formatDateKey(provision.targetDate),
+          targetDate: formatFinancialDateKey(provision.targetDate),
           expectedAmount: moneyString(provision.expectedAmount),
           reservedAmount: moneyString(provision.reservedAmount)
         }
       });
     });
 
-    const coveredMonths = new Set(history.map((transaction) => formatMonthKey(transaction.date)));
+    const coveredMonths = new Set(
+      history.map((transaction) => formatFinancialMonthKey(transaction.date))
+    );
     const variableByCategory = new Map<
       number | null,
       { category: { id: number; name: string } | null; total: Prisma.Decimal; transactions: number }
@@ -613,7 +636,9 @@ export default class FinancialPlanningAnalysisService {
     const coverageRatio = Math.min(coveredMonths.size / params.historyMonths, 1);
     const categorizationRatio =
       expenseHistory.length > 0 ? categorizedExpenses.length / expenseHistory.length : 0;
-    const previousMonthKey = formatMonthKey(addMonths(historyEndExclusive, -1));
+    const previousMonthKey = formatFinancialMonthKey(
+      addFinancialMonths(historyEndExclusive, -1)
+    );
     const hasRecentData = coveredMonths.has(previousMonthKey);
     const coverageDeclaredFull = profile.financialDataCoverage === 'FULL';
     const breakdown = [
@@ -696,8 +721,8 @@ export default class FinancialPlanningAnalysisService {
       .map((source) => source.key);
     const period = {
       historyMonths: params.historyMonths,
-      startDate: formatDateKey(historyStart),
-      endDate: formatDateKey(historyEnd)
+      startDate: formatFinancialDateKey(historyStart),
+      endDate: formatFinancialDateKey(historyEnd)
     };
     const basisDataQuality = {
       score: dataQuality.score,
@@ -745,7 +770,12 @@ export default class FinancialPlanningAnalysisService {
     };
   }
 
-  static async preview(params: { userId: number; companyId: number; historyMonths: number }) {
+  static async preview(params: {
+    userId: number;
+    companyId: number;
+    historyMonths: number;
+    at?: Date;
+  }) {
     const { rawPeriod: _rawPeriod, ...response } = await this.build(params);
     return response;
   }
@@ -819,6 +849,7 @@ export default class FinancialPlanningAnalysisService {
     targetMonthlySavings: string;
     selectedSourceKeys: string[];
     basisHash: string;
+    at?: Date;
   }) {
     const prepared = await this.build(params);
     if (params.basisHash !== prepared.basisHash) {

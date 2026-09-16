@@ -176,6 +176,11 @@ const routeToBreadcrumb: Record<string, BreadcrumbItem[]> = {
   '/profile': [
     { label: 'Dashboard', href: '/' },
     { label: 'Meu Perfil' }
+  ],
+  '/profile/financial': [
+    { label: 'Dashboard', href: '/' },
+    { label: 'Meu Perfil', href: '/profile' },
+    { label: 'Perfil de Planejamento Financeiro' }
   ]
 };
 

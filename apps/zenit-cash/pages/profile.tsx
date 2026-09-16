@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import {
+  AlertTriangle,
   Building2,
+  CheckCircle2,
+  Clock3,
   Link as LinkIcon,
   MessageCircle,
   QrCode,
   RefreshCw,
   ShieldCheck,
-  Unplug
+  Unplug,
+  UserRoundCog
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
@@ -17,6 +22,10 @@ import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { useToast } from '@/components/ui/ToastContext';
 import api from '@/lib/api';
 import { WhatsAppQrCode } from '@/components/integrations/WhatsAppQrCode';
+import {
+  getPersonalFinancialProfile,
+  PersonalFinancialProfileResponse
+} from '@/lib/personal-financial-profile';
 
 type WhatsAppBackendConfig = {
   cloudApiConfigured: boolean;
@@ -75,6 +84,29 @@ function formatDateTime(value: string | null) {
   return new Date(value).toLocaleString('pt-BR');
 }
 
+const financialProfileStatePresentation = {
+  NOT_CONFIGURED: {
+    label: 'Não configurado',
+    className: 'border-gray-700 bg-gray-900 text-gray-300',
+    icon: UserRoundCog
+  },
+  INCOMPLETE: {
+    label: 'Incompleto',
+    className: 'border-amber-800 bg-amber-950/40 text-amber-300',
+    icon: AlertTriangle
+  },
+  READY: {
+    label: 'Pronto',
+    className: 'border-emerald-800 bg-emerald-950/40 text-emerald-300',
+    icon: CheckCircle2
+  },
+  OUTDATED: {
+    label: 'Precisa de revisão',
+    className: 'border-orange-800 bg-orange-950/40 text-orange-300',
+    icon: Clock3
+  }
+};
+
 export default function ProfilePage() {
   const { user, userId, companyId } = useAuth();
   const { addToast } = useToast();
@@ -90,6 +122,9 @@ export default function ProfilePage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(companyId || null);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatusResponse | null>(null);
+  const [financialProfile, setFinancialProfile] =
+    useState<PersonalFinancialProfileResponse | null>(null);
+  const [loadingFinancialProfile, setLoadingFinancialProfile] = useState(true);
 
   useEffect(() => {
     setFormData({
@@ -105,6 +140,7 @@ export default function ProfilePage() {
     }
 
     void loadWhatsAppStatus(true);
+    void loadFinancialProfile();
   }, [userId]);
 
   useEffect(() => {
@@ -155,6 +191,20 @@ export default function ProfilePage() {
     } finally {
       setLoadingWhatsApp(false);
       setRefreshingWhatsApp(false);
+    }
+  }
+
+  async function loadFinancialProfile() {
+    setLoadingFinancialProfile(true);
+    try {
+      setFinancialProfile(await getPersonalFinancialProfile());
+    } catch (error: any) {
+      addToast(
+        error.response?.data?.error || 'Erro ao carregar o perfil de planejamento financeiro',
+        'error'
+      );
+    } finally {
+      setLoadingFinancialProfile(false);
     }
   }
 
@@ -252,6 +302,16 @@ export default function ProfilePage() {
     whatsAppStatus?.companies.filter((entry) => entry.whatsappAccess.allowed) || [];
   const blockedCompanies =
     whatsAppStatus?.companies.filter((entry) => !entry.whatsappAccess.allowed) || [];
+  const financialProfilePresentation = financialProfile
+    ? financialProfileStatePresentation[financialProfile.state]
+    : financialProfileStatePresentation.NOT_CONFIGURED;
+  const FinancialProfileStateIcon = financialProfilePresentation.icon;
+  const financialProfileActionLabel =
+    financialProfile?.state === 'INCOMPLETE'
+      ? 'Continuar configuração'
+      : financialProfile?.state === 'NOT_CONFIGURED' || !financialProfile
+        ? 'Configurar perfil'
+        : 'Revisar perfil';
 
   return (
     <DashboardLayout title="Meu Perfil">
@@ -262,11 +322,54 @@ export default function ProfilePage() {
         ]}
       />
 
-      <div className="mx-auto grid max-w-5xl grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card
-          headerSubtitle="Atualize seus dados de acesso ao Zenit"
-          headerTitle="Informacoes do Perfil"
-        >
+      <div className="mx-auto max-w-5xl space-y-6">
+        <Card>
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="rounded-lg bg-accent/15 p-2.5 text-accent">
+                <UserRoundCog size={22} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-medium text-white">
+                    Perfil de planejamento financeiro
+                  </h2>
+                  {!loadingFinancialProfile && (
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${financialProfilePresentation.className}`}
+                    >
+                      <FinancialProfileStateIcon size={13} />
+                      {financialProfilePresentation.label}
+                    </span>
+                  )}
+                </div>
+                {loadingFinancialProfile ? (
+                  <div className="mt-3 h-2 w-52 animate-pulse rounded-full bg-gray-700" />
+                ) : (
+                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-400">
+                    <span>{financialProfile?.completionPercentage || 0}% preenchido</span>
+                    <span>
+                      Uso exclusivo: {financialProfile?.personalWorkspace.name || 'workspace pessoal'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Link
+              href="/profile/financial"
+              className="inline-flex shrink-0 items-center justify-center rounded border border-gray-600 px-3 py-1.5 font-semibold text-gray-300 transition-all duration-200 hover:border-accent hover:bg-elevated hover:text-accent"
+            >
+              {financialProfileActionLabel}
+            </Link>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <Card
+            headerSubtitle="Atualize seus dados de acesso ao Zenit"
+            headerTitle="Informacoes do Perfil"
+          >
           <form onSubmit={handleProfileSubmit}>
             <Input
               label="Nome"
@@ -304,12 +407,12 @@ export default function ProfilePage() {
               {loadingProfile ? 'Salvando...' : 'Salvar Alteracoes'}
             </Button>
           </form>
-        </Card>
+          </Card>
 
-        <Card
-          headerSubtitle="Conecte o operador do Zenit ao seu numero"
-          headerTitle="Canal do WhatsApp"
-        >
+          <Card
+            headerSubtitle="Conecte o operador do Zenit ao seu numero"
+            headerTitle="Canal do WhatsApp"
+          >
           <div className="space-y-5">
             <div className="rounded-xl border border-gray-700 bg-[#1a1f2b] p-4">
               <div className="flex items-start gap-3">
@@ -506,7 +609,8 @@ export default function ProfilePage() {
               </div>
             </div>
           </div>
-        </Card>
+          </Card>
+        </div>
       </div>
     </DashboardLayout>
   );

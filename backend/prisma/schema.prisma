@@ -224,6 +224,33 @@ enum FinancialProvisionEntryType {
   USE
 }
 
+enum PersonalPlanningContext {
+  INDIVIDUAL
+  FAMILY
+}
+
+enum PersonalFinancialDataCoverage {
+  FULL
+  PARTIAL
+}
+
+enum PersonalPlanningStyle {
+  CONSERVATIVE
+  BALANCED
+  FLEXIBLE
+}
+
+enum PersonalAdjustmentPace {
+  GRADUAL
+  IMMEDIATE
+}
+
+enum PersonalCategoryFlexibility {
+  PROTECTED
+  MODERATE
+  FLEXIBLE
+}
+
 enum AssistantMode {
   OPERATOR
   SPECIALIST
@@ -301,6 +328,7 @@ model User {
   budgets                Budget[]
   financialProvisionsCreated FinancialProvision[]
   financialProvisionEntriesCreated FinancialProvisionEntry[]
+  personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileOwner")
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -351,6 +379,7 @@ model Company {
   monthlyCategoryBudgets MonthlyCategoryBudget[]
   recurringMonthlyCategoryBudgets RecurringMonthlyCategoryBudget[]
   financialProvisions FinancialProvision[]
+  personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileWorkspace")
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -518,6 +547,7 @@ model FinancialCategory {
   monthlyBudgets  MonthlyCategoryBudget[]
   recurringMonthlyBudgets RecurringMonthlyCategoryBudget[]
   financialProvisions FinancialProvision[]
+  personalFinancialPreferences PersonalFinancialCategoryPreference[]
 
   @@unique([name, parentId, companyId])
   @@index([companyId])
@@ -1152,6 +1182,60 @@ model FinancialProvisionEntry {
 
   @@index([provisionId, occurredAt])
   @@index([createdBy])
+}
+
+model PersonalFinancialProfile {
+  id                           Int                            @id @default(autoincrement())
+  ownerUserId                  Int                            @unique
+  personalWorkspaceId          Int                            @unique
+  planningContext              PersonalPlanningContext?
+  adultsCount                  Int?
+  dependentsCount              Int?
+  financialDataCoverage        PersonalFinancialDataCoverage?
+  emergencyReserveTargetMonths Int?
+  planningStyle                PersonalPlanningStyle?
+  adjustmentPace               PersonalAdjustmentPace?
+  categoryPrioritiesReviewedAt DateTime?
+  lastReviewedAt               DateTime?
+  version                      Int                            @default(1)
+  createdAt                    DateTime                       @default(now())
+  updatedAt                    DateTime                       @updatedAt
+
+  ownerUser                    User                           @relation("PersonalFinancialProfileOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  personalWorkspace            Company                        @relation("PersonalFinancialProfileWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Cascade)
+  categoryPreferences          PersonalFinancialCategoryPreference[]
+  revisions                    PersonalFinancialProfileRevision[]
+
+  @@index([ownerUserId, personalWorkspaceId])
+}
+
+model PersonalFinancialCategoryPreference {
+  id                   Int                         @id @default(autoincrement())
+  profileId            Int
+  categoryId           Int
+  flexibility          PersonalCategoryFlexibility
+  minimumMonthlyAmount Decimal?                    @db.Decimal(15, 2)
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+
+  profile              PersonalFinancialProfile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  category             FinancialCategory           @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, categoryId], name: "unique_personal_financial_category_preference")
+  @@index([categoryId])
+}
+
+model PersonalFinancialProfileRevision {
+  id        Int                      @id @default(autoincrement())
+  profileId Int
+  version   Int
+  snapshot  Json
+  createdAt DateTime                 @default(now())
+
+  profile   PersonalFinancialProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, version], name: "unique_personal_financial_profile_revision")
+  @@index([profileId, createdAt])
 }
 
 model Process {

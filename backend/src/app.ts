@@ -26,6 +26,7 @@ import appAccessRoutes from './routes/app-access.routes';
 import cashBootstrapRoutes from './routes/cash-bootstrap.routes';
 import cashRoutes from './routes/cash.routes';
 import assistantRoutes from './routes/assistant.routes';
+import personalFinancialProfileRoutes from './routes/personal-financial-profile.routes';
 
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
@@ -203,6 +204,11 @@ app.use('/api', createRateLimitMiddleware('api'), integrationPublicRoutes);
 
 // 14) Middleware de autenticação
 app.use('/api', authMiddleware);
+app.use(
+  '/api/me',
+  createRateLimitMiddleware('api'),
+  personalFinancialProfileRoutes
+);
 app.use('/api/cash', createRateLimitMiddleware('api'), cashBootstrapRoutes);
 
 // 15) Middleware de tenant

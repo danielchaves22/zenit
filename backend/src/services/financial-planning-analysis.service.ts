@@ -12,7 +12,10 @@ import {
 } from '@prisma/client';
 import PersonalFinancialProfileService from './personal-financial-profile.service';
 import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
-import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
+import {
+  buildFinancialRecognitionWhere,
+  buildOperationalTransactionWhere
+} from '../utils/financial-transaction-query';
 import {
   addFinancialMonths,
   FinancialCalendarContext,
@@ -394,9 +397,11 @@ export default class FinancialPlanningAnalysisService {
           where: {
             companyId: workspace.id,
             type: { in: [TransactionType.INCOME, TransactionType.EXPENSE] },
-            status: TransactionStatus.COMPLETED,
             date: { gte: historyStart, lt: historyEndExclusive },
-            ...buildOperationalTransactionWhere()
+            AND: [
+              buildFinancialRecognitionWhere('ECONOMIC'),
+              buildOperationalTransactionWhere()
+            ]
           },
           select: {
             id: true,

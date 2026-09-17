@@ -11,7 +11,11 @@ import FixedTransactionService from './fixed-transaction.service';
 import UserVariableProjectionPreferenceService from './user-variable-projection-preference.service';
 import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import { resolveCreditCardInvoiceReference } from '../utils/credit-card';
-import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
+import {
+  buildFinancialRecognitionWhere,
+  buildOperationalTransactionWhere,
+  type FinancialRecognitionPerspective
+} from '../utils/financial-transaction-query';
 import { getCreditCardInvoiceSignedAmount } from '../utils/financial-transaction-amount';
 import {
   type FinancialRecognition,
@@ -111,6 +115,78 @@ function buildRelevantMonthWhere(startDate: Date, endDate: Date): Prisma.Financi
         }
       }
     ]
+  };
+}
+
+function buildHistoricalNonCardDateWhere(params: {
+  perspective: FinancialRecognitionPerspective;
+  startDate: Date;
+  endDate: Date;
+}): Prisma.FinancialTransactionWhereInput {
+  const range = {
+    gte: params.startDate,
+    lte: params.endDate
+  };
+
+  if (params.perspective === 'MATERIALIZED') {
+    return buildRelevantMonthWhere(params.startDate, params.endDate);
+  }
+
+  if (params.perspective === 'ECONOMIC') {
+    return {
+      date: range
+    };
+  }
+
+  return {
+    OR: [
+      { effectiveDate: range },
+      {
+        effectiveDate: null,
+        date: range
+      }
+    ]
+  };
+}
+
+function buildHistoricalCardDateWhere(params: {
+  perspective: FinancialRecognitionPerspective;
+  startDate: Date;
+  endDate: Date;
+}): Prisma.FinancialTransactionWhereInput {
+  const range = {
+    gte: params.startDate,
+    lte: params.endDate
+  };
+
+  if (params.perspective === 'ECONOMIC') {
+    return {
+      date: range
+    };
+  }
+
+  if (params.perspective === 'SETTLEMENT') {
+    return {
+      creditCardInvoice: {
+        is: {
+          OR: [
+            { settledAt: range },
+            {
+              settledAt: null,
+              dueDate: range
+            }
+          ]
+        }
+      }
+    };
+  }
+
+  return {
+    creditCardInvoice: {
+      is: {
+        dueDate: range
+      }
+    }
   };
 }
 
@@ -379,16 +455,14 @@ export default class FinancialDashboardService {
   private static async buildHistoricalAverageMap(params: {
     companyId: number;
     trackedCategoryIds: number[];
-    accessibleAccountIds?: number[];
     accessFilter?: Prisma.FinancialTransactionWhereInput;
-    referenceDate: Date;
+    calendarContext: FinancialCalendarContext;
   }): Promise<Map<number, Prisma.Decimal>> {
     const {
       companyId,
       trackedCategoryIds,
-      accessibleAccountIds,
       accessFilter,
-      referenceDate
+      calendarContext
     } = params;
 
     const result = new Map<number, Prisma.Decimal>();
@@ -401,76 +475,33 @@ export default class FinancialDashboardService {
       return result;
     }
 
-    const currentMonthStart = startOfMonth(referenceDate);
-    const historyStart = startOfMonth(addFinancialMonths(currentMonthStart, -6));
-    const historyEnd = endOfMonth(addFinancialMonths(currentMonthStart, -1));
-
-    const baseWhere: Prisma.FinancialTransactionWhereInput = {
+    const history = await this.getHistoryDashboard({
       companyId,
-      type: TransactionType.EXPENSE,
-      status: { not: TransactionStatus.CANCELED },
-      categoryId: { in: trackedCategoryIds },
-      recurringTransactionId: null,
-      ...buildOperationalTransactionWhere()
-    };
-
-    const accessibleWhere: Prisma.FinancialTransactionWhereInput[] = [];
-    if (accessFilter) {
-      accessibleWhere.push(accessFilter);
-    }
-
-    const nonCardAggregates = await prisma.financialTransaction.groupBy({
-      by: ['categoryId'],
-      where: {
-        AND: [
-          baseWhere,
-          {
-            creditCardInvoiceId: null
-          },
-          buildRelevantMonthWhere(historyStart, historyEnd),
-          ...accessibleWhere
-        ]
-      },
-      _sum: {
-        amount: true
-      }
+      months: 7,
+      categoryIds: trackedCategoryIds,
+      transactionCategoryIds: trackedCategoryIds,
+      excludeRecurringTransactions: true,
+      accessFilter,
+      calendarContext,
+      recognitionPerspective: 'SETTLEMENT'
     });
+    const completeMonthKeys = new Set(
+      history.monthlyTotals
+        .filter((month) => !month.isPartialCurrentMonth)
+        .map((month) => month.month)
+        .slice(-6)
+    );
 
-    const cardAggregates = await prisma.financialTransaction.groupBy({
-      by: ['categoryId'],
-      where: {
-        AND: [
-          baseWhere,
-          {
-            creditCardInvoiceId: { not: null },
-            creditCardInvoice: {
-              is: {
-                dueDate: {
-                  gte: historyStart,
-                  lte: historyEnd
-                }
-              }
-            }
-          },
-          ...accessibleWhere
-        ]
-      },
-      _sum: {
-        amount: true
-      }
-    });
-
-    for (const aggregate of [...nonCardAggregates, ...cardAggregates]) {
-      if (!aggregate.categoryId) {
-        continue;
-      }
-
-      const currentValue = result.get(aggregate.categoryId) ?? new Prisma.Decimal(0);
-      result.set(aggregate.categoryId, currentValue.plus(toDecimal(aggregate._sum.amount)));
-    }
-
-    for (const [categoryId, total] of result.entries()) {
-      result.set(categoryId, total.div(6));
+    for (const series of history.categorySeries) {
+      const total = series.points.reduce(
+        (sum, point) =>
+          completeMonthKeys.has(point.month) ? sum.plus(point.amount) : sum,
+        new Prisma.Decimal(0)
+      );
+      result.set(
+        series.categoryId,
+        completeMonthKeys.size > 0 ? total.div(completeMonthKeys.size) : total
+      );
     }
 
     return result;
@@ -836,9 +867,8 @@ export default class FinancialDashboardService {
     const historicalAverageByCategoryId = await this.buildHistoricalAverageMap({
       companyId: params.companyId,
       trackedCategoryIds: trackedCategories.map((category) => category.id),
-      accessibleAccountIds: params.accessibleAccountIds,
       accessFilter: params.accessFilter,
-      referenceDate: currentDate
+      calendarContext: calendar
     });
 
     let carryOverAmount = await this.getCurrentBalance({
@@ -1071,8 +1101,11 @@ export default class FinancialDashboardService {
     companyId: number;
     months?: number;
     categoryIds?: number[];
+    transactionCategoryIds?: number[];
+    excludeRecurringTransactions?: boolean;
     accessFilter?: Prisma.FinancialTransactionWhereInput;
     calendarContext?: FinancialCalendarContext;
+    recognitionPerspective?: FinancialRecognitionPerspective;
     at?: Date;
   }) {
     const calendar =
@@ -1086,6 +1119,7 @@ export default class FinancialDashboardService {
     );
     const rangeEnd = endOfMonth(currentMonthStart);
     const operationalWhere = buildOperationalTransactionWhere();
+    const recognitionPerspective = params.recognitionPerspective ?? 'MATERIALIZED';
     const sharedFilters: Prisma.FinancialTransactionWhereInput[] = [
       { companyId: params.companyId },
       {
@@ -1093,16 +1127,24 @@ export default class FinancialDashboardService {
           in: [TransactionType.INCOME, TransactionType.EXPENSE]
         }
       },
-      {
-        status: {
-          not: TransactionStatus.CANCELED
-        }
-      },
+      buildFinancialRecognitionWhere(recognitionPerspective),
       operationalWhere
     ];
 
     if (params.accessFilter) {
       sharedFilters.push(params.accessFilter);
+    }
+    if (params.transactionCategoryIds) {
+      sharedFilters.push({
+        categoryId: {
+          in: params.transactionCategoryIds
+        }
+      });
+    }
+    if (params.excludeRecurringTransactions) {
+      sharedFilters.push({
+        recurringTransactionId: null
+      });
     }
 
     const [materializedNonCard, materializedCard, selectedCategories] = await Promise.all([
@@ -1113,7 +1155,11 @@ export default class FinancialDashboardService {
             {
               creditCardInvoiceId: null
             },
-            buildRelevantMonthWhere(rangeStart, rangeEnd)
+            buildHistoricalNonCardDateWhere({
+              perspective: recognitionPerspective,
+              startDate: rangeStart,
+              endDate: rangeEnd
+            })
           ]
         },
         select: {
@@ -1128,6 +1174,7 @@ export default class FinancialDashboardService {
             }
           },
           dueDate: true,
+          effectiveDate: true,
           date: true
         }
       }),
@@ -1144,21 +1191,19 @@ export default class FinancialDashboardService {
                   creditCardCreditKind: { not: null }
                 }
               ],
-              creditCardInvoice: {
-                is: {
-                  dueDate: {
-                    gte: rangeStart,
-                    lte: rangeEnd
-                  }
-                }
-              }
-            }
+            },
+            buildHistoricalCardDateWhere({
+              perspective: recognitionPerspective,
+              startDate: rangeStart,
+              endDate: rangeEnd
+            })
           ]
         },
         select: {
           type: true,
           creditCardCreditKind: true,
           amount: true,
+          date: true,
           categoryId: true,
           category: {
             select: {
@@ -1169,7 +1214,8 @@ export default class FinancialDashboardService {
           },
           creditCardInvoice: {
             select: {
-              dueDate: true
+              dueDate: true,
+              settledAt: true
             }
           }
         }
@@ -1229,7 +1275,11 @@ export default class FinancialDashboardService {
     };
 
     for (const transaction of materializedNonCard) {
-      const relevantDate = transaction.dueDate || transaction.date;
+      const relevantDate = recognitionPerspective === 'SETTLEMENT'
+        ? transaction.effectiveDate || transaction.date
+        : recognitionPerspective === 'ECONOMIC'
+          ? transaction.date
+          : transaction.dueDate || transaction.date;
       const monthKey = formatFinancialMonthKey(relevantDate);
       const totals = monthTotals.get(monthKey);
 
@@ -1248,11 +1298,17 @@ export default class FinancialDashboardService {
     }
 
     for (const transaction of materializedCard) {
-      if (!transaction.creditCardInvoice?.dueDate) {
+      const relevantDate = recognitionPerspective === 'ECONOMIC'
+        ? transaction.date
+        : recognitionPerspective === 'SETTLEMENT'
+          ? transaction.creditCardInvoice?.settledAt || transaction.creditCardInvoice?.dueDate
+          : transaction.creditCardInvoice?.dueDate;
+
+      if (!relevantDate) {
         continue;
       }
 
-      const monthKey = formatFinancialMonthKey(transaction.creditCardInvoice.dueDate);
+      const monthKey = formatFinancialMonthKey(relevantDate);
       const totals = monthTotals.get(monthKey);
 
       if (!totals) {
@@ -1266,6 +1322,7 @@ export default class FinancialDashboardService {
 
     return {
       months: totalMonths,
+      recognitionPerspective,
       monthlyTotals: [...monthTotals.entries()].map(([month, totals]) => ({
         month,
         incomeTotal: toMoneyString(totals.incomeTotal),

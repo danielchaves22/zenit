@@ -243,6 +243,24 @@ obrigacao; `CLOSED` continua significando fatura fechada e nao paga. O dashboard
 mensal preserva, por compatibilidade, os campos externos chamados `realized`,
 mas eles representam a perspectiva de caixa liquidado nesse contrato.
 
+Consultas historicas declaram uma das tres perspectivas:
+
+- `MATERIALIZED` preserva todos os lancamentos ativos conhecidos e alimenta o
+  grafico historico operacional;
+- `ECONOMIC` considera transacoes concluidas na data de competencia e alimenta
+  a leitura de habitos do diagnostico;
+- `SETTLEMENT` considera transacoes comuns concluidas pela data efetiva e
+  compras ou creditos de cartao somente depois de a fatura estar paga. Essa e a
+  perspectiva das medias de caixa usadas pelo dashboard e pelo planejamento
+  mensal por categoria.
+
+As medias de caixa do dashboard e do planejamento mensal compartilham a mesma
+politica de reconhecimento, datas e valores. O escopo permanece adequado a cada
+pergunta: a estimativa variavel do dashboard exclui recorrencias, enquanto o
+planejamento por categoria considera todo o gasto coberto pelo limite. Creditos
+de cartao reduzem a despesa da categoria segundo sua natureza financeira,
+evitando que a media seja maior que a saida liquida.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -310,9 +328,7 @@ que deveriam representar a mesma situacao financeira.
 
 Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot, seu historico auditavel e a
-matriz canonica de reconhecimento usada pelo dashboard ja foram consolidados.
-Permanecem:
+matriz canonica de reconhecimento e as perspectivas historicas usadas por
+dashboard, planejamento mensal e diagnostico ja foram consolidados. Permanece:
 
-1. Explicitar a perspectiva economica ou de caixa nas medias historicas e nas
-   fontes do diagnostico antes de adotar a matriz nesses consumidores.
-2. Unificar a projecao mensal consumida por dashboard e planejamento.
+1. Unificar a projecao mensal consumida por dashboard e planejamento.

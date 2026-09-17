@@ -1,10 +1,48 @@
 import {
+  CreditCardInvoiceStatus,
   FinancialAccountPurpose,
   FinancialTransactionEntryKind,
-  Prisma
+  Prisma,
+  TransactionStatus
 } from '@prisma/client';
 
 export type IgnoredTransactionState = 'ACTIVE' | 'IGNORED' | 'ALL';
+export type FinancialRecognitionPerspective =
+  | 'MATERIALIZED'
+  | 'ECONOMIC'
+  | 'SETTLEMENT';
+
+export function buildFinancialRecognitionWhere(
+  perspective: FinancialRecognitionPerspective
+): Prisma.FinancialTransactionWhereInput {
+  if (perspective === 'MATERIALIZED') {
+    return {
+      status: {
+        not: TransactionStatus.CANCELED
+      }
+    };
+  }
+
+  if (perspective === 'ECONOMIC') {
+    return {
+      status: TransactionStatus.COMPLETED
+    };
+  }
+
+  return {
+    status: TransactionStatus.COMPLETED,
+    OR: [
+      { creditCardInvoiceId: null },
+      {
+        creditCardInvoice: {
+          is: {
+            status: CreditCardInvoiceStatus.PAID
+          }
+        }
+      }
+    ]
+  };
+}
 
 export function buildIgnoredTransactionWhere(
   ignoredState: IgnoredTransactionState = 'ACTIVE'

@@ -90,6 +90,7 @@ export interface FinancialDashboardMonthlyResponse {
 
 export interface FinancialDashboardHistoryResponse {
   months: number;
+  recognitionPerspective: 'MATERIALIZED' | 'ECONOMIC' | 'SETTLEMENT';
   monthlyTotals: Array<{
     month: string;
     incomeTotal: string;

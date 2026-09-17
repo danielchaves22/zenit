@@ -609,6 +609,217 @@ describe('Financial dashboard', () => {
     expect(nextMonthResponse.body.projectedEndingBalance).toBe('1420.00');
   });
 
+  it('uses settled cash history and card credits in the variable expense average', async () => {
+    const now = new Date();
+    const currentMonthKey = buildMonthKey(now);
+    const currentMonthIndex = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const [checkingAccount, creditCardAccount, expenseCategory] = await Promise.all([
+      prisma.financialAccount.create({
+        data: {
+          name: 'Conta da media liquidada',
+          type: 'CHECKING',
+          balance: 1000,
+          companyId: primaryCompanyId
+        }
+      }),
+      prisma.financialAccount.create({
+        data: {
+          name: 'Cartao da media liquidada',
+          type: 'CREDIT_CARD',
+          balance: 0,
+          creditLimit: 2000,
+          statementClosingDay: 20,
+          statementDueDay: 28,
+          companyId: primaryCompanyId
+        }
+      }),
+      prisma.financialCategory.create({
+        data: {
+          name: 'Variavel liquidada',
+          type: 'EXPENSE',
+          color: '#f97316',
+          companyId: primaryCompanyId
+        }
+      })
+    ]);
+
+    for (let offset = 1; offset <= 6; offset += 1) {
+      const historicalDate = buildDate(currentYear, currentMonthIndex - offset, 10);
+      await prisma.financialTransaction.create({
+        data: {
+          description: `Despesa liquidada ${offset}`,
+          amount: 100,
+          date: historicalDate,
+          dueDate: historicalDate,
+          effectiveDate: historicalDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        }
+      });
+    }
+
+    const previousMonth = buildDate(currentYear, currentMonthIndex - 2, 1);
+    const previousMonthDate = buildDate(currentYear, currentMonthIndex - 1, 15);
+    const paidInvoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: creditCardAccount.id,
+        referenceYear: previousMonth.getFullYear(),
+        referenceMonth: previousMonth.getMonth() + 1,
+        closingDate: buildDate(currentYear, currentMonthIndex - 2, 10),
+        dueDate: buildDate(currentYear, currentMonthIndex - 2, 15),
+        settledAt: previousMonthDate,
+        status: 'PAID',
+        totalAmount: 50
+      }
+    });
+    const openMonth = buildDate(currentYear, currentMonthIndex - 3, 1);
+    const openInvoice = await prisma.creditCardInvoice.create({
+      data: {
+        accountId: creditCardAccount.id,
+        referenceYear: openMonth.getFullYear(),
+        referenceMonth: openMonth.getMonth() + 1,
+        closingDate: buildDate(currentYear, currentMonthIndex - 3, 10),
+        dueDate: buildDate(currentYear, currentMonthIndex - 3, 15),
+        status: 'OPEN',
+        totalAmount: 300
+      }
+    });
+    const inactiveRecurring = await prisma.recurringTransaction.create({
+      data: {
+        description: 'Fixa historica fora da media variavel',
+        amount: 1200,
+        type: TransactionType.EXPENSE,
+        frequency: RecurringFrequency.MONTHLY,
+        dayOfMonth: 10,
+        startDate: buildDate(currentYear, currentMonthIndex - 6, 10),
+        endDate: previousMonthDate,
+        nextDueDate: previousMonthDate,
+        isActive: false,
+        fromAccountId: checkingAccount.id,
+        categoryId: expenseCategory.id,
+        companyId: primaryCompanyId,
+        createdBy: primaryUserId
+      }
+    });
+
+    await prisma.financialTransaction.createMany({
+      data: [
+        {
+          description: 'Despesa antiga ainda pendente',
+          amount: 600,
+          date: previousMonthDate,
+          dueDate: previousMonthDate,
+          type: 'EXPENSE',
+          status: 'PENDING',
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Compra em fatura paga',
+          amount: 60,
+          date: previousMonthDate,
+          effectiveDate: previousMonthDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: creditCardAccount.id,
+          categoryId: expenseCategory.id,
+          creditCardInvoiceId: paidInvoice.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Credito em fatura paga',
+          amount: 10,
+          date: previousMonthDate,
+          effectiveDate: previousMonthDate,
+          type: 'INCOME',
+          status: 'COMPLETED',
+          toAccountId: creditCardAccount.id,
+          categoryId: expenseCategory.id,
+          creditCardInvoiceId: paidInvoice.id,
+          creditCardCreditKind: 'ADJUSTMENT',
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Compra em fatura ainda aberta',
+          amount: 300,
+          date: buildDate(currentYear, currentMonthIndex - 3, 8),
+          effectiveDate: buildDate(currentYear, currentMonthIndex - 3, 8),
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: creditCardAccount.id,
+          categoryId: expenseCategory.id,
+          creditCardInvoiceId: openInvoice.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        },
+        {
+          description: 'Fixa materializada fora da media variavel',
+          amount: 1200,
+          date: previousMonthDate,
+          dueDate: previousMonthDate,
+          effectiveDate: previousMonthDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          recurringTransactionId: inactiveRecurring.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId
+        }
+      ]
+    });
+
+    await prisma.userVariableProjectionPreference.create({
+      data: {
+        userId: primaryUserId,
+        companyId: primaryCompanyId,
+        trackedExpenseCategoryIds: [expenseCategory.id]
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/financial/dashboard/monthly')
+      .set(authHeaders(primaryToken, primaryCompanyId))
+      .query({ month: currentMonthKey });
+
+    expect(response.status).toBe(200);
+    expect(response.body.variableProjection.categories).toEqual([
+      expect.objectContaining({
+        categoryId: expenseCategory.id,
+        historicalAverage: '108.33',
+        committedInMonth: '0.00',
+        remainingProjected: '108.33'
+      })
+    ]);
+
+    const settlementHistory = await FinancialDashboardService.getHistoryDashboard({
+      companyId: primaryCompanyId,
+      months: 7,
+      categoryIds: [expenseCategory.id],
+      transactionCategoryIds: [expenseCategory.id],
+      excludeRecurringTransactions: true,
+      recognitionPerspective: 'SETTLEMENT'
+    });
+    expect(settlementHistory.recognitionPerspective).toBe('SETTLEMENT');
+    expect(
+      settlementHistory.monthlyTotals.find(
+        (month) => month.month === buildMonthKey(previousMonthDate)
+      )
+    ).toMatchObject({
+      expenseTotal: '150.00'
+    });
+  });
+
   it('keeps future pending transactions in the unsettled dashboard breakdown', async () => {
     const now = new Date();
     const futureMonthKey = addMonthKey(buildMonthKey(now), 1);
@@ -1167,6 +1378,7 @@ describe('Financial dashboard', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.months).toBe(12);
+    expect(response.body.recognitionPerspective).toBe('MATERIALIZED');
     expect(response.body.monthlyTotals).toHaveLength(12);
 
     const currentMonth = response.body.monthlyTotals.find((item: any) => item.month === currentMonthKey);

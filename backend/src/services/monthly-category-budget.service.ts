@@ -717,8 +717,10 @@ export default class MonthlyCategoryBudgetService {
         companyId: params.companyId,
         months: 7,
         categoryIds: [...selectedCategoryIds],
+        transactionCategoryIds: [...selectedCategoryIds],
         accessFilter: params.accessFilter,
-        calendarContext: calendar
+        calendarContext: calendar,
+        recognitionPerspective: 'SETTLEMENT'
       })
     ]);
 

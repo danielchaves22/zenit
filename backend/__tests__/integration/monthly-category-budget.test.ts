@@ -25,6 +25,11 @@ function addMonths(monthKey: string, offset: number): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function monthDate(monthKey: string, offset: number, day = 10): Date {
+  const [year, month] = addMonths(monthKey, offset).split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
+
 describe('Monthly category budget', () => {
   let companyId: number;
   let otherCompanyId: number;
@@ -546,6 +551,62 @@ describe('Monthly category budget', () => {
       forecastAmount: '150.00',
       remainingAmount: '-30.00',
       status: 'EXCEEDED'
+    });
+  });
+
+  it('uses only settled history when calculating the category forecast average', async () => {
+    const month = currentMonthKey();
+    const historicalTransactions = [];
+
+    for (let offset = 1; offset <= 6; offset += 1) {
+      const historicalDate = monthDate(month, -offset);
+      historicalTransactions.push(
+        {
+          companyId,
+          createdBy: userId,
+          description: `Lazer liquidado ${offset}`,
+          amount: 100,
+          date: historicalDate,
+          effectiveDate: historicalDate,
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.COMPLETED,
+          fromAccountId: accountId,
+          categoryId: siblingCategoryId
+        },
+        {
+          companyId,
+          createdBy: userId,
+          description: `Lazer pendente ${offset}`,
+          amount: 500,
+          date: historicalDate,
+          dueDate: historicalDate,
+          type: TransactionType.EXPENSE,
+          status: TransactionStatus.PENDING,
+          fromAccountId: accountId,
+          categoryId: siblingCategoryId
+        }
+      );
+    }
+
+    await prisma.financialTransaction.createMany({
+      data: historicalTransactions
+    });
+
+    const response = await request(app)
+      .put('/api/financial/budgets/monthly')
+      .set(authHeaders())
+      .send({
+        month,
+        allocations: [
+          { categoryId: siblingCategoryId, limitAmount: '150.00', includeChildren: true }
+        ]
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.items[0]).toMatchObject({
+      historicalAverageAmount: '100.00',
+      forecastAmount: '100.00',
+      status: 'ON_TRACK'
     });
   });
 

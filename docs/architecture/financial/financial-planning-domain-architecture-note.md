@@ -230,6 +230,19 @@ Essas perspectivas sao funcoes puras distintas. Um tipo generico de ajuste nao
 deve substituir a natureza economica especifica de pagamento, cashback, estorno
 ou desconto.
 
+### Reconhecimento economico e liquidacao
+
+Reconhecimento economico e liquidacao sao dimensoes distintas. Valores apenas
+projetados ainda nao foram materializados. Uma transacao pendente foi
+materializada, mas ainda nao foi realizada nem liquidada. Uma transacao comum
+concluida e realizada e liquidada pela propria transacao.
+
+No cartao, uma compra concluida ja e economicamente realizada, mas permanece nao
+liquidada enquanto a fatura estiver aberta ou fechada. Somente `PAID` liquida a
+obrigacao; `CLOSED` continua significando fatura fechada e nao paga. O dashboard
+mensal preserva, por compatibilidade, os campos externos chamados `realized`,
+mas eles representam a perspectiva de caixa liquidado nesse contrato.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -296,8 +309,10 @@ que deveriam representar a mesma situacao financeira.
 ## Proximos passos
 
 Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
-planejamento compartilhado, integridade do snapshot e seu historico auditavel ja
-foram consolidados. Permanecem:
+planejamento compartilhado, integridade do snapshot, seu historico auditavel e a
+matriz canonica de reconhecimento usada pelo dashboard ja foram consolidados.
+Permanecem:
 
-1. Centralizar as regras de reconhecimento de valores realizados e pagos.
+1. Explicitar a perspectiva economica ou de caixa nas medias historicas e nas
+   fontes do diagnostico antes de adotar a matriz nesses consumidores.
 2. Unificar a projecao mensal consumida por dashboard e planejamento.

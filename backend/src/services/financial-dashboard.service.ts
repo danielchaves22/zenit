@@ -1,7 +1,6 @@
 import prisma from '../lib/prisma';
 import {
   AccountType,
-  CreditCardInvoiceStatus,
   FinancialAccountPurpose,
   Prisma,
   RecurringFrequency,
@@ -14,6 +13,12 @@ import WorkspaceFinancialCalendarService from './workspace-financial-calendar.se
 import { resolveCreditCardInvoiceReference } from '../utils/credit-card';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 import { getCreditCardInvoiceSignedAmount } from '../utils/financial-transaction-amount';
+import {
+  type FinancialRecognition,
+  recognizeCreditCardTransaction,
+  recognizeNonCardTransaction,
+  recognizeProjectedAmount
+} from '../utils/financial-recognition';
 import {
   addFinancialMonths,
   FinancialCalendarContext,
@@ -38,7 +43,7 @@ type DashboardKnownRow = {
   categoryId: number | null;
   categoryName: string;
   categoryColor: string;
-  isRealized: boolean;
+  isSettled: boolean;
   categoryAggregationState: DashboardCategoryAggregationState;
 };
 
@@ -175,12 +180,18 @@ function addAmountToCategoryAccumulator(
   accumulator.projectedAmount = accumulator.projectedAmount.plus(amount);
 }
 
-function isCompletedStatus(status?: TransactionStatus | null): boolean {
-  return status === TransactionStatus.COMPLETED;
-}
+function toDashboardAggregationState(
+  recognition: FinancialRecognition
+): DashboardCategoryAggregationState {
+  if (recognition.settlementState === 'SETTLED') {
+    return 'REALIZED';
+  }
 
-function isPaidInvoiceStatus(status?: CreditCardInvoiceStatus | null): boolean {
-  return status === CreditCardInvoiceStatus.PAID;
+  if (recognition.settlementState === 'PROJECTED') {
+    return 'PROJECTED';
+  }
+
+  return 'PENDING';
 }
 
 export default class FinancialDashboardService {
@@ -555,6 +566,7 @@ export default class FinancialDashboardService {
         },
         select: {
           type: true,
+          status: true,
           creditCardCreditKind: true,
           amount: true,
           recurringTransactionId: true,
@@ -577,9 +589,7 @@ export default class FinancialDashboardService {
     const rows: DashboardKnownRow[] = [];
 
     for (const transaction of materializedNonCard) {
-      const categoryAggregationState = isCompletedStatus(transaction.status)
-        ? 'REALIZED'
-        : 'PENDING';
+      const recognition = recognizeNonCardTransaction(transaction.status);
 
       rows.push({
         type: transaction.type as DashboardTransactionType,
@@ -588,15 +598,16 @@ export default class FinancialDashboardService {
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
         categoryColor: buildCategoryColor(transaction.category),
-        isRealized: !isCurrentMonth || isCompletedStatus(transaction.status),
-        categoryAggregationState
+        isSettled: recognition.settlementState === 'SETTLED',
+        categoryAggregationState: toDashboardAggregationState(recognition)
       });
     }
 
     for (const transaction of materializedCard) {
-      const categoryAggregationState = isPaidInvoiceStatus(transaction.creditCardInvoice?.status)
-        ? 'REALIZED'
-        : 'PENDING';
+      const recognition = recognizeCreditCardTransaction(
+        transaction.status,
+        transaction.creditCardInvoice?.status
+      );
 
       rows.push({
         type: TransactionType.EXPENSE,
@@ -605,8 +616,8 @@ export default class FinancialDashboardService {
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
         categoryColor: buildCategoryColor(transaction.category),
-        isRealized: !isCurrentMonth || isPaidInvoiceStatus(transaction.creditCardInvoice?.status),
-        categoryAggregationState
+        isSettled: recognition.settlementState === 'SETTLED',
+        categoryAggregationState: toDashboardAggregationState(recognition)
       });
     }
 
@@ -662,6 +673,8 @@ export default class FinancialDashboardService {
       }
     });
 
+    const projectedRecognition = recognizeProjectedAmount();
+
     for (const occurrence of projectedOccurrences) {
       const template = occurrence.template;
       const isCreditCardFixedExpense =
@@ -678,8 +691,8 @@ export default class FinancialDashboardService {
           categoryId: template.categoryId ?? null,
           categoryName: buildCategoryLabel(template.category),
           categoryColor: buildCategoryColor(template.category),
-          isRealized: false,
-          categoryAggregationState: 'PROJECTED'
+          isSettled: projectedRecognition.settlementState === 'SETTLED',
+          categoryAggregationState: toDashboardAggregationState(projectedRecognition)
         });
         continue;
       }
@@ -691,8 +704,8 @@ export default class FinancialDashboardService {
         categoryId: template.categoryId ?? null,
         categoryName: buildCategoryLabel(template.category),
         categoryColor: buildCategoryColor(template.category),
-        isRealized: false,
-        categoryAggregationState: 'PROJECTED'
+        isSettled: projectedRecognition.settlementState === 'SETTLED',
+        categoryAggregationState: toDashboardAggregationState(projectedRecognition)
       });
     }
 
@@ -755,7 +768,7 @@ export default class FinancialDashboardService {
     for (const row of params.knownRows) {
       if (row.type === TransactionType.INCOME) {
         incomeTotal = incomeTotal.plus(row.amount);
-        if (row.isRealized) {
+        if (row.isSettled) {
           realizedIncome = realizedIncome.plus(row.amount);
         } else {
           remainingIncome = remainingIncome.plus(row.amount);
@@ -763,7 +776,7 @@ export default class FinancialDashboardService {
         continue;
       }
 
-      if (row.isRealized) {
+      if (row.isSettled) {
         realizedCommittedExpense = realizedCommittedExpense.plus(row.amount);
       } else {
         remainingCommittedExpense = remainingCommittedExpense.plus(row.amount);
@@ -918,7 +931,7 @@ export default class FinancialDashboardService {
 
       if (row.type === TransactionType.INCOME) {
         monthlyIncomeTotal = monthlyIncomeTotal.plus(row.amount);
-        if (row.isRealized) {
+        if (row.isSettled) {
           realizedIncomeTotal = realizedIncomeTotal.plus(row.amount);
         } else {
           remainingIncomeTotal = remainingIncomeTotal.plus(row.amount);
@@ -938,7 +951,7 @@ export default class FinancialDashboardService {
         continue;
       }
 
-      if (row.isRealized) {
+      if (row.isSettled) {
         realizedCommittedExpenseTotal = realizedCommittedExpenseTotal.plus(row.amount);
       } else {
         remainingCommittedExpenseTotal = remainingCommittedExpenseTotal.plus(row.amount);

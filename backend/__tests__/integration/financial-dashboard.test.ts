@@ -609,6 +609,187 @@ describe('Financial dashboard', () => {
     expect(nextMonthResponse.body.projectedEndingBalance).toBe('1420.00');
   });
 
+  it('keeps future pending transactions in the unsettled dashboard breakdown', async () => {
+    const now = new Date();
+    const futureMonthKey = addMonthKey(buildMonthKey(now), 1);
+    const [futureYear, futureMonth] = futureMonthKey.split('-').map(Number);
+
+    const [checkingAccount, incomeCategory] = await Promise.all([
+      prisma.financialAccount.create({
+        data: {
+          name: 'Conta da receita futura',
+          type: 'CHECKING',
+          balance: 1000,
+          companyId: primaryCompanyId
+        }
+      }),
+      prisma.financialCategory.create({
+        data: {
+          name: 'Receita futura pendente',
+          type: 'INCOME',
+          color: '#22c55e',
+          companyId: primaryCompanyId
+        }
+      })
+    ]);
+
+    const futureDate = buildDate(futureYear, futureMonth - 1, 10);
+
+    await prisma.financialTransaction.create({
+      data: {
+        description: 'Receita ainda nao liquidada',
+        amount: 250,
+        date: futureDate,
+        dueDate: futureDate,
+        type: 'INCOME',
+        status: 'PENDING',
+        toAccountId: checkingAccount.id,
+        categoryId: incomeCategory.id,
+        companyId: primaryCompanyId,
+        createdBy: primaryUserId
+      }
+    });
+
+    const response = await request(app)
+      .get('/api/financial/dashboard/monthly')
+      .set(authHeaders(primaryToken, primaryCompanyId))
+      .query({ month: futureMonthKey });
+
+    expect(response.status).toBe(200);
+    expect(response.body.currentMonthBreakdown.income).toEqual({
+      realized: '0.00',
+      remaining: '250.00'
+    });
+    expect(response.body.categoryTotals).toEqual([
+      expect.objectContaining({
+        categoryId: incomeCategory.id,
+        amount: '250.00',
+        realizedAmount: '0.00',
+        pendingAmount: '250.00',
+        projectedAmount: '0.00'
+      })
+    ]);
+    expect(response.body.projectedEndingBalance).toBe('1250.00');
+  });
+
+  it('settles completed card transactions only when the invoice is paid', async () => {
+    const now = new Date();
+    const currentMonthKey = buildMonthKey(now);
+    const currentMonthIndex = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    const expenseCategory = await prisma.financialCategory.create({
+      data: {
+        name: 'Compras no cartao',
+        type: 'EXPENSE',
+        color: '#ef4444',
+        companyId: primaryCompanyId
+      }
+    });
+
+    const [closedCard, paidCard] = await Promise.all([
+      prisma.financialAccount.create({
+        data: {
+          name: 'Cartao com fatura fechada',
+          type: 'CREDIT_CARD',
+          balance: -40,
+          creditLimit: 1000,
+          statementClosingDay: 20,
+          statementDueDay: 28,
+          companyId: primaryCompanyId
+        }
+      }),
+      prisma.financialAccount.create({
+        data: {
+          name: 'Cartao com fatura paga',
+          type: 'CREDIT_CARD',
+          balance: -30,
+          creditLimit: 1000,
+          statementClosingDay: 20,
+          statementDueDay: 28,
+          companyId: primaryCompanyId
+        }
+      })
+    ]);
+
+    const dueDate = buildDate(currentYear, currentMonthIndex, 28);
+    const [closedInvoice, paidInvoice] = await Promise.all([
+      prisma.creditCardInvoice.create({
+        data: {
+          accountId: closedCard.id,
+          referenceYear: currentYear,
+          referenceMonth: currentMonthIndex + 1,
+          closingDate: buildDate(currentYear, currentMonthIndex, 20),
+          dueDate,
+          status: 'CLOSED',
+          totalAmount: 40
+        }
+      }),
+      prisma.creditCardInvoice.create({
+        data: {
+          accountId: paidCard.id,
+          referenceYear: currentYear,
+          referenceMonth: currentMonthIndex + 1,
+          closingDate: buildDate(currentYear, currentMonthIndex, 20),
+          dueDate,
+          status: 'PAID',
+          totalAmount: 30
+        }
+      })
+    ]);
+
+    await prisma.financialTransaction.createMany({
+      data: [
+        {
+          description: 'Compra em fatura fechada',
+          amount: 40,
+          date: buildDate(currentYear, currentMonthIndex, 5),
+          dueDate,
+          effectiveDate: buildDate(currentYear, currentMonthIndex, 5),
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: closedCard.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId,
+          creditCardInvoiceId: closedInvoice.id
+        },
+        {
+          description: 'Compra em fatura paga',
+          amount: 30,
+          date: buildDate(currentYear, currentMonthIndex, 6),
+          dueDate,
+          effectiveDate: buildDate(currentYear, currentMonthIndex, 6),
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: paidCard.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId,
+          creditCardInvoiceId: paidInvoice.id
+        }
+      ]
+    });
+
+    const response = await request(app)
+      .get('/api/financial/dashboard/monthly')
+      .set(authHeaders(primaryToken, primaryCompanyId))
+      .query({ month: currentMonthKey });
+
+    expect(response.status).toBe(200);
+    expect(response.body.currentMonthBreakdown.expense.realizedCommitted).toBe('30.00');
+    expect(response.body.currentMonthBreakdown.expense.remainingCommitted).toBe('40.00');
+    expect(response.body.categoryTotals).toEqual([
+      expect.objectContaining({
+        categoryId: expenseCategory.id,
+        amount: '70.00',
+        realizedAmount: '30.00',
+        pendingAmount: '40.00',
+        projectedAmount: '0.00'
+      })
+    ]);
+  });
+
   it('ignores archived transactions and does not retro-project fixed occurrences in the current month', async () => {
     const now = new Date();
     const currentMonthKey = buildMonthKey(now);

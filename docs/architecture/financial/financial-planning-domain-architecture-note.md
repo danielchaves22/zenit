@@ -274,6 +274,25 @@ mais a projecao fixa subtraindo campos serializados da projecao variavel. Limite
 planejado continua fora do calculador: e uma intencao do usuario comparada com a
 projecao, nao um fato financeiro capaz de alterar saldo.
 
+### Competencia canonica das parcelas
+
+Cada fato conhecido da projecao declara explicitamente seu mes de competencia e
+a data que o determinou. Parcelas fora do cartao pertencem ao mes do vencimento;
+`date` e usado apenas como fallback para lancamentos legados sem `dueDate`.
+Parcelas de cartao pertencem ao mes de vencimento da fatura, nunca ao mes da
+compra ou da data agendada.
+
+Somente o valor da parcela aplicavel participa de cada mes. O valor total da
+compra e a quantidade de parcelas continuam como metadados da serie e nao sao
+somados novamente na projecao. O calculador rejeita fatos cuja competencia seja
+diferente do mes calculado, transformando uma convencao antes implicita em uma
+invariante verificavel.
+
+Compra parcelada fora do cartao, compra parcelada no cartao e repeticao finita
+permanecem conceitos distintos. A repeticao finita legada pode compartilhar os
+campos de numero e total de parcelas, mas nao possui plano de parcelamento. Uma
+ocorrencia fixa projetada tambem nao se torna parcela apenas por se repetir.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -343,8 +362,8 @@ Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot, seu historico auditavel e a
 matriz canonica de reconhecimento e as perspectivas historicas usadas por
 dashboard, planejamento mensal e diagnostico, alem da projecao mensal compartilhada
-por dashboard e planejamento, ja foram consolidados. Permanecem:
+por dashboard e planejamento e a competencia explicita de parcelas, ja foram
+consolidados. Permanecem:
 
-1. Explicitar a competencia de parcelas na projecao canonica.
-2. Integrar contribuicoes de provisoes sem trata-las como despesas realizadas.
-3. Comparar dashboard, planejamento e diagnostico nos mesmos cenarios compostos.
+1. Integrar contribuicoes de provisoes sem trata-las como despesas realizadas.
+2. Comparar dashboard, planejamento e diagnostico nos mesmos cenarios compostos.

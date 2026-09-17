@@ -36,6 +36,7 @@ import {
   type MonthlyProjectionKnownRow,
   type MonthlyProjectionTransactionType
 } from '../utils/monthly-financial-projection';
+import { resolveMonthlyProjectionCompetence } from '../utils/monthly-projection-competence';
 
 function startOfMonth(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
@@ -478,8 +479,13 @@ export default class FinancialDashboardService {
         select: {
           type: true,
           amount: true,
+          date: true,
+          dueDate: true,
           status: true,
           recurringTransactionId: true,
+          installmentNumber: true,
+          totalInstallments: true,
+          installmentPlanId: true,
           categoryId: true,
           category: {
             select: {
@@ -519,6 +525,9 @@ export default class FinancialDashboardService {
           creditCardCreditKind: true,
           amount: true,
           recurringTransactionId: true,
+          installmentNumber: true,
+          totalInstallments: true,
+          purchaseGroupId: true,
           categoryId: true,
           category: {
             select: {
@@ -528,7 +537,8 @@ export default class FinancialDashboardService {
           },
           creditCardInvoice: {
             select: {
-              status: true
+              status: true,
+              dueDate: true
             }
           }
         }
@@ -543,6 +553,14 @@ export default class FinancialDashboardService {
       rows.push({
         type: transaction.type as MonthlyProjectionTransactionType,
         source: transaction.recurringTransactionId ? 'FIXED_MATERIALIZED' : 'AD_HOC_MATERIALIZED',
+        competence: resolveMonthlyProjectionCompetence({
+          kind: 'MATERIALIZED_NON_CARD',
+          transactionDate: transaction.date,
+          dueDate: transaction.dueDate,
+          installmentNumber: transaction.installmentNumber,
+          totalInstallments: transaction.totalInstallments,
+          installmentPlanId: transaction.installmentPlanId
+        }),
         amount: toDecimal(transaction.amount),
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
@@ -553,14 +571,23 @@ export default class FinancialDashboardService {
     }
 
     for (const transaction of materializedCard) {
+      if (!transaction.creditCardInvoice) continue;
+
       const recognition = recognizeCreditCardTransaction(
         transaction.status,
-        transaction.creditCardInvoice?.status
+        transaction.creditCardInvoice.status
       );
 
       rows.push({
         type: TransactionType.EXPENSE,
         source: 'CREDIT_CARD',
+        competence: resolveMonthlyProjectionCompetence({
+          kind: 'MATERIALIZED_CREDIT_CARD',
+          invoiceDueDate: transaction.creditCardInvoice.dueDate,
+          installmentNumber: transaction.installmentNumber,
+          totalInstallments: transaction.totalInstallments,
+          purchaseGroupId: transaction.purchaseGroupId
+        }),
         amount: getCreditCardInvoiceSignedAmount(transaction),
         categoryId: transaction.categoryId,
         categoryName: buildCategoryLabel(transaction.category),
@@ -633,9 +660,20 @@ export default class FinancialDashboardService {
         template.fromAccount?.statementDueDay;
 
       if (isCreditCardFixedExpense) {
+        const invoiceReference = resolveCreditCardInvoiceReference(
+          occurrence.occurrenceDate,
+          template.fromAccount!.statementClosingDay!,
+          template.fromAccount!.statementDueDay!
+        );
+
         rows.push({
           type: TransactionType.EXPENSE,
           source: 'CREDIT_CARD',
+          competence: resolveMonthlyProjectionCompetence({
+            kind: 'PROJECTED_FIXED',
+            occurrenceDate: occurrence.occurrenceDate,
+            creditCardInvoiceDueDate: invoiceReference.dueDate
+          }),
           amount: toDecimal(template.amount),
           categoryId: template.categoryId ?? null,
           categoryName: buildCategoryLabel(template.category),
@@ -649,6 +687,10 @@ export default class FinancialDashboardService {
       rows.push({
         type: template.type as MonthlyProjectionTransactionType,
         source: 'FIXED_PROJECTED',
+        competence: resolveMonthlyProjectionCompetence({
+          kind: 'PROJECTED_FIXED',
+          occurrenceDate: occurrence.occurrenceDate
+        }),
         amount: toDecimal(template.amount),
         categoryId: template.categoryId ?? null,
         categoryName: buildCategoryLabel(template.category),

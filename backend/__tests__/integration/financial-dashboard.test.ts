@@ -170,6 +170,9 @@ describe('Financial dashboard', () => {
         companyId: { in: [primaryCompanyId, secondaryCompanyId] }
       }
     });
+    await prisma.installmentPlan.deleteMany({
+      where: { companyId: { in: [primaryCompanyId, secondaryCompanyId] } }
+    });
     await prisma.creditCardInvoice.deleteMany({
       where: {
         account: {
@@ -213,6 +216,9 @@ describe('Financial dashboard', () => {
       where: {
         companyId: { in: [primaryCompanyId, secondaryCompanyId] }
       }
+    });
+    await prisma.installmentPlan.deleteMany({
+      where: { companyId: { in: [primaryCompanyId, secondaryCompanyId] } }
     });
     await prisma.creditCardInvoice.deleteMany({
       where: {
@@ -881,6 +887,214 @@ describe('Financial dashboard', () => {
       })
     ]);
     expect(response.body.projectedEndingBalance).toBe('1250.00');
+  });
+
+  it('projects only each installment amount in its explicit competence month', async () => {
+    const now = new Date();
+    const currentMonthKey = buildMonthKey(now);
+    const nextMonthKey = addMonthKey(currentMonthKey, 1);
+    const [currentYear, currentMonth] = currentMonthKey.split('-').map(Number);
+    const [nextYear, nextMonth] = nextMonthKey.split('-').map(Number);
+    const currentDueDate = buildDate(currentYear, currentMonth - 1, 18);
+    const nextDueDate = buildDate(nextYear, nextMonth - 1, 18);
+    const purchaseDate = buildDate(currentYear, currentMonth - 1, 5);
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const [checkingAccount, creditCardAccount, expenseCategory] = await Promise.all([
+      prisma.financialAccount.create({
+        data: {
+          name: 'Conta das parcelas por competencia',
+          type: 'CHECKING',
+          balance: 1000,
+          companyId: primaryCompanyId
+        }
+      }),
+      prisma.financialAccount.create({
+        data: {
+          name: 'Cartao das parcelas por competencia',
+          type: 'CREDIT_CARD',
+          balance: 0,
+          creditLimit: 3000,
+          statementClosingDay: 10,
+          statementDueDay: 18,
+          companyId: primaryCompanyId
+        }
+      }),
+      prisma.financialCategory.create({
+        data: {
+          name: 'Parcelas por competencia',
+          type: 'EXPENSE',
+          color: '#7c3aed',
+          companyId: primaryCompanyId
+        }
+      })
+    ]);
+
+    const installmentPlanId = `dashboard-plan-${suffix}`;
+    await prisma.installmentPlan.create({
+      data: {
+        id: installmentPlanId,
+        description: 'Curso em duas parcelas',
+        totalAmount: 180,
+        installmentCount: 2,
+        purchaseDate,
+        firstDueDate: currentDueDate,
+        companyId: primaryCompanyId,
+        createdBy: primaryUserId
+      }
+    });
+
+    const [currentInvoice, nextInvoice] = await Promise.all([
+      prisma.creditCardInvoice.create({
+        data: {
+          accountId: creditCardAccount.id,
+          referenceYear: currentYear,
+          referenceMonth: currentMonth,
+          closingDate: buildDate(currentYear, currentMonth - 1, 10),
+          dueDate: currentDueDate,
+          status: 'OPEN',
+          totalAmount: 50
+        }
+      }),
+      prisma.creditCardInvoice.create({
+        data: {
+          accountId: creditCardAccount.id,
+          referenceYear: nextYear,
+          referenceMonth: nextMonth,
+          closingDate: buildDate(nextYear, nextMonth - 1, 10),
+          dueDate: nextDueDate,
+          status: 'OPEN',
+          totalAmount: 50
+        }
+      })
+    ]);
+
+    await prisma.financialTransaction.createMany({
+      data: [
+        {
+          description: 'Curso - parcela 1',
+          amount: 90,
+          date: currentDueDate,
+          dueDate: currentDueDate,
+          type: 'EXPENSE',
+          status: 'PENDING',
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId,
+          installmentNumber: 1,
+          totalInstallments: 2,
+          installmentPlanId
+        },
+        {
+          description: 'Curso - parcela 2',
+          amount: 90,
+          date: nextDueDate,
+          dueDate: nextDueDate,
+          type: 'EXPENSE',
+          status: 'PENDING',
+          fromAccountId: checkingAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId,
+          installmentNumber: 2,
+          totalInstallments: 2,
+          installmentPlanId
+        },
+        {
+          description: 'Notebook - parcela 1',
+          amount: 50,
+          date: purchaseDate,
+          dueDate: currentInvoice.dueDate,
+          effectiveDate: purchaseDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: creditCardAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId,
+          installmentNumber: 1,
+          totalInstallments: 2,
+          purchaseGroupId: `dashboard-card-${suffix}`,
+          creditCardInvoiceId: currentInvoice.id
+        },
+        {
+          description: 'Notebook - parcela 2',
+          amount: 50,
+          date: purchaseDate,
+          dueDate: nextInvoice.dueDate,
+          effectiveDate: purchaseDate,
+          type: 'EXPENSE',
+          status: 'COMPLETED',
+          fromAccountId: creditCardAccount.id,
+          categoryId: expenseCategory.id,
+          companyId: primaryCompanyId,
+          createdBy: primaryUserId,
+          installmentNumber: 2,
+          totalInstallments: 2,
+          purchaseGroupId: `dashboard-card-${suffix}`,
+          creditCardInvoiceId: nextInvoice.id
+        }
+      ]
+    });
+
+    const [currentProjection, nextProjection] = await Promise.all([
+      FinancialDashboardService.getMonthlyProjection({
+        companyId: primaryCompanyId,
+        userId: primaryUserId,
+        month: currentMonthKey
+      }),
+      FinancialDashboardService.getMonthlyProjection({
+        companyId: primaryCompanyId,
+        userId: primaryUserId,
+        month: nextMonthKey
+      })
+    ]);
+
+    const summarizeInstallments = (projection: typeof currentProjection) =>
+      projection.knownRows
+        .filter((row) => row.competence.installment)
+        .map((row) => ({
+          month: row.competence.month,
+          kind: row.competence.installment?.kind,
+          number: row.competence.installment?.number,
+          amount: row.amount.toFixed(2)
+        }));
+
+    expect(summarizeInstallments(currentProjection)).toEqual(
+      expect.arrayContaining([
+        {
+          month: currentMonthKey,
+          kind: 'NON_CARD_INSTALLMENT',
+          number: 1,
+          amount: '90.00'
+        },
+        {
+          month: currentMonthKey,
+          kind: 'CREDIT_CARD_INSTALLMENT',
+          number: 1,
+          amount: '50.00'
+        }
+      ])
+    );
+    expect(summarizeInstallments(nextProjection)).toEqual(
+      expect.arrayContaining([
+        {
+          month: nextMonthKey,
+          kind: 'NON_CARD_INSTALLMENT',
+          number: 2,
+          amount: '90.00'
+        },
+        {
+          month: nextMonthKey,
+          kind: 'CREDIT_CARD_INSTALLMENT',
+          number: 2,
+          amount: '50.00'
+        }
+      ])
+    );
+    expect(currentProjection.totals.committedExpenseTotal.toFixed(2)).toBe('140.00');
+    expect(nextProjection.totals.committedExpenseTotal.toFixed(2)).toBe('140.00');
   });
 
   it('settles completed card transactions only when the invoice is paid', async () => {

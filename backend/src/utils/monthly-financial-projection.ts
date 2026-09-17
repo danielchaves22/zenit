@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { MonthlyProjectionCompetence } from './monthly-projection-competence';
 
 export type MonthlyProjectionSource =
   | 'AD_HOC_MATERIALIZED'
@@ -12,6 +13,7 @@ export type MonthlyProjectionAggregationState = 'REALIZED' | 'PENDING' | 'PROJEC
 export type MonthlyProjectionKnownRow = {
   type: MonthlyProjectionTransactionType;
   source: MonthlyProjectionSource;
+  competence: MonthlyProjectionCompetence;
   amount: Prisma.Decimal;
   categoryId: number | null;
   categoryName: string;
@@ -161,6 +163,13 @@ export function calculateMonthlyFinancialProjection(params: {
   trackedCategories: MonthlyProjectionTrackedCategory[];
   historicalAverageByCategoryId: Map<number, Prisma.Decimal>;
 }): MonthlyFinancialProjection {
+  const mismatchedRow = params.knownRows.find((row) => row.competence.month !== params.month);
+  if (mismatchedRow) {
+    throw new Error(
+      `Fato financeiro da competência ${mismatchedRow.competence.month} não pode compor a projeção ${params.month}`
+    );
+  }
+
   const variableProjectionItems = buildVariableProjectionItems({
     month: params.month,
     trackedCategories: params.trackedCategories,

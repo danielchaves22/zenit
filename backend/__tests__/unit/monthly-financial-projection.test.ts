@@ -6,9 +6,15 @@ import {
 
 function row(
   input: Partial<MonthlyProjectionKnownRow> &
-    Pick<MonthlyProjectionKnownRow, 'type' | 'source' | 'amount'>
+    Pick<MonthlyProjectionKnownRow, 'type' | 'source' | 'amount'>,
+  month = '2026-09'
 ): MonthlyProjectionKnownRow {
   return {
+    competence: {
+      month,
+      basis: 'TRANSACTION_DUE_DATE',
+      installment: null
+    },
     categoryId: 10,
     categoryName: 'Combustível',
     categoryColor: '#f97316',
@@ -86,25 +92,34 @@ describe('Monthly financial projection', () => {
       trackedCategories: [],
       historicalAverageByCategoryId: new Map(),
       knownRows: [
-        row({
-          type: 'INCOME',
-          source: 'FIXED_PROJECTED',
-          amount: new Prisma.Decimal(500),
-          categoryAggregationState: 'PROJECTED'
-        }),
-        row({
-          type: 'EXPENSE',
-          source: 'AD_HOC_MATERIALIZED',
-          amount: new Prisma.Decimal(100),
-          isSettled: true,
-          categoryAggregationState: 'REALIZED'
-        }),
-        row({
-          type: 'EXPENSE',
-          source: 'FIXED_PROJECTED',
-          amount: new Prisma.Decimal(200),
-          categoryAggregationState: 'PROJECTED'
-        })
+        row(
+          {
+            type: 'INCOME',
+            source: 'FIXED_PROJECTED',
+            amount: new Prisma.Decimal(500),
+            categoryAggregationState: 'PROJECTED'
+          },
+          '2026-10'
+        ),
+        row(
+          {
+            type: 'EXPENSE',
+            source: 'AD_HOC_MATERIALIZED',
+            amount: new Prisma.Decimal(100),
+            isSettled: true,
+            categoryAggregationState: 'REALIZED'
+          },
+          '2026-10'
+        ),
+        row(
+          {
+            type: 'EXPENSE',
+            source: 'FIXED_PROJECTED',
+            amount: new Prisma.Decimal(200),
+            categoryAggregationState: 'PROJECTED'
+          },
+          '2026-10'
+        )
       ]
     });
 
@@ -131,5 +146,27 @@ describe('Monthly financial projection', () => {
 
     expect(projection.variableProjectionItems[0].remainingProjected.toFixed(2)).toBe('0.00');
     expect(projection.categoryTotals[0].variableProjectedAmount.toFixed(2)).toBe('0.00');
+  });
+
+  it('rejects a known fact assigned to a different competence month', () => {
+    expect(() =>
+      calculateMonthlyFinancialProjection({
+        month: '2026-09',
+        isCurrentMonth: true,
+        carryOverAmount: new Prisma.Decimal(0),
+        trackedCategories: [],
+        historicalAverageByCategoryId: new Map(),
+        knownRows: [
+          row(
+            {
+              type: 'EXPENSE',
+              source: 'AD_HOC_MATERIALIZED',
+              amount: new Prisma.Decimal(50)
+            },
+            '2026-10'
+          )
+        ]
+      })
+    ).toThrow('competência 2026-10 não pode compor a projeção 2026-09');
   });
 });

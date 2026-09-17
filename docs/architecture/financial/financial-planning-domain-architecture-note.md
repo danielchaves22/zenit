@@ -200,10 +200,13 @@ dependem do workspace, como impedir alteracoes em meses passados, pertencem ao
 servico de dominio. Assim, chamadas HTTP e chamadas internas aplicam a mesma
 politica e nao dependem do timezone do servidor.
 
-O diagnostico financeiro usa a metodologia v2 a partir da adocao desse
+O diagnostico financeiro passou a usar a metodologia v2 com a adocao desse
 calendario: a janela historica e a contribuicao mensal de provisoes derivam da
-data de negocio do workspace. Snapshots v1 permanecem imutaveis e identificados
-com a metodologia original; nao existe regravacao retroativa do historico.
+data de negocio do workspace. A metodologia v3 passa a considerar creditos
+explicitos de cartao no valor liquido das medias variaveis e inclui apenas
+contribuicoes de provisao aplicaveis ao mes atual. Snapshots v1 e v2 permanecem
+imutaveis e identificados com a metodologia original; nao existe regravacao
+retroativa do historico.
 
 ### Calculo canonico das provisoes
 
@@ -366,13 +369,18 @@ que deveriam representar a mesma situacao financeira.
   interface deixe clara a natureza logica da reserva.
 - Autorizacao de planejamento passa a ser requisito estrutural para uso por MEIs.
 
-## Proximos passos
+## Estado da consolidacao
 
 Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot, seu historico auditavel e a
 matriz canonica de reconhecimento e as perspectivas historicas usadas por
 dashboard, planejamento mensal e diagnostico, alem da projecao mensal compartilhada
 por dashboard e planejamento, a competencia explicita de parcelas e a dimensao
-separada de contribuicoes de provisoes, ja foram consolidados. Permanece:
+separada de contribuicoes de provisoes, ja foram consolidados.
 
-1. Comparar dashboard, planejamento e diagnostico nos mesmos cenarios compostos.
+O cenario composto de regressao compara os tres consumidores para receitas fixas,
+despesas fixas, parcelas fora e dentro do cartao, medias variaveis liquidas de
+creditos e provisoes. Ele tambem verifica que provisoes continuam fora das despesas,
+dos limites por categoria e do saldo das contas. Com essa cobertura, a P0 de
+consolidacao semantica e tecnica esta encerrada; novas alteracoes devem preservar
+essas invariantes.

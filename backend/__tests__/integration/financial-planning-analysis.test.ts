@@ -2,6 +2,7 @@ import request from 'supertest';
 import {
   AccountType,
   AppKey,
+  CreditCardCreditKind,
   CreditCardInvoiceStatus,
   PrismaClient,
   RecurringFrequency,
@@ -9,8 +10,10 @@ import {
   TransactionType
 } from '@prisma/client';
 import app from '../../src/app';
+import FinancialDashboardService from '../../src/services/financial-dashboard.service';
 import FinancialPlanningAnalysisService from '../../src/services/financial-planning-analysis.service';
 import FinancialProvisionService from '../../src/services/financial-provision.service';
+import MonthlyCategoryBudgetService from '../../src/services/monthly-category-budget.service';
 import { generateToken } from '../../src/utils/jwt';
 
 const prisma = new PrismaClient();
@@ -20,6 +23,11 @@ const APP_KEY_VALUE = 'zenit-cash';
 function monthDate(offset: number, day = 15): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, day, 12));
+}
+
+function monthKey(offset: number): string {
+  const date = monthDate(offset, 1);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 describe('Financial planning analysis preparation', () => {
@@ -142,6 +150,7 @@ describe('Financial planning analysis preparation', () => {
           amount: 10000,
           type: TransactionType.INCOME,
           frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: 5,
           startDate: monthDate(-12, 1),
           nextDueDate: monthDate(0, 5),
           isActive: true,
@@ -157,6 +166,7 @@ describe('Financial planning analysis preparation', () => {
           amount: 2000,
           type: TransactionType.EXPENSE,
           frequency: RecurringFrequency.MONTHLY,
+          dayOfMonth: 10,
           startDate: monthDate(-12, 1),
           nextDueDate: monthDate(0, 10),
           isActive: true,
@@ -247,7 +257,7 @@ describe('Financial planning analysis preparation', () => {
       }
     });
 
-    for (const offset of [-3, -2, -1]) {
+    for (const offset of [-6, -5, -4, -3, -2, -1]) {
       await prisma.financialTransaction.createMany({
         data: [
           {
@@ -289,6 +299,52 @@ describe('Financial planning analysis preparation', () => {
             purchaseGroupId: `historical-group-${offset}`,
             installmentNumber: 1,
             totalInstallments: 2
+          }
+        ]
+      });
+
+      const reference = monthDate(offset, 1);
+      const settledAt = monthDate(offset, 17);
+      const paidInvoice = await prisma.creditCardInvoice.create({
+        data: {
+          accountId: creditCardAccountId,
+          referenceYear: reference.getUTCFullYear(),
+          referenceMonth: reference.getUTCMonth() + 1,
+          closingDate: monthDate(offset, 10),
+          dueDate: settledAt,
+          settledAt,
+          status: CreditCardInvoiceStatus.PAID,
+          totalAmount: 80
+        }
+      });
+      await prisma.financialTransaction.createMany({
+        data: [
+          {
+            companyId: personalWorkspaceId,
+            createdBy: userId,
+            description: 'Compra variável no cartão',
+            amount: 100,
+            date: monthDate(offset, 8),
+            effectiveDate: monthDate(offset, 8),
+            type: TransactionType.EXPENSE,
+            status: TransactionStatus.COMPLETED,
+            fromAccountId: creditCardAccountId,
+            categoryId: variableCategoryId,
+            creditCardInvoiceId: paidInvoice.id
+          },
+          {
+            companyId: personalWorkspaceId,
+            createdBy: userId,
+            description: 'Crédito da compra variável',
+            amount: 20,
+            date: monthDate(offset, 9),
+            effectiveDate: monthDate(offset, 9),
+            type: TransactionType.INCOME,
+            status: TransactionStatus.COMPLETED,
+            toAccountId: creditCardAccountId,
+            categoryId: variableCategoryId,
+            creditCardInvoiceId: paidInvoice.id,
+            creditCardCreditKind: CreditCardCreditKind.ADJUSTMENT
           }
         ]
       });
@@ -411,7 +467,7 @@ describe('Financial planning analysis preparation', () => {
         at: boundaryInstant
       });
       expect(saoPaulo).toMatchObject({
-        methodologyVersion: 2,
+        methodologyVersion: 3,
         period: {
           historyMonths: 2,
           startDate: '2025-10-01',
@@ -484,6 +540,135 @@ describe('Financial planning analysis preparation', () => {
     }
   });
 
+  it('keeps dashboard, monthly planning and diagnosis aligned in a composite scenario', async () => {
+    const projectedMonth = monthKey(1);
+    const referenceMonth = monthDate(1, 1);
+    const futureProvision = await prisma.financialProvision.create({
+      data: {
+        companyId: personalWorkspaceId,
+        createdBy: userId,
+        categoryId: expenseCategoryId,
+        name: 'Provisão ainda não iniciada',
+        kind: 'ONE_TIME',
+        status: 'ACTIVE',
+        expectedAmount: 200,
+        reservedAmount: 0,
+        startMonth: monthDate(2, 1),
+        targetDate: monthDate(4, 15)
+      }
+    });
+
+    try {
+      await prisma.userVariableProjectionPreference.upsert({
+        where: {
+          unique_user_variable_projection_preference: {
+            userId,
+            companyId: personalWorkspaceId
+          }
+        },
+        update: { trackedExpenseCategoryIds: [variableCategoryId] },
+        create: {
+          userId,
+          companyId: personalWorkspaceId,
+          trackedExpenseCategoryIds: [variableCategoryId]
+        }
+      });
+      await prisma.monthlyCategoryBudget.createMany({
+        data: [
+          {
+            companyId: personalWorkspaceId,
+            categoryId: expenseCategoryId,
+            referenceMonth,
+            limitAmount: 3000,
+            includeChildren: true
+          },
+          {
+            companyId: personalWorkspaceId,
+            categoryId: variableCategoryId,
+            referenceMonth,
+            limitAmount: 700,
+            includeChildren: true
+          }
+        ]
+      });
+
+      const [dashboard, planning, diagnosis] = await Promise.all([
+        FinancialDashboardService.getMonthlyProjection({
+          companyId: personalWorkspaceId,
+          userId,
+          month: projectedMonth
+        }),
+        MonthlyCategoryBudgetService.getPlan({
+          companyId: personalWorkspaceId,
+          userId,
+          month: projectedMonth
+        }),
+        FinancialPlanningAnalysisService.preview({
+          companyId: personalWorkspaceId,
+          userId,
+          historyMonths: 6
+        })
+      ]);
+
+      const diagnosisSourceAmount = (kind: string) =>
+        diagnosis.sources
+          .filter((source) => source.kind === kind)
+          .reduce((total, source) => total + Number(source.monthlyAmount), 0)
+          .toFixed(2);
+      const plannedFixedCategory = planning.items.find(
+        (item) => item.category.id === expenseCategoryId
+      );
+      const plannedVariableCategory = planning.items.find(
+        (item) => item.category.id === variableCategoryId
+      );
+      const dashboardFixedCategory = dashboard.categoryTotals.find(
+        (item) => item.categoryId === expenseCategoryId
+      );
+
+      expect(diagnosis.methodologyVersion).toBe(3);
+      expect(dashboard.totals.incomeTotal.toFixed(2)).toBe('10000.00');
+      expect(diagnosisSourceAmount('FIXED_INCOME')).toBe('10000.00');
+
+      expect(dashboard.totals.committedExpenseTotal.toFixed(2)).toBe('2700.00');
+      expect(planning.summary.committedAmount).toBe('2700.00');
+      expect(diagnosisSourceAmount('FIXED_EXPENSE')).toBe('2000.00');
+      expect(diagnosisSourceAmount('INSTALLMENT')).toBe('700.00');
+      expect(plannedFixedCategory?.committedAmount).toBe('2700.00');
+
+      expect(dashboard.totals.variableProjectedExpenseTotal.toFixed(2)).toBe('580.00');
+      expect(plannedVariableCategory?.historicalAverageAmount).toBe('580.00');
+      expect(diagnosisSourceAmount('VARIABLE_EXPENSE')).toBe('580.00');
+
+      expect(dashboard.totals.expenseTotal.toFixed(2)).toBe('3280.00');
+      expect(planning.summary.forecastAmount).toBe('3280.00');
+      expect(
+        (Number(diagnosisSourceAmount('FIXED_EXPENSE')) +
+          Number(diagnosisSourceAmount('INSTALLMENT')) +
+          Number(diagnosisSourceAmount('VARIABLE_EXPENSE'))).toFixed(2)
+      ).toBe('3280.00');
+
+      expect(dashboard.totals.provisionContributionTotal.toFixed(2)).toBe('400.00');
+      expect(diagnosisSourceAmount('PROVISION')).toBe('400.00');
+      expect(dashboardFixedCategory?.amount.toFixed(2)).toBe('2700.00');
+      expect(
+        diagnosis.sources.some((source) => source.key === `PROVISION:${futureProvision.id}`)
+      ).toBe(false);
+      expect(
+        dashboard.provisionContributionItems.some(
+          (item) => item.provisionId === futureProvision.id
+        )
+      ).toBe(false);
+    } finally {
+      await prisma.monthlyCategoryBudget.deleteMany({
+        where: { companyId: personalWorkspaceId, referenceMonth }
+      });
+      await prisma.userVariableProjectionPreference.deleteMany({
+        where: { userId, companyId: personalWorkspaceId }
+      });
+      await prisma.financialProvision.delete({ where: { id: futureProvision.id } });
+    }
+  });
+
   it('builds a transparent preview without double-counting fixed and installment history', async () => {
     const response = await request(app)
       .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
@@ -531,7 +716,7 @@ describe('Financial planning analysis preparation', () => {
         expect.objectContaining({
           kind: 'VARIABLE_EXPENSE',
           label: 'Lazer do diagnóstico',
-          monthlyAmount: '500.00'
+          monthlyAmount: '580.00'
         })
       ])
     );
@@ -559,17 +744,17 @@ describe('Financial planning analysis preparation', () => {
       objectiveKind: 'MONTHLY_SAVINGS',
       targetMonthlySavings: '1000.00',
       profileVersion: 1,
-      methodologyVersion: 2,
+      methodologyVersion: 3,
       basisHash: preview.body.basisHash,
       dataQualityScore: 100,
       status: 'CONFIRMED',
       totals: {
         monthlyIncome: '10000.00',
         monthlyCommittedExpenses: '2700.00',
-        monthlyVariableExpenses: '500.00',
+        monthlyVariableExpenses: '580.00',
         monthlyProvisionContribution: '400.00',
-        monthlyAvailableBeforeGoal: '6400.00',
-        monthlyBalanceAfterGoal: '5400.00'
+        monthlyAvailableBeforeGoal: '6320.00',
+        monthlyBalanceAfterGoal: '5320.00'
       }
     });
     const stored = await prisma.financialPlanningSnapshot.findUnique({

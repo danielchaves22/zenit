@@ -23,9 +23,13 @@ import {
   formatFinancialMonthKey,
   parseFinancialMonthKey
 } from '../utils/financial-calendar';
-import { calculateProvisionMonthlyContribution } from '../utils/financial-provision-calculator';
+import { calculateProvisionContributionForMonth } from '../utils/financial-provision-calculator';
+import {
+  getCreditCardInvoiceSignedAmount,
+  isCreditCardInvoiceCredit
+} from '../utils/financial-transaction-amount';
 
-const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 2;
+const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 3;
 
 export type FinancialPlanningSourceKind =
   | 'FIXED_INCOME'
@@ -409,6 +413,8 @@ export default class FinancialPlanningAnalysisService {
             date: true,
             amount: true,
             paidAmount: true,
+            creditCardInvoiceId: true,
+            creditCardCreditKind: true,
             categoryId: true,
             recurringTransactionId: true,
             installmentPlanId: true,
@@ -534,7 +540,11 @@ export default class FinancialPlanningAnalysisService {
     });
 
     provisions.forEach((provision) => {
-      const contribution = calculateProvisionMonthlyContribution(provision, calendar);
+      const contribution = calculateProvisionContributionForMonth(
+        provision,
+        calendar,
+        calendar.currentMonthKey
+      );
       if (contribution.isZero()) return;
       sources.push({
         key: `PROVISION:${provision.id}`,
@@ -564,7 +574,11 @@ export default class FinancialPlanningAnalysisService {
       { category: { id: number; name: string } | null; total: Prisma.Decimal; transactions: number }
     >();
     history.forEach((transaction) => {
-      if (transaction.type !== TransactionType.EXPENSE) return;
+      const isCardCredit =
+        transaction.type === TransactionType.INCOME &&
+        transaction.creditCardInvoiceId !== null &&
+        isCreditCardInvoiceCredit(transaction);
+      if (transaction.type !== TransactionType.EXPENSE && !isCardCredit) return;
       if (
         transaction.recurringTransactionId ||
         transaction.installmentPlanId ||
@@ -578,7 +592,10 @@ export default class FinancialPlanningAnalysisService {
         total: new Prisma.Decimal(0),
         transactions: 0
       };
-      current.total = current.total.plus((transaction.paidAmount ?? transaction.amount).abs());
+      const amount = isCardCredit
+        ? getCreditCardInvoiceSignedAmount(transaction)
+        : (transaction.paidAmount ?? transaction.amount).abs();
+      current.total = current.total.plus(amount);
       current.transactions += 1;
       variableByCategory.set(transaction.categoryId, current);
     });
@@ -586,13 +603,15 @@ export default class FinancialPlanningAnalysisService {
     Array.from(variableByCategory.entries())
       .sort((left, right) => right[1].total.comparedTo(left[1].total))
       .forEach(([categoryId, item]) => {
+        const average = Prisma.Decimal.max(item.total, 0).div(averagingMonths);
+        if (average.isZero()) return;
         sources.push({
           key: `HISTORICAL_CATEGORY:${categoryId ?? 'UNCATEGORIZED'}`,
           kind: 'VARIABLE_EXPENSE',
           origin: 'HISTORICAL_CATEGORY',
           label: item.category?.name ?? 'Despesas sem categoria',
           detail: `Média de ${item.transactions} lançamento(s) em ${averagingMonths} mês(es) com dados`,
-          monthlyAmount: moneyString(item.total.div(averagingMonths)),
+          monthlyAmount: moneyString(average),
           selectedByDefault: true,
           metadata: {
             categoryId,

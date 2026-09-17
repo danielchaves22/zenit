@@ -353,6 +353,28 @@ planejamento. Em todos os casos, a persistencia continua exigindo a acao
 explicita `Salvar planejamento` e passa novamente pelas validacoes canonicas do
 backend.
 
+### Evidencias para orientacao financeira
+
+A explicacao inteligente nao recebe transacoes cruas nem liberdade para decidir
+quais numeros sao verdadeiros. O backend transforma o retrato confirmado e os
+cenarios deterministas em um pacote versionado de evidencias, composto por:
+
+- achados classificados, cada um com titulo, resumo e severidade;
+- metricas tipadas como dinheiro, percentual ou quantidade;
+- referencias institucionais vinculadas aos principios utilizados;
+- limitacoes explicitas da metodologia.
+
+Os primeiros achados cobrem encaixe da meta, saldo-base, participacao dos
+compromissos na renda, concentracao dos gastos variaveis, capacidade real de
+ajuste e qualidade dos dados. Percentuais descrevem a base do usuario; nao sao
+apresentados como limites universais. Qualquer faixa de atencao pertence a uma
+metodologia interna versionada.
+
+As referencias sustentam principios de organizacao, resiliencia e bem-estar
+financeiro. Elas nao autorizam atribuir a uma instituicao um limite que ela nao
+publicou. Uma futura chamada de IA podera ordenar e explicar somente os achados
+recebidos, sem recalcular valores, criar referencias ou executar mutacoes.
+
 ### Quality gates
 
 Um lote financeiro somente esta concluido quando:

@@ -126,6 +126,43 @@ export interface FinancialPlanningScenario {
   warnings: string[];
 }
 
+export interface FinancialGuidanceEvidenceMetric {
+  key: string;
+  label: string;
+  value: string;
+  format: 'MONEY' | 'PERCENT' | 'NUMBER';
+}
+
+export interface FinancialGuidanceFinding {
+  id:
+    | 'BASE_BALANCE'
+    | 'GOAL_FIT'
+    | 'COMMITTED_INCOME_SHARE'
+    | 'VARIABLE_EXPENSE_CONCENTRATION'
+    | 'ADJUSTMENT_CAPACITY'
+    | 'DATA_QUALITY';
+  severity: 'POSITIVE' | 'INFORMATIONAL' | 'ATTENTION' | 'CRITICAL';
+  title: string;
+  summary: string;
+  evidence: FinancialGuidanceEvidenceMetric[];
+  referenceIds: string[];
+}
+
+export interface FinancialGuidanceReference {
+  id: string;
+  organization: string;
+  title: string;
+  url: string;
+  purpose: string;
+}
+
+export interface FinancialGuidanceEvidence {
+  methodologyVersion: number;
+  findings: FinancialGuidanceFinding[];
+  references: FinancialGuidanceReference[];
+  limitations: string[];
+}
+
 export interface FinancialPlanningScenarioResult {
   snapshot: {
     id: number;
@@ -139,6 +176,7 @@ export interface FinancialPlanningScenarioResult {
   currentMonthlyBalanceAfterGoal: string;
   requiredReduction: string;
   scenarios: FinancialPlanningScenario[];
+  guidanceEvidence?: FinancialGuidanceEvidence;
 }
 
 export interface FinancialPlanningPreview {

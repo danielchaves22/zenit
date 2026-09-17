@@ -32,6 +32,7 @@ import {
   buildFinancialBudgetScenarios,
   FinancialBudgetScenarioSource
 } from '../utils/financial-budget-scenario';
+import { buildFinancialGuidanceEvidence } from '../utils/financial-guidance-evidence';
 
 const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 4;
 
@@ -908,6 +909,10 @@ export default class FinancialPlanningAnalysisService {
     const totals = snapshot.totals as Record<string, unknown>;
     if (
       hasInvalidSource ||
+      typeof totals.monthlyIncome !== 'string' ||
+      typeof totals.monthlyCommittedExpenses !== 'string' ||
+      typeof totals.monthlyVariableExpenses !== 'string' ||
+      typeof totals.monthlyProvisionContribution !== 'string' ||
       typeof totals.monthlyAvailableBeforeGoal !== 'string' ||
       typeof totals.monthlyBalanceAfterGoal !== 'string'
     ) {
@@ -918,17 +923,36 @@ export default class FinancialPlanningAnalysisService {
       );
     }
 
+    const scenarioResult = buildFinancialBudgetScenarios({
+      targetMonthlySavings: snapshot.targetMonthlySavings,
+      monthlyAvailableBeforeGoal: totals.monthlyAvailableBeforeGoal,
+      monthlyBalanceAfterGoal: totals.monthlyBalanceAfterGoal,
+      sources
+    });
+
     return {
       snapshot: {
         id: snapshot.id,
         basisHash: snapshot.basisHash,
         confirmedAt: snapshot.confirmedAt
       },
-      ...buildFinancialBudgetScenarios({
+      ...scenarioResult,
+      guidanceEvidence: buildFinancialGuidanceEvidence({
         targetMonthlySavings: snapshot.targetMonthlySavings,
-        monthlyAvailableBeforeGoal: totals.monthlyAvailableBeforeGoal,
-        monthlyBalanceAfterGoal: totals.monthlyBalanceAfterGoal,
-        sources
+        totals: {
+          monthlyIncome: totals.monthlyIncome,
+          monthlyCommittedExpenses: totals.monthlyCommittedExpenses,
+          monthlyVariableExpenses: totals.monthlyVariableExpenses,
+          monthlyProvisionContribution: totals.monthlyProvisionContribution,
+          monthlyAvailableBeforeGoal: totals.monthlyAvailableBeforeGoal,
+          monthlyBalanceAfterGoal: totals.monthlyBalanceAfterGoal
+        },
+        dataQuality: {
+          score: snapshot.dataQualityScore,
+          rating: snapshot.dataQualityScore >= 80 ? 'HIGH' : snapshot.dataQualityScore >= 60 ? 'MEDIUM' : 'LOW'
+        },
+        sources,
+        scenarios: scenarioResult
       })
     };
   }

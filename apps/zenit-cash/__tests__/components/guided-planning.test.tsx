@@ -190,6 +190,36 @@ describe('GuidedPlanning', () => {
       currentMonthlyAvailableBeforeGoal: '6700.00',
       currentMonthlyBalanceAfterGoal: '-300.00',
       requiredReduction: '300.00',
+      guidanceEvidence: {
+        methodologyVersion: 1,
+        findings: [
+          {
+            id: 'GOAL_FIT',
+            severity: 'ATTENTION',
+            title: 'A meta exige ajuste na base atual',
+            summary: 'Existe disponibilidade mensal, mas ela ainda é menor que a economia desejada.',
+            evidence: [
+              {
+                key: 'monthlyBalanceAfterGoal',
+                label: 'Saldo depois da meta',
+                value: '-300.00',
+                format: 'MONEY'
+              }
+            ],
+            referenceIds: ['CAIXA_ORCAMENTO_PRATICO']
+          }
+        ],
+        references: [
+          {
+            id: 'CAIXA_ORCAMENTO_PRATICO',
+            organization: 'CAIXA',
+            title: 'Fazendo seu orçamento na prática',
+            url: 'https://www.caixa.gov.br/educacao-financeira/voce/orcamento-pratica/Paginas/default.aspx',
+            purpose: 'Organização do orçamento.'
+          }
+        ],
+        limitations: ['Os percentuais não são limites universais de gasto.']
+      },
       scenarios: [
         {
           id: 'PRESERVE_PRIORITIES',
@@ -280,6 +310,8 @@ describe('GuidedPlanning', () => {
 
     await waitFor(() => expect(scenariosMock).toHaveBeenCalledWith(50));
     expect(await screen.findByText('Preservar prioridades')).toBeInTheDocument();
+    expect(screen.getByText('Leitura dos dados confirmados')).toBeInTheDocument();
+    expect(screen.getByText('A meta exige ajuste na base atual')).toBeInTheDocument();
     expect(screen.getByText('Meta alcançável neste cenário')).toBeInTheDocument();
     expect(screen.getByText('R$ 500,00')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Revisar como rascunho mensal' }));

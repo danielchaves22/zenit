@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { InfoModalButton } from "@/components/ui/InfoModalButton";
 import { useToast } from "@/components/ui/ToastContext";
+import { FinancialGuidanceEvidencePanel } from "./FinancialGuidanceEvidence";
 import {
   FinancialPlanningApiError,
   FinancialPlanningScenario,
@@ -112,17 +113,22 @@ export function FinancialPlanningScenarios({
       )}
 
       {result?.status === "TARGET_ALREADY_MET" && (
-        <div className="mt-4 flex items-start gap-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-4 text-emerald-200">
-          <CheckCircle2 size={20} className="mt-0.5 shrink-0" />
-          <div>
-            <p className="font-medium">A meta já cabe no retrato confirmado</p>
-            <p className="mt-1 text-sm text-emerald-200/80">
-              A disponibilidade mensal atual é de{" "}
-              {formatMoney(result.currentMonthlyAvailableBeforeGoal)}. Nenhum
-              corte foi sugerido.
-            </p>
+        <>
+          <div className="mt-4 flex items-start gap-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-4 text-emerald-200">
+            <CheckCircle2 size={20} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">A meta já cabe no retrato confirmado</p>
+              <p className="mt-1 text-sm text-emerald-200/80">
+                A disponibilidade mensal atual é de{" "}
+                {formatMoney(result.currentMonthlyAvailableBeforeGoal)}. Nenhum
+                corte foi sugerido.
+              </p>
+            </div>
           </div>
-        </div>
+          {result.guidanceEvidence && (
+            <FinancialGuidanceEvidencePanel evidence={result.guidanceEvidence} />
+          )}
+        </>
       )}
 
       {result?.status === "ADJUSTMENT_REQUIRED" && (
@@ -131,6 +137,9 @@ export function FinancialPlanningScenarios({
             Faltam {formatMoney(result.requiredReduction)} por mês para a meta
             no retrato atual.
           </div>
+          {result.guidanceEvidence && (
+            <FinancialGuidanceEvidencePanel evidence={result.guidanceEvidence} />
+          )}
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             {result.scenarios.map((scenario) => (
               <ScenarioCard

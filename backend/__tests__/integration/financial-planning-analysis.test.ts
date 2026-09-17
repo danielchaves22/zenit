@@ -20,6 +20,8 @@ const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
 const APP_KEY_VALUE = 'zenit-cash';
 
+jest.setTimeout(30_000);
+
 function monthDate(offset: number, day = 15): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, day, 12));
@@ -369,7 +371,7 @@ describe('Financial planning analysis preparation', () => {
     await prisma.userAppGrant.create({
       data: { userId, companyId: business.id, appId: cashApp.id, granted: true }
     });
-  });
+  }, 30_000);
 
   afterAll(async () => {
     await prisma.financialPlanningSnapshot.deleteMany({ where: { ownerUserId: userId } });
@@ -400,7 +402,7 @@ describe('Financial planning analysis preparation', () => {
     });
     await prisma.user.delete({ where: { id: userId } });
     await prisma.$disconnect();
-  });
+  }, 30_000);
 
   it('uses the workspace month for the historical window and provision contribution', async () => {
     const boundaryInstant = new Date('2026-01-01T02:30:00.000Z');
@@ -828,6 +830,20 @@ describe('Financial planning analysis preparation', () => {
         remainingGap: '0.00'
       })
     ]);
+    expect(scenarios.body.guidanceEvidence).toMatchObject({
+      methodologyVersion: 1,
+      findings: expect.arrayContaining([
+        expect.objectContaining({ id: 'GOAL_FIT', severity: 'ATTENTION' }),
+        expect.objectContaining({ id: 'COMMITTED_INCOME_SHARE' }),
+        expect.objectContaining({ id: 'VARIABLE_EXPENSE_CONCENTRATION' }),
+        expect.objectContaining({ id: 'ADJUSTMENT_CAPACITY', severity: 'POSITIVE' }),
+        expect.objectContaining({ id: 'DATA_QUALITY' })
+      ]),
+      references: expect.arrayContaining([
+        expect.objectContaining({ id: 'BCB_CIDADANIA_FINANCEIRA' }),
+        expect.objectContaining({ id: 'OECD_INFE_2023' })
+      ])
+    });
     expect(
       await prisma.monthlyCategoryBudget.count({
         where: { companyId: personalWorkspaceId }

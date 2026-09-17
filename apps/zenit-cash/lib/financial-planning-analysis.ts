@@ -98,6 +98,49 @@ export interface FinancialPlanningSnapshotPage {
   nextCursor: number | null;
 }
 
+export interface FinancialPlanningScenarioAdjustment {
+  sourceKey: string;
+  categoryId: number | null;
+  categoryName: string;
+  flexibility: 'MODERATE' | 'FLEXIBLE';
+  currentAmount: string;
+  minimumMonthlyAmount: string;
+  adjustableAmount: string;
+  proposedReduction: string;
+  suggestedMonthlyLimit: string;
+  explanation: string;
+}
+
+export interface FinancialPlanningScenario {
+  id: 'PRESERVE_PRIORITIES' | 'BALANCED';
+  label: string;
+  description: string;
+  feasibility: 'FEASIBLE' | 'PARTIAL' | 'NO_ADJUSTABLE_EXPENSES';
+  requiredReduction: string;
+  proposedReduction: string;
+  remainingGap: string;
+  projectedMonthlyAvailableBeforeGoal: string;
+  projectedMonthlyBalanceAfterGoal: string;
+  adjustments: FinancialPlanningScenarioAdjustment[];
+  assumptions: string[];
+  warnings: string[];
+}
+
+export interface FinancialPlanningScenarioResult {
+  snapshot: {
+    id: number;
+    basisHash: string | null;
+    confirmedAt: string;
+  };
+  recommendationMethodologyVersion: number;
+  status: 'TARGET_ALREADY_MET' | 'ADJUSTMENT_REQUIRED';
+  targetMonthlySavings: string;
+  currentMonthlyAvailableBeforeGoal: string;
+  currentMonthlyBalanceAfterGoal: string;
+  requiredReduction: string;
+  scenarios: FinancialPlanningScenario[];
+}
+
 export interface FinancialPlanningPreview {
   workspace: { id: number; name: string };
   methodologyVersion: number;
@@ -124,6 +167,9 @@ export interface FinancialPlanningApiError {
     | 'FINANCIAL_PLANNING_PREVIEW_STALE'
     | 'FINANCIAL_PLANNING_INTEGRITY_CONFLICT'
     | 'FINANCIAL_PLANNING_SNAPSHOT_NOT_FOUND'
+    | 'FINANCIAL_PLANNING_SNAPSHOT_UNSUPPORTED_FOR_SCENARIOS'
+    | 'FINANCIAL_PLANNING_SNAPSHOT_STALE_FOR_SCENARIOS'
+    | 'FINANCIAL_PLANNING_SNAPSHOT_INVALID_FOR_SCENARIOS'
     | 'INVALID_SOURCE_SELECTION'
     | 'INCOME_SOURCE_REQUIRED';
 }
@@ -161,4 +207,13 @@ export async function getFinancialPlanningSnapshot(
 ): Promise<FinancialPlanningSnapshot> {
   const response = await api.get(`/financial/budgets/planning-analysis/snapshots/${snapshotId}`);
   return response.data as FinancialPlanningSnapshot;
+}
+
+export async function getFinancialPlanningSnapshotScenarios(
+  snapshotId: number
+): Promise<FinancialPlanningScenarioResult> {
+  const response = await api.get(
+    `/financial/budgets/planning-analysis/snapshots/${snapshotId}/scenarios`
+  );
+  return response.data as FinancialPlanningScenarioResult;
 }

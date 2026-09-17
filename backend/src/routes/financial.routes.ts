@@ -175,6 +175,7 @@ import {
 import {
   confirmFinancialPlanningAnalysis,
   getFinancialPlanningSnapshot,
+  getFinancialPlanningSnapshotScenarios,
   listFinancialPlanningSnapshots,
   previewFinancialPlanningAnalysis
 } from '../controllers/financial-planning-analysis.controller';
@@ -372,6 +373,11 @@ router.get(
   '/budgets/planning-analysis/snapshots',
   validate(listFinancialPlanningSnapshotsSchema, { source: 'query' }),
   listFinancialPlanningSnapshots
+);
+router.get(
+  '/budgets/planning-analysis/snapshots/:id/scenarios',
+  validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
+  getFinancialPlanningSnapshotScenarios
 );
 router.get(
   '/budgets/planning-analysis/snapshots/:id',

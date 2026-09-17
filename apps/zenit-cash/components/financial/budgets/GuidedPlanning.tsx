@@ -17,6 +17,7 @@ import { InfoModalButton } from '@/components/ui/InfoModalButton';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/ToastContext';
 import { FinancialPlanningSnapshotHistory } from './FinancialPlanningSnapshotHistory';
+import { FinancialPlanningScenarios } from './FinancialPlanningScenarios';
 import {
   FinancialPlanningApiError,
   FinancialPlanningPreview,
@@ -561,6 +562,9 @@ export function GuidedPlanning() {
           )}
         </div>
       </div>
+      {result && resultValidity === 'CURRENT' && (
+        <FinancialPlanningScenarios snapshot={result} />
+      )}
       <FinancialPlanningSnapshotHistory />
     </div>
   );

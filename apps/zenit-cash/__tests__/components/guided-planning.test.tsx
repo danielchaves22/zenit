@@ -4,12 +4,13 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GuidedPlanning } from '@/components/financial/budgets/GuidedPlanning';
 
-const { addToastMock, confirmMock, detailMock, getMock, historyMock } = vi.hoisted(() => ({
+const { addToastMock, confirmMock, detailMock, getMock, historyMock, scenariosMock } = vi.hoisted(() => ({
   addToastMock: vi.fn(),
   confirmMock: vi.fn(),
   detailMock: vi.fn(),
   historyMock: vi.fn(),
-  getMock: vi.fn()
+  getMock: vi.fn(),
+  scenariosMock: vi.fn()
 }));
 
 vi.mock('@/components/ui/ToastContext', () => ({
@@ -67,7 +68,8 @@ vi.mock('@/lib/financial-planning-analysis', async () => {
     getFinancialPlanningPreview: (...args: unknown[]) => getMock(...args),
     confirmFinancialPlanningSnapshot: (...args: unknown[]) => confirmMock(...args),
     getFinancialPlanningSnapshots: (...args: unknown[]) => historyMock(...args),
-    getFinancialPlanningSnapshot: (...args: unknown[]) => detailMock(...args)
+    getFinancialPlanningSnapshot: (...args: unknown[]) => detailMock(...args),
+    getFinancialPlanningSnapshotScenarios: (...args: unknown[]) => scenariosMock(...args)
   };
 });
 
@@ -180,6 +182,44 @@ describe('GuidedPlanning', () => {
       nextCursor: null
     });
     detailMock.mockResolvedValue(snapshot);
+    scenariosMock.mockResolvedValue({
+      snapshot: { id: 50, basisHash: 'a'.repeat(64), confirmedAt: snapshot.confirmedAt },
+      recommendationMethodologyVersion: 1,
+      status: 'ADJUSTMENT_REQUIRED',
+      targetMonthlySavings: '7000.00',
+      currentMonthlyAvailableBeforeGoal: '6700.00',
+      currentMonthlyBalanceAfterGoal: '-300.00',
+      requiredReduction: '300.00',
+      scenarios: [
+        {
+          id: 'PRESERVE_PRIORITIES',
+          label: 'Preservar prioridades',
+          description: 'Propõe ajustes apenas nas categorias marcadas como flexíveis.',
+          feasibility: 'FEASIBLE',
+          requiredReduction: '300.00',
+          proposedReduction: '300.00',
+          remainingGap: '0.00',
+          projectedMonthlyAvailableBeforeGoal: '7000.00',
+          projectedMonthlyBalanceAfterGoal: '0.00',
+          adjustments: [
+            {
+              sourceKey: 'HISTORICAL_CATEGORY:3',
+              categoryId: 3,
+              categoryName: 'Lazer',
+              flexibility: 'FLEXIBLE',
+              currentAmount: '800.00',
+              minimumMonthlyAmount: '300.00',
+              adjustableAmount: '500.00',
+              proposedReduction: '300.00',
+              suggestedMonthlyLimit: '500.00',
+              explanation: 'Ajuste distribuído entre categorias flexíveis.'
+            }
+          ],
+          assumptions: ['Somente gastos variáveis foram ajustados.'],
+          warnings: []
+        }
+      ]
+    });
   });
 
   it('lets the user choose sources before confirming an immutable snapshot', async () => {
@@ -226,6 +266,21 @@ describe('GuidedPlanning', () => {
       'href',
       '/profile/financial?returnTo=%2Ffinancial%2Fbudgets%3Fview%3Dguided'
     );
+  });
+
+  it('compares deterministic scenarios only after using a current confirmed portrait', async () => {
+    const user = userEvent.setup();
+    getMock.mockResolvedValue({ ...preview, latestSnapshot: snapshot });
+
+    render(<GuidedPlanning />);
+
+    expect(await screen.findByText('Cenários para alcançar a meta')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Calcular cenários' }));
+
+    await waitFor(() => expect(scenariosMock).toHaveBeenCalledWith(50));
+    expect(await screen.findByText('Preservar prioridades')).toBeInTheDocument();
+    expect(screen.getByText('Meta alcançável neste cenário')).toBeInTheDocument();
+    expect(screen.getByText('R$ 500,00')).toBeInTheDocument();
   });
 
   it('refreshes the preview when the reviewed financial basis became stale', async () => {

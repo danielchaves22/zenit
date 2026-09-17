@@ -88,3 +88,18 @@ export async function getFinancialPlanningSnapshot(req: Request, res: Response) 
     return sendError(res, error, 'Erro ao consultar diagnóstico financeiro');
   }
 }
+
+export async function getFinancialPlanningSnapshotScenarios(req: Request, res: Response) {
+  try {
+    const context = getUserContext(req);
+    const params = req.params as unknown as GetFinancialPlanningSnapshotParams;
+    return res.status(200).json(
+      await FinancialPlanningAnalysisService.getScenarios({
+        ...context,
+        snapshotId: params.id
+      })
+    );
+  } catch (error: any) {
+    return sendError(res, error, 'Erro ao calcular cenários para o retrato financeiro');
+  }
+}

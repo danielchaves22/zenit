@@ -28,8 +28,12 @@ import {
   getCreditCardInvoiceSignedAmount,
   isCreditCardInvoiceCredit
 } from '../utils/financial-transaction-amount';
+import {
+  buildFinancialBudgetScenarios,
+  FinancialBudgetScenarioSource
+} from '../utils/financial-budget-scenario';
 
-const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 3;
+const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 4;
 
 export type FinancialPlanningSourceKind =
   | 'FIXED_INCOME'
@@ -430,14 +434,31 @@ export default class FinancialPlanningAnalysisService {
         })
       ]);
 
-    const preferenceByCategory = new Map<number, string>(
+    const preferenceByCategory = new Map<
+      number,
+      { flexibility: string; minimumMonthlyAmount: string | null }
+    >(
       profile.categoryPreferences.map(
-        (preference: { categoryId: number; flexibility: string }) => [
+        (preference: {
+          categoryId: number;
+          flexibility: string;
+          minimumMonthlyAmount: string | null;
+        }) => [
           preference.categoryId,
-          preference.flexibility
+          {
+            flexibility: preference.flexibility,
+            minimumMonthlyAmount: preference.minimumMonthlyAmount
+          }
         ]
       )
     );
+    const categoryPreferenceMetadata = (categoryId: number | null | undefined) => {
+      const preference = categoryId ? preferenceByCategory.get(categoryId) : null;
+      return {
+        flexibility: preference?.flexibility ?? null,
+        minimumMonthlyAmount: preference?.minimumMonthlyAmount ?? null
+      };
+    };
     const sources: FinancialPlanningSource[] = recurring.map((item) => ({
       key: `RECURRING_TRANSACTION:${item.id}`,
       kind: item.type === TransactionType.INCOME ? 'FIXED_INCOME' : 'FIXED_EXPENSE',
@@ -455,7 +476,7 @@ export default class FinancialPlanningAnalysisService {
         frequency: item.frequency,
         categoryId: item.category?.id ?? null,
         categoryName: item.category?.name ?? null,
-        flexibility: item.category ? preferenceByCategory.get(item.category.id) ?? null : null,
+        ...categoryPreferenceMetadata(item.category?.id),
         endDate: item.endDate ? formatFinancialDateKey(item.endDate) : null
       }
     }));
@@ -487,9 +508,7 @@ export default class FinancialPlanningAnalysisService {
           accountName: representative.fromAccount?.name ?? null,
           categoryId: representative.category?.id ?? null,
           categoryName: representative.category?.name ?? null,
-          flexibility: representative.category
-            ? preferenceByCategory.get(representative.category.id) ?? null
-            : null
+          ...categoryPreferenceMetadata(representative.category?.id)
         }
       });
     });
@@ -532,9 +551,7 @@ export default class FinancialPlanningAnalysisService {
           accountName: representative.fromAccount.name,
           categoryId: representative.category?.id ?? null,
           categoryName: representative.category?.name ?? null,
-          flexibility: representative.category
-            ? preferenceByCategory.get(representative.category.id) ?? null
-            : null
+          ...categoryPreferenceMetadata(representative.category?.id)
         }
       });
     });
@@ -558,7 +575,7 @@ export default class FinancialPlanningAnalysisService {
           provisionId: provision.id,
           categoryId: provision.category.id,
           categoryName: provision.category.name,
-          flexibility: preferenceByCategory.get(provision.category.id) ?? null,
+          ...categoryPreferenceMetadata(provision.category.id),
           targetDate: formatFinancialDateKey(provision.targetDate),
           expectedAmount: moneyString(provision.expectedAmount),
           reservedAmount: moneyString(provision.reservedAmount)
@@ -616,7 +633,7 @@ export default class FinancialPlanningAnalysisService {
           metadata: {
             categoryId,
             categoryName: item.category?.name ?? null,
-            flexibility: categoryId ? preferenceByCategory.get(categoryId) ?? null : null,
+            ...categoryPreferenceMetadata(categoryId),
             transactionCount: item.transactions,
             averagingMonths
           }
@@ -832,6 +849,88 @@ export default class FinancialPlanningAnalysisService {
       );
     }
     return serializeSnapshot(snapshot);
+  }
+
+  static async getScenarios(params: { userId: number; companyId: number; snapshotId: number }) {
+    const snapshot = await this.getSnapshot(params);
+    if (!snapshot) {
+      throw new FinancialPlanningAnalysisError(
+        'Retrato financeiro não encontrado',
+        'FINANCIAL_PLANNING_SNAPSHOT_NOT_FOUND',
+        404
+      );
+    }
+    if (snapshot.methodologyVersion !== FINANCIAL_PLANNING_METHODOLOGY_VERSION) {
+      throw new FinancialPlanningAnalysisError(
+        'Confirme um novo retrato financeiro para calcular cenários com a metodologia atual',
+        'FINANCIAL_PLANNING_SNAPSHOT_UNSUPPORTED_FOR_SCENARIOS',
+        409
+      );
+    }
+    const currentBasis = await this.build({
+      userId: params.userId,
+      companyId: params.companyId,
+      historyMonths: snapshot.historyMonths
+    });
+    if (
+      !snapshot.basisHash ||
+      snapshot.basisHash !== currentBasis.basisHash ||
+      snapshot.profileVersion !== currentBasis.profile.version
+    ) {
+      throw new FinancialPlanningAnalysisError(
+        'O retrato financeiro ficou desatualizado. Revise e confirme a base atual antes de calcular cenários',
+        'FINANCIAL_PLANNING_SNAPSHOT_STALE_FOR_SCENARIOS',
+        409
+      );
+    }
+    if (!Array.isArray(snapshot.sources) || !snapshot.totals || typeof snapshot.totals !== 'object') {
+      throw new FinancialPlanningAnalysisError(
+        'O retrato financeiro não possui dados íntegros para calcular cenários',
+        'FINANCIAL_PLANNING_SNAPSHOT_INVALID_FOR_SCENARIOS',
+        409
+      );
+    }
+
+    const sources = snapshot.sources as FinancialBudgetScenarioSource[];
+    const hasInvalidSource = sources.some(
+      (source) =>
+        !source ||
+        typeof source.key !== 'string' ||
+        typeof source.kind !== 'string' ||
+        typeof source.label !== 'string' ||
+        typeof source.monthlyAmount !== 'string' ||
+        typeof source.selected !== 'boolean' ||
+        !source.metadata ||
+        typeof source.metadata !== 'object' ||
+        (source.kind === 'VARIABLE_EXPENSE' &&
+          !Object.prototype.hasOwnProperty.call(source.metadata, 'minimumMonthlyAmount'))
+    );
+    const totals = snapshot.totals as Record<string, unknown>;
+    if (
+      hasInvalidSource ||
+      typeof totals.monthlyAvailableBeforeGoal !== 'string' ||
+      typeof totals.monthlyBalanceAfterGoal !== 'string'
+    ) {
+      throw new FinancialPlanningAnalysisError(
+        'O retrato financeiro não possui dados íntegros para calcular cenários',
+        'FINANCIAL_PLANNING_SNAPSHOT_INVALID_FOR_SCENARIOS',
+        409
+      );
+    }
+
+    return {
+      snapshot: {
+        id: snapshot.id,
+        basisHash: snapshot.basisHash,
+        confirmedAt: snapshot.confirmedAt
+      },
+      ...buildFinancialBudgetScenarios({
+        targetMonthlySavings: snapshot.targetMonthlySavings,
+        monthlyAvailableBeforeGoal: totals.monthlyAvailableBeforeGoal,
+        monthlyBalanceAfterGoal: totals.monthlyBalanceAfterGoal,
+        sources
+      })
+    };
   }
 
   static async confirm(params: {

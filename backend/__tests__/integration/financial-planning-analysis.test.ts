@@ -135,7 +135,7 @@ describe('Financial planning analysis preparation', () => {
           (category: { id: number }) => ({
             categoryId: category.id,
             flexibility: category.id === expenseCategoryId ? 'PROTECTED' : 'FLEXIBLE',
-            minimumMonthlyAmount: null
+            minimumMonthlyAmount: category.id === variableCategoryId ? '300.00' : null
           })
         )
       });
@@ -467,7 +467,7 @@ describe('Financial planning analysis preparation', () => {
         at: boundaryInstant
       });
       expect(saoPaulo).toMatchObject({
-        methodologyVersion: 3,
+        methodologyVersion: 4,
         period: {
           historyMonths: 2,
           startDate: '2025-10-01',
@@ -625,7 +625,7 @@ describe('Financial planning analysis preparation', () => {
         (item) => item.categoryId === expenseCategoryId
       );
 
-      expect(diagnosis.methodologyVersion).toBe(3);
+      expect(diagnosis.methodologyVersion).toBe(4);
       expect(dashboard.totals.incomeTotal.toFixed(2)).toBe('10000.00');
       expect(diagnosisSourceAmount('FIXED_INCOME')).toBe('10000.00');
 
@@ -716,7 +716,11 @@ describe('Financial planning analysis preparation', () => {
         expect.objectContaining({
           kind: 'VARIABLE_EXPENSE',
           label: 'Lazer do diagnóstico',
-          monthlyAmount: '580.00'
+          monthlyAmount: '580.00',
+          metadata: expect.objectContaining({
+            flexibility: 'FLEXIBLE',
+            minimumMonthlyAmount: '300.00'
+          })
         })
       ])
     );
@@ -744,7 +748,7 @@ describe('Financial planning analysis preparation', () => {
       objectiveKind: 'MONTHLY_SAVINGS',
       targetMonthlySavings: '1000.00',
       profileVersion: 1,
-      methodologyVersion: 3,
+      methodologyVersion: 4,
       basisHash: preview.body.basisHash,
       dataQualityScore: 100,
       status: 'CONFIRMED',
@@ -765,6 +769,104 @@ describe('Financial planning analysis preparation', () => {
     expect(stored?.basisHash).toBe(preview.body.basisHash);
     expect(stored?.confirmationHash).toMatch(/^[a-f0-9]{64}$/);
     expect(Array.isArray(stored?.sourceSnapshot)).toBe(true);
+  });
+
+  it('calculates explainable scenarios from a confirmed portrait without changing the budget', async () => {
+    const preview = await request(app)
+      .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+      .set(personalHeaders());
+    const confirmed = await request(app)
+      .post('/api/financial/budgets/planning-analysis/snapshots')
+      .set(personalHeaders())
+      .send({
+        objectiveKind: 'MONTHLY_SAVINGS',
+        targetMonthlySavings: '6500.00',
+        historyMonths: 3,
+        selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+        basisHash: preview.body.basisHash
+      });
+
+    expect(confirmed.status).toBe(201);
+    const scenarios = await request(app)
+      .get(`/api/financial/budgets/planning-analysis/snapshots/${confirmed.body.id}/scenarios`)
+      .set(personalHeaders());
+
+    expect(scenarios.status).toBe(200);
+    expect(scenarios.body).toMatchObject({
+      snapshot: {
+        id: confirmed.body.id,
+        basisHash: confirmed.body.basisHash
+      },
+      recommendationMethodologyVersion: 1,
+      status: 'ADJUSTMENT_REQUIRED',
+      targetMonthlySavings: '6500.00',
+      currentMonthlyAvailableBeforeGoal: '6320.00',
+      currentMonthlyBalanceAfterGoal: '-180.00',
+      requiredReduction: '180.00'
+    });
+    expect(scenarios.body.scenarios).toEqual([
+      expect.objectContaining({
+        id: 'PRESERVE_PRIORITIES',
+        feasibility: 'FEASIBLE',
+        proposedReduction: '180.00',
+        remainingGap: '0.00',
+        adjustments: [
+          expect.objectContaining({
+            sourceKey: `HISTORICAL_CATEGORY:${variableCategoryId}`,
+            categoryName: 'Lazer do diagnóstico',
+            currentAmount: '580.00',
+            minimumMonthlyAmount: '300.00',
+            proposedReduction: '180.00',
+            suggestedMonthlyLimit: '400.00'
+          })
+        ]
+      }),
+      expect.objectContaining({
+        id: 'BALANCED',
+        feasibility: 'FEASIBLE',
+        proposedReduction: '180.00',
+        remainingGap: '0.00'
+      })
+    ]);
+    expect(
+      await prisma.monthlyCategoryBudget.count({
+        where: { companyId: personalWorkspaceId }
+      })
+    ).toBe(0);
+  });
+
+  it('rejects scenarios when the confirmed portrait no longer matches the current basis', async () => {
+    const preview = await request(app)
+      .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+      .set(personalHeaders());
+    const confirmed = await request(app)
+      .post('/api/financial/budgets/planning-analysis/snapshots')
+      .set(personalHeaders())
+      .send({
+        objectiveKind: 'MONTHLY_SAVINGS',
+        targetMonthlySavings: '6600.00',
+        historyMonths: 3,
+        selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+        basisHash: preview.body.basisHash
+      });
+    await prisma.recurringTransaction.update({
+      where: { id: recurringIncomeId },
+      data: { amount: 10100 }
+    });
+
+    try {
+      const scenarios = await request(app)
+        .get(`/api/financial/budgets/planning-analysis/snapshots/${confirmed.body.id}/scenarios`)
+        .set(personalHeaders());
+
+      expect(scenarios.status).toBe(409);
+      expect(scenarios.body.code).toBe('FINANCIAL_PLANNING_SNAPSHOT_STALE_FOR_SCENARIOS');
+    } finally {
+      await prisma.recurringTransaction.update({
+        where: { id: recurringIncomeId },
+        data: { amount: 10000 }
+      });
+    }
   });
 
   it('requires at least one selected fixed income', async () => {

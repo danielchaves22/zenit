@@ -195,7 +195,8 @@ function buildMonthlyResponse(month: string) {
       incomeTotal: '500.00',
       expenseTotal: '120.00',
       committedExpenseTotal: '100.00',
-      variableProjectedExpenseTotal: '20.00'
+      variableProjectedExpenseTotal: '20.00',
+      provisionContributionTotal: '100.00'
     },
     currentMonthBreakdown: {
       income: {
@@ -232,6 +233,21 @@ function buildMonthlyResponse(month: string) {
           historicalAverage: '120.00',
           committedInMonth: '100.00',
           remainingProjected: '20.00'
+        }
+      ]
+    },
+    provisions: {
+      total: '100.00',
+      items: [
+        {
+          provisionId: 1,
+          provisionName: 'IPVA',
+          categoryId: 10,
+          categoryName: 'Combustivel',
+          color: '#f97316',
+          month,
+          targetMonth: `${year + 1}-01`,
+          amount: '100.00'
         }
       ]
     },
@@ -338,6 +354,7 @@ describe('FinancialDashboard', () => {
       .parentElement;
 
     expect(projectedBalanceCard).toHaveTextContent('1.380,00');
+    expect(screen.getByText('Aportes para provisoes').parentElement).toHaveTextContent('100,00');
     expect(screen.getByText(/Compromissos fixos ativos/i)).toBeInTheDocument();
     expect(screen.getByText(/Cartoes consolidados/i)).toBeInTheDocument();
     expect(screen.getByText(/5\.000,00/)).toBeInTheDocument();

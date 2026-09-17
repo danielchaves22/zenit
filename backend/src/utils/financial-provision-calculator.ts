@@ -41,3 +41,30 @@ export function calculateProvisionMonthlyContribution(
     .div(calculateProvisionMonthsAvailable(input, calendar))
     .toDecimalPlaces(2, Prisma.Decimal.ROUND_UP);
 }
+
+export function calculateProvisionContributionForMonth(
+  input: FinancialProvisionCalculationInput,
+  calendar: FinancialCalendarContext,
+  monthKey: string
+): Prisma.Decimal {
+  parseFinancialMonthKey(monthKey);
+
+  const startMonthKey = formatFinancialMonthKey(input.startMonth);
+  const targetMonthKey = formatFinancialMonthKey(input.targetDate);
+  const effectiveStartMonthKey =
+    startMonthKey > calendar.currentMonthKey ? startMonthKey : calendar.currentMonthKey;
+  const contribution = calculateProvisionMonthlyContribution(input, calendar);
+
+  if (contribution.isZero()) return contribution;
+
+  // An overdue provision, or one started in its target month, is funded once
+  // in the effective start month. Otherwise, contributions stop before the
+  // target month because that is when the reserved amount is expected to be used.
+  if (targetMonthKey <= effectiveStartMonthKey) {
+    return monthKey === effectiveStartMonthKey ? contribution : new Prisma.Decimal(0);
+  }
+
+  return monthKey >= effectiveStartMonthKey && monthKey < targetMonthKey
+    ? contribution
+    : new Prisma.Decimal(0);
+}

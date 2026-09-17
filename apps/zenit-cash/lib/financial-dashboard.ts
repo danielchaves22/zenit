@@ -38,6 +38,7 @@ export interface FinancialDashboardMonthlyResponse {
     expenseTotal: string;
     committedExpenseTotal: string;
     variableProjectedExpenseTotal: string;
+    provisionContributionTotal: string;
   };
   currentMonthBreakdown: {
     income: {
@@ -73,6 +74,19 @@ export interface FinancialDashboardMonthlyResponse {
       historicalAverage: string;
       committedInMonth: string;
       remainingProjected: string;
+    }>;
+  };
+  provisions: {
+    total: string;
+    items: Array<{
+      provisionId: number;
+      provisionName: string;
+      categoryId: number;
+      categoryName: string;
+      color: string;
+      month: string;
+      targetMonth: string;
+      amount: string;
     }>;
   };
   projectedEndingBalance: string;

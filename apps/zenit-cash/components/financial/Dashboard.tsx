@@ -894,14 +894,24 @@ export default function FinancialDashboard() {
           ? incomeRemaining
           : parseAmount(monthlyData.monthlyTotals.incomeTotal),
         Comprometido: 0,
-        Variavel: 0
+        Variavel: 0,
+        Provisoes: 0
       },
       {
         name: 'Saidas',
         Realizado: monthlyData.isCurrentMonth ? expenseRealized : 0,
         Restante: expenseRemainingCommitted,
         Comprometido: expenseRemainingCommitted,
-        Variavel: expenseRemainingVariable
+        Variavel: expenseRemainingVariable,
+        Provisoes: 0
+      },
+      {
+        name: 'Reservas',
+        Realizado: 0,
+        Restante: 0,
+        Comprometido: 0,
+        Variavel: 0,
+        Provisoes: parseAmount(monthlyData.provisions?.total ?? '0.00')
       }
     ];
   }, [monthlyData]);
@@ -1178,14 +1188,14 @@ export default function FinancialDashboard() {
       {view === 'monthly' ? (
         <>
           {monthlyLoadingState ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-              {Array.from({ length: 5 }).map((_, index) => (
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, index) => (
                 <Skeleton key={index} className="h-28 rounded-xl" />
               ))}
             </div>
           ) : monthlyData ? (
             <>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
                 <SummaryCard
                   title="Saldo base"
                   value={monthlyData.carryOver.amount}
@@ -1231,6 +1241,12 @@ export default function FinancialDashboard() {
                   }
                 />
                 <SummaryCard
+                  title="Aportes para provisoes"
+                  value={monthlyData.provisions?.total ?? '0.00'}
+                  tone="default"
+                  subtitle="Reserva logica; nao altera o saldo das contas"
+                />
+                <SummaryCard
                   title="Saldo final projetado"
                   value={monthlyData.projectedEndingBalance}
                   tone="balance"
@@ -1246,7 +1262,7 @@ export default function FinancialDashboard() {
                 <Card className="p-5">
                   <h3 className="text-lg font-medium text-white">Composicao do mes</h3>
                   <p className="mt-1 text-sm text-gray-400">
-                    Receitas conhecidas, saidas comprometidas e estimativa restante das categorias observadas.
+                    Receitas, saidas e aportes logicos para despesas futuras previsiveis.
                   </p>
                   <div className="mt-5 h-72">
                     <ResponsiveContainer width="100%" height="100%">
@@ -1262,6 +1278,7 @@ export default function FinancialDashboard() {
                         <Bar dataKey="Realizado" stackId="stack" fill="#38bdf8" />
                         <Bar dataKey="Restante" stackId="stack" fill="#22c55e" />
                         <Bar dataKey="Variavel" stackId="stack" fill="#f59e0b" />
+                        <Bar dataKey="Provisoes" stackId="stack" fill="#a78bfa" />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>

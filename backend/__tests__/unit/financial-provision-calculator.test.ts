@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { buildFinancialCalendarContext } from '../../src/utils/financial-calendar';
 import {
+  calculateProvisionContributionForMonth,
   calculateProvisionMonthlyContribution,
   calculateProvisionMonthsAvailable
 } from '../../src/utils/financial-provision-calculator';
@@ -62,5 +63,33 @@ describe('Financial provision calculator', () => {
 
     expect(calculateProvisionMonthsAvailable(input, calendar)).toBe(3);
     expect(calculateProvisionMonthlyContribution(input, calendar).toFixed(2)).toBe('300.00');
+    expect(calculateProvisionContributionForMonth(input, calendar, '2026-02').toFixed(2)).toBe(
+      '0.00'
+    );
+    expect(calculateProvisionContributionForMonth(input, calendar, '2026-03').toFixed(2)).toBe(
+      '300.00'
+    );
+    expect(calculateProvisionContributionForMonth(input, calendar, '2026-05').toFixed(2)).toBe(
+      '300.00'
+    );
+    expect(calculateProvisionContributionForMonth(input, calendar, '2026-06').toFixed(2)).toBe(
+      '0.00'
+    );
+  });
+
+  it('charges an overdue provision only in the current workspace month', () => {
+    const input = {
+      expectedAmount: '250.00',
+      reservedAmount: '50.00',
+      startMonth: new Date('2025-10-01T12:00:00.000Z'),
+      targetDate: new Date('2025-12-20T12:00:00.000Z')
+    };
+
+    expect(calculateProvisionContributionForMonth(input, calendar, '2026-01').toFixed(2)).toBe(
+      '200.00'
+    );
+    expect(calculateProvisionContributionForMonth(input, calendar, '2026-02').toFixed(2)).toBe(
+      '0.00'
+    );
   });
 });

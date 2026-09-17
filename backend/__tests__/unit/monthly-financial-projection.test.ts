@@ -84,6 +84,34 @@ describe('Monthly financial projection', () => {
     expect(projection.projectedEndingBalance.toFixed(2)).toBe('960.00');
   });
 
+  it('keeps provision contributions separate from expenses and account balance', () => {
+    const projection = calculateMonthlyFinancialProjection({
+      month: '2026-09',
+      isCurrentMonth: true,
+      carryOverAmount: new Prisma.Decimal(1000),
+      trackedCategories: [],
+      historicalAverageByCategoryId: new Map(),
+      knownRows: [],
+      provisionContributionItems: [
+        {
+          provisionId: 1,
+          provisionName: 'IPVA',
+          categoryId: 10,
+          categoryName: 'Veiculo',
+          color: '#8b5cf6',
+          month: '2026-09',
+          targetMonth: '2027-01',
+          amount: new Prisma.Decimal(250)
+        }
+      ]
+    });
+
+    expect(projection.totals.provisionContributionTotal.toFixed(2)).toBe('250.00');
+    expect(projection.totals.expenseTotal.toFixed(2)).toBe('0.00');
+    expect(projection.categoryTotals).toEqual([]);
+    expect(projection.projectedEndingBalance.toFixed(2)).toBe('1000.00');
+  });
+
   it('uses every known movement when carrying a future month forward', () => {
     const projection = calculateMonthlyFinancialProjection({
       month: '2026-10',

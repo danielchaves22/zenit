@@ -38,6 +38,17 @@ export type MonthlyVariableProjectionItem = {
   remainingProjected: Prisma.Decimal;
 };
 
+export type MonthlyProvisionContributionItem = {
+  provisionId: number;
+  provisionName: string;
+  categoryId: number;
+  categoryName: string;
+  color: string;
+  month: string;
+  targetMonth: string;
+  amount: Prisma.Decimal;
+};
+
 export type MonthlyProjectionCategoryTotal = {
   categoryId: number | null;
   name: string;
@@ -58,6 +69,7 @@ export type MonthlyFinancialProjection = {
   projectedEndingBalance: Prisma.Decimal;
   knownRows: MonthlyProjectionKnownRow[];
   variableProjectionItems: MonthlyVariableProjectionItem[];
+  provisionContributionItems: MonthlyProvisionContributionItem[];
   categoryTotals: MonthlyProjectionCategoryTotal[];
   totals: {
     incomeTotal: Prisma.Decimal;
@@ -68,6 +80,7 @@ export type MonthlyFinancialProjection = {
     remainingIncomeTotal: Prisma.Decimal;
     realizedCommittedExpenseTotal: Prisma.Decimal;
     remainingCommittedExpenseTotal: Prisma.Decimal;
+    provisionContributionTotal: Prisma.Decimal;
   };
 };
 
@@ -162,11 +175,21 @@ export function calculateMonthlyFinancialProjection(params: {
   knownRows: MonthlyProjectionKnownRow[];
   trackedCategories: MonthlyProjectionTrackedCategory[];
   historicalAverageByCategoryId: Map<number, Prisma.Decimal>;
+  provisionContributionItems?: MonthlyProvisionContributionItem[];
 }): MonthlyFinancialProjection {
   const mismatchedRow = params.knownRows.find((row) => row.competence.month !== params.month);
   if (mismatchedRow) {
     throw new Error(
       `Fato financeiro da competência ${mismatchedRow.competence.month} não pode compor a projeção ${params.month}`
+    );
+  }
+  const provisionContributionItems = params.provisionContributionItems ?? [];
+  const mismatchedProvision = provisionContributionItems.find(
+    (item) => item.month !== params.month
+  );
+  if (mismatchedProvision) {
+    throw new Error(
+      `Contribuição de provisão do mês ${mismatchedProvision.month} não pode compor a projeção ${params.month}`
     );
   }
 
@@ -247,6 +270,10 @@ export function calculateMonthlyFinancialProjection(params: {
     remainingCommittedExpenseTotal
   );
   const expenseTotal = committedExpenseTotal.plus(variableProjectedExpenseTotal);
+  const provisionContributionTotal = provisionContributionItems.reduce(
+    (sum, item) => sum.plus(item.amount),
+    new Prisma.Decimal(0)
+  );
   const projectedEndingBalance = params.isCurrentMonth
     ? params.carryOverAmount
         .plus(remainingIncomeTotal)
@@ -264,6 +291,7 @@ export function calculateMonthlyFinancialProjection(params: {
     projectedEndingBalance,
     knownRows: params.knownRows,
     variableProjectionItems,
+    provisionContributionItems,
     categoryTotals: [...categoryTotalsMap.values()],
     totals: {
       incomeTotal,
@@ -273,7 +301,8 @@ export function calculateMonthlyFinancialProjection(params: {
       realizedIncomeTotal,
       remainingIncomeTotal,
       realizedCommittedExpenseTotal,
-      remainingCommittedExpenseTotal
+      remainingCommittedExpenseTotal,
+      provisionContributionTotal
     }
   };
 }

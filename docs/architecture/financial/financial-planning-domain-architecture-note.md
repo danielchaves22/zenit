@@ -214,6 +214,16 @@ workspace e o mes alvo. A divisao e arredondada para cima em centavos, garantind
 que o total previsto seja alcancado sem que telas diferentes apresentem valores
 divergentes. Provisoes integralmente financiadas nunca geram contribuicao negativa.
 
+A projecao mensal expoe a contribuicao aplicavel a cada mes como uma dimensao
+separada. Ela comeca no maior mes entre o inicio da provisao e o mes atual do
+workspace e termina antes do mes alvo, quando o valor reservado devera ser usado.
+Provisoes vencidas concentram a necessidade restante apenas no mes atual.
+
+Essa contribuicao nao compoe despesa realizada, pendente ou projetada, nao consome
+limite do Planejamento Mensal por Categoria e nao altera o saldo projetado das
+contas. Trata-se de uma reserva logica exibida para apoiar decisoes; uma eventual
+despesa materializada continuara sendo reconhecida pelo lancamento financeiro.
+
 ### Perspectivas canonicas de valor
 
 O valor persistido de uma transacao representa magnitude e permanece positivo.
@@ -362,8 +372,7 @@ Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot, seu historico auditavel e a
 matriz canonica de reconhecimento e as perspectivas historicas usadas por
 dashboard, planejamento mensal e diagnostico, alem da projecao mensal compartilhada
-por dashboard e planejamento e a competencia explicita de parcelas, ja foram
-consolidados. Permanecem:
+por dashboard e planejamento, a competencia explicita de parcelas e a dimensao
+separada de contribuicoes de provisoes, ja foram consolidados. Permanece:
 
-1. Integrar contribuicoes de provisoes sem trata-las como despesas realizadas.
-2. Comparar dashboard, planejamento e diagnostico nos mesmos cenarios compostos.
+1. Comparar dashboard, planejamento e diagnostico nos mesmos cenarios compostos.

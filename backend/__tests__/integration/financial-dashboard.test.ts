@@ -2,6 +2,7 @@ import request from 'supertest';
 import bcrypt from 'bcrypt';
 import {
   AppKey,
+  FinancialProvisionKind,
   PrismaClient,
   RecurringFrequency,
   TransactionStatus,
@@ -190,6 +191,11 @@ describe('Financial dashboard', () => {
         companyId: { in: [primaryCompanyId, secondaryCompanyId] }
       }
     });
+    await prisma.financialProvision.deleteMany({
+      where: {
+        companyId: { in: [primaryCompanyId, secondaryCompanyId] }
+      }
+    });
     await prisma.financialCategory.deleteMany({
       where: {
         companyId: { in: [primaryCompanyId, secondaryCompanyId] }
@@ -233,6 +239,11 @@ describe('Financial dashboard', () => {
       }
     });
     await prisma.financialTag.deleteMany({
+      where: {
+        companyId: { in: [primaryCompanyId, secondaryCompanyId] }
+      }
+    });
+    await prisma.financialProvision.deleteMany({
       where: {
         companyId: { in: [primaryCompanyId, secondaryCompanyId] }
       }
@@ -610,9 +621,94 @@ describe('Financial dashboard', () => {
       incomeTotal: '80.00',
       expenseTotal: '120.00',
       committedExpenseTotal: '30.00',
-      variableProjectedExpenseTotal: '90.00'
+      variableProjectedExpenseTotal: '90.00',
+      provisionContributionTotal: '0.00'
     });
     expect(nextMonthResponse.body.projectedEndingBalance).toBe('1420.00');
+  });
+
+  it('projects provision contributions without turning them into expenses or account movements', async () => {
+    const now = new Date();
+    const currentMonthKey = buildMonthKey(now);
+    const nextMonthKey = addMonthKey(currentMonthKey, 1);
+    const targetMonthKey = addMonthKey(currentMonthKey, 3);
+    const [currentYear, currentMonth] = currentMonthKey.split('-').map(Number);
+    const [targetYear, targetMonth] = targetMonthKey.split('-').map(Number);
+
+    await prisma.financialAccount.create({
+      data: {
+        name: 'Conta da provisao projetada',
+        type: 'CHECKING',
+        balance: 1000,
+        companyId: primaryCompanyId
+      }
+    });
+    const category = await prisma.financialCategory.create({
+      data: {
+        name: 'Despesa anual provisionada',
+        type: 'EXPENSE',
+        color: '#8b5cf6',
+        companyId: primaryCompanyId
+      }
+    });
+    const provision = await prisma.financialProvision.create({
+      data: {
+        companyId: primaryCompanyId,
+        createdBy: primaryUserId,
+        categoryId: category.id,
+        name: 'IPVA futuro',
+        kind: FinancialProvisionKind.ONE_TIME,
+        expectedAmount: 900,
+        reservedAmount: 0,
+        startMonth: buildDate(currentYear, currentMonth - 1, 1),
+        targetDate: buildDate(targetYear, targetMonth - 1, 15)
+      }
+    });
+
+    const [currentResponse, nextResponse, targetResponse] = await Promise.all([
+      request(app)
+        .get('/api/financial/dashboard/monthly')
+        .set(authHeaders(primaryToken, primaryCompanyId))
+        .query({ month: currentMonthKey }),
+      request(app)
+        .get('/api/financial/dashboard/monthly')
+        .set(authHeaders(primaryToken, primaryCompanyId))
+        .query({ month: nextMonthKey }),
+      request(app)
+        .get('/api/financial/dashboard/monthly')
+        .set(authHeaders(primaryToken, primaryCompanyId))
+        .query({ month: targetMonthKey })
+    ]);
+
+    expect(currentResponse.status).toBe(200);
+    expect(currentResponse.body.provisions).toEqual({
+      total: '300.00',
+      items: [
+        {
+          provisionId: provision.id,
+          provisionName: 'IPVA futuro',
+          categoryId: category.id,
+          categoryName: 'Despesa anual provisionada',
+          color: '#8b5cf6',
+          month: currentMonthKey,
+          targetMonth: targetMonthKey,
+          amount: '300.00'
+        }
+      ]
+    });
+    expect(currentResponse.body.monthlyTotals.expenseTotal).toBe('0.00');
+    expect(currentResponse.body.categoryTotals).toEqual([]);
+    expect(currentResponse.body.projectedEndingBalance).toBe('1000.00');
+
+    expect(nextResponse.status).toBe(200);
+    expect(nextResponse.body.provisions.total).toBe('300.00');
+    expect(nextResponse.body.monthlyTotals.expenseTotal).toBe('0.00');
+    expect(nextResponse.body.projectedEndingBalance).toBe('1000.00');
+
+    expect(targetResponse.status).toBe(200);
+    expect(targetResponse.body.provisions).toEqual({ total: '0.00', items: [] });
+    expect(targetResponse.body.monthlyTotals.expenseTotal).toBe('0.00');
+    expect(targetResponse.body.projectedEndingBalance).toBe('1000.00');
   });
 
   it('uses settled cash history and card credits in the variable expense average', async () => {

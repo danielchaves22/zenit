@@ -2,6 +2,7 @@ import prisma from '../lib/prisma';
 import {
   AccountType,
   FinancialAccountPurpose,
+  FinancialProvisionStatus,
   Prisma,
   RecurringFrequency,
   TransactionStatus,
@@ -37,6 +38,7 @@ import {
   type MonthlyProjectionTransactionType
 } from '../utils/monthly-financial-projection';
 import { resolveMonthlyProjectionCompetence } from '../utils/monthly-projection-competence';
+import { calculateProvisionContributionForMonth } from '../utils/financial-provision-calculator';
 
 function startOfMonth(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
@@ -734,6 +736,24 @@ export default class FinancialDashboardService {
       accessFilter: params.accessFilter,
       calendarContext: calendar
     });
+    const activeProvisions = await prisma.financialProvision.findMany({
+      where: {
+        companyId: params.companyId,
+        status: FinancialProvisionStatus.ACTIVE
+      },
+      select: {
+        id: true,
+        name: true,
+        expectedAmount: true,
+        reservedAmount: true,
+        startMonth: true,
+        targetDate: true,
+        category: {
+          select: { id: true, name: true, color: true }
+        }
+      },
+      orderBy: [{ targetDate: 'asc' }, { id: 'asc' }]
+    });
 
     let carryOverAmount = await this.getCurrentBalance({
       companyId: params.companyId,
@@ -747,6 +767,7 @@ export default class FinancialDashboardService {
     // Compare with the requested month end so the target future month is included.
     while (monthCursor <= requestedMonthEnd) {
       const monthEnd = endOfMonth(monthCursor);
+      const monthKey = formatFinancialMonthKey(monthCursor);
       const knownRows = await this.getKnownMonthlyRows({
         companyId: params.companyId,
         monthStart: monthCursor,
@@ -756,13 +777,26 @@ export default class FinancialDashboardService {
         accessibleAccountIds: params.accessibleAccountIds,
         accessFilter: params.accessFilter
       });
+      const provisionContributionItems = activeProvisions
+        .map((provision) => ({
+          provisionId: provision.id,
+          provisionName: provision.name,
+          categoryId: provision.category.id,
+          categoryName: provision.category.name,
+          color: provision.category.color,
+          month: monthKey,
+          targetMonth: formatFinancialMonthKey(provision.targetDate),
+          amount: calculateProvisionContributionForMonth(provision, calendar, monthKey)
+        }))
+        .filter((item) => item.amount.gt(0));
       const computation = calculateMonthlyFinancialProjection({
-        month: formatFinancialMonthKey(monthCursor),
+        month: monthKey,
         isCurrentMonth: isSameMonth(monthCursor, currentDate),
         carryOverAmount,
         knownRows,
         trackedCategories,
-        historicalAverageByCategoryId
+        historicalAverageByCategoryId,
+        provisionContributionItems
       });
 
       if (isSameMonth(monthCursor, requestedMonthStart)) {
@@ -854,6 +888,9 @@ export default class FinancialDashboardService {
         committedExpenseTotal: toMoneyString(targetComputation.totals.committedExpenseTotal),
         variableProjectedExpenseTotal: toMoneyString(
           targetComputation.totals.variableProjectedExpenseTotal
+        ),
+        provisionContributionTotal: toMoneyString(
+          targetComputation.totals.provisionContributionTotal
         )
       },
       currentMonthBreakdown: {
@@ -899,6 +936,19 @@ export default class FinancialDashboardService {
             committedInMonth: toMoneyString(item.committedInMonth),
             remainingProjected: toMoneyString(item.remainingProjected)
           }))
+      },
+      provisions: {
+        total: toMoneyString(targetComputation.totals.provisionContributionTotal),
+        items: targetComputation.provisionContributionItems.map((item) => ({
+          provisionId: item.provisionId,
+          provisionName: item.provisionName,
+          categoryId: item.categoryId,
+          categoryName: item.categoryName,
+          color: item.color,
+          month: item.month,
+          targetMonth: item.targetMonth,
+          amount: toMoneyString(item.amount)
+        }))
       },
       projectedEndingBalance: toMoneyString(targetComputation.projectedEndingBalance),
       categoryTotals: targetComputation.categoryTotals.map((item) => ({

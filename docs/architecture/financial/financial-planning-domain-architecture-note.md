@@ -30,7 +30,7 @@ parcelas e conciliacao para incluir quatro controles de planejamento:
 - Plano de Disponibilidade;
 - Planejamento Mensal por Categoria;
 - Provisoes;
-- Diagnostico Financeiro orientado por objetivo.
+- Retrato Financeiro orientado por objetivo e seus cenarios de planejamento.
 
 Esses controles respondem a perguntas diferentes. Eles compartilham os mesmos
 dados financeiros, mas nao devem compartilhar significado por coincidencia de
@@ -42,7 +42,7 @@ sem transformar preferencias pessoais em regras globais da empresa.
 
 ## Problema
 
-Dashboard, planejamento mensal e diagnostico financeiro cresceram em momentos
+Dashboard, planejamento mensal e retrato financeiro cresceram em momentos
 diferentes. Isso cria risco de divergencia em pontos como:
 
 - data de reconhecimento de uma transacao;
@@ -66,7 +66,8 @@ pode ser confiavel se esses conceitos tiverem uma origem canonica e auditavel.
 | Planejamento Mensal | Onde o workspace pretende gastar em determinado mes? | Workspace | Nao altera saldo nem cria transacao |
 | Provisao | Quanto deve ser separado para uma despesa futura previsivel? | Workspace | Mantem reserva logica; nao movimenta uma conta por si so |
 | Perfil Financeiro | Qual e o contexto pessoal usado para orientar decisoes? | Usuario e workspace pessoal | Nao altera dados operacionais |
-| Diagnostico Financeiro | Qual era a base confirmada para analisar um objetivo? | Usuario e workspace pessoal | Cria snapshot; nao altera transacoes nem planos |
+| Retrato Financeiro | Qual era a base confirmada para analisar um objetivo? | Usuario e workspace pessoal | Cria snapshot; nao altera transacoes nem planos |
+| Cenarios de Planejamento | Quais limites variaveis poderiam aproximar o usuario do objetivo? | Usuario e workspace pessoal | Simula alternativas; somente envia uma escolha a um rascunho revisavel |
 
 Os nomes das tabelas existentes podem permanecer durante a consolidacao. APIs,
 componentes e novos modulos devem usar os nomes de dominio acima para evitar que
@@ -93,7 +94,7 @@ todo controle seja chamado genericamente de `Budget`.
 ### Invariantes
 
 1. Toda consulta ou mutacao operacional deve estar restrita ao workspace ativo.
-2. Perfil e diagnostico pessoais somente podem ser acessados pelo proprietario
+2. Perfil e retrato pessoais somente podem ser acessados pelo proprietario
    do workspace pessoal correspondente.
 3. Planejamentos e provisoes empresariais exigem politica explicita de leitura e
    alteracao; autenticacao generica nao substitui autorizacao de dominio.
@@ -120,7 +121,7 @@ universal:
    reconhecimento, categoria, valor e confianca sem depender da tela consumidora.
 3. **Calculadores puros:** calculam contribuicao de provisao, equivalencia mensal,
    totais, medias e projecoes sem consultar ou persistir dados.
-4. **Casos de uso:** orquestram dashboard, planejamento mensal e diagnostico.
+4. **Casos de uso:** orquestram dashboard, planejamento mensal e retrato.
 5. **Contratos de API:** expõem valores monetarios como strings decimais e
    incluem versao de metodologia quando o resultado for persistido.
 
@@ -139,9 +140,9 @@ substituir a validacao final do servidor.
 - Diferencas intencionais entre visao de caixa, competencia e planejamento devem
   aparecer no nome da politica e no contrato retornado.
 
-### Integridade do diagnostico confirmado
+### Integridade do retrato confirmado
 
-A previa do diagnostico possui um `basisHash` SHA-256 deterministico. A
+A previa do retrato possui um `basisHash` SHA-256 deterministico. A
 identificacao vincula usuario, workspace pessoal, versao do perfil, versao da
 metodologia, periodo, indicadores objetivos de qualidade e as fontes financeiras
 disponiveis. Textos puramente apresentacionais nao fazem parte do hash.
@@ -174,7 +175,7 @@ de acesso distingue consulta de gestao:
 
 O middleware de tenant e o acesso ao aplicativo continuam sendo pre-condicoes.
 A politica acima nao se aplica ao Plano de Disponibilidade, que e individual por
-usuario, nem ao Diagnostico Financeiro, que exige o proprietario do workspace
+usuario, nem ao Retrato Financeiro, que exige o proprietario do workspace
 pessoal correspondente.
 
 ### Calendario financeiro canonico
@@ -200,18 +201,21 @@ dependem do workspace, como impedir alteracoes em meses passados, pertencem ao
 servico de dominio. Assim, chamadas HTTP e chamadas internas aplicam a mesma
 politica e nao dependem do timezone do servidor.
 
-O diagnostico financeiro passou a usar a metodologia v2 com a adocao desse
+O retrato financeiro passou a usar a metodologia v2 com a adocao desse
 calendario: a janela historica e a contribuicao mensal de provisoes derivam da
 data de negocio do workspace. A metodologia v3 passa a considerar creditos
 explicitos de cartao no valor liquido das medias variaveis e inclui apenas
-contribuicoes de provisao aplicaveis ao mes atual. Snapshots v1 e v2 permanecem
+contribuicoes de provisao aplicaveis ao mes atual. A metodologia v4 inclui em
+cada fonte a flexibilidade e o piso mensal confirmados no perfil, tornando a
+base suficiente para reproduzir cenarios. Snapshots v1, v2 e v3 permanecem
 imutaveis e identificados com a metodologia original; nao existe regravacao
-retroativa do historico.
+retroativa do historico nem geracao de cenarios por uma metodologia que nao
+possuia esses pisos.
 
 ### Calculo canonico das provisoes
 
 O valor mensal necessario para financiar uma provisao e calculado por uma funcao
-pura compartilhada pela propria provisao e pelo diagnostico. A funcao considera
+pura compartilhada pela propria provisao e pelo retrato. A funcao considera
 o saldo ainda nao reservado, o primeiro mes efetivo entre inicio e mes atual do
 workspace e o mes alvo. A divisao e arredondada para cima em centavos, garantindo
 que o total previsto seja alcancado sem que telas diferentes apresentem valores
@@ -261,7 +265,7 @@ Consultas historicas declaram uma das tres perspectivas:
 - `MATERIALIZED` preserva todos os lancamentos ativos conhecidos e alimenta o
   grafico historico operacional;
 - `ECONOMIC` considera transacoes concluidas na data de competencia e alimenta
-  a leitura de habitos do diagnostico;
+  a leitura de habitos do retrato;
 - `SETTLEMENT` considera transacoes comuns concluidas pela data efetiva e
   compras ou creditos de cartao somente depois de a fatura estar paga. Essa e a
   perspectiva das medias de caixa usadas pelo dashboard e pelo planejamento
@@ -306,7 +310,7 @@ permanecem conceitos distintos. A repeticao finita legada pode compartilhar os
 campos de numero e total de parcelas, mas nao possui plano de parcelamento. Uma
 ocorrencia fixa projetada tambem nao se torna parcela apenas por se repetir.
 
-### Historico auditavel do diagnostico
+### Historico auditavel do retrato
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
 cursor decrescente e retorna apenas resumo, totais, versoes, qualidade e
@@ -318,6 +322,36 @@ workspace pessoal ativo. A consulta nao exige que o perfil atual continue pronto
 um perfil ausente ou desatualizado bloqueia novas analises, mas nao apaga nem
 oculta a evidencia anteriormente confirmada. Nao existem rotas de atualizacao ou
 exclusao desses snapshots.
+
+### Cenarios deterministas e rascunho mensal
+
+Os cenarios sao calculados apenas a partir de um retrato confirmado e atual. O
+backend recompõe o `basisHash` antes de responder, evitando que uma mudanca entre
+a exibicao e a solicitacao produza recomendacoes sobre uma base obsoleta. A
+metodologia de recomendacao possui versao propria e nao depende de IA.
+
+A primeira metodologia altera somente medias de gastos variaveis selecionadas:
+
+- `PRESERVE_PRIORITIES` distribui o ajuste entre categorias flexiveis;
+- `BALANCED` usa primeiro as flexiveis e depois as moderadas;
+- categorias protegidas, despesas fixas, parcelas e provisoes nao sao reduzidas;
+- o piso mensal declarado no perfil e sempre preservado;
+- capacidade insuficiente gera resultado parcial e diferenca remanescente, nunca
+  uma alegacao falsa de viabilidade.
+
+Escolher um cenario nao persiste limites. A escolha e transportada em memoria
+para o rascunho do Planejamento Mensal no mes exibido. Limites existentes que
+tenham a mesma categoria sao preservados em sua natureza, e planejamentos fixos
+recebem por padrao uma alteracao `MONTH_ONLY`. Uma categoria nova entra como
+planejamento unico e com cobertura exata, sem incluir filhos automaticamente.
+
+Uma sugestao para categoria coberta por um grupo mais amplo nao e aplicada
+automaticamente, pois a media que originou o cenario possui escopo exato. A
+interface identifica essas categorias para revisao manual. Limite zero e uma
+intencao valida de nao gastar e permanece diferente de remover a categoria do
+planejamento. Em todos os casos, a persistencia continua exigindo a acao
+explicita `Salvar planejamento` e passa novamente pelas validacoes canonicas do
+backend.
 
 ### Quality gates
 
@@ -361,7 +395,7 @@ que deveriam representar a mesma situacao financeira.
 
 ## Consequencias
 
-- Dashboard, planejamento e diagnostico deverao convergir para os mesmos fatos
+- Dashboard, planejamento e retrato deverao convergir para os mesmos fatos
   financeiros quando a politica de reconhecimento for a mesma.
 - Novas recomendacoes exigirao snapshot de base, metodologia versionada e
   confirmacao explicita.
@@ -374,7 +408,7 @@ que deveriam representar a mesma situacao financeira.
 Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot, seu historico auditavel e a
 matriz canonica de reconhecimento e as perspectivas historicas usadas por
-dashboard, planejamento mensal e diagnostico, alem da projecao mensal compartilhada
+dashboard, planejamento mensal e retrato, alem da projecao mensal compartilhada
 por dashboard e planejamento, a competencia explicita de parcelas e a dimensao
 separada de contribuicoes de provisoes, ja foram consolidados.
 

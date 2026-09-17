@@ -294,6 +294,55 @@ describe('MonthlyCategoryPlanning', () => {
     await waitFor(() => expect(replacePlanMock).toHaveBeenCalledTimes(1));
   });
 
+  it('loads a recommended scenario into the draft without saving it automatically', async () => {
+    const user = userEvent.setup();
+    const onConsumed = vi.fn();
+    getPlanMock.mockResolvedValue(planWithFuel('2026-09', '500.00', true));
+    replacePlanMock.mockResolvedValue(planWithFuel('2026-09', '420.00', true));
+
+    render(
+      <MonthlyCategoryPlanning
+        month="2026-09"
+        draftProposal={{
+          id: 'snapshot-50-balanced',
+          sourceSnapshotId: 50,
+          sourceScenarioId: 'BALANCED',
+          sourceScenarioLabel: 'Ajuste equilibrado',
+          targetMonth: '2026-09',
+          adjustments: [
+            {
+              categoryId: 10,
+              categoryName: 'Combustível',
+              suggestedMonthlyLimit: '420.00'
+            }
+          ]
+        }}
+        onDraftProposalConsumed={onConsumed}
+      />
+    );
+
+    expect(await screen.findByText(/Ajuste equilibrado/)).toBeInTheDocument();
+    expect(screen.getByText(/Nada foi salvo ainda/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('420.00')).toBeInTheDocument();
+    expect(replacePlanMock).not.toHaveBeenCalled();
+    expect(onConsumed).toHaveBeenCalledWith('snapshot-50-balanced');
+
+    await user.click(screen.getByRole('button', { name: 'Salvar planejamento' }));
+    await waitFor(() => {
+      expect(replacePlanMock).toHaveBeenCalledWith({
+        month: '2026-09',
+        allocations: [
+          {
+            categoryId: 10,
+            limitAmount: '420.00',
+            includeChildren: true,
+            recurringChangeScope: 'MONTH_ONLY'
+          }
+        ]
+      });
+    });
+  });
+
   it('keeps the company plan visible without exposing management actions to read-only members', async () => {
     getPlanMock.mockResolvedValue({
       ...planWithFuel('2026-09'),

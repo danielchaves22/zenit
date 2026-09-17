@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 import { AvailabilityPlan } from '@/components/financial/budgets/AvailabilityPlan';
@@ -15,6 +15,8 @@ import { PageGuard } from '@/components/ui/AccessGuard';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { InfoModalButton } from '@/components/ui/InfoModalButton';
+import type { FinancialPlanningScenario } from '@/lib/financial-planning-analysis';
+import type { FinancialPlanningBudgetDraftProposal } from '@/lib/monthly-category-budget-draft';
 
 function getCurrentMonthKey(): string {
   const today = new Date();
@@ -62,6 +64,8 @@ function BudgetsPageInner() {
   const maximumMonth = addMonths(currentMonth, 24);
   const view = normalizeView(router.query.view);
   const month = normalizeMonth(router.query.month, currentMonth);
+  const [pendingDraftProposal, setPendingDraftProposal] =
+    useState<FinancialPlanningBudgetDraftProposal | null>(null);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -85,6 +89,38 @@ function BudgetsPageInner() {
       {
         pathname: '/financial/budgets',
         query: { view, month: nextMonth }
+      },
+      undefined,
+      { shallow: true }
+    );
+  }
+
+  function reviewScenarioAsMonthlyDraft(selection: {
+    snapshotId: number;
+    scenario: FinancialPlanningScenario;
+  }) {
+    setPendingDraftProposal({
+      id: `${selection.snapshotId}:${selection.scenario.id}:${Date.now()}`,
+      sourceSnapshotId: selection.snapshotId,
+      sourceScenarioId: selection.scenario.id,
+      sourceScenarioLabel: selection.scenario.label,
+      targetMonth: month,
+      adjustments: selection.scenario.adjustments.flatMap((adjustment) =>
+        adjustment.categoryId === null
+          ? []
+          : [
+              {
+                categoryId: adjustment.categoryId,
+                categoryName: adjustment.categoryName,
+                suggestedMonthlyLimit: adjustment.suggestedMonthlyLimit
+              }
+            ]
+      )
+    });
+    void router.push(
+      {
+        pathname: '/financial/budgets',
+        query: { view: 'monthly', month }
       },
       undefined,
       { shallow: true }
@@ -166,10 +202,19 @@ function BudgetsPageInner() {
       {view === 'overview' && <BudgetOverview month={month} />}
       {view === 'availability' && <AvailabilityPlan />}
       {view === 'monthly' && (
-        <MonthlyCategoryPlanning month={month} onMonthChange={changeMonth} />
+        <MonthlyCategoryPlanning
+          month={month}
+          onMonthChange={changeMonth}
+          draftProposal={pendingDraftProposal}
+          onDraftProposalConsumed={(proposalId) =>
+            setPendingDraftProposal((current) =>
+              current?.id === proposalId ? null : current
+            )
+          }
+        />
       )}
       {view === 'provisions' && <FinancialProvisions />}
-      {view === 'guided' && <GuidedPlanning />}
+      {view === 'guided' && <GuidedPlanning onReviewScenario={reviewScenarioAsMonthlyDraft} />}
     </DashboardLayout>
   );
 }

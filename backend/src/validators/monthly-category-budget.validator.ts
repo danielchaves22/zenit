@@ -27,7 +27,7 @@ const allocationSchema = z.object({
     .union([z.string(), z.number()])
     .transform((value) => String(value).replace(',', '.').trim())
     .refine((value) => /^\d+(\.\d{1,2})?$/.test(value), 'Limite deve ter no máximo duas casas decimais')
-    .refine((value) => Number(value) > 0, 'Limite deve ser maior que zero')
+    .refine((value) => Number(value) >= 0, 'Limite não pode ser negativo')
     .refine((value) => Number(value) <= 999999999.99, 'Limite excede o valor máximo permitido'),
   includeChildren: z.boolean().optional().default(true),
   recurringChangeScope: z.enum(['MONTH_ONLY', 'FROM_MONTH']).optional().default('MONTH_ONLY')

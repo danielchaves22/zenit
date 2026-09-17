@@ -21,6 +21,7 @@ import { FinancialPlanningScenarios } from './FinancialPlanningScenarios';
 import {
   FinancialPlanningApiError,
   FinancialPlanningPreview,
+  FinancialPlanningScenario,
   FinancialPlanningSnapshot,
   FinancialPlanningSource,
   FinancialPlanningSourceKind,
@@ -139,7 +140,14 @@ function sumSelected(
   };
 }
 
-export function GuidedPlanning() {
+export function GuidedPlanning({
+  onReviewScenario
+}: {
+  onReviewScenario?: (selection: {
+    snapshotId: number;
+    scenario: FinancialPlanningScenario;
+  }) => void;
+} = {}) {
   const { addToast } = useToast();
   const [historyMonths, setHistoryMonths] = useState(6);
   const [targetMonthlySavings, setTargetMonthlySavings] = useState('0.00');
@@ -563,7 +571,14 @@ export function GuidedPlanning() {
         </div>
       </div>
       {result && resultValidity === 'CURRENT' && (
-        <FinancialPlanningScenarios snapshot={result} />
+        <FinancialPlanningScenarios
+          snapshot={result}
+          onReviewScenario={
+            onReviewScenario
+              ? (scenario) => onReviewScenario({ snapshotId: result.id, scenario })
+              : undefined
+          }
+        />
       )}
       <FinancialPlanningSnapshotHistory />
     </div>

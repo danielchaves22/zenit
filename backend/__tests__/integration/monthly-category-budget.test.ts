@@ -269,6 +269,35 @@ describe('Monthly category budget', () => {
     ).resolves.toBe(0);
   });
 
+  it('preserves an explicit zero limit as a tracked no-spend category', async () => {
+    const month = currentMonthKey();
+    const response = await request(app)
+      .put('/api/financial/budgets/monthly')
+      .set(authHeaders())
+      .send({
+        month,
+        allocations: [
+          { categoryId: siblingCategoryId, limitAmount: '0.00', includeChildren: false }
+        ]
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary.plannedAmount).toBe('0.00');
+    expect(response.body.items).toEqual([
+      expect.objectContaining({
+        category: expect.objectContaining({ id: siblingCategoryId }),
+        limitAmount: '0.00',
+        includeChildren: false,
+        origin: 'ONE_TIME'
+      })
+    ]);
+    const stored = await prisma.monthlyCategoryBudget.findFirstOrThrow({
+      where: { companyId, categoryId: siblingCategoryId }
+    });
+    expect(stored.isExcluded).toBe(false);
+    expect(stored.limitAmount.toFixed(2)).toBe('0.00');
+  });
+
   it('rejects overlapping parent and child allocations', async () => {
     const response = await request(app)
       .put('/api/financial/budgets/monthly')

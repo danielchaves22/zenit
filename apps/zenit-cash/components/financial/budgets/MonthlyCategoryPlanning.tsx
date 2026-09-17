@@ -28,12 +28,18 @@ import {
   MonthlyCategoryBudgetKind,
   MonthlyCategoryBudgetResponse,
   MonthlyCategoryBudgetStatus,
-  RecurringBudgetChangeScope,
   createMonthlyCategoryBudget,
   endRecurringMonthlyCategoryBudget,
   getMonthlyCategoryBudget,
   replaceMonthlyCategoryBudget
 } from '@/lib/monthly-category-budgets';
+import type { RecurringBudgetChangeScope } from '@/lib/monthly-category-budgets';
+import {
+  FinancialPlanningBudgetDraftProposal,
+  MonthlyCategoryBudgetDraftAllocation,
+  applyFinancialPlanningProposalToDraft,
+  draftAllocationFromItem
+} from '@/lib/monthly-category-budget-draft';
 
 interface ExpenseCategory extends CategoryOption {
   type: 'EXPENSE';
@@ -41,16 +47,7 @@ interface ExpenseCategory extends CategoryOption {
   _count?: { children: number };
 }
 
-interface DraftAllocation {
-  categoryId: number;
-  limitAmount: string;
-  includeChildren: boolean;
-  recurringBudgetId: number | null;
-  origin: MonthlyCategoryBudgetItem['origin'];
-  baseLimitAmount: string | null;
-  recurrenceStartMonth: string | null;
-  recurringChangeScope: RecurringBudgetChangeScope;
-}
+type DraftAllocation = MonthlyCategoryBudgetDraftAllocation;
 
 interface CreationDraft {
   categoryId: string;
@@ -91,19 +88,6 @@ function formatMonthLabel(monthKey: string): string {
     year: 'numeric'
   }).format(new Date(year, month - 1, 1, 12, 0, 0, 0));
   return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
-function draftFromItem(item: MonthlyCategoryBudgetItem): DraftAllocation {
-  return {
-    categoryId: item.category.id,
-    limitAmount: item.limitAmount,
-    includeChildren: item.includeChildren,
-    recurringBudgetId: item.recurringBudgetId,
-    origin: item.origin,
-    baseLimitAmount: item.baseLimitAmount,
-    recurrenceStartMonth: item.recurrenceStartMonth,
-    recurringChangeScope: 'MONTH_ONLY'
-  };
 }
 
 function normalizeAmount(value: string): string {
@@ -181,10 +165,14 @@ function statusPresentation(status: MonthlyCategoryBudgetStatus) {
 
 export function MonthlyCategoryPlanning({
   month,
-  onMonthChange
+  onMonthChange,
+  draftProposal,
+  onDraftProposalConsumed
 }: {
   month: string;
   onMonthChange?: (month: string) => void;
+  draftProposal?: FinancialPlanningBudgetDraftProposal | null;
+  onDraftProposalConsumed?: (proposalId: string) => void;
 }) {
   const { addToast } = useToast();
   const confirmation = useConfirmation();
@@ -203,6 +191,13 @@ export function MonthlyCategoryPlanning({
   const [creating, setCreating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [appliedProposalId, setAppliedProposalId] = useState<string | null>(null);
+  const [scenarioDraftNotice, setScenarioDraftNotice] = useState<{
+    scenarioLabel: string;
+    appliedCount: number;
+    unchangedCount: number;
+    skippedCategoryNames: string[];
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,7 +212,7 @@ export function MonthlyCategoryPlanning({
 
         if (cancelled) return;
 
-        const nextDraft = planResponse.items.map(draftFromItem);
+        const nextDraft = planResponse.items.map(draftAllocationFromItem);
         setCategories((categoryResponse.data || []) as ExpenseCategory[]);
         setPlan(planResponse);
         setDraft(nextDraft);
@@ -230,6 +225,7 @@ export function MonthlyCategoryPlanning({
           includeChildren: true
         });
         setCreationPlan(planResponse);
+        setScenarioDraftNotice(null);
       } catch (error: any) {
         if (!cancelled) {
           addToast(error.response?.data?.error || 'Erro ao carregar o planejamento mensal', 'error');
@@ -295,7 +291,7 @@ export function MonthlyCategoryPlanning({
     () =>
       creationDraft.month === month
         ? draft
-        : (creationPlan?.items || []).map(draftFromItem),
+        : (creationPlan?.items || []).map(draftAllocationFromItem),
     [creationDraft.month, creationPlan, draft, month]
   );
   const availableCreationCategories = useMemo(() => {
@@ -331,6 +327,52 @@ export function MonthlyCategoryPlanning({
   const isDirty = currentSignature !== savedSignature;
   const canManage = plan?.access.canManage ?? false;
 
+  useEffect(() => {
+    if (!draftProposal || loading || !plan || appliedProposalId === draftProposal.id) return;
+
+    setAppliedProposalId(draftProposal.id);
+    onDraftProposalConsumed?.(draftProposal.id);
+    if (draftProposal.targetMonth !== month) {
+      addToast('O cenário pertence a outro mês de planejamento', 'error');
+      return;
+    }
+    if (!canManage) {
+      addToast('Você não possui permissão para revisar este cenário no planejamento', 'error');
+      return;
+    }
+
+    const result = applyFinancialPlanningProposalToDraft({
+      allocations: draft,
+      categories,
+      proposal: draftProposal
+    });
+    setDraft(result.allocations);
+    setScenarioDraftNotice({
+      scenarioLabel: draftProposal.sourceScenarioLabel,
+      appliedCount: result.appliedCategoryIds.length,
+      unchangedCount: result.unchangedCategoryIds.length,
+      skippedCategoryNames: result.skipped.map((item) => item.categoryName)
+    });
+    if (result.appliedCategoryIds.length > 0) {
+      addToast('Cenário levado ao rascunho. Revise os valores antes de salvar.', 'success');
+    } else if (result.unchangedCategoryIds.length > 0 && result.skipped.length === 0) {
+      addToast('O planejamento mensal já corresponde a este cenário');
+    } else {
+      addToast('Nenhuma sugestão pôde ser adicionada ao rascunho atual', 'error');
+    }
+  }, [
+    addToast,
+    appliedProposalId,
+    canManage,
+    categories,
+    draft,
+    draftProposal,
+    loading,
+    month,
+    onDraftProposalConsumed,
+    plan
+  ]);
+
   const draftSummary = useMemo(() => {
     return draft.reduce(
       (summary, allocation) => {
@@ -358,10 +400,11 @@ export function MonthlyCategoryPlanning({
   }, [draft, planItemByCategoryId]);
 
   function applyPlanResponse(response: MonthlyCategoryBudgetResponse) {
-    const nextDraft = response.items.map(draftFromItem);
+    const nextDraft = response.items.map(draftAllocationFromItem);
     setPlan(response);
     setDraft(nextDraft);
     setSavedSignature(allocationSignature(nextDraft));
+    setScenarioDraftNotice(null);
     if (creationDraft.month === response.month) setCreationPlan(response);
   }
 
@@ -379,8 +422,10 @@ export function MonthlyCategoryPlanning({
       return;
     }
     const categoryId = Number(creationDraft.categoryId);
-    if (!categoryId || Number(creationDraft.limitAmount) <= 0) {
-      addToast('Informe a categoria e um limite maior que zero', 'error');
+    const rawLimitAmount = creationDraft.limitAmount.trim();
+    const limitAmount = Number(rawLimitAmount);
+    if (!categoryId || !rawLimitAmount || !Number.isFinite(limitAmount) || limitAmount < 0) {
+      addToast('Informe a categoria e um limite igual ou maior que zero', 'error');
       return;
     }
 
@@ -450,9 +495,13 @@ export function MonthlyCategoryPlanning({
   }
 
   async function persistPlan() {
-    const invalidAllocation = draft.find((allocation) => Number(allocation.limitAmount) <= 0);
+    const invalidAllocation = draft.find((allocation) => {
+      if (!allocation.limitAmount.trim()) return true;
+      const amount = Number(allocation.limitAmount);
+      return !Number.isFinite(amount) || amount < 0;
+    });
     if (invalidAllocation) {
-      addToast('Informe um limite maior que zero para todas as categorias', 'error');
+      addToast('O limite mensal não pode ser negativo', 'error');
       throw new Error('Limite mensal inválido');
     }
 
@@ -505,9 +554,9 @@ export function MonthlyCategoryPlanning({
       const nextDraft = previousPlan.items.map((item) => {
         const currentItem = planItemByCategoryId.get(item.category.id);
         return currentItem
-          ? { ...draftFromItem(currentItem), limitAmount: item.limitAmount }
+          ? { ...draftAllocationFromItem(currentItem), limitAmount: item.limitAmount }
           : {
-              ...draftFromItem(item),
+              ...draftAllocationFromItem(item),
               origin: 'ONE_TIME' as const,
               recurringBudgetId: null,
               baseLimitAmount: null,
@@ -519,6 +568,7 @@ export function MonthlyCategoryPlanning({
         return;
       }
       setDraft(nextDraft);
+      setScenarioDraftNotice(null);
       addToast('Mês anterior copiado para o rascunho. Salve para aplicar.', 'success');
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao copiar o mês anterior', 'error');
@@ -601,7 +651,42 @@ export function MonthlyCategoryPlanning({
         </div>
       )}
 
-      {canManage && isDirty && (
+      {canManage && scenarioDraftNotice && (
+        <div className="mb-4 rounded-lg border border-blue-800/70 bg-blue-950/30 px-4 py-3 text-sm text-blue-200">
+          <p>
+            O cenário <strong className="text-white">{scenarioDraftNotice.scenarioLabel}</strong>{' '}
+            {scenarioDraftNotice.appliedCount > 0 ? (
+              <>
+                atualizou {scenarioDraftNotice.appliedCount}{' '}
+                {scenarioDraftNotice.appliedCount === 1 ? 'categoria' : 'categorias'} no rascunho.
+              </>
+            ) : (
+              <>foi comparado com o planejamento atual.</>
+            )}{' '}
+            Nada foi salvo ainda.
+          </p>
+          {scenarioDraftNotice.unchangedCount > 0 && (
+            <p className="mt-1 text-xs text-blue-200/80">
+              {scenarioDraftNotice.unchangedCount}{' '}
+              {scenarioDraftNotice.unchangedCount === 1
+                ? 'categoria já estava'
+                : 'categorias já estavam'}{' '}
+              no valor sugerido.
+            </p>
+          )}
+          {scenarioDraftNotice.skippedCategoryNames.length > 0 && (
+            <p className="mt-1 text-xs text-blue-200/80">
+              Revise manualmente: {scenarioDraftNotice.skippedCategoryNames.join(', ')}{' '}
+              {scenarioDraftNotice.skippedCategoryNames.length === 1
+                ? 'não pôde ser aplicada'
+                : 'não puderam ser aplicadas'}{' '}
+              por conflito de hierarquia ou indisponibilidade da categoria.
+            </p>
+          )}
+        </div>
+      )}
+
+      {canManage && isDirty && !scenarioDraftNotice && (
         <div className="mb-4 rounded-lg border border-amber-800/70 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
           Há alterações no rascunho. Os indicadores definitivos serão recalculados ao salvar.
         </div>
@@ -692,7 +777,9 @@ export function MonthlyCategoryPlanning({
                 creating ||
                 !creationPlan ||
                 !creationDraft.categoryId ||
-                Number(creationDraft.limitAmount) <= 0
+                !creationDraft.limitAmount.trim() ||
+                !Number.isFinite(Number(creationDraft.limitAmount)) ||
+                Number(creationDraft.limitAmount) < 0
               }
               className="mb-0 inline-flex min-h-10 items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
             >

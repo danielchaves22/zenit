@@ -35,8 +35,10 @@ function feasibilityLabel(
 
 export function FinancialPlanningScenarios({
   snapshot,
+  onReviewScenario,
 }: {
   snapshot: FinancialPlanningSnapshot;
+  onReviewScenario?: (scenario: FinancialPlanningScenario) => void;
 }) {
   const { addToast } = useToast();
   const [result, setResult] = useState<FinancialPlanningScenarioResult | null>(
@@ -131,7 +133,15 @@ export function FinancialPlanningScenarios({
           </div>
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             {result.scenarios.map((scenario) => (
-              <ScenarioCard key={scenario.id} scenario={scenario} />
+              <ScenarioCard
+                key={scenario.id}
+                scenario={scenario}
+                onReview={
+                  onReviewScenario
+                    ? () => onReviewScenario(scenario)
+                    : undefined
+                }
+              />
             ))}
           </div>
           <p className="text-xs text-gray-500">
@@ -145,7 +155,13 @@ export function FinancialPlanningScenarios({
   );
 }
 
-function ScenarioCard({ scenario }: { scenario: FinancialPlanningScenario }) {
+function ScenarioCard({
+  scenario,
+  onReview,
+}: {
+  scenario: FinancialPlanningScenario;
+  onReview?: () => void;
+}) {
   const feasible = scenario.feasibility === "FEASIBLE";
   const StatusIcon = feasible ? CheckCircle2 : AlertTriangle;
   return (
@@ -234,6 +250,16 @@ function ScenarioCard({ scenario }: { scenario: FinancialPlanningScenario }) {
           ))}
         </ul>
       </details>
+      {onReview && scenario.adjustments.length > 0 && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onReview}
+          className="mt-4 w-full"
+        >
+          Revisar como rascunho mensal
+        </Button>
+      )}
     </section>
   );
 }

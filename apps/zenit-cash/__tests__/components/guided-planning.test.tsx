@@ -270,9 +270,10 @@ describe('GuidedPlanning', () => {
 
   it('compares deterministic scenarios only after using a current confirmed portrait', async () => {
     const user = userEvent.setup();
+    const onReviewScenario = vi.fn();
     getMock.mockResolvedValue({ ...preview, latestSnapshot: snapshot });
 
-    render(<GuidedPlanning />);
+    render(<GuidedPlanning onReviewScenario={onReviewScenario} />);
 
     expect(await screen.findByText('Cenários para alcançar a meta')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Calcular cenários' }));
@@ -281,6 +282,11 @@ describe('GuidedPlanning', () => {
     expect(await screen.findByText('Preservar prioridades')).toBeInTheDocument();
     expect(screen.getByText('Meta alcançável neste cenário')).toBeInTheDocument();
     expect(screen.getByText('R$ 500,00')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Revisar como rascunho mensal' }));
+    expect(onReviewScenario).toHaveBeenCalledWith({
+      snapshotId: 50,
+      scenario: expect.objectContaining({ id: 'PRESERVE_PRIORITIES' })
+    });
   });
 
   it('refreshes the preview when the reviewed financial basis became stale', async () => {

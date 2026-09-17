@@ -58,7 +58,7 @@ export function FinancialPlanningSnapshotHistory() {
       }
     } catch (error: any) {
       const response = error.response?.data as FinancialPlanningApiError | undefined;
-      addToast(response?.error || 'Erro ao consultar histórico de diagnósticos', 'error');
+      addToast(response?.error || 'Erro ao consultar histórico de retratos financeiros', 'error');
     } finally {
       setLoading(false);
     }
@@ -84,7 +84,7 @@ export function FinancialPlanningSnapshotHistory() {
     } catch (error: any) {
       setExpandedId(null);
       const response = error.response?.data as FinancialPlanningApiError | undefined;
-      addToast(response?.error || 'Erro ao consultar diagnóstico financeiro', 'error');
+      addToast(response?.error || 'Erro ao consultar retrato financeiro', 'error');
     } finally {
       setDetailLoadingId(null);
     }
@@ -95,7 +95,7 @@ export function FinancialPlanningSnapshotHistory() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <History size={18} className="text-accent" />
-          <h3 className="font-semibold text-white">Histórico de diagnósticos</h3>
+          <h3 className="font-semibold text-white">Histórico de retratos financeiros</h3>
         </div>
         <Button
           type="button"
@@ -127,11 +127,11 @@ export function FinancialPlanningSnapshotHistory() {
           {loading && !loaded ? (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
               <Loader2 size={17} className="animate-spin" />
-              Carregando diagnósticos...
+              Carregando retratos financeiros...
             </div>
           ) : items.length === 0 ? (
             <div className="rounded-lg border border-dashed border-gray-700 px-4 py-6 text-center text-sm text-gray-500">
-              Nenhum diagnóstico foi confirmado ainda.
+              Nenhum retrato financeiro foi confirmado ainda.
             </div>
           ) : (
             <div className="space-y-3">

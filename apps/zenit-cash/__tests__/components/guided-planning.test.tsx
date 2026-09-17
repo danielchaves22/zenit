@@ -188,6 +188,7 @@ describe('GuidedPlanning', () => {
 
     expect(await screen.findByText('Workspace pessoal de Ana')).toBeInTheDocument();
     expect(screen.getByText('92%')).toBeInTheDocument();
+    expect(screen.getByText('Qualidade alta')).toBeInTheDocument();
     await user.clear(screen.getByLabelText('Quanto deseja economizar por mês?'));
     await user.type(screen.getByLabelText('Quanto deseja economizar por mês?'), '1000.00');
     await user.click(screen.getByRole('checkbox', { name: 'Considerar Lazer' }));
@@ -202,8 +203,9 @@ describe('GuidedPlanning', () => {
         basisHash: 'a'.repeat(64)
       });
     });
-    expect(await screen.findByText('Retrato confirmado')).toBeInTheDocument();
-    expect(addToastMock).toHaveBeenCalledWith('Diagnóstico financeiro confirmado', 'success');
+    expect(await screen.findByText('Base confirmada e atual')).toBeInTheDocument();
+    expect(screen.getByText('Retrato confirmado agora')).toBeInTheDocument();
+    expect(addToastMock).toHaveBeenCalledWith('Retrato financeiro confirmado', 'success');
   });
 
   it('directs the user to configure the financial profile when required', async () => {
@@ -252,6 +254,33 @@ describe('GuidedPlanning', () => {
       'Os dados financeiros mudaram desde a prévia',
       'error'
     );
+  });
+
+  it('marks the latest confirmed portrait as stale when its basis no longer matches', async () => {
+    getMock.mockResolvedValue({
+      ...preview,
+      latestSnapshot: { ...snapshot, basisHash: 'b'.repeat(64) }
+    });
+
+    render(<GuidedPlanning />);
+
+    expect(await screen.findByText('Retrato financeiro desatualizado')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Receitas, compromissos, histórico, perfil ou metodologia mudaram/)
+    ).toBeInTheDocument();
+    expect(screen.getByText('Último retrato confirmado')).toBeInTheDocument();
+  });
+
+  it('does not claim freshness for a legacy portrait without an integrity hash', async () => {
+    getMock.mockResolvedValue({
+      ...preview,
+      latestSnapshot: { ...snapshot, basisHash: null }
+    });
+
+    render(<GuidedPlanning />);
+
+    expect(await screen.findByText('Validade não verificável')).toBeInTheDocument();
+    expect(screen.getByText(/antes do controle de integridade da base/)).toBeInTheDocument();
   });
 
   it('loads the immutable diagnosis history and its audit details on demand', async () => {

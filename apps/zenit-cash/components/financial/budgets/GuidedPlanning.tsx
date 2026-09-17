@@ -79,6 +79,29 @@ function formatDateKey(value: string): string {
   return `${day}/${month}/${year}`;
 }
 
+type SnapshotValidity = 'CURRENT' | 'STALE' | 'LEGACY';
+
+function getSnapshotValidity(
+  snapshot: FinancialPlanningSnapshot,
+  preview: FinancialPlanningPreview
+): SnapshotValidity {
+  if (!snapshot.basisHash) return 'LEGACY';
+  if (
+    snapshot.basisHash !== preview.basisHash ||
+    snapshot.profileVersion !== preview.profile.version ||
+    snapshot.methodologyVersion !== preview.methodologyVersion
+  ) {
+    return 'STALE';
+  }
+  return 'CURRENT';
+}
+
+function getQualityLabel(rating: FinancialPlanningPreview['dataQuality']['rating']): string {
+  if (rating === 'HIGH') return 'Alta';
+  if (rating === 'MEDIUM') return 'Média';
+  return 'Baixa';
+}
+
 function sumSelected(
   sources: FinancialPlanningSource[],
   selectedKeys: Set<string>,
@@ -148,7 +171,7 @@ export function GuidedPlanning() {
           setPreview(null);
           setGateError(response);
         } else {
-          addToast(response?.error || 'Erro ao preparar diagnóstico financeiro', 'error');
+          addToast(response?.error || 'Erro ao preparar retrato financeiro', 'error');
         }
       })
       .finally(() => {
@@ -191,7 +214,7 @@ export function GuidedPlanning() {
         basisHash: preview.basisHash
       });
       setConfirmedSnapshot(snapshot);
-      addToast('Diagnóstico financeiro confirmado', 'success');
+      addToast('Retrato financeiro confirmado', 'success');
     } catch (error: any) {
       const response = error.response?.data as FinancialPlanningApiError | undefined;
       if (response?.code === 'FINANCIAL_PLANNING_PREVIEW_STALE') {
@@ -204,7 +227,7 @@ export function GuidedPlanning() {
           // The confirmation error remains the most useful message for this interaction.
         }
       }
-      addToast(response?.error || 'Erro ao confirmar diagnóstico financeiro', 'error');
+      addToast(response?.error || 'Erro ao confirmar retrato financeiro', 'error');
     } finally {
       setSaving(false);
     }
@@ -263,7 +286,7 @@ export function GuidedPlanning() {
     return (
       <Card className="mx-auto max-w-xl text-center">
         <AlertTriangle className="mx-auto text-amber-300" size={28} />
-        <p className="mt-3 text-white">Não foi possível preparar o diagnóstico.</p>
+        <p className="mt-3 text-white">Não foi possível preparar o retrato financeiro.</p>
       </Card>
     );
   }
@@ -275,6 +298,26 @@ export function GuidedPlanning() {
         ? 'text-amber-300'
         : 'text-red-300';
   const result = confirmedSnapshot || preview.latestSnapshot;
+  const resultValidity = result ? getSnapshotValidity(result, preview) : null;
+  const ResultStatusIcon = resultValidity === 'CURRENT' ? CheckCircle2 : AlertTriangle;
+  const resultStatusTitle =
+    resultValidity === 'CURRENT'
+      ? 'Base confirmada e atual'
+      : resultValidity === 'STALE'
+        ? 'Retrato financeiro desatualizado'
+        : 'Validade não verificável';
+  const resultStatusDescription =
+    resultValidity === 'CURRENT'
+      ? 'A base financeira atual corresponde exatamente a esta confirmação.'
+      : resultValidity === 'STALE'
+        ? 'Receitas, compromissos, histórico, perfil ou metodologia mudaram. Revise as fontes e confirme novamente.'
+        : 'Este retrato foi criado antes do controle de integridade da base. Confirme um novo retrato para atualizar a referência.';
+  const resultStatusClass =
+    resultValidity === 'CURRENT'
+      ? 'border-emerald-900/60 bg-emerald-950/20 text-emerald-300'
+      : resultValidity === 'STALE'
+        ? 'border-amber-900/60 bg-amber-950/20 text-amber-300'
+        : 'border-blue-900/60 bg-blue-950/20 text-blue-300';
 
   return (
     <div className="space-y-5">
@@ -406,6 +449,9 @@ export function GuidedPlanning() {
                 <p className={`mt-1 text-3xl font-semibold ${qualityTone}`}>
                   {preview.dataQuality.score}%
                 </p>
+                <p className={`mt-1 text-xs font-medium ${qualityTone}`}>
+                  Qualidade {getQualityLabel(preview.dataQuality.rating).toLowerCase()}
+                </p>
               </div>
               <Database className={qualityTone} size={28} />
             </div>
@@ -463,7 +509,7 @@ export function GuidedPlanning() {
 
             {!selectedFixedIncome && (
               <div className="mt-4 rounded-lg border border-red-900/60 bg-red-950/20 p-3 text-xs text-red-200">
-                Selecione ao menos uma receita fixa para confirmar o diagnóstico.
+                Selecione ao menos uma receita fixa para confirmar o retrato financeiro.
               </div>
             )}
             <Button
@@ -481,18 +527,33 @@ export function GuidedPlanning() {
           {result && (
             <Card>
               <div className="flex items-start gap-3">
-                <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-300" size={21} />
-                <div>
-                  <p className="font-medium text-white">
-                    {confirmedSnapshot ? 'Retrato confirmado' : 'Último retrato confirmado'}
-                  </p>
+                <ResultStatusIcon
+                  className={`mt-0.5 shrink-0 ${
+                    resultValidity === 'CURRENT'
+                      ? 'text-emerald-300'
+                      : resultValidity === 'STALE'
+                        ? 'text-amber-300'
+                        : 'text-blue-300'
+                  }`}
+                  size={21}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-white">{resultStatusTitle}</p>
+                  <p className="mt-1 text-sm text-gray-400">{resultStatusDescription}</p>
+                  <div className={`mt-3 rounded-lg border p-3 ${resultStatusClass}`}>
+                    <p className="text-sm font-medium">
+                      {confirmedSnapshot ? 'Retrato confirmado agora' : 'Último retrato confirmado'}
+                    </p>
+                    <p className="mt-1 text-xs opacity-80">
+                      Snapshot #{result.id} · {formatDateTime(result.confirmedAt)}
+                    </p>
+                  </div>
                   <p className="mt-1 text-sm text-gray-400">
                     Meta de {formatMoney(result.targetMonthlySavings)} por mês · qualidade{' '}
                     {result.dataQualityScore}%
                   </p>
                   <p className="mt-1 text-xs text-gray-500">
-                    Snapshot #{result.id} · perfil v{result.profileVersion} ·{' '}
-                    {formatDateTime(result.confirmedAt)}
+                    Perfil v{result.profileVersion} · metodologia v{result.methodologyVersion}
                   </p>
                 </div>
               </div>

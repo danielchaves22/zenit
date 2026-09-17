@@ -150,12 +150,14 @@ describe('Monthly category budget', () => {
 
   beforeEach(async () => {
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
+    await prisma.recurringTransaction.deleteMany({ where: { companyId } });
     await prisma.monthlyCategoryBudget.deleteMany({ where: { companyId } });
     await prisma.recurringMonthlyCategoryBudget.deleteMany({ where: { companyId } });
   });
 
   afterAll(async () => {
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
+    await prisma.recurringTransaction.deleteMany({ where: { companyId } });
     await prisma.monthlyCategoryBudget.deleteMany({ where: { companyId } });
     await prisma.recurringMonthlyCategoryBudget.deleteMany({ where: { companyId } });
     await prisma.financialCategory.deleteMany({ where: { companyId } });
@@ -551,6 +553,46 @@ describe('Monthly category budget', () => {
       forecastAmount: '150.00',
       remainingAmount: '-30.00',
       status: 'EXCEEDED'
+    });
+  });
+
+  it('uses the canonical fixed projection as a category commitment', async () => {
+    const month = currentMonthKey();
+    const nextMonth = addMonths(month, 1);
+    await prisma.recurringTransaction.create({
+      data: {
+        companyId,
+        createdBy: userId,
+        description: 'Combustível fixo projetado',
+        amount: 30,
+        type: TransactionType.EXPENSE,
+        frequency: 'MONTHLY',
+        dayOfMonth: 10,
+        startDate: monthDate(month, -1),
+        nextDueDate: monthDate(nextMonth, 0),
+        isActive: true,
+        fromAccountId: accountId,
+        categoryId: childCategoryId
+      }
+    });
+
+    const response = await request(app)
+      .put('/api/financial/budgets/monthly')
+      .set(authHeaders())
+      .send({
+        month: nextMonth,
+        allocations: [
+          { categoryId: parentCategoryId, limitAmount: '120.00', includeChildren: true }
+        ]
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.items[0]).toMatchObject({
+      realizedAmount: '0.00',
+      committedAmount: '30.00',
+      forecastAmount: '30.00',
+      remainingAmount: '90.00',
+      status: 'ON_TRACK'
     });
   });
 

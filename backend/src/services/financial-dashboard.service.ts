@@ -29,57 +29,13 @@ import {
   formatFinancialMonthKey,
   parseFinancialMonthKey
 } from '../utils/financial-calendar';
-
-
-type DashboardSource =
-  | 'AD_HOC_MATERIALIZED'
-  | 'FIXED_MATERIALIZED'
-  | 'FIXED_PROJECTED'
-  | 'CREDIT_CARD';
-
-type DashboardTransactionType = 'INCOME' | 'EXPENSE';
-type DashboardCategoryAggregationState = 'REALIZED' | 'PENDING' | 'PROJECTED';
-
-type DashboardKnownRow = {
-  type: DashboardTransactionType;
-  source: DashboardSource;
-  amount: Prisma.Decimal;
-  categoryId: number | null;
-  categoryName: string;
-  categoryColor: string;
-  isSettled: boolean;
-  categoryAggregationState: DashboardCategoryAggregationState;
-};
-
-type CategoryTotalAccumulator = {
-  categoryId: number | null;
-  name: string;
-  color: string;
-  type: DashboardTransactionType;
-  amount: Prisma.Decimal;
-  realizedAmount: Prisma.Decimal;
-  pendingAmount: Prisma.Decimal;
-  projectedAmount: Prisma.Decimal;
-};
-
-type VariableProjectionItem = {
-  categoryId: number;
-  categoryName: string;
-  color: string;
-  month: string;
-  historicalAverage: Prisma.Decimal;
-  committedInMonth: Prisma.Decimal;
-  remainingProjected: Prisma.Decimal;
-};
-
-type MonthlyComputation = {
-  month: string;
-  isCurrentMonth: boolean;
-  carryOverAmount: Prisma.Decimal;
-  projectedEndingBalance: Prisma.Decimal;
-  knownRows: DashboardKnownRow[];
-  variableProjectionItems: VariableProjectionItem[];
-};
+import {
+  calculateMonthlyFinancialProjection,
+  type MonthlyFinancialProjection,
+  type MonthlyProjectionAggregationState,
+  type MonthlyProjectionKnownRow,
+  type MonthlyProjectionTransactionType
+} from '../utils/monthly-financial-projection';
 
 function startOfMonth(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
@@ -218,47 +174,9 @@ function buildCategoryColor(category?: { color?: string | null } | null): string
   return category?.color || '#6B7280';
 }
 
-function createCategoryTotalAccumulator(params: {
-  categoryId: number | null;
-  name: string;
-  color: string;
-  type: DashboardTransactionType;
-}): CategoryTotalAccumulator {
-  return {
-    categoryId: params.categoryId,
-    name: params.name,
-    color: params.color,
-    type: params.type,
-    amount: new Prisma.Decimal(0),
-    realizedAmount: new Prisma.Decimal(0),
-    pendingAmount: new Prisma.Decimal(0),
-    projectedAmount: new Prisma.Decimal(0)
-  };
-}
-
-function addAmountToCategoryAccumulator(
-  accumulator: CategoryTotalAccumulator,
-  amount: Prisma.Decimal,
-  aggregationState: DashboardCategoryAggregationState
-) {
-  accumulator.amount = accumulator.amount.plus(amount);
-
-  if (aggregationState === 'REALIZED') {
-    accumulator.realizedAmount = accumulator.realizedAmount.plus(amount);
-    return;
-  }
-
-  if (aggregationState === 'PENDING') {
-    accumulator.pendingAmount = accumulator.pendingAmount.plus(amount);
-    return;
-  }
-
-  accumulator.projectedAmount = accumulator.projectedAmount.plus(amount);
-}
-
 function toDashboardAggregationState(
   recognition: FinancialRecognition
-): DashboardCategoryAggregationState {
+): MonthlyProjectionAggregationState {
   if (recognition.settlementState === 'SETTLED') {
     return 'REALIZED';
   }
@@ -515,7 +433,7 @@ export default class FinancialDashboardService {
     isCurrentMonth: boolean;
     accessibleAccountIds?: number[];
     accessFilter?: Prisma.FinancialTransactionWhereInput;
-  }): Promise<DashboardKnownRow[]> {
+  }): Promise<MonthlyProjectionKnownRow[]> {
     const {
       companyId,
       monthStart,
@@ -617,13 +535,13 @@ export default class FinancialDashboardService {
       })
     ]);
 
-    const rows: DashboardKnownRow[] = [];
+    const rows: MonthlyProjectionKnownRow[] = [];
 
     for (const transaction of materializedNonCard) {
       const recognition = recognizeNonCardTransaction(transaction.status);
 
       rows.push({
-        type: transaction.type as DashboardTransactionType,
+        type: transaction.type as MonthlyProjectionTransactionType,
         source: transaction.recurringTransactionId ? 'FIXED_MATERIALIZED' : 'AD_HOC_MATERIALIZED',
         amount: toDecimal(transaction.amount),
         categoryId: transaction.categoryId,
@@ -729,7 +647,7 @@ export default class FinancialDashboardService {
       }
 
       rows.push({
-        type: template.type as DashboardTransactionType,
+        type: template.type as MonthlyProjectionTransactionType,
         source: 'FIXED_PROJECTED',
         amount: toDecimal(template.amount),
         categoryId: template.categoryId ?? null,
@@ -743,103 +661,7 @@ export default class FinancialDashboardService {
     return rows;
   }
 
-  private static buildVariableProjectionItems(params: {
-    monthKey: string;
-    trackedCategories: Array<{ id: number; name: string; color: string }>;
-    historicalAverageByCategoryId: Map<number, Prisma.Decimal>;
-    knownRows: DashboardKnownRow[];
-  }): VariableProjectionItem[] {
-    const committedByCategoryId = new Map<number, Prisma.Decimal>();
-
-    for (const row of params.knownRows) {
-      if (row.type !== TransactionType.EXPENSE || row.categoryId === null) {
-        continue;
-      }
-
-      const currentValue = committedByCategoryId.get(row.categoryId) ?? new Prisma.Decimal(0);
-      committedByCategoryId.set(row.categoryId, currentValue.plus(row.amount));
-    }
-
-    return params.trackedCategories.map((category) => {
-      const historicalAverage =
-        params.historicalAverageByCategoryId.get(category.id) ?? new Prisma.Decimal(0);
-      const committedInMonth = committedByCategoryId.get(category.id) ?? new Prisma.Decimal(0);
-      const projectedDifference = historicalAverage.minus(committedInMonth);
-      const remainingProjected = projectedDifference.gt(0)
-        ? projectedDifference
-        : new Prisma.Decimal(0);
-
-      return {
-        categoryId: category.id,
-        categoryName: category.name,
-        color: category.color,
-        month: params.monthKey,
-        historicalAverage,
-        committedInMonth,
-        remainingProjected
-      };
-    });
-  }
-
-  private static buildMonthlyComputation(params: {
-    monthStart: Date;
-    currentDate: Date;
-    carryOverAmount: Prisma.Decimal;
-    knownRows: DashboardKnownRow[];
-    variableProjectionItems: VariableProjectionItem[];
-  }): MonthlyComputation {
-    const monthKey = formatFinancialMonthKey(params.monthStart);
-    const isCurrentMonth = isSameMonth(params.monthStart, params.currentDate);
-    let incomeTotal = new Prisma.Decimal(0);
-    let realizedIncome = new Prisma.Decimal(0);
-    let remainingIncome = new Prisma.Decimal(0);
-    let realizedCommittedExpense = new Prisma.Decimal(0);
-    let remainingCommittedExpense = new Prisma.Decimal(0);
-
-    for (const row of params.knownRows) {
-      if (row.type === TransactionType.INCOME) {
-        incomeTotal = incomeTotal.plus(row.amount);
-        if (row.isSettled) {
-          realizedIncome = realizedIncome.plus(row.amount);
-        } else {
-          remainingIncome = remainingIncome.plus(row.amount);
-        }
-        continue;
-      }
-
-      if (row.isSettled) {
-        realizedCommittedExpense = realizedCommittedExpense.plus(row.amount);
-      } else {
-        remainingCommittedExpense = remainingCommittedExpense.plus(row.amount);
-      }
-    }
-
-    const variableProjectedExpenseTotal = params.variableProjectionItems.reduce(
-      (sum, item) => sum.plus(item.remainingProjected),
-      new Prisma.Decimal(0)
-    );
-
-    const committedExpenseTotal = realizedCommittedExpense.plus(remainingCommittedExpense);
-    const expenseTotal = committedExpenseTotal.plus(variableProjectedExpenseTotal);
-    const projectedEndingBalance = isCurrentMonth
-      ? params.carryOverAmount.plus(remainingIncome).minus(remainingCommittedExpense).minus(
-          variableProjectedExpenseTotal
-        )
-      : params.carryOverAmount.plus(incomeTotal).minus(committedExpenseTotal).minus(
-          variableProjectedExpenseTotal
-        );
-
-    return {
-      month: monthKey,
-      isCurrentMonth,
-      carryOverAmount: params.carryOverAmount,
-      projectedEndingBalance,
-      knownRows: params.knownRows,
-      variableProjectionItems: params.variableProjectionItems
-    };
-  }
-
-  static async getMonthlyDashboard(params: {
+  static async getMonthlyProjection(params: {
     companyId: number;
     userId: number;
     month: string;
@@ -847,7 +669,7 @@ export default class FinancialDashboardService {
     accessFilter?: Prisma.FinancialTransactionWhereInput;
     calendarContext?: FinancialCalendarContext;
     at?: Date;
-  }) {
+  }): Promise<MonthlyFinancialProjection> {
     const calendar =
       params.calendarContext ??
       (await WorkspaceFinancialCalendarService.getContext(params.companyId, params.at));
@@ -877,7 +699,7 @@ export default class FinancialDashboardService {
     });
 
     let monthCursor = new Date(currentMonthStart);
-    let targetComputation: MonthlyComputation | null = null;
+    let targetComputation: MonthlyFinancialProjection | null = null;
 
     // `addMonths` keeps iteration on a stable first-of-month cursor at noon.
     // Compare with the requested month end so the target future month is included.
@@ -892,18 +714,13 @@ export default class FinancialDashboardService {
         accessibleAccountIds: params.accessibleAccountIds,
         accessFilter: params.accessFilter
       });
-      const variableProjectionItems = this.buildVariableProjectionItems({
-        monthKey: formatFinancialMonthKey(monthCursor),
-        trackedCategories,
-        historicalAverageByCategoryId,
-        knownRows
-      });
-      const computation = this.buildMonthlyComputation({
-        monthStart: monthCursor,
-        currentDate,
+      const computation = calculateMonthlyFinancialProjection({
+        month: formatFinancialMonthKey(monthCursor),
+        isCurrentMonth: isSameMonth(monthCursor, currentDate),
         carryOverAmount,
         knownRows,
-        variableProjectionItems
+        trackedCategories,
+        historicalAverageByCategoryId
       });
 
       if (isSameMonth(monthCursor, requestedMonthStart)) {
@@ -917,10 +734,20 @@ export default class FinancialDashboardService {
     if (!targetComputation) {
       throw new Error('Não foi possível calcular o dashboard mensal');
     }
-    const categoryTotalsMap = new Map<
-      string,
-      CategoryTotalAccumulator
-    >();
+
+    return targetComputation;
+  }
+
+  static async getMonthlyDashboard(params: {
+    companyId: number;
+    userId: number;
+    month: string;
+    accessibleAccountIds?: number[];
+    accessFilter?: Prisma.FinancialTransactionWhereInput;
+    calendarContext?: FinancialCalendarContext;
+    at?: Date;
+  }) {
+    const targetComputation = await this.getMonthlyProjection(params);
 
     const committedBreakdown = {
       income: {
@@ -936,37 +763,8 @@ export default class FinancialDashboardService {
       }
     };
 
-    let monthlyIncomeTotal = new Prisma.Decimal(0);
-    let realizedIncomeTotal = new Prisma.Decimal(0);
-    let remainingIncomeTotal = new Prisma.Decimal(0);
-    let realizedCommittedExpenseTotal = new Prisma.Decimal(0);
-    let remainingCommittedExpenseTotal = new Prisma.Decimal(0);
-
     for (const row of targetComputation.knownRows) {
-      const categoryKey = `${row.type}:${row.categoryId ?? 'uncategorized'}`;
-      const existingCategory =
-        categoryTotalsMap.get(categoryKey) ??
-        createCategoryTotalAccumulator({
-          categoryId: row.categoryId,
-          name: row.categoryName,
-          color: row.categoryColor,
-          type: row.type
-        });
-      addAmountToCategoryAccumulator(
-        existingCategory,
-        row.amount,
-        row.categoryAggregationState
-      );
-      categoryTotalsMap.set(categoryKey, existingCategory);
-
       if (row.type === TransactionType.INCOME) {
-        monthlyIncomeTotal = monthlyIncomeTotal.plus(row.amount);
-        if (row.isSettled) {
-          realizedIncomeTotal = realizedIncomeTotal.plus(row.amount);
-        } else {
-          remainingIncomeTotal = remainingIncomeTotal.plus(row.amount);
-        }
-
         if (row.source === 'AD_HOC_MATERIALIZED') {
           committedBreakdown.income.adHocMaterializedTotal =
             committedBreakdown.income.adHocMaterializedTotal.plus(row.amount);
@@ -979,12 +777,6 @@ export default class FinancialDashboardService {
         }
 
         continue;
-      }
-
-      if (row.isSettled) {
-        realizedCommittedExpenseTotal = realizedCommittedExpenseTotal.plus(row.amount);
-      } else {
-        remainingCommittedExpenseTotal = remainingCommittedExpenseTotal.plus(row.amount);
       }
 
       if (row.source === 'AD_HOC_MATERIALIZED') {
@@ -1002,31 +794,6 @@ export default class FinancialDashboardService {
       }
     }
 
-    for (const item of targetComputation.variableProjectionItems) {
-      if (item.remainingProjected.lte(0)) {
-        continue;
-      }
-
-      const categoryKey = `${TransactionType.EXPENSE}:${item.categoryId}`;
-      const existingCategory =
-        categoryTotalsMap.get(categoryKey) ??
-        createCategoryTotalAccumulator({
-          categoryId: item.categoryId,
-          name: item.categoryName,
-          color: item.color,
-          type: TransactionType.EXPENSE
-        });
-      addAmountToCategoryAccumulator(existingCategory, item.remainingProjected, 'PROJECTED');
-      categoryTotalsMap.set(categoryKey, existingCategory);
-    }
-
-    const variableProjectedExpenseTotal = targetComputation.variableProjectionItems.reduce(
-      (sum, item) => sum.plus(item.remainingProjected),
-      new Prisma.Decimal(0)
-    );
-    const committedExpenseTotal = realizedCommittedExpenseTotal.plus(remainingCommittedExpenseTotal);
-    const monthlyExpenseTotal = committedExpenseTotal.plus(variableProjectedExpenseTotal);
-
     return {
       month: targetComputation.month,
       isCurrentMonth: targetComputation.isCurrentMonth,
@@ -1040,20 +807,28 @@ export default class FinancialDashboardService {
         source: targetComputation.isCurrentMonth ? 'CURRENT_BALANCE' : 'PREVIOUS_PROJECTED'
       },
       monthlyTotals: {
-        incomeTotal: toMoneyString(monthlyIncomeTotal),
-        expenseTotal: toMoneyString(monthlyExpenseTotal),
-        committedExpenseTotal: toMoneyString(committedExpenseTotal),
-        variableProjectedExpenseTotal: toMoneyString(variableProjectedExpenseTotal)
+        incomeTotal: toMoneyString(targetComputation.totals.incomeTotal),
+        expenseTotal: toMoneyString(targetComputation.totals.expenseTotal),
+        committedExpenseTotal: toMoneyString(targetComputation.totals.committedExpenseTotal),
+        variableProjectedExpenseTotal: toMoneyString(
+          targetComputation.totals.variableProjectedExpenseTotal
+        )
       },
       currentMonthBreakdown: {
         income: {
-          realized: toMoneyString(realizedIncomeTotal),
-          remaining: toMoneyString(remainingIncomeTotal)
+          realized: toMoneyString(targetComputation.totals.realizedIncomeTotal),
+          remaining: toMoneyString(targetComputation.totals.remainingIncomeTotal)
         },
         expense: {
-          realizedCommitted: toMoneyString(realizedCommittedExpenseTotal),
-          remainingCommitted: toMoneyString(remainingCommittedExpenseTotal),
-          remainingVariableProjected: toMoneyString(variableProjectedExpenseTotal)
+          realizedCommitted: toMoneyString(
+            targetComputation.totals.realizedCommittedExpenseTotal
+          ),
+          remainingCommitted: toMoneyString(
+            targetComputation.totals.remainingCommittedExpenseTotal
+          ),
+          remainingVariableProjected: toMoneyString(
+            targetComputation.totals.variableProjectedExpenseTotal
+          )
         }
       },
       committedBreakdown: {
@@ -1070,7 +845,7 @@ export default class FinancialDashboardService {
         }
       },
       variableProjection: {
-        total: toMoneyString(variableProjectedExpenseTotal),
+        total: toMoneyString(targetComputation.totals.variableProjectedExpenseTotal),
         categories: targetComputation.variableProjectionItems
           .filter((item) => item.remainingProjected.gt(0))
           .map((item) => ({
@@ -1084,7 +859,7 @@ export default class FinancialDashboardService {
           }))
       },
       projectedEndingBalance: toMoneyString(targetComputation.projectedEndingBalance),
-      categoryTotals: [...categoryTotalsMap.values()].map((item) => ({
+      categoryTotals: targetComputation.categoryTotals.map((item) => ({
         categoryId: item.categoryId,
         name: item.name,
         color: item.color,

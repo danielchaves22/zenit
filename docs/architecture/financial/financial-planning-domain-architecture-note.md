@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-09-16
+last_reviewed: 2026-09-17
 summary: Limites, linguagem e invariantes do dominio de planejamento financeiro do Zenit Cash.
 tags:
   - zenit-cash
@@ -261,6 +261,19 @@ planejamento por categoria considera todo o gasto coberto pelo limite. Creditos
 de cartao reduzem a despesa da categoria segundo sua natureza financeira,
 evitando que a media seja maior que a saida liquida.
 
+### Projecao mensal canonica
+
+Dashboard e Planejamento Mensal consomem o mesmo calculador puro de projecao.
+Ele recebe fatos mensais ja classificados, medias historicas das categorias
+acompanhadas e saldo transportado, e devolve realizado, pendente, projecao fixa,
+projecao variavel, totais por categoria e saldo final projetado.
+
+O dashboard apenas serializa esse resultado para seu contrato externo. O
+Planejamento Mensal usa diretamente os valores decimais canonicos e nao deduz
+mais a projecao fixa subtraindo campos serializados da projecao variavel. Limite
+planejado continua fora do calculador: e uma intencao do usuario comparada com a
+projecao, nao um fato financeiro capaz de alterar saldo.
+
 ### Historico auditavel do diagnostico
 
 Snapshots confirmados podem ser consultados, mas nao alterados. A listagem usa
@@ -329,6 +342,9 @@ que deveriam representar a mesma situacao financeira.
 Lint, testes reproduziveis, caracterizacao dos calculos atuais, autorizacao do
 planejamento compartilhado, integridade do snapshot, seu historico auditavel e a
 matriz canonica de reconhecimento e as perspectivas historicas usadas por
-dashboard, planejamento mensal e diagnostico ja foram consolidados. Permanece:
+dashboard, planejamento mensal e diagnostico, alem da projecao mensal compartilhada
+por dashboard e planejamento, ja foram consolidados. Permanecem:
 
-1. Unificar a projecao mensal consumida por dashboard e planejamento.
+1. Explicitar a competencia de parcelas na projecao canonica.
+2. Integrar contribuicoes de provisoes sem trata-las como despesas realizadas.
+3. Comparar dashboard, planejamento e diagnostico nos mesmos cenarios compostos.

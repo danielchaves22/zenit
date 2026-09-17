@@ -8,6 +8,7 @@ import {
   formatFinancialMonthKey,
   FinancialCalendarContext
 } from '../utils/financial-calendar';
+import type { MonthlyProjectionCategoryTotal } from '../utils/monthly-financial-projection';
 
 
 type RecurringChangeScope = 'MONTH_ONLY' | 'FROM_MONTH';
@@ -44,13 +45,6 @@ type EffectiveAllocation = {
   origin: BudgetOrigin;
   baseLimitAmount: Prisma.Decimal | null;
   recurrenceStartMonth: string | null;
-};
-
-type MonthlyDashboardCategoryTotal = {
-  categoryId: number | null;
-  realizedAmount: string;
-  pendingAmount: string;
-  projectedAmount: string;
 };
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
@@ -704,8 +698,8 @@ export default class MonthlyCategoryBudgetService {
       coveredIds.forEach((categoryId) => selectedCategoryIds.add(categoryId));
     });
 
-    const [monthlyDashboard, historyDashboard] = await Promise.all([
-      FinancialDashboardService.getMonthlyDashboard({
+    const [monthlyProjection, historyDashboard] = await Promise.all([
+      FinancialDashboardService.getMonthlyProjection({
         companyId: params.companyId,
         userId: params.userId,
         month: params.month,
@@ -724,13 +718,9 @@ export default class MonthlyCategoryBudgetService {
       })
     ]);
 
-    const categoryTotalsById = new Map<number, MonthlyDashboardCategoryTotal>();
-    monthlyDashboard.categoryTotals.forEach((categoryTotal) => {
+    const categoryTotalsById = new Map<number, MonthlyProjectionCategoryTotal>();
+    monthlyProjection.categoryTotals.forEach((categoryTotal) => {
       if (categoryTotal.categoryId !== null) categoryTotalsById.set(categoryTotal.categoryId, categoryTotal);
-    });
-    const variableProjectionByCategoryId = new Map<number, Prisma.Decimal>();
-    monthlyDashboard.variableProjection.categories.forEach((category) => {
-      variableProjectionByCategoryId.set(category.categoryId, toDecimal(category.remainingProjected));
     });
     const historySeriesByCategoryId = new Map(
       historyDashboard.categorySeries.map((series) => [series.categoryId, series])
@@ -744,21 +734,15 @@ export default class MonthlyCategoryBudgetService {
       const coveredIds = coveredIdsByAllocationId.get(allocation.id) ?? [allocation.category.id];
       let realizedAmount = new Prisma.Decimal(0);
       let pendingAmount = new Prisma.Decimal(0);
-      let projectedAmount = new Prisma.Decimal(0);
-      let variableProjectionAmount = new Prisma.Decimal(0);
+      let fixedProjectedAmount = new Prisma.Decimal(0);
       coveredIds.forEach((categoryId) => {
         const totals = categoryTotalsById.get(categoryId);
         realizedAmount = realizedAmount.plus(toDecimal(totals?.realizedAmount));
         pendingAmount = pendingAmount.plus(toDecimal(totals?.pendingAmount));
-        projectedAmount = projectedAmount.plus(toDecimal(totals?.projectedAmount));
-        variableProjectionAmount = variableProjectionAmount.plus(
-          variableProjectionByCategoryId.get(categoryId) ?? 0
+        fixedProjectedAmount = fixedProjectedAmount.plus(
+          toDecimal(totals?.fixedProjectedAmount)
         );
       });
-      const fixedProjectedAmount = maxDecimal(
-        projectedAmount.minus(variableProjectionAmount),
-        new Prisma.Decimal(0)
-      );
       const committedAmount = pendingAmount.plus(fixedProjectedAmount);
       const knownAmount = realizedAmount.plus(committedAmount);
       let historicalTotal = new Prisma.Decimal(0);

@@ -38,6 +38,7 @@ Estrutura principal:
 Subareas canonicas:
 
 - `products/zenit-cash`
+- `products/zenit-cash/releases`
 - `products/zenit-cash-mobile`
 - `products/zenit-calc`
 - `architecture/assistant`

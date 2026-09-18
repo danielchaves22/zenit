@@ -44,7 +44,7 @@ Campos opcionais:
 
 Enums fechados:
 
-- `type`: `overview`, `functional-spec`, `technical-spec`, `architecture-note`, `setup-guide`, `operations-guide`, `testing-guide`, `example`, `rfc`, `decision-record`, `legacy-note`
+- `type`: `overview`, `functional-spec`, `technical-spec`, `architecture-note`, `setup-guide`, `operations-guide`, `testing-guide`, `example`, `rfc`, `decision-record`, `release-note`, `legacy-note`
 - `audience`: `user`, `dev`, `ops`, `product`, `leadership`
 - `visibility`: `public`, `internal`, `restricted`
 - `status`: `draft`, `active`, `deprecated`, `archived`

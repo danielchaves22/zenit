@@ -35,6 +35,7 @@ Templates oficiais:
 - `example`: cenario, atores envolvidos, entrada, fluxo passo a passo, payloads e eventos, resultado esperado, observacoes.
 - `rfc`: contexto, problema, proposta, tradeoffs, pontos em aberto, proximos passos.
 - `decision-record`: contexto, decisao, consequencias, documentos relacionados.
+- `release-note`: resumo da versao, novidades orientadas ao usuario, exemplo de uso, como aproveitar melhor e observacoes relevantes de compatibilidade.
 - `legacy-note`: contexto historico, escopo legado, estado atual, substituicao ou destino, referencias.
 
 ## Consequencias

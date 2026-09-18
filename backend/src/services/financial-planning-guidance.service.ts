@@ -12,8 +12,15 @@ import FinancialPlanningAnalysisService, {
 } from './financial-planning-analysis.service';
 import OpenAiIntegrationService from './openai-integration.service';
 import { hashCanonicalPayload } from '../utils/canonical-hash';
+import { logger } from '../logger';
+import { observeFinancialPlanningGuidance } from '../metrics';
+import {
+  evaluateFinancialPlanningGuidance,
+  financialPlanningGuidanceEvaluationSchema,
+  FinancialPlanningGuidanceEvaluation
+} from '../utils/financial-planning-guidance-evaluation';
 
-export const FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION = 'financial-guidance-v1';
+export const FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION = 'financial-guidance-v2';
 
 const guidancePayloadSchema = z.object({
   headline: z.string().trim().min(5).max(100),
@@ -124,7 +131,11 @@ type FinancialPlanningGuidanceInput = {
   };
   evidence: {
     methodologyVersion: number;
-    findings: Array<{ id: string; referenceIds: string[] }>;
+    findings: Array<{
+      id: string;
+      severity: 'POSITIVE' | 'INFORMATIONAL' | 'ATTENTION' | 'CRITICAL';
+      referenceIds: string[];
+    }>;
     references: Array<{ id: string }>;
     limitations: string[];
   } & Record<string, unknown>;
@@ -142,7 +153,7 @@ function optionalTokenCount(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
-function buildContentHash(params: {
+type LegacyContentHashParams = {
   snapshotId: number;
   provider: AiProvider;
   providerResponseId: string | null;
@@ -159,7 +170,19 @@ function buildContentHash(params: {
   totalTokens: number | null;
   usedFallbackModel: boolean;
   generatedAt: string;
-}): string {
+};
+
+function buildLegacyContentHash(params: LegacyContentHashParams): string {
+  return hashCanonicalPayload(params);
+}
+
+function buildContentHash(
+  params: LegacyContentHashParams & {
+    evaluationMethodologyVersion: number;
+    evaluationScore: number;
+    evaluation: FinancialPlanningGuidanceEvaluation;
+  }
+): string {
   return hashCanonicalPayload(params);
 }
 
@@ -189,7 +212,7 @@ function serializeRecord(record: FinancialPlanningGuidanceRecord) {
   }
   const inputHash = hashCanonicalPayload(input);
   const generatedAt = record.generatedAt.toISOString();
-  const contentHash = buildContentHash({
+  const legacyHashParams: LegacyContentHashParams = {
     snapshotId: record.snapshotId,
     provider: record.provider,
     providerResponseId: record.providerResponseId,
@@ -206,7 +229,48 @@ function serializeRecord(record: FinancialPlanningGuidanceRecord) {
     totalTokens: record.totalTokens,
     usedFallbackModel: record.usedFallbackModel,
     generatedAt
-  });
+  };
+  const evaluationFields = [
+    record.evaluationMethodologyVersion,
+    record.evaluationScore,
+    record.evaluation
+  ];
+  const hasEvaluation = evaluationFields.every((value) => value !== null);
+  const hasPartialEvaluation = evaluationFields.some((value) => value !== null) && !hasEvaluation;
+  let evaluation: FinancialPlanningGuidanceEvaluation | undefined;
+  let contentHash: string;
+  if (hasPartialEvaluation) return invalidPersistedGuidance();
+  if (hasEvaluation) {
+    const parsedEvaluation = financialPlanningGuidanceEvaluationSchema.safeParse(record.evaluation);
+    if (
+      !parsedEvaluation.success ||
+      !parsedEvaluation.data.passed ||
+      parsedEvaluation.data.methodologyVersion !== record.evaluationMethodologyVersion ||
+      parsedEvaluation.data.score !== record.evaluationScore
+    ) {
+      return invalidPersistedGuidance();
+    }
+    const recalculatedEvaluation = evaluateFinancialPlanningGuidance({
+      payload: parsedGuidance.data,
+      evidence: input.evidence,
+      scenarios: input.scenarios,
+      targetAlreadyMet: input.objective.status === 'TARGET_ALREADY_MET'
+    });
+    if (
+      hashCanonicalPayload(recalculatedEvaluation) !== hashCanonicalPayload(parsedEvaluation.data)
+    ) {
+      return invalidPersistedGuidance();
+    }
+    evaluation = parsedEvaluation.data;
+    contentHash = buildContentHash({
+      ...legacyHashParams,
+      evaluationMethodologyVersion: record.evaluationMethodologyVersion!,
+      evaluationScore: record.evaluationScore!,
+      evaluation
+    });
+  } else {
+    contentHash = buildLegacyContentHash(legacyHashParams);
+  }
   if (inputHash !== record.inputHash || contentHash !== record.contentHash) {
     return invalidPersistedGuidance();
   }
@@ -220,6 +284,7 @@ function serializeRecord(record: FinancialPlanningGuidanceRecord) {
     evidenceMethodologyVersion: record.evidenceMethodologyVersion,
     recommendationMethodologyVersion: record.recommendationMethodologyVersion,
     guidanceMethodologyVersion: record.guidanceMethodologyVersion,
+    evaluation,
     guidanceEvidence: input.evidence,
     scenarioContext: input.scenarios,
     guidance: parsedGuidance.data,
@@ -280,69 +345,11 @@ function buildInstructions(): string {
     'Cite somente findingId e referenceIds existentes no pacote.',
     'Nao apresente regras universais de gasto, garantias de resultado ou aconselhamento de investimento.',
     'Priorize os achados mais relevantes, explique os tradeoffs e proponha proximos passos revisaveis.',
+    'Cubra ao menos um dos achados com maior severidade no pacote.',
+    'Quando DATA_QUALITY estiver em ATTENTION, cite esse achado em priorities ou cautions.',
     'Se os cenarios nao forem suficientes ou a qualidade dos dados exigir cautela, diga isso claramente.',
     'Responda em portugues do Brasil, com linguagem direta, respeitosa e sem alarmismo.'
   ].join(' ');
-}
-
-function narrativeTexts(payload: FinancialPlanningGuidancePayload): string[] {
-  return [
-    payload.headline,
-    payload.summary,
-    payload.scenarioComparison.explanation,
-    ...payload.priorities.flatMap((priority) => [
-      priority.title,
-      priority.explanation,
-      priority.nextStep
-    ]),
-    ...payload.cautions.map((caution) => caution.message)
-  ];
-}
-
-function validateGrounding(params: {
-  payload: FinancialPlanningGuidancePayload;
-  evidence: {
-    findings: Array<{ id: string; referenceIds: string[] }>;
-    references: Array<{ id: string }>;
-  };
-  scenarios: Array<{ id: string }>;
-  targetAlreadyMet: boolean;
-}) {
-  if (narrativeTexts(params.payload).some((text) => /\d/.test(text))) {
-    throw new Error('A explicação da IA introduziu números fora da camada determinística');
-  }
-
-  const findingById = new Map(params.evidence.findings.map((finding) => [finding.id, finding]));
-  const citedFindingIds = new Set([
-    ...params.payload.priorities.map((priority) => priority.findingId),
-    ...params.payload.cautions.flatMap((caution) => caution.findingId ? [caution.findingId] : [])
-  ]);
-  if (Array.from(citedFindingIds).some((id) => !findingById.has(id))) {
-    throw new Error('A explicação da IA citou um achado inexistente');
-  }
-
-  const existingReferenceIds = new Set(params.evidence.references.map((reference) => reference.id));
-  const groundedReferenceIds = new Set(
-    Array.from(citedFindingIds).flatMap((id) => findingById.get(id)?.referenceIds ?? [])
-  );
-  if (
-    params.payload.referenceIds.some(
-      (id) => !existingReferenceIds.has(id) || !groundedReferenceIds.has(id)
-    )
-  ) {
-    throw new Error('A explicação da IA citou uma referência sem vínculo com os achados utilizados');
-  }
-
-  const scenarioId = params.payload.scenarioComparison.scenarioId;
-  if (params.targetAlreadyMet && scenarioId !== 'NONE') {
-    throw new Error('A explicação da IA escolheu um cenário quando a meta já está atendida');
-  }
-  if (
-    scenarioId !== 'NONE' &&
-    !params.scenarios.some((scenario) => scenario.id === scenarioId)
-  ) {
-    throw new Error('A explicação da IA citou um cenário inexistente');
-  }
 }
 
 function safeUserIdentifier(userId: number): string {
@@ -424,6 +431,11 @@ export default class FinancialPlanningGuidanceService {
     try {
       credential = await OpenAiIntegrationService.getDecryptedCredential(params.companyId, true);
     } catch {
+      observeFinancialPlanningGuidance({
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        outcome: 'unavailable',
+        durationMs: Date.now() - startedAt
+      });
       throw new FinancialPlanningAnalysisError(
         'A explicação por IA não está disponível neste workspace',
         'FINANCIAL_PLANNING_AI_UNAVAILABLE',
@@ -471,6 +483,13 @@ export default class FinancialPlanningGuidanceService {
         });
       }
     } catch {
+      observeFinancialPlanningGuidance({
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        outcome: 'provider_error',
+        usedFallbackModel,
+        durationMs: Date.now() - startedAt
+      });
       throw new FinancialPlanningAnalysisError(
         'Não foi possível consultar a IA agora. Tente novamente mais tarde',
         'FINANCIAL_PLANNING_AI_PROVIDER_ERROR',
@@ -479,6 +498,13 @@ export default class FinancialPlanningGuidanceService {
     }
 
     if (!response.ok) {
+      observeFinancialPlanningGuidance({
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        outcome: 'provider_error',
+        usedFallbackModel,
+        durationMs: Date.now() - startedAt
+      });
       throw new FinancialPlanningAnalysisError(
         'Não foi possível consultar a IA agora. Tente novamente mais tarde',
         'FINANCIAL_PLANNING_AI_PROVIDER_ERROR',
@@ -486,24 +512,59 @@ export default class FinancialPlanningGuidanceService {
       );
     }
 
+    const usage = response.parsed?.usage;
+    const inputTokens = optionalTokenCount(usage?.input_tokens);
+    const outputTokens = optionalTokenCount(usage?.output_tokens);
+    const totalTokens = optionalTokenCount(usage?.total_tokens);
     const parsedPayload = guidancePayloadSchema.safeParse(
       parseJsonSafe(extractOutputText(response.parsed))
     );
     if (!parsedPayload.success) {
+      observeFinancialPlanningGuidance({
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        outcome: 'schema_invalid',
+        usedFallbackModel,
+        durationMs: Date.now() - startedAt,
+        inputTokens,
+        outputTokens,
+        totalTokens
+      });
       throw new FinancialPlanningAnalysisError(
         'A IA não devolveu uma explicação segura para esta análise',
         'FINANCIAL_PLANNING_AI_INVALID_RESPONSE',
         502
       );
     }
-    try {
-      validateGrounding({
-        payload: parsedPayload.data,
-        evidence,
-        scenarios: scenarioResult.scenarios,
-        targetAlreadyMet: scenarioResult.status === 'TARGET_ALREADY_MET'
+    const evaluation = evaluateFinancialPlanningGuidance({
+      payload: parsedPayload.data,
+      evidence,
+      scenarios: scenarioResult.scenarios,
+      targetAlreadyMet: scenarioResult.status === 'TARGET_ALREADY_MET'
+    });
+    if (!evaluation.passed) {
+      const failedChecks = evaluation.checks
+        .filter((item) => !item.passed)
+        .map((item) => item.id);
+      logger.warn('Financial planning guidance failed deterministic evaluation', {
+        snapshotId: params.snapshotId,
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        evaluationMethodologyVersion: evaluation.methodologyVersion,
+        evaluationScore: evaluation.score,
+        failedChecks
       });
-    } catch {
+      observeFinancialPlanningGuidance({
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        outcome: 'evaluation_invalid',
+        usedFallbackModel,
+        durationMs: Date.now() - startedAt,
+        evaluationScore: evaluation.score,
+        inputTokens,
+        outputTokens,
+        totalTokens
+      });
       throw new FinancialPlanningAnalysisError(
         'A IA não devolveu uma explicação segura para esta análise',
         'FINANCIAL_PLANNING_AI_INVALID_RESPONSE',
@@ -516,10 +577,6 @@ export default class FinancialPlanningGuidanceService {
       typeof response.parsed?.id === 'string' && response.parsed.id.length <= 180
         ? response.parsed.id
         : null;
-    const usage = response.parsed?.usage;
-    const inputTokens = optionalTokenCount(usage?.input_tokens);
-    const outputTokens = optionalTokenCount(usage?.output_tokens);
-    const totalTokens = optionalTokenCount(usage?.total_tokens);
     const latencyMs = Date.now() - startedAt;
     const inputHash = hashCanonicalPayload(input);
     const contentHash = buildContentHash({
@@ -531,8 +588,11 @@ export default class FinancialPlanningGuidanceService {
       guidanceMethodologyVersion: 1,
       evidenceMethodologyVersion: evidence.methodologyVersion,
       recommendationMethodologyVersion: scenarioResult.recommendationMethodologyVersion,
+      evaluationMethodologyVersion: evaluation.methodologyVersion,
+      evaluationScore: evaluation.score,
       inputHash,
       guidance: parsedPayload.data,
+      evaluation,
       latencyMs,
       inputTokens,
       outputTokens,
@@ -554,10 +614,13 @@ export default class FinancialPlanningGuidanceService {
           guidanceMethodologyVersion: 1,
           evidenceMethodologyVersion: evidence.methodologyVersion,
           recommendationMethodologyVersion: scenarioResult.recommendationMethodologyVersion,
+          evaluationMethodologyVersion: evaluation.methodologyVersion,
+          evaluationScore: evaluation.score,
           inputHash,
           contentHash,
           inputSnapshot: input as unknown as Prisma.InputJsonValue,
           guidance: parsedPayload.data as Prisma.InputJsonValue,
+          evaluation: evaluation as Prisma.InputJsonValue,
           latencyMs,
           inputTokens,
           outputTokens,
@@ -566,8 +629,41 @@ export default class FinancialPlanningGuidanceService {
           generatedAt
         }
       });
-      return serializeRecord(record);
+      const serialized = serializeRecord(record);
+      observeFinancialPlanningGuidance({
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        outcome: 'success',
+        usedFallbackModel,
+        durationMs: Date.now() - startedAt,
+        evaluationScore: evaluation.score,
+        inputTokens,
+        outputTokens,
+        totalTokens
+      });
+      logger.info('Financial planning guidance generated and evaluated', {
+        recordId: record.id,
+        snapshotId: params.snapshotId,
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        evaluationMethodologyVersion: evaluation.methodologyVersion,
+        evaluationScore: evaluation.score,
+        latencyMs,
+        usedFallbackModel
+      });
+      return serialized;
     } catch (error) {
+      observeFinancialPlanningGuidance({
+        model: selectedModel,
+        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+        outcome: 'persistence_error',
+        usedFallbackModel,
+        durationMs: Date.now() - startedAt,
+        evaluationScore: evaluation.score,
+        inputTokens,
+        outputTokens,
+        totalTokens
+      });
       if (error instanceof FinancialPlanningAnalysisError) throw error;
       throw new FinancialPlanningAnalysisError(
         'O parecer foi validado, mas não pôde ser salvo com segurança',
@@ -581,8 +677,8 @@ export default class FinancialPlanningGuidanceService {
 export const __private__ = {
   GUIDANCE_JSON_SCHEMA,
   buildInstructions,
+  buildLegacyContentHash,
   buildContentHash,
   extractOutputText,
-  serializeRecord,
-  validateGrounding
+  serializeRecord
 };

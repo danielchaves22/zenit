@@ -1299,10 +1299,13 @@ model FinancialPlanningGuidanceRecord {
   guidanceMethodologyVersion       Int
   evidenceMethodologyVersion       Int
   recommendationMethodologyVersion Int
+  evaluationMethodologyVersion     Int?
+  evaluationScore                  Int?
   inputHash                        String     @db.VarChar(64)
   contentHash                      String     @db.VarChar(64)
   inputSnapshot                    Json
   guidance                         Json
+  evaluation                       Json?
   latencyMs                        Int
   inputTokens                      Int?
   outputTokens                     Int?

@@ -148,6 +148,19 @@ export function FinancialPlanningAiGuidance({
           Ver auditoria do parecer
         </summary>
         <dl className="mt-2 space-y-1 break-all">
+          {result.evaluation ? (
+            <div>
+              <dt className="inline">Validação determinística: </dt>
+              <dd className="inline">
+                {result.evaluation.passed ? 'aprovada' : 'reprovada'} · {result.evaluation.score}% · metodologia v{result.evaluation.methodologyVersion}
+              </dd>
+            </div>
+          ) : (
+            <div>
+              <dt className="inline">Validação determinística: </dt>
+              <dd className="inline">não disponível para este registro anterior</dd>
+            </div>
+          )}
           <div><dt className="inline">Entrada: </dt><dd className="inline font-mono">{result.audit.inputHash}</dd></div>
           <div><dt className="inline">Conteúdo: </dt><dd className="inline font-mono">{result.audit.contentHash}</dd></div>
           {result.telemetry.providerResponseId && (

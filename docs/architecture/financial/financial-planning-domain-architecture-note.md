@@ -394,6 +394,26 @@ snapshot atual e acao explicita; ela cria outro registro em vez de sobrescrever 
 anterior. Respostas recusadas pelas validacoes de estrutura ou fundamentacao nao sao
 persistidas como pareceres validos.
 
+O schema estruturado do provedor e apenas a primeira camada. Antes de persistir,
+o Zenit executa uma avaliacao deterministica versionada que verifica ausencia de
+numeros narrativos, existencia dos achados citados, vinculo das referencias,
+compatibilidade do cenario, cobertura de ao menos um achado de maior severidade e
+cautela explicita quando a qualidade dos dados exige atencao. Nos novos pareceres,
+o relatorio completo, sua versao e a pontuacao fazem parte do registro e do hash de
+conteudo. Registros anteriores permanecem legiveis e continuam verificados pelo
+hash original, sem receber retroativamente uma avaliacao que nao existia na geracao.
+
+Um conjunto de casos de referencia tambem versionado cobre meta atendida, ajuste
+necessario, baixa qualidade de dados e respostas adversariais. Toda mudanca de
+prompt ou metodologia deve manter esse conjunto verde ou registrar deliberadamente
+a nova expectativa. A avaliacao nao usa uma segunda IA como juiz do primeiro
+parecer.
+
+A estabilidade operacional e exposta nas metricas Prometheus: resultado da
+solicitacao, duracao, pontuacao da avaliacao e tokens por tipo. Os labels sao de
+baixa cardinalidade (modelo, versao do prompt, resultado e fallback) e nao incluem
+identificadores de usuario, empresa, snapshot nem conteudo financeiro.
+
 ### Quality gates
 
 Um lote financeiro somente esta concluido quando:

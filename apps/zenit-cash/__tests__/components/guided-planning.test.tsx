@@ -261,6 +261,12 @@ describe('GuidedPlanning', () => {
       evidenceMethodologyVersion: 1,
       recommendationMethodologyVersion: 1,
       guidanceMethodologyVersion: 1,
+      evaluation: {
+        methodologyVersion: 1,
+        passed: true,
+        score: 100,
+        checks: []
+      },
       guidanceEvidence: {
         methodologyVersion: 1,
         findings: [
@@ -320,7 +326,7 @@ describe('GuidedPlanning', () => {
       telemetry: {
         provider: 'OPENAI',
         model: 'gpt-4o-mini',
-        promptVersion: 'financial-guidance-v1',
+        promptVersion: 'financial-guidance-v2',
         latencyMs: 120
       },
       audit: {
@@ -422,6 +428,10 @@ describe('GuidedPlanning', () => {
     expect(screen.getByRole('link', { name: 'CAIXA' })).toHaveAttribute(
       'href',
       'https://www.caixa.gov.br/educacao-financeira/voce/orcamento-pratica/Paginas/default.aspx'
+    );
+    await user.click(screen.getByText('Ver auditoria do parecer'));
+    expect(screen.getByText('Validação determinística:').parentElement).toHaveTextContent(
+      'aprovada · 100% · metodologia v1'
     );
 
     const firstGuidance = await guidanceMock.mock.results[0].value;

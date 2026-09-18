@@ -898,6 +898,12 @@ describe('Financial planning analysis preparation', () => {
       evidenceMethodologyVersion: 1,
       recommendationMethodologyVersion: 1,
       guidanceMethodologyVersion: 1,
+      evaluation: {
+        methodologyVersion: 1,
+        passed: true,
+        score: 100,
+        checks: []
+      },
       guidanceEvidence: {
         methodologyVersion: 1,
         findings: [],
@@ -926,7 +932,7 @@ describe('Financial planning analysis preparation', () => {
       telemetry: {
         provider: 'OPENAI',
         model: 'gpt-4o-mini',
-        promptVersion: 'financial-guidance-v1',
+        promptVersion: 'financial-guidance-v2',
         latencyMs: 100,
         providerResponseId: 'resp_route_test',
         usedFallbackModel: undefined,
@@ -1024,6 +1030,12 @@ describe('Financial planning analysis preparation', () => {
       expect(generated.body).toMatchObject({
         recordId: expect.any(Number),
         snapshot: { id: confirmed.body.id },
+        evaluation: {
+          methodologyVersion: 1,
+          passed: true,
+          score: 100,
+          checks: expect.any(Array)
+        },
         telemetry: {
           provider: 'OPENAI',
           model: 'gpt-4o-mini',
@@ -1042,6 +1054,13 @@ describe('Financial planning analysis preparation', () => {
       expect(stored.ownerUserId).toBe(userId);
       expect(stored.personalWorkspaceId).toBe(personalWorkspaceId);
       expect(stored.providerResponseId).toBe('resp_financial_guidance_integration');
+      expect(stored.evaluationMethodologyVersion).toBe(1);
+      expect(stored.evaluationScore).toBe(100);
+      expect(stored.evaluation).toMatchObject({
+        methodologyVersion: 1,
+        passed: true,
+        score: 100
+      });
       expect(stored.inputSnapshot).not.toHaveProperty('transactions');
 
       const history = await request(app)
@@ -1051,6 +1070,7 @@ describe('Financial planning analysis preparation', () => {
       expect(history.body.items[0]).toMatchObject({
         recordId: generated.body.recordId,
         guidance: { headline: 'A meta pede uma escolha consciente' },
+        evaluation: generated.body.evaluation,
         audit: generated.body.audit
       });
     } finally {

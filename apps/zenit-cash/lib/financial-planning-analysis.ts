@@ -214,6 +214,23 @@ export interface FinancialPlanningGuidanceResult {
     assumptions: string[];
     warnings: string[];
   }>;
+  evaluation?: {
+    methodologyVersion: number;
+    passed: boolean;
+    score: number;
+    checks: Array<{
+      id:
+        | 'NO_UNSUPPORTED_NUMBERS'
+        | 'KNOWN_FINDINGS'
+        | 'GROUNDED_REFERENCES'
+        | 'GROUNDED_SCENARIO'
+        | 'IMPORTANT_FINDING_COVERAGE'
+        | 'DATA_QUALITY_CAUTION';
+      passed: boolean;
+      weight: number;
+      message: string;
+    }>;
+  };
   guidance: FinancialPlanningAiGuidance;
   telemetry: {
     provider: 'OPENAI';

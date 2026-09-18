@@ -34,6 +34,16 @@ export const getFinancialPlanningSnapshotSchema = z.object({
   id: z.coerce.number().int().positive('Diagnóstico inválido')
 });
 
+export const listFinancialPlanningGuidanceSchema = z.object({
+  cursor: z.coerce.number().int().positive('Cursor inválido').optional(),
+  limit: z.coerce
+    .number()
+    .int('Limite deve ser um número inteiro')
+    .min(1, 'Limite deve ser maior que zero')
+    .max(25, 'Consulte no máximo 25 pareceres por vez')
+    .default(10)
+});
+
 export const confirmFinancialPlanningAnalysisSchema = z
   .object({
     objectiveKind: z.literal('MONTHLY_SAVINGS').optional().default('MONTHLY_SAVINGS'),
@@ -64,6 +74,9 @@ export type ListFinancialPlanningSnapshotsQuery = z.infer<
 >;
 export type GetFinancialPlanningSnapshotParams = z.infer<
   typeof getFinancialPlanningSnapshotSchema
+>;
+export type ListFinancialPlanningGuidanceQuery = z.infer<
+  typeof listFinancialPlanningGuidanceSchema
 >;
 export type ConfirmFinancialPlanningAnalysisBody = z.infer<
   typeof confirmFinancialPlanningAnalysisSchema

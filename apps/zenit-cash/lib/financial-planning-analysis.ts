@@ -200,19 +200,44 @@ export interface FinancialPlanningAiGuidance {
 }
 
 export interface FinancialPlanningGuidanceResult {
+  recordId: number;
   snapshot: FinancialPlanningScenarioResult['snapshot'];
   evidenceMethodologyVersion: number;
   recommendationMethodologyVersion: number;
   guidanceMethodologyVersion: number;
+  guidanceEvidence: FinancialGuidanceEvidence;
+  scenarioContext: Array<{
+    id: string;
+    label: string;
+    feasibility: string;
+    findingIds: string[];
+    assumptions: string[];
+    warnings: string[];
+  }>;
   guidance: FinancialPlanningAiGuidance;
   telemetry: {
     provider: 'OPENAI';
     model: string;
     promptVersion: string;
     latencyMs: number;
+    providerResponseId?: string;
     usedFallbackModel?: boolean;
+    usage?: {
+      inputTokens: number | null;
+      outputTokens: number | null;
+      totalTokens: number | null;
+    };
+  };
+  audit: {
+    inputHash: string;
+    contentHash: string;
   };
   generatedAt: string;
+}
+
+export interface FinancialPlanningGuidancePage {
+  items: FinancialPlanningGuidanceResult[];
+  nextCursor: number | null;
 }
 
 export interface FinancialPlanningPreview {
@@ -247,6 +272,8 @@ export interface FinancialPlanningApiError {
     | 'FINANCIAL_PLANNING_AI_UNAVAILABLE'
     | 'FINANCIAL_PLANNING_AI_PROVIDER_ERROR'
     | 'FINANCIAL_PLANNING_AI_INVALID_RESPONSE'
+    | 'FINANCIAL_PLANNING_GUIDANCE_PERSISTENCE_ERROR'
+    | 'FINANCIAL_PLANNING_GUIDANCE_INTEGRITY_CONFLICT'
     | 'INVALID_SOURCE_SELECTION'
     | 'INCOME_SOURCE_REQUIRED';
 }
@@ -302,4 +329,15 @@ export async function generateFinancialPlanningGuidance(
     `/financial/budgets/planning-analysis/snapshots/${snapshotId}/guidance`
   );
   return response.data as FinancialPlanningGuidanceResult;
+}
+
+export async function getFinancialPlanningGuidance(
+  snapshotId: number,
+  params?: { cursor?: number; limit?: number }
+): Promise<FinancialPlanningGuidancePage> {
+  const response = await api.get(
+    `/financial/budgets/planning-analysis/snapshots/${snapshotId}/guidance`,
+    { params }
+  );
+  return response.data as FinancialPlanningGuidancePage;
 }

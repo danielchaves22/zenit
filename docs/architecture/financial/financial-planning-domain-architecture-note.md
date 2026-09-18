@@ -382,10 +382,17 @@ Narrativas que introduzam numeros sao recusadas: valores e percentuais continuam
 visiveis somente nos componentes deterministas.
 
 A chamada nao habilita ferramentas, nao solicita armazenamento da resposta pelo
-provedor e nao executa mutacoes. Modelo, versao do prompt, versoes das metodologias,
-instante e latencia acompanham o retorno para diagnostico. Neste primeiro estagio,
-o parecer nao e persistido; atualizar a tela ou recalcular o retrato exige uma nova
-solicitacao explicita.
+provedor e nao executa mutacoes. O Zenit persiste localmente cada parecer validado
+como registro imutavel ligado ao snapshot. O registro conserva a entrada estruturada,
+a saida, hashes canonicos de entrada e conteudo, modelo, versao do prompt, versoes
+das metodologias, identificador da resposta do provedor, uso de tokens, instante e
+latencia. Nao existem rotas de atualizacao ou exclusao desses registros.
+
+O historico pode ser consultado mesmo quando o snapshot deixou de ser atual, pois
+representa o que foi explicado naquela base. Uma nova geracao continua exigindo
+snapshot atual e acao explicita; ela cria outro registro em vez de sobrescrever o
+anterior. Respostas recusadas pelas validacoes de estrutura ou fundamentacao nao sao
+persistidas como pareceres validos.
 
 ### Quality gates
 

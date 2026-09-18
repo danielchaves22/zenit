@@ -1,5 +1,4 @@
 import prisma from '../lib/prisma';
-import { createHash } from 'crypto';
 import {
   AccountType,
   FinancialPlanningObjectiveKind,
@@ -33,6 +32,7 @@ import {
   FinancialBudgetScenarioSource
 } from '../utils/financial-budget-scenario';
 import { buildFinancialGuidanceEvidence } from '../utils/financial-guidance-evidence';
+import { hashCanonicalPayload } from '../utils/canonical-hash';
 
 const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 4;
 
@@ -89,22 +89,6 @@ function compareCanonicalStrings(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;
-}
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => compareCanonicalStrings(left, right))
-        .map(([key, item]) => [key, canonicalize(item)])
-    );
-  }
-  return value;
-}
-
-function hashCanonicalPayload(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
 }
 
 function buildConfirmationHash(params: {

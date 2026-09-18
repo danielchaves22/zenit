@@ -1,24 +1,24 @@
 import React from 'react';
-import { Bot, CheckCircle2, Loader2, Sparkles, TriangleAlert } from 'lucide-react';
+import { Bot, CheckCircle2, History, Loader2, ShieldCheck, Sparkles, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import type {
-  FinancialGuidanceEvidence,
-  FinancialPlanningGuidanceResult,
-  FinancialPlanningScenario
+  FinancialPlanningGuidanceResult
 } from '@/lib/financial-planning-analysis';
 
 export function FinancialPlanningAiGuidance({
-  evidence,
-  scenarios,
   result,
+  history = [],
+  historyLoading = false,
   loading,
-  onGenerate
+  onGenerate,
+  onSelect
 }: {
-  evidence: FinancialGuidanceEvidence;
-  scenarios: FinancialPlanningScenario[];
   result: FinancialPlanningGuidanceResult | null;
+  history?: FinancialPlanningGuidanceResult[];
+  historyLoading?: boolean;
   loading: boolean;
-  onGenerate: () => void;
+  onGenerate?: () => void;
+  onSelect?: (record: FinancialPlanningGuidanceResult) => void;
 }) {
   if (!result) {
     return (
@@ -31,16 +31,25 @@ export function FinancialPlanningAiGuidance({
               A IA pode organizar os achados e explicar os trade-offs. Ela não recalcula valores,
               não altera cenários e não salva mudanças no seu planejamento.
             </p>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={loading}
-              onClick={onGenerate}
-              className="mt-3 inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
-              {loading ? 'Gerando parecer...' : 'Gerar parecer com IA'}
-            </Button>
+            {historyLoading ? (
+              <span className="mt-3 inline-flex items-center gap-2 text-xs text-gray-400">
+                <Loader2 size={14} className="animate-spin" />
+                Consultando pareceres salvos...
+              </span>
+            ) : onGenerate ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={loading}
+                onClick={onGenerate}
+                className="mt-3 inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
+                {loading ? 'Gerando parecer...' : 'Gerar parecer com IA'}
+              </Button>
+            ) : (
+              <p className="mt-3 text-xs text-gray-500">Nenhum parecer foi salvo para este retrato.</p>
+            )}
           </div>
         </div>
       </section>
@@ -48,10 +57,10 @@ export function FinancialPlanningAiGuidance({
   }
 
   const references = result.guidance.referenceIds.flatMap((referenceId) => {
-    const reference = evidence.references.find((item) => item.id === referenceId);
+    const reference = result.guidanceEvidence.references.find((item) => item.id === referenceId);
     return reference ? [reference] : [];
   });
-  const selectedScenario = scenarios.find(
+  const selectedScenario = result.scenarioContext.find(
     (scenario) => scenario.id === result.guidance.scenarioComparison.scenarioId
   );
 
@@ -130,8 +139,60 @@ export function FinancialPlanningAiGuidance({
 
       <p className="mt-3 text-[11px] text-gray-600">
         Gerado em {new Date(result.generatedAt).toLocaleString('pt-BR')} · modelo {result.telemetry.model}
-        {' · '}prompt {result.telemetry.promptVersion} · parecer não salvo
+        {' · '}prompt {result.telemetry.promptVersion} · registro #{result.recordId}
       </p>
+
+      <details className="mt-3 border-t border-gray-800 pt-3 text-xs text-gray-500">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-gray-400">
+          <ShieldCheck size={14} />
+          Ver auditoria do parecer
+        </summary>
+        <dl className="mt-2 space-y-1 break-all">
+          <div><dt className="inline">Entrada: </dt><dd className="inline font-mono">{result.audit.inputHash}</dd></div>
+          <div><dt className="inline">Conteúdo: </dt><dd className="inline font-mono">{result.audit.contentHash}</dd></div>
+          {result.telemetry.providerResponseId && (
+            <div><dt className="inline">Resposta do provedor: </dt><dd className="inline font-mono">{result.telemetry.providerResponseId}</dd></div>
+          )}
+        </dl>
+      </details>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {onGenerate && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={loading}
+            onClick={onGenerate}
+            className="inline-flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={15} className="animate-spin" /> : <Bot size={15} />}
+            {loading ? 'Gerando novo parecer...' : 'Gerar novo parecer'}
+          </Button>
+        )}
+      </div>
+
+      {history.length > 1 && onSelect && (
+        <details className="mt-3 text-xs text-gray-400">
+          <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-gray-300">
+            <History size={14} />
+            Outros pareceres salvos ({history.length - 1})
+          </summary>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {history
+              .filter((item) => item.recordId !== result.recordId)
+              .map((item) => (
+                <button
+                  key={item.recordId}
+                  type="button"
+                  onClick={() => onSelect(item)}
+                  className="rounded border border-gray-700 px-2.5 py-1.5 text-gray-300 hover:border-violet-700 hover:text-white"
+                >
+                  #{item.recordId} · {new Date(item.generatedAt).toLocaleString('pt-BR')}
+                </button>
+              ))}
+          </div>
+        </details>
+      )}
     </section>
   );
 }

@@ -13,6 +13,7 @@ import app from '../../src/app';
 import FinancialDashboardService from '../../src/services/financial-dashboard.service';
 import FinancialPlanningAnalysisService from '../../src/services/financial-planning-analysis.service';
 import FinancialPlanningGuidanceService from '../../src/services/financial-planning-guidance.service';
+import OpenAiIntegrationService from '../../src/services/openai-integration.service';
 import FinancialProvisionService from '../../src/services/financial-provision.service';
 import MonthlyCategoryBudgetService from '../../src/services/monthly-category-budget.service';
 import { generateToken } from '../../src/utils/jwt';
@@ -888,6 +889,7 @@ describe('Financial planning analysis preparation', () => {
 
   it('exposes AI guidance only through an explicit snapshot request', async () => {
     const generate = jest.spyOn(FinancialPlanningGuidanceService, 'generate').mockResolvedValue({
+      recordId: 81,
       snapshot: {
         id: 91,
         basisHash: 'a'.repeat(64),
@@ -896,6 +898,13 @@ describe('Financial planning analysis preparation', () => {
       evidenceMethodologyVersion: 1,
       recommendationMethodologyVersion: 1,
       guidanceMethodologyVersion: 1,
+      guidanceEvidence: {
+        methodologyVersion: 1,
+        findings: [],
+        references: [],
+        limitations: []
+      },
+      scenarioContext: [],
       guidance: {
         headline: 'Uma decisão apoiada pelos dados',
         summary: 'O parecer organiza a leitura sem substituir a decisão da pessoa.',
@@ -919,7 +928,13 @@ describe('Financial planning analysis preparation', () => {
         model: 'gpt-4o-mini',
         promptVersion: 'financial-guidance-v1',
         latencyMs: 100,
-        usedFallbackModel: undefined
+        providerResponseId: 'resp_route_test',
+        usedFallbackModel: undefined,
+        usage: undefined
+      },
+      audit: {
+        inputHash: 'b'.repeat(64),
+        contentHash: 'c'.repeat(64)
       },
       generatedAt: '2026-09-17T12:00:00.000Z'
     });
@@ -938,6 +953,109 @@ describe('Financial planning analysis preparation', () => {
       });
     } finally {
       generate.mockRestore();
+    }
+  });
+
+  it('persists and lists immutable guidance with its audit metadata', async () => {
+    const preview = await request(app)
+      .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+      .set(personalHeaders());
+    const confirmed = await request(app)
+      .post('/api/financial/budgets/planning-analysis/snapshots')
+      .set(personalHeaders())
+      .send({
+        objectiveKind: 'MONTHLY_SAVINGS',
+        targetMonthlySavings: '6500.00',
+        historyMonths: 3,
+        selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+        basisHash: preview.body.basisHash
+      });
+    expect([200, 201]).toContain(confirmed.status);
+
+    const credential = jest.spyOn(OpenAiIntegrationService, 'getDecryptedCredential')
+      .mockResolvedValue({
+        companyId: personalWorkspaceId,
+        provider: 'OPENAI',
+        apiKey: 'integration-test-key',
+        model: 'gpt-4o-mini',
+        promptVersion: 'v1',
+        isActive: true,
+        updatedAt: new Date('2026-09-18T12:00:00.000Z')
+      });
+    const originalFetch = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        id: 'resp_financial_guidance_integration',
+        output_text: JSON.stringify({
+          headline: 'A meta pede uma escolha consciente',
+          summary: 'A base permite revisar escolhas flexíveis sem substituir sua decisão pessoal.',
+          priorities: [
+            {
+              findingId: 'GOAL_FIT',
+              title: 'Revise o cenário sugerido',
+              explanation: 'A proposta usa somente categorias que aceitam ajuste no seu perfil.',
+              nextStep: 'Confirme se a proposta continua adequada para sua rotina.'
+            }
+          ],
+          scenarioComparison: {
+            scenarioId: 'PRESERVE_PRIORITIES',
+            explanation: 'Este cenário concentra o esforço nas escolhas com maior flexibilidade.'
+          },
+          cautions: [
+            {
+              findingId: 'GOAL_FIT',
+              message: 'O parecer depende da manutenção da base financeira confirmada.'
+            }
+          ],
+          referenceIds: ['CAIXA_ORCAMENTO_PRATICO']
+        }),
+        usage: { input_tokens: 420, output_tokens: 110, total_tokens: 530 }
+      })
+    }) as jest.Mock;
+
+    try {
+      const generated = await request(app)
+        .post(`/api/financial/budgets/planning-analysis/snapshots/${confirmed.body.id}/guidance`)
+        .set(personalHeaders());
+
+      expect(generated.status).toBe(200);
+      expect(generated.body).toMatchObject({
+        recordId: expect.any(Number),
+        snapshot: { id: confirmed.body.id },
+        telemetry: {
+          provider: 'OPENAI',
+          model: 'gpt-4o-mini',
+          providerResponseId: 'resp_financial_guidance_integration',
+          usage: { inputTokens: 420, outputTokens: 110, totalTokens: 530 }
+        },
+        audit: {
+          inputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          contentHash: expect.stringMatching(/^[a-f0-9]{64}$/)
+        }
+      });
+
+      const stored = await prisma.financialPlanningGuidanceRecord.findUniqueOrThrow({
+        where: { id: generated.body.recordId }
+      });
+      expect(stored.ownerUserId).toBe(userId);
+      expect(stored.personalWorkspaceId).toBe(personalWorkspaceId);
+      expect(stored.providerResponseId).toBe('resp_financial_guidance_integration');
+      expect(stored.inputSnapshot).not.toHaveProperty('transactions');
+
+      const history = await request(app)
+        .get(`/api/financial/budgets/planning-analysis/snapshots/${confirmed.body.id}/guidance?limit=10`)
+        .set(personalHeaders());
+      expect(history.status).toBe(200);
+      expect(history.body.items[0]).toMatchObject({
+        recordId: generated.body.recordId,
+        guidance: { headline: 'A meta pede uma escolha consciente' },
+        audit: generated.body.audit
+      });
+    } finally {
+      global.fetch = originalFetch;
+      credential.mockRestore();
     }
   });
 

@@ -10,6 +10,7 @@ import {
   getFinancialPlanningSnapshot,
   getFinancialPlanningSnapshots
 } from '@/lib/financial-planning-analysis';
+import { FinancialPlanningGuidanceArchive } from './FinancialPlanningGuidanceArchive';
 
 function formatMoney(value: string | number): string {
   return new Intl.NumberFormat('pt-BR', {
@@ -263,6 +264,13 @@ function SnapshotAuditDetail({ snapshot }: { snapshot: FinancialPlanningSnapshot
         <code className="mt-2 block break-all rounded bg-background px-3 py-2 text-xs text-gray-400">
           {snapshot.basisHash || 'Não registrado para este snapshot legado'}
         </code>
+      </div>
+
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          Pareceres explicativos salvos
+        </p>
+        <FinancialPlanningGuidanceArchive snapshotId={snapshot.id} />
       </div>
     </div>
   );

@@ -4,13 +4,14 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GuidedPlanning } from '@/components/financial/budgets/GuidedPlanning';
 
-const { addToastMock, confirmMock, detailMock, getMock, guidanceMock, historyMock, scenariosMock } = vi.hoisted(() => ({
+const { addToastMock, confirmMock, detailMock, getMock, guidanceHistoryMock, guidanceMock, historyMock, scenariosMock } = vi.hoisted(() => ({
   addToastMock: vi.fn(),
   confirmMock: vi.fn(),
   detailMock: vi.fn(),
   guidanceMock: vi.fn(),
   historyMock: vi.fn(),
   getMock: vi.fn(),
+  guidanceHistoryMock: vi.fn(),
   scenariosMock: vi.fn()
 }));
 
@@ -71,7 +72,8 @@ vi.mock('@/lib/financial-planning-analysis', async () => {
     getFinancialPlanningSnapshots: (...args: unknown[]) => historyMock(...args),
     getFinancialPlanningSnapshot: (...args: unknown[]) => detailMock(...args),
     getFinancialPlanningSnapshotScenarios: (...args: unknown[]) => scenariosMock(...args),
-    generateFinancialPlanningGuidance: (...args: unknown[]) => guidanceMock(...args)
+    generateFinancialPlanningGuidance: (...args: unknown[]) => guidanceMock(...args),
+    getFinancialPlanningGuidance: (...args: unknown[]) => guidanceHistoryMock(...args)
   };
 });
 
@@ -184,6 +186,7 @@ describe('GuidedPlanning', () => {
       nextCursor: null
     });
     detailMock.mockResolvedValue(snapshot);
+    guidanceHistoryMock.mockResolvedValue({ items: [], nextCursor: null });
     scenariosMock.mockResolvedValue({
       snapshot: { id: 50, basisHash: 'a'.repeat(64), confirmedAt: snapshot.confirmedAt },
       recommendationMethodologyVersion: 1,
@@ -253,10 +256,44 @@ describe('GuidedPlanning', () => {
       ]
     });
     guidanceMock.mockResolvedValue({
+      recordId: 81,
       snapshot: { id: 50, basisHash: 'a'.repeat(64), confirmedAt: snapshot.confirmedAt },
       evidenceMethodologyVersion: 1,
       recommendationMethodologyVersion: 1,
       guidanceMethodologyVersion: 1,
+      guidanceEvidence: {
+        methodologyVersion: 1,
+        findings: [
+          {
+            id: 'GOAL_FIT',
+            severity: 'ATTENTION',
+            title: 'A meta exige ajuste na base atual',
+            summary: 'Existe disponibilidade mensal, mas ela ainda é menor que a economia desejada.',
+            evidence: [],
+            referenceIds: ['CAIXA_ORCAMENTO_PRATICO']
+          }
+        ],
+        references: [
+          {
+            id: 'CAIXA_ORCAMENTO_PRATICO',
+            organization: 'CAIXA',
+            title: 'Fazendo seu orçamento na prática',
+            url: 'https://www.caixa.gov.br/educacao-financeira/voce/orcamento-pratica/Paginas/default.aspx',
+            purpose: 'Organização do orçamento.'
+          }
+        ],
+        limitations: []
+      },
+      scenarioContext: [
+        {
+          id: 'PRESERVE_PRIORITIES',
+          label: 'Preservar prioridades',
+          feasibility: 'FEASIBLE',
+          findingIds: ['ADJUSTMENT_CAPACITY'],
+          assumptions: [],
+          warnings: []
+        }
+      ],
       guidance: {
         headline: 'A meta pede uma escolha consciente',
         summary: 'A base mostra espaço para ajuste sem substituir sua decisão pessoal.',
@@ -285,6 +322,10 @@ describe('GuidedPlanning', () => {
         model: 'gpt-4o-mini',
         promptVersion: 'financial-guidance-v1',
         latencyMs: 120
+      },
+      audit: {
+        inputHash: 'b'.repeat(64),
+        contentHash: 'c'.repeat(64)
       },
       generatedAt: '2026-09-17T12:00:00.000Z'
     });
@@ -347,6 +388,7 @@ describe('GuidedPlanning', () => {
     await user.click(screen.getByRole('button', { name: 'Calcular cenários' }));
 
     await waitFor(() => expect(scenariosMock).toHaveBeenCalledWith(50));
+    await waitFor(() => expect(guidanceHistoryMock).toHaveBeenCalledWith(50, { limit: 10 }));
     expect(guidanceMock).not.toHaveBeenCalled();
     expect(await screen.findByText('Preservar prioridades')).toBeInTheDocument();
     expect(screen.getByText('Leitura dos dados confirmados')).toBeInTheDocument();
@@ -376,11 +418,54 @@ describe('GuidedPlanning', () => {
     await waitFor(() => expect(guidanceMock).toHaveBeenCalledWith(50));
     expect(await screen.findByText('A meta pede uma escolha consciente')).toBeInTheDocument();
     expect(screen.getByText('Revise a flexibilidade declarada')).toBeInTheDocument();
-    expect(screen.getByText(/parecer não salvo/)).toBeInTheDocument();
+    expect(screen.getByText(/registro #81/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'CAIXA' })).toHaveAttribute(
       'href',
       'https://www.caixa.gov.br/educacao-financeira/voce/orcamento-pratica/Paginas/default.aspx'
     );
+
+    const firstGuidance = await guidanceMock.mock.results[0].value;
+    guidanceMock.mockResolvedValueOnce({
+      ...firstGuidance,
+      recordId: 82,
+      guidance: {
+        ...firstGuidance.guidance,
+        headline: 'Uma nova leitura preservada'
+      },
+      audit: {
+        inputHash: 'd'.repeat(64),
+        contentHash: 'e'.repeat(64)
+      },
+      generatedAt: '2026-09-18T13:00:00.000Z'
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Gerar novo parecer' }));
+
+    expect(await screen.findByText('Uma nova leitura preservada')).toBeInTheDocument();
+    expect(screen.getByText(/registro #82/)).toBeInTheDocument();
+    await user.click(screen.getByText('Outros pareceres salvos (1)'));
+    await user.click(screen.getByRole('button', { name: /#81/ }));
+    expect(await screen.findByText('A meta pede uma escolha consciente')).toBeInTheDocument();
+    expect(screen.getByText(/registro #81/)).toBeInTheDocument();
+  });
+
+  it('reopens a saved AI explanation without requesting a new generation', async () => {
+    const user = userEvent.setup();
+    const savedGuidance = await guidanceMock();
+    guidanceMock.mockClear();
+    guidanceHistoryMock.mockResolvedValue({ items: [savedGuidance], nextCursor: null });
+    getMock.mockResolvedValue({ ...preview, latestSnapshot: snapshot });
+
+    render(<GuidedPlanning />);
+
+    await screen.findByText('Cenários para alcançar a meta');
+    await user.click(screen.getByRole('button', { name: 'Calcular cenários' }));
+
+    await waitFor(() => expect(guidanceHistoryMock).toHaveBeenCalledWith(50, { limit: 10 }));
+    expect(await screen.findByText('A meta pede uma escolha consciente')).toBeInTheDocument();
+    expect(screen.getByText(/registro #81/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Gerar novo parecer' })).toBeInTheDocument();
+    expect(guidanceMock).not.toHaveBeenCalled();
   });
 
   it('refreshes the preview when the reviewed financial basis became stale', async () => {

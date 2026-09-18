@@ -19,6 +19,7 @@ import {
   FinancialPlanningScenarioResult,
   FinancialPlanningSnapshot,
   generateFinancialPlanningGuidance,
+  getFinancialPlanningGuidance,
   getFinancialPlanningSnapshotScenarios,
 } from "@/lib/financial-planning-analysis";
 
@@ -50,17 +51,34 @@ export function FinancialPlanningScenarios({
   );
   const [loading, setLoading] = useState(false);
   const [guidance, setGuidance] = useState<FinancialPlanningGuidanceResult | null>(null);
+  const [guidanceHistory, setGuidanceHistory] = useState<FinancialPlanningGuidanceResult[]>([]);
   const [guidanceLoading, setGuidanceLoading] = useState(false);
+  const [guidanceHistoryLoading, setGuidanceHistoryLoading] = useState(false);
 
   useEffect(() => {
     setResult(null);
     setGuidance(null);
+    setGuidanceHistory([]);
   }, [snapshot.id]);
 
   async function calculateScenarios() {
     setLoading(true);
     try {
-      setResult(await getFinancialPlanningSnapshotScenarios(snapshot.id));
+      const scenarioResult = await getFinancialPlanningSnapshotScenarios(snapshot.id);
+      setResult(scenarioResult);
+      setGuidance(null);
+      setGuidanceHistory([]);
+      setGuidanceHistoryLoading(true);
+      try {
+        const page = await getFinancialPlanningGuidance(snapshot.id, { limit: 10 });
+        setGuidanceHistory(page.items);
+        setGuidance(page.items[0] ?? null);
+      } catch (error: any) {
+        const response = error.response?.data as FinancialPlanningApiError | undefined;
+        addToast(response?.error || "Erro ao consultar pareceres salvos", "error");
+      } finally {
+        setGuidanceHistoryLoading(false);
+      }
     } catch (error: any) {
       const response = error.response?.data as
         FinancialPlanningApiError | undefined;
@@ -76,7 +94,12 @@ export function FinancialPlanningScenarios({
   async function generateGuidance() {
     setGuidanceLoading(true);
     try {
-      setGuidance(await generateFinancialPlanningGuidance(snapshot.id));
+      const generated = await generateFinancialPlanningGuidance(snapshot.id);
+      setGuidance(generated);
+      setGuidanceHistory((current) => [
+        generated,
+        ...current.filter((item) => item.recordId !== generated.recordId),
+      ]);
     } catch (error: any) {
       const response = error.response?.data as FinancialPlanningApiError | undefined;
       addToast(response?.error || "Erro ao gerar parecer explicativo", "error");
@@ -87,11 +110,12 @@ export function FinancialPlanningScenarios({
 
   const guidancePanel = result?.guidanceEvidence ? (
     <FinancialPlanningAiGuidance
-      evidence={result.guidanceEvidence}
-      scenarios={result.scenarios}
       result={guidance}
+      history={guidanceHistory}
+      historyLoading={guidanceHistoryLoading}
       loading={guidanceLoading}
       onGenerate={() => void generateGuidance()}
+      onSelect={setGuidance}
     />
   ) : null;
 

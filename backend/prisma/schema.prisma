@@ -338,6 +338,7 @@ model User {
   financialProvisionEntriesCreated FinancialProvisionEntry[]
   personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileOwner")
   financialPlanningSnapshots FinancialPlanningSnapshot[] @relation("FinancialPlanningSnapshotOwner")
+  financialPlanningGuidanceRecords FinancialPlanningGuidanceRecord[] @relation("FinancialPlanningGuidanceOwner")
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -390,6 +391,7 @@ model Company {
   financialProvisions FinancialProvision[]
   personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileWorkspace")
   financialPlanningSnapshots FinancialPlanningSnapshot[] @relation("FinancialPlanningSnapshotWorkspace")
+  financialPlanningGuidanceRecords FinancialPlanningGuidanceRecord[] @relation("FinancialPlanningGuidanceWorkspace")
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -1278,7 +1280,42 @@ model FinancialPlanningSnapshot {
 
   ownerUser                     User                            @relation("FinancialPlanningSnapshotOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
   personalWorkspace             Company                         @relation("FinancialPlanningSnapshotWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Cascade)
+  guidanceRecords               FinancialPlanningGuidanceRecord[]
 
+  @@index([ownerUserId, createdAt])
+  @@index([personalWorkspaceId, createdAt])
+}
+
+
+model FinancialPlanningGuidanceRecord {
+  id                               Int        @id @default(autoincrement())
+  snapshotId                       Int
+  ownerUserId                      Int
+  personalWorkspaceId              Int
+  provider                         AiProvider @default(OPENAI)
+  providerResponseId               String?    @db.VarChar(180)
+  model                            String     @db.VarChar(120)
+  promptVersion                    String     @db.VarChar(80)
+  guidanceMethodologyVersion       Int
+  evidenceMethodologyVersion       Int
+  recommendationMethodologyVersion Int
+  inputHash                        String     @db.VarChar(64)
+  contentHash                      String     @db.VarChar(64)
+  inputSnapshot                    Json
+  guidance                         Json
+  latencyMs                        Int
+  inputTokens                      Int?
+  outputTokens                     Int?
+  totalTokens                      Int?
+  usedFallbackModel                Boolean    @default(false)
+  generatedAt                      DateTime
+  createdAt                        DateTime   @default(now())
+
+  snapshot          FinancialPlanningSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  ownerUser         User                      @relation("FinancialPlanningGuidanceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  personalWorkspace Company                   @relation("FinancialPlanningGuidanceWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId, id])
   @@index([ownerUserId, createdAt])
   @@index([personalWorkspaceId, createdAt])
 }

@@ -79,6 +79,7 @@ import {
 import {
   confirmFinancialPlanningAnalysisSchema,
   getFinancialPlanningSnapshotSchema,
+  listFinancialPlanningGuidanceSchema,
   listFinancialPlanningSnapshotsSchema,
   previewFinancialPlanningAnalysisSchema
 } from '../validators/financial-planning-analysis.validator';
@@ -178,6 +179,7 @@ import {
   getFinancialPlanningSnapshot,
   getFinancialPlanningSnapshotScenarios,
   listFinancialPlanningSnapshots,
+  listFinancialPlanningGuidance,
   previewFinancialPlanningAnalysis
 } from '../controllers/financial-planning-analysis.controller';
 import {
@@ -394,6 +396,12 @@ router.post(
   financialPlanningGuidanceLimit,
   validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
   generateFinancialPlanningGuidance
+);
+router.get(
+  '/budgets/planning-analysis/snapshots/:id/guidance',
+  validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
+  validate(listFinancialPlanningGuidanceSchema, { source: 'query' }),
+  listFinancialPlanningGuidance
 );
 router.get(
   '/budgets/planning-analysis/snapshots/:id',

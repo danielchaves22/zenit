@@ -1,5 +1,7 @@
+import { AiProvider, FinancialPlanningGuidanceRecord, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { z } from 'zod';
+import prisma from '../lib/prisma';
 import {
   LEGACY_OPENAI_MODEL_FALLBACK,
   resolveOpenAiModel,
@@ -9,6 +11,7 @@ import FinancialPlanningAnalysisService, {
   FinancialPlanningAnalysisError
 } from './financial-planning-analysis.service';
 import OpenAiIntegrationService from './openai-integration.service';
+import { hashCanonicalPayload } from '../utils/canonical-hash';
 
 export const FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION = 'financial-guidance-v1';
 
@@ -108,6 +111,140 @@ type ResponsesApiResult = {
   raw: string;
   parsed: any;
 };
+
+type FinancialPlanningGuidanceInput = {
+  snapshot: {
+    id: number;
+    basisHash: string | null;
+    confirmedAt: string;
+  };
+  objective: {
+    kind: 'MONTHLY_SAVINGS';
+    status: 'TARGET_ALREADY_MET' | 'ADJUSTMENT_REQUIRED';
+  };
+  evidence: {
+    methodologyVersion: number;
+    findings: Array<{ id: string; referenceIds: string[] }>;
+    references: Array<{ id: string }>;
+    limitations: string[];
+  } & Record<string, unknown>;
+  scenarios: Array<{
+    id: string;
+    label: string;
+    feasibility: string;
+    findingIds: string[];
+    assumptions: string[];
+    warnings: string[];
+  }>;
+};
+
+function optionalTokenCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+}
+
+function buildContentHash(params: {
+  snapshotId: number;
+  provider: AiProvider;
+  providerResponseId: string | null;
+  model: string;
+  promptVersion: string;
+  guidanceMethodologyVersion: number;
+  evidenceMethodologyVersion: number;
+  recommendationMethodologyVersion: number;
+  inputHash: string;
+  guidance: FinancialPlanningGuidancePayload;
+  latencyMs: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  usedFallbackModel: boolean;
+  generatedAt: string;
+}): string {
+  return hashCanonicalPayload(params);
+}
+
+function invalidPersistedGuidance(): never {
+  throw new FinancialPlanningAnalysisError(
+    'O parecer financeiro salvo não passou na verificação de integridade',
+    'FINANCIAL_PLANNING_GUIDANCE_INTEGRITY_CONFLICT',
+    409
+  );
+}
+
+function serializeRecord(record: FinancialPlanningGuidanceRecord) {
+  const input = record.inputSnapshot as unknown as FinancialPlanningGuidanceInput;
+  const parsedGuidance = guidancePayloadSchema.safeParse(record.guidance);
+  if (
+    !input ||
+    typeof input !== 'object' ||
+    !input.snapshot ||
+    input.snapshot.id !== record.snapshotId ||
+    !input.evidence ||
+    !Array.isArray(input.evidence.findings) ||
+    !Array.isArray(input.evidence.references) ||
+    !Array.isArray(input.scenarios) ||
+    !parsedGuidance.success
+  ) {
+    return invalidPersistedGuidance();
+  }
+  const inputHash = hashCanonicalPayload(input);
+  const generatedAt = record.generatedAt.toISOString();
+  const contentHash = buildContentHash({
+    snapshotId: record.snapshotId,
+    provider: record.provider,
+    providerResponseId: record.providerResponseId,
+    model: record.model,
+    promptVersion: record.promptVersion,
+    guidanceMethodologyVersion: record.guidanceMethodologyVersion,
+    evidenceMethodologyVersion: record.evidenceMethodologyVersion,
+    recommendationMethodologyVersion: record.recommendationMethodologyVersion,
+    inputHash,
+    guidance: parsedGuidance.data,
+    latencyMs: record.latencyMs,
+    inputTokens: record.inputTokens,
+    outputTokens: record.outputTokens,
+    totalTokens: record.totalTokens,
+    usedFallbackModel: record.usedFallbackModel,
+    generatedAt
+  });
+  if (inputHash !== record.inputHash || contentHash !== record.contentHash) {
+    return invalidPersistedGuidance();
+  }
+
+  const hasUsage = [record.inputTokens, record.outputTokens, record.totalTokens].some(
+    (value) => value !== null
+  );
+  return {
+    recordId: record.id,
+    snapshot: input.snapshot,
+    evidenceMethodologyVersion: record.evidenceMethodologyVersion,
+    recommendationMethodologyVersion: record.recommendationMethodologyVersion,
+    guidanceMethodologyVersion: record.guidanceMethodologyVersion,
+    guidanceEvidence: input.evidence,
+    scenarioContext: input.scenarios,
+    guidance: parsedGuidance.data,
+    telemetry: {
+      provider: record.provider,
+      model: record.model,
+      promptVersion: record.promptVersion,
+      latencyMs: record.latencyMs,
+      providerResponseId: record.providerResponseId ?? undefined,
+      usedFallbackModel: record.usedFallbackModel || undefined,
+      usage: hasUsage
+        ? {
+            inputTokens: record.inputTokens,
+            outputTokens: record.outputTokens,
+            totalTokens: record.totalTokens
+          }
+        : undefined
+    },
+    audit: {
+      inputHash: record.inputHash,
+      contentHash: record.contentHash
+    },
+    generatedAt
+  };
+}
 
 function parseJsonSafe(raw: string | null | undefined): any {
   if (!raw) return null;
@@ -253,6 +390,32 @@ async function requestGuidance(params: {
 }
 
 export default class FinancialPlanningGuidanceService {
+  static async list(params: {
+    userId: number;
+    companyId: number;
+    snapshotId: number;
+    cursor?: number;
+    limit: number;
+  }) {
+    await FinancialPlanningAnalysisService.getSnapshot(params);
+    const found = await prisma.financialPlanningGuidanceRecord.findMany({
+      where: {
+        snapshotId: params.snapshotId,
+        ownerUserId: params.userId,
+        personalWorkspaceId: params.companyId,
+        ...(params.cursor ? { id: { lt: params.cursor } } : {})
+      },
+      orderBy: { id: 'desc' },
+      take: params.limit + 1
+    });
+    const hasMore = found.length > params.limit;
+    const records = found.slice(0, params.limit);
+    return {
+      items: records.map(serializeRecord),
+      nextCursor: hasMore ? records[records.length - 1]!.id : null
+    };
+  }
+
   static async generate(params: { userId: number; companyId: number; snapshotId: number }) {
     const startedAt = Date.now();
     const scenarioResult = await FinancialPlanningAnalysisService.getScenarios(params);
@@ -268,7 +431,8 @@ export default class FinancialPlanningGuidanceService {
       );
     }
 
-    const input = {
+    const input: FinancialPlanningGuidanceInput = {
+      snapshot: scenarioResult.snapshot,
       objective: {
         kind: 'MONTHLY_SAVINGS',
         status: scenarioResult.status
@@ -347,27 +511,78 @@ export default class FinancialPlanningGuidanceService {
       );
     }
 
-    return {
-      snapshot: scenarioResult.snapshot,
+    const generatedAt = new Date();
+    const providerResponseId =
+      typeof response.parsed?.id === 'string' && response.parsed.id.length <= 180
+        ? response.parsed.id
+        : null;
+    const usage = response.parsed?.usage;
+    const inputTokens = optionalTokenCount(usage?.input_tokens);
+    const outputTokens = optionalTokenCount(usage?.output_tokens);
+    const totalTokens = optionalTokenCount(usage?.total_tokens);
+    const latencyMs = Date.now() - startedAt;
+    const inputHash = hashCanonicalPayload(input);
+    const contentHash = buildContentHash({
+      snapshotId: params.snapshotId,
+      provider: AiProvider.OPENAI,
+      providerResponseId,
+      model: selectedModel,
+      promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+      guidanceMethodologyVersion: 1,
       evidenceMethodologyVersion: evidence.methodologyVersion,
       recommendationMethodologyVersion: scenarioResult.recommendationMethodologyVersion,
-      guidanceMethodologyVersion: 1,
+      inputHash,
       guidance: parsedPayload.data,
-      telemetry: {
-        provider: 'OPENAI' as const,
-        model: selectedModel,
-        promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
-        latencyMs: Date.now() - startedAt,
-        usedFallbackModel: usedFallbackModel || undefined
-      },
-      generatedAt: new Date().toISOString()
-    };
+      latencyMs,
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      usedFallbackModel,
+      generatedAt: generatedAt.toISOString()
+    });
+
+    try {
+      const record = await prisma.financialPlanningGuidanceRecord.create({
+        data: {
+          snapshotId: params.snapshotId,
+          ownerUserId: params.userId,
+          personalWorkspaceId: params.companyId,
+          provider: AiProvider.OPENAI,
+          providerResponseId,
+          model: selectedModel,
+          promptVersion: FINANCIAL_PLANNING_GUIDANCE_PROMPT_VERSION,
+          guidanceMethodologyVersion: 1,
+          evidenceMethodologyVersion: evidence.methodologyVersion,
+          recommendationMethodologyVersion: scenarioResult.recommendationMethodologyVersion,
+          inputHash,
+          contentHash,
+          inputSnapshot: input as unknown as Prisma.InputJsonValue,
+          guidance: parsedPayload.data as Prisma.InputJsonValue,
+          latencyMs,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          usedFallbackModel,
+          generatedAt
+        }
+      });
+      return serializeRecord(record);
+    } catch (error) {
+      if (error instanceof FinancialPlanningAnalysisError) throw error;
+      throw new FinancialPlanningAnalysisError(
+        'O parecer foi validado, mas não pôde ser salvo com segurança',
+        'FINANCIAL_PLANNING_GUIDANCE_PERSISTENCE_ERROR',
+        500
+      );
+    }
   }
 }
 
 export const __private__ = {
   GUIDANCE_JSON_SCHEMA,
   buildInstructions,
+  buildContentHash,
   extractOutputText,
+  serializeRecord,
   validateGrounding
 };

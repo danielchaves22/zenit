@@ -1,6 +1,9 @@
 import FinancialPlanningAnalysisService from '../../src/services/financial-planning-analysis.service';
-import FinancialPlanningGuidanceService from '../../src/services/financial-planning-guidance.service';
+import FinancialPlanningGuidanceService, {
+  __private__
+} from '../../src/services/financial-planning-guidance.service';
 import OpenAiIntegrationService from '../../src/services/openai-integration.service';
+import prisma from '../../src/lib/prisma';
 
 const scenarioResult = {
   snapshot: {
@@ -123,6 +126,19 @@ describe('FinancialPlanningGuidanceService', () => {
       isActive: true,
       updatedAt: new Date('2026-09-17T12:00:00.000Z')
     });
+    jest.spyOn(prisma.financialPlanningGuidanceRecord, 'create').mockImplementation((
+      async ({ data }: any) => ({
+        id: 81,
+        ...data,
+        provider: data.provider ?? 'OPENAI',
+        providerResponseId: data.providerResponseId ?? null,
+        inputTokens: data.inputTokens ?? null,
+        outputTokens: data.outputTokens ?? null,
+        totalTokens: data.totalTokens ?? null,
+        usedFallbackModel: data.usedFallbackModel ?? false,
+        createdAt: new Date('2026-09-18T12:00:01.000Z')
+      }) as any
+    ) as any);
   });
 
   afterEach(() => {
@@ -134,7 +150,11 @@ describe('FinancialPlanningGuidanceService', () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      text: async () => JSON.stringify({ output_text: JSON.stringify(payload) })
+      text: async () => JSON.stringify({
+        id: 'resp_guidance_test',
+        output_text: JSON.stringify(payload),
+        usage: { input_tokens: 450, output_tokens: 120, total_tokens: 570 }
+      })
     }) as jest.Mock;
   }
 
@@ -147,7 +167,18 @@ describe('FinancialPlanningGuidanceService', () => {
       snapshotId: 50
     });
 
-    expect(result.guidance).toEqual(validGuidance);
+    expect(result).toMatchObject({
+      recordId: 81,
+      guidance: validGuidance,
+      telemetry: {
+        providerResponseId: 'resp_guidance_test',
+        usage: { inputTokens: 450, outputTokens: 120, totalTokens: 570 }
+      },
+      audit: {
+        inputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        contentHash: expect.stringMatching(/^[a-f0-9]{64}$/)
+      }
+    });
     expect(result.telemetry).toMatchObject({
       provider: 'OPENAI',
       model: 'gpt-4o-mini',
@@ -177,6 +208,7 @@ describe('FinancialPlanningGuidanceService', () => {
     });
     const input = JSON.parse(body.input);
     expect(input).toMatchObject({
+      snapshot: scenarioResult.snapshot,
       objective: { kind: 'MONTHLY_SAVINGS', status: 'ADJUSTMENT_REQUIRED' },
       evidence: scenarioResult.guidanceEvidence,
       scenarios: [
@@ -188,6 +220,35 @@ describe('FinancialPlanningGuidanceService', () => {
     });
     expect(input).not.toHaveProperty('transactions');
     expect(body.safety_identifier).not.toContain('11');
+    expect(prisma.financialPlanningGuidanceRecord.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        snapshotId: 50,
+        ownerUserId: 11,
+        personalWorkspaceId: 7,
+        providerResponseId: 'resp_guidance_test',
+        inputTokens: 450,
+        outputTokens: 120,
+        totalTokens: 570,
+        inputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        contentHash: expect.stringMatching(/^[a-f0-9]{64}$/)
+      })
+    });
+  });
+
+  it('rejects a saved record when its audited content was changed', async () => {
+    mockGuidanceResponse(validGuidance);
+    await FinancialPlanningGuidanceService.generate({ companyId: 7, userId: 11, snapshotId: 50 });
+    const data = (prisma.financialPlanningGuidanceRecord.create as jest.Mock).mock.calls[0][0].data;
+
+    expect(() => __private__.serializeRecord({
+      id: 81,
+      ...data,
+      contentHash: '0'.repeat(64),
+      createdAt: new Date('2026-09-18T12:00:01.000Z')
+    } as any)).toThrow(expect.objectContaining({
+      code: 'FINANCIAL_PLANNING_GUIDANCE_INTEGRITY_CONFLICT',
+      statusCode: 409
+    }));
   });
 
   it.each([
@@ -218,6 +279,7 @@ describe('FinancialPlanningGuidanceService', () => {
       code: 'FINANCIAL_PLANNING_AI_INVALID_RESPONSE',
       statusCode: 502
     });
+    expect(prisma.financialPlanningGuidanceRecord.create).not.toHaveBeenCalled();
   });
 
   it('does not call the provider when the workspace integration is unavailable', async () => {
@@ -233,5 +295,6 @@ describe('FinancialPlanningGuidanceService', () => {
       statusCode: 503
     });
     expect(global.fetch).not.toHaveBeenCalled();
+    expect(prisma.financialPlanningGuidanceRecord.create).not.toHaveBeenCalled();
   });
 });

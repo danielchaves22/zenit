@@ -6,6 +6,7 @@ import FinancialPlanningGuidanceService from '../services/financial-planning-gui
 import {
   ConfirmFinancialPlanningAnalysisBody,
   GetFinancialPlanningSnapshotParams,
+  ListFinancialPlanningGuidanceQuery,
   ListFinancialPlanningSnapshotsQuery,
   PreviewFinancialPlanningAnalysisQuery
 } from '../validators/financial-planning-analysis.validator';
@@ -117,5 +118,23 @@ export async function generateFinancialPlanningGuidance(req: Request, res: Respo
     );
   } catch (error: any) {
     return sendError(res, error, 'Erro ao gerar parecer explicativo para o retrato financeiro');
+  }
+}
+
+export async function listFinancialPlanningGuidance(req: Request, res: Response) {
+  try {
+    const context = getUserContext(req);
+    const params = req.params as unknown as GetFinancialPlanningSnapshotParams;
+    const query = req.query as unknown as ListFinancialPlanningGuidanceQuery;
+    return res.status(200).json(
+      await FinancialPlanningGuidanceService.list({
+        ...context,
+        snapshotId: params.id,
+        cursor: query.cursor,
+        limit: query.limit
+      })
+    );
+  } catch (error: any) {
+    return sendError(res, error, 'Erro ao consultar pareceres do retrato financeiro');
   }
 }

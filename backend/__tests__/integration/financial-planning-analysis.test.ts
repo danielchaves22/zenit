@@ -12,6 +12,7 @@ import {
 import app from '../../src/app';
 import FinancialDashboardService from '../../src/services/financial-dashboard.service';
 import FinancialPlanningAnalysisService from '../../src/services/financial-planning-analysis.service';
+import FinancialPlanningGuidanceService from '../../src/services/financial-planning-guidance.service';
 import FinancialProvisionService from '../../src/services/financial-provision.service';
 import MonthlyCategoryBudgetService from '../../src/services/monthly-category-budget.service';
 import { generateToken } from '../../src/utils/jwt';
@@ -882,6 +883,61 @@ describe('Financial planning analysis preparation', () => {
         where: { id: recurringIncomeId },
         data: { amount: 10000 }
       });
+    }
+  });
+
+  it('exposes AI guidance only through an explicit snapshot request', async () => {
+    const generate = jest.spyOn(FinancialPlanningGuidanceService, 'generate').mockResolvedValue({
+      snapshot: {
+        id: 91,
+        basisHash: 'a'.repeat(64),
+        confirmedAt: '2026-09-17T12:00:00.000Z'
+      },
+      evidenceMethodologyVersion: 1,
+      recommendationMethodologyVersion: 1,
+      guidanceMethodologyVersion: 1,
+      guidance: {
+        headline: 'Uma decisão apoiada pelos dados',
+        summary: 'O parecer organiza a leitura sem substituir a decisão da pessoa.',
+        priorities: [
+          {
+            findingId: 'GOAL_FIT',
+            title: 'Revise o cenário sugerido',
+            explanation: 'A proposta preserva as prioridades informadas no perfil.',
+            nextStep: 'Confirme se o ajuste é compatível com sua rotina.'
+          }
+        ],
+        scenarioComparison: {
+          scenarioId: 'PRESERVE_PRIORITIES',
+          explanation: 'O cenário mantém protegidas as categorias definidas como prioritárias.'
+        },
+        cautions: [],
+        referenceIds: ['CAIXA_ORCAMENTO_PRATICO']
+      },
+      telemetry: {
+        provider: 'OPENAI',
+        model: 'gpt-4o-mini',
+        promptVersion: 'financial-guidance-v1',
+        latencyMs: 100,
+        usedFallbackModel: undefined
+      },
+      generatedAt: '2026-09-17T12:00:00.000Z'
+    });
+
+    try {
+      const response = await request(app)
+        .post('/api/financial/budgets/planning-analysis/snapshots/91/guidance')
+        .set(personalHeaders());
+
+      expect(response.status).toBe(200);
+      expect(response.body.guidance.headline).toBe('Uma decisão apoiada pelos dados');
+      expect(generate).toHaveBeenCalledWith({
+        companyId: personalWorkspaceId,
+        userId,
+        snapshotId: 91
+      });
+    } finally {
+      generate.mockRestore();
     }
   });
 

@@ -179,6 +179,42 @@ export interface FinancialPlanningScenarioResult {
   guidanceEvidence?: FinancialGuidanceEvidence;
 }
 
+export interface FinancialPlanningAiGuidance {
+  headline: string;
+  summary: string;
+  priorities: Array<{
+    findingId: FinancialGuidanceFinding['id'];
+    title: string;
+    explanation: string;
+    nextStep: string;
+  }>;
+  scenarioComparison: {
+    scenarioId: 'NONE' | FinancialPlanningScenario['id'];
+    explanation: string;
+  };
+  cautions: Array<{
+    findingId: FinancialGuidanceFinding['id'] | null;
+    message: string;
+  }>;
+  referenceIds: string[];
+}
+
+export interface FinancialPlanningGuidanceResult {
+  snapshot: FinancialPlanningScenarioResult['snapshot'];
+  evidenceMethodologyVersion: number;
+  recommendationMethodologyVersion: number;
+  guidanceMethodologyVersion: number;
+  guidance: FinancialPlanningAiGuidance;
+  telemetry: {
+    provider: 'OPENAI';
+    model: string;
+    promptVersion: string;
+    latencyMs: number;
+    usedFallbackModel?: boolean;
+  };
+  generatedAt: string;
+}
+
 export interface FinancialPlanningPreview {
   workspace: { id: number; name: string };
   methodologyVersion: number;
@@ -208,6 +244,9 @@ export interface FinancialPlanningApiError {
     | 'FINANCIAL_PLANNING_SNAPSHOT_UNSUPPORTED_FOR_SCENARIOS'
     | 'FINANCIAL_PLANNING_SNAPSHOT_STALE_FOR_SCENARIOS'
     | 'FINANCIAL_PLANNING_SNAPSHOT_INVALID_FOR_SCENARIOS'
+    | 'FINANCIAL_PLANNING_AI_UNAVAILABLE'
+    | 'FINANCIAL_PLANNING_AI_PROVIDER_ERROR'
+    | 'FINANCIAL_PLANNING_AI_INVALID_RESPONSE'
     | 'INVALID_SOURCE_SELECTION'
     | 'INCOME_SOURCE_REQUIRED';
 }
@@ -254,4 +293,13 @@ export async function getFinancialPlanningSnapshotScenarios(
     `/financial/budgets/planning-analysis/snapshots/${snapshotId}/scenarios`
   );
   return response.data as FinancialPlanningScenarioResult;
+}
+
+export async function generateFinancialPlanningGuidance(
+  snapshotId: number
+): Promise<FinancialPlanningGuidanceResult> {
+  const response = await api.post(
+    `/financial/budgets/planning-analysis/snapshots/${snapshotId}/guidance`
+  );
+  return response.data as FinancialPlanningGuidanceResult;
 }

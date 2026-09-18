@@ -11,11 +11,14 @@ import { Card } from "@/components/ui/Card";
 import { InfoModalButton } from "@/components/ui/InfoModalButton";
 import { useToast } from "@/components/ui/ToastContext";
 import { FinancialGuidanceEvidencePanel } from "./FinancialGuidanceEvidence";
+import { FinancialPlanningAiGuidance } from "./FinancialPlanningAiGuidance";
 import {
   FinancialPlanningApiError,
+  FinancialPlanningGuidanceResult,
   FinancialPlanningScenario,
   FinancialPlanningScenarioResult,
   FinancialPlanningSnapshot,
+  generateFinancialPlanningGuidance,
   getFinancialPlanningSnapshotScenarios,
 } from "@/lib/financial-planning-analysis";
 
@@ -46,9 +49,12 @@ export function FinancialPlanningScenarios({
     null,
   );
   const [loading, setLoading] = useState(false);
+  const [guidance, setGuidance] = useState<FinancialPlanningGuidanceResult | null>(null);
+  const [guidanceLoading, setGuidanceLoading] = useState(false);
 
   useEffect(() => {
     setResult(null);
+    setGuidance(null);
   }, [snapshot.id]);
 
   async function calculateScenarios() {
@@ -66,6 +72,28 @@ export function FinancialPlanningScenarios({
       setLoading(false);
     }
   }
+
+  async function generateGuidance() {
+    setGuidanceLoading(true);
+    try {
+      setGuidance(await generateFinancialPlanningGuidance(snapshot.id));
+    } catch (error: any) {
+      const response = error.response?.data as FinancialPlanningApiError | undefined;
+      addToast(response?.error || "Erro ao gerar parecer explicativo", "error");
+    } finally {
+      setGuidanceLoading(false);
+    }
+  }
+
+  const guidancePanel = result?.guidanceEvidence ? (
+    <FinancialPlanningAiGuidance
+      evidence={result.guidanceEvidence}
+      scenarios={result.scenarios}
+      result={guidance}
+      loading={guidanceLoading}
+      onGenerate={() => void generateGuidance()}
+    />
+  ) : null;
 
   return (
     <Card>
@@ -128,6 +156,7 @@ export function FinancialPlanningScenarios({
           {result.guidanceEvidence && (
             <FinancialGuidanceEvidencePanel evidence={result.guidanceEvidence} />
           )}
+          {guidancePanel}
         </>
       )}
 
@@ -140,6 +169,7 @@ export function FinancialPlanningScenarios({
           {result.guidanceEvidence && (
             <FinancialGuidanceEvidencePanel evidence={result.guidanceEvidence} />
           )}
+          {guidancePanel}
           <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             {result.scenarios.map((scenario) => (
               <ScenarioCard

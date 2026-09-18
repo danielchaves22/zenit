@@ -372,8 +372,20 @@ metodologia interna versionada.
 
 As referencias sustentam principios de organizacao, resiliencia e bem-estar
 financeiro. Elas nao autorizam atribuir a uma instituicao um limite que ela nao
-publicou. Uma futura chamada de IA podera ordenar e explicar somente os achados
-recebidos, sem recalcular valores, criar referencias ou executar mutacoes.
+publicou.
+
+O parecer por IA e solicitado explicitamente a partir de um snapshot atual. O
+backend revalida o snapshot e envia ao provedor apenas o pacote de evidencias e
+metadados dos cenarios, sem transacoes cruas. A resposta usa schema estruturado e
+deve referenciar exclusivamente achados, cenarios e fontes existentes no pacote.
+Narrativas que introduzam numeros sao recusadas: valores e percentuais continuam
+visiveis somente nos componentes deterministas.
+
+A chamada nao habilita ferramentas, nao solicita armazenamento da resposta pelo
+provedor e nao executa mutacoes. Modelo, versao do prompt, versoes das metodologias,
+instante e latencia acompanham o retorno para diagnostico. Neste primeiro estagio,
+o parecer nao e persistido; atualizar a tela ou recalcular o retrato exige uma nova
+solicitacao explicita.
 
 ### Quality gates
 

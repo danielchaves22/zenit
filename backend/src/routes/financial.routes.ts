@@ -174,6 +174,7 @@ import {
 } from '../controllers/financial-provision.controller';
 import {
   confirmFinancialPlanningAnalysis,
+  generateFinancialPlanningGuidance,
   getFinancialPlanningSnapshot,
   getFinancialPlanningSnapshotScenarios,
   listFinancialPlanningSnapshots,
@@ -206,6 +207,15 @@ const creditCardValueAnalysisLimit = rateLimit({
   legacyHeaders: false,
   keyGenerator: req => `credit-card-values:${req.user.companyId}:${req.user.userId}`,
   message: { error: 'Aguarde um minuto antes de solicitar novos pareceres da IA.' }
+});
+
+const financialPlanningGuidanceLimit = rateLimit({
+  windowMs: 60_000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: req => `financial-planning-guidance:${req.user.companyId}:${req.user.userId}`,
+  message: { error: 'Aguarde um minuto antes de solicitar um novo parecer da IA.' }
 });
 
 const bankRouter = Router({ mergeParams: true });
@@ -378,6 +388,12 @@ router.get(
   '/budgets/planning-analysis/snapshots/:id/scenarios',
   validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
   getFinancialPlanningSnapshotScenarios
+);
+router.post(
+  '/budgets/planning-analysis/snapshots/:id/guidance',
+  financialPlanningGuidanceLimit,
+  validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
+  generateFinancialPlanningGuidance
 );
 router.get(
   '/budgets/planning-analysis/snapshots/:id',

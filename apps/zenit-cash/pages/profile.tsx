@@ -140,8 +140,15 @@ export default function ProfilePage() {
     }
 
     void loadWhatsAppStatus(true);
-    void loadFinancialProfile();
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId || !companyId) {
+      return;
+    }
+
+    void loadFinancialProfile();
+  }, [userId, companyId]);
 
   useEffect(() => {
     if (!whatsAppStatus?.pendingChallenge) {
@@ -349,7 +356,7 @@ export default function ProfilePage() {
                   <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-400">
                     <span>{financialProfile?.completionPercentage || 0}% preenchido</span>
                     <span>
-                      Uso exclusivo: {financialProfile?.personalWorkspace.name || 'workspace pessoal'}
+                      Workspace: {financialProfile?.workspace.name || 'workspace atual'}
                     </span>
                   </div>
                 )}

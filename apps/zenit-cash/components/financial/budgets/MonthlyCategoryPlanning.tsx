@@ -724,7 +724,7 @@ export function MonthlyCategoryPlanning({
                 setCreationDraft((current) => ({ ...current, limitAmount }))
               }
               selectOnFocus
-              className="mb-0"
+              className="!mb-0"
             />
             <div>
               <label htmlFor="monthly-budget-kind" className="mb-1 block text-sm font-medium text-gray-300">

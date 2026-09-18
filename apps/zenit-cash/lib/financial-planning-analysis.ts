@@ -57,6 +57,7 @@ export interface FinancialPlanningDataQuality {
 
 export interface FinancialPlanningSnapshot {
   id: number;
+  createdByUserId: number | null;
   objectiveKind: 'MONTHLY_SAVINGS';
   targetMonthlySavings: string;
   historyMonths: number;
@@ -77,6 +78,7 @@ export interface FinancialPlanningSnapshot {
 
 export interface FinancialPlanningSnapshotSummary {
   id: number;
+  createdByUserId: number | null;
   objectiveKind: 'MONTHLY_SAVINGS';
   targetMonthlySavings: string;
   historyMonths: number;
@@ -246,6 +248,7 @@ export interface FinancialPlanningGuidanceResult {
     };
   };
   audit: {
+    createdByUserId: number | null;
     inputHash: string;
     contentHash: string;
   };
@@ -277,7 +280,7 @@ export interface FinancialPlanningPreview {
 export interface FinancialPlanningApiError {
   error: string;
   code?:
-    | 'PERSONAL_WORKSPACE_REQUIRED'
+    | 'FINANCIAL_WORKSPACE_REQUIRED'
     | 'FINANCIAL_PROFILE_REQUIRED'
     | 'FINANCIAL_PROFILE_OUTDATED'
     | 'FINANCIAL_PLANNING_PREVIEW_STALE'

@@ -282,7 +282,8 @@ Decisoes atuais:
 
 - a experiencia sera pessoal primeiro;
 - dados operacionais permanecem vinculados ao workspace;
-- perfil e aconselhamento pessoais pertencem ao usuario em seu workspace pessoal;
+- perfil, retratos e aconselhamento financeiro pertencem ao workspace ativo,
+  com autoria e permissoes explicitas para uso individual, familiar ou empresarial;
 - IA permanece como apoio, nao como fonte da matematica financeira;
 - a base deve continuar extensivel para MEIs e pequenas equipes.
 

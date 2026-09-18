@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { PrismaClient, TransactionType } from '@prisma/client';
+import { AppKey, PrismaClient, TransactionType } from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 
@@ -17,9 +17,14 @@ describe('Personal financial profile', () => {
   let expenseCategoryIds: number[];
   let foreignExpenseCategoryId: number;
 
-  const headers = (authToken = token) => ({
+  const authHeaders = (authToken = token) => ({
     Authorization: `Bearer ${authToken}`,
     [APP_KEY_HEADER]: APP_KEY_VALUE
+  });
+
+  const headers = (authToken = token, companyId = personalWorkspaceId) => ({
+    ...authHeaders(authToken),
+    'X-Company-Id': String(companyId)
   });
 
   const completePayload = () => ({
@@ -63,16 +68,23 @@ describe('Personal financial profile', () => {
     token = generateToken({ userId });
     otherToken = generateToken({ userId: otherUserId });
 
-    const [initialResponse, otherInitialResponse] = await Promise.all([
-      request(app).get('/api/me/financial-profile').set(headers(token)),
-      request(app).get('/api/me/financial-profile').set(headers(otherToken))
+    const [bootstrap, otherBootstrap] = await Promise.all([
+      request(app).get('/api/cash/personal-workspace').set(authHeaders(token)),
+      request(app).get('/api/cash/personal-workspace').set(authHeaders(otherToken))
     ]);
 
-    expect(initialResponse.status).toBe(200);
-    expect(otherInitialResponse.status).toBe(200);
+    expect(bootstrap.status).toBe(200);
+    expect(otherBootstrap.status).toBe(200);
 
-    personalWorkspaceId = initialResponse.body.personalWorkspace.id;
-    otherPersonalWorkspaceId = otherInitialResponse.body.personalWorkspace.id;
+    personalWorkspaceId = bootstrap.body.companyId;
+    otherPersonalWorkspaceId = otherBootstrap.body.companyId;
+
+    const [initialResponse, otherInitialResponse] = await Promise.all([
+      request(app).get('/api/financial/planning-profile').set(headers(token)),
+      request(app)
+        .get('/api/financial/planning-profile')
+        .set(headers(otherToken, otherPersonalWorkspaceId))
+    ]);
     expenseCategoryIds = initialResponse.body.categories.map(
       (category: { id: number }) => category.id
     );
@@ -80,7 +92,7 @@ describe('Personal financial profile', () => {
   });
 
   beforeEach(async () => {
-    await prisma.personalFinancialProfile.deleteMany({ where: { ownerUserId: userId } });
+    await prisma.personalFinancialProfile.deleteMany({ where: { companyId: personalWorkspaceId } });
     await prisma.financialCategory.deleteMany({
       where: {
         companyId: personalWorkspaceId,
@@ -92,7 +104,7 @@ describe('Personal financial profile', () => {
 
   afterAll(async () => {
     await prisma.personalFinancialProfile.deleteMany({
-      where: { ownerUserId: { in: [userId, otherUserId] } }
+      where: { companyId: { in: [personalWorkspaceId, otherPersonalWorkspaceId] } }
     });
 
     for (const companyId of [personalWorkspaceId, otherPersonalWorkspaceId]) {
@@ -108,9 +120,9 @@ describe('Personal financial profile', () => {
     await prisma.$disconnect();
   });
 
-  it('resolves the private personal workspace without requiring an active company', async () => {
+  it('resolves the planning profile for the active workspace', async () => {
     const response = await request(app)
-      .get('/api/me/financial-profile')
+      .get('/api/financial/planning-profile')
       .set(headers());
 
     expect(response.status).toBe(200);
@@ -118,7 +130,8 @@ describe('Personal financial profile', () => {
       state: 'NOT_CONFIGURED',
       completionPercentage: 0,
       profile: null,
-      personalWorkspace: { id: personalWorkspaceId }
+      workspace: { id: personalWorkspaceId },
+      access: { canRead: true, canManage: true }
     });
     expect(response.body.categories).toHaveLength(expenseCategoryIds.length);
     expect(
@@ -130,7 +143,7 @@ describe('Personal financial profile', () => {
 
   it('saves a complete profile with immutable revisions and both ownership links', async () => {
     const firstSave = await request(app)
-      .put('/api/me/financial-profile')
+      .put('/api/financial/planning-profile')
       .set(headers())
       .send(completePayload());
 
@@ -139,15 +152,16 @@ describe('Personal financial profile', () => {
       state: 'READY',
       completionPercentage: 100,
       profile: {
-        ownerUserId: userId,
+        createdByUserId: userId,
+        updatedByUserId: userId,
         version: 1,
         categoryPrioritiesReviewed: true,
-        personalWorkspace: { id: personalWorkspaceId }
+        workspace: { id: personalWorkspaceId }
       }
     });
 
     const secondSave = await request(app)
-      .put('/api/me/financial-profile')
+      .put('/api/financial/planning-profile')
       .set(headers())
       .send({ ...completePayload(), emergencyReserveTargetMonths: 9 });
 
@@ -156,16 +170,21 @@ describe('Personal financial profile', () => {
     expect(secondSave.body.profile.emergencyReserveTargetMonths).toBe(9);
 
     const stored = await prisma.personalFinancialProfile.findUnique({
-      where: { ownerUserId: userId },
+      where: { companyId: personalWorkspaceId },
       include: { revisions: { orderBy: { version: 'asc' } } }
     });
-    expect(stored?.personalWorkspaceId).toBe(personalWorkspaceId);
+    expect(stored?.companyId).toBe(personalWorkspaceId);
+    expect(stored?.updatedByUserId).toBe(userId);
     expect(stored?.revisions.map((revision) => revision.version)).toEqual([1, 2]);
+    expect(stored?.revisions.map((revision) => revision.createdByUserId)).toEqual([
+      userId,
+      userId
+    ]);
   });
 
   it('preserves a completed category review while the remaining profile is incomplete', async () => {
     const response = await request(app)
-      .put('/api/me/financial-profile')
+      .put('/api/financial/planning-profile')
       .set(headers())
       .send({ ...completePayload(), planningStyle: null });
 
@@ -176,9 +195,9 @@ describe('Personal financial profile', () => {
     expect(response.body.profile.lastReviewedAt).toBeNull();
   });
 
-  it('rejects category preferences from another personal workspace', async () => {
+  it('rejects category preferences from another workspace', async () => {
     const response = await request(app)
-      .put('/api/me/financial-profile')
+      .put('/api/financial/planning-profile')
       .set(headers())
       .send({
         ...completePayload(),
@@ -194,13 +213,13 @@ describe('Personal financial profile', () => {
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe(
-      'Uma ou mais categorias não pertencem ao workspace pessoal'
+      'Uma ou mais categorias não pertencem ao workspace atual'
     );
   });
 
   it('marks a ready profile for review when a new expense category appears', async () => {
     const saveResponse = await request(app)
-      .put('/api/me/financial-profile')
+      .put('/api/financial/planning-profile')
       .set(headers())
       .send(completePayload());
     expect(saveResponse.body.state).toBe('READY');
@@ -215,7 +234,7 @@ describe('Personal financial profile', () => {
     });
 
     const response = await request(app)
-      .get('/api/me/financial-profile')
+      .get('/api/financial/planning-profile')
       .set(headers());
 
     expect(response.status).toBe(200);
@@ -223,21 +242,96 @@ describe('Personal financial profile', () => {
     expect(response.body.completionPercentage).toBe(88);
   });
 
-  it('never exposes one user profile to another user', async () => {
+  it('does not expose a profile from another workspace', async () => {
     await request(app)
-      .put('/api/me/financial-profile')
+      .put('/api/financial/planning-profile')
       .set(headers())
       .send(completePayload());
 
     const response = await request(app)
-      .get('/api/me/financial-profile')
-      .set(headers(otherToken));
+      .get('/api/financial/planning-profile')
+      .set(headers(otherToken, otherPersonalWorkspaceId));
 
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       state: 'NOT_CONFIGURED',
       profile: null,
-      personalWorkspace: { id: otherPersonalWorkspaceId }
+      workspace: { id: otherPersonalWorkspaceId }
     });
+  });
+
+  it('shares the workspace profile while reserving changes for workspace managers', async () => {
+    const created = await request(app)
+      .put('/api/financial/planning-profile')
+      .set(headers())
+      .send(completePayload());
+    expect(created.status).toBe(200);
+
+    const cashApp = await prisma.ecosystemApp.findUniqueOrThrow({
+      where: { appKey: AppKey.ZENIT_CASH }
+    });
+    await prisma.userCompany.create({
+      data: {
+        userId: otherUserId,
+        companyId: personalWorkspaceId,
+        role: 'USER',
+        isDefault: false
+      }
+    });
+    await prisma.userAppGrant.create({
+      data: {
+        userId: otherUserId,
+        companyId: personalWorkspaceId,
+        appId: cashApp.id,
+        granted: true
+      }
+    });
+
+    try {
+      const shared = await request(app)
+        .get('/api/financial/planning-profile')
+        .set(headers(otherToken, personalWorkspaceId));
+      expect(shared.status).toBe(200);
+      expect(shared.body).toMatchObject({
+        state: 'READY',
+        profile: { id: created.body.profile.id },
+        workspace: { id: personalWorkspaceId },
+        access: { canRead: true, canManage: false }
+      });
+
+      const forbidden = await request(app)
+        .put('/api/financial/planning-profile')
+        .set(headers(otherToken, personalWorkspaceId))
+        .send(completePayload());
+      expect(forbidden.status).toBe(403);
+      expect(forbidden.body.code).toBe('WORKSPACE_PLANNING_MANAGEMENT_FORBIDDEN');
+
+      await prisma.userCompany.update({
+        where: {
+          userId_companyId: { userId: otherUserId, companyId: personalWorkspaceId }
+        },
+        data: { role: 'SUPERUSER' }
+      });
+
+      const updated = await request(app)
+        .put('/api/financial/planning-profile')
+        .set(headers(otherToken, personalWorkspaceId))
+        .send({ ...completePayload(), emergencyReserveTargetMonths: 9 });
+      expect(updated.status).toBe(200);
+      expect(updated.body.profile).toMatchObject({
+        id: created.body.profile.id,
+        createdByUserId: userId,
+        updatedByUserId: otherUserId,
+        version: 2,
+        emergencyReserveTargetMonths: 9
+      });
+    } finally {
+      await prisma.userAppGrant.deleteMany({
+        where: { userId: otherUserId, companyId: personalWorkspaceId }
+      });
+      await prisma.userCompany.deleteMany({
+        where: { userId: otherUserId, companyId: personalWorkspaceId }
+      });
+    }
   });
 });

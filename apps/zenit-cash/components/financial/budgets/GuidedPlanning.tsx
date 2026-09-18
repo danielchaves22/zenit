@@ -173,7 +173,7 @@ export function GuidedPlanning({
         if (cancelled) return;
         const response = error.response?.data as FinancialPlanningApiError | undefined;
         if (
-          response?.code === 'PERSONAL_WORKSPACE_REQUIRED' ||
+          response?.code === 'FINANCIAL_WORKSPACE_REQUIRED' ||
           response?.code === 'FINANCIAL_PROFILE_REQUIRED' ||
           response?.code === 'FINANCIAL_PROFILE_OUTDATED'
         ) {
@@ -253,7 +253,7 @@ export function GuidedPlanning({
   }
 
   if (gateError) {
-    const requiresProfile = gateError.code !== 'PERSONAL_WORKSPACE_REQUIRED';
+    const requiresProfile = gateError.code !== 'FINANCIAL_WORKSPACE_REQUIRED';
     return (
       <div className="space-y-5">
         <Card className="mx-auto max-w-2xl">
@@ -263,7 +263,7 @@ export function GuidedPlanning({
             </div>
             <div className="flex-1">
               <h2 className="text-xl font-semibold text-white">
-                {requiresProfile ? 'Perfil financeiro necessário' : 'Use seu workspace pessoal'}
+                {requiresProfile ? 'Perfil financeiro necessário' : 'Workspace indisponível'}
               </h2>
               <p className="mt-2 text-sm text-gray-400">{gateError.error}</p>
               {requiresProfile ? (

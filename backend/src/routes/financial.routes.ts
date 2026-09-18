@@ -64,6 +64,7 @@ import {
   getFinancialDashboardMonthlySchema
 } from '../validators/financial-dashboard.validator';
 import { updateVariableProjectionPreferenceSchema } from '../validators/variable-projection-preference.validator';
+import { savePersonalFinancialProfileSchema } from '../validators/personal-financial-profile.validator';
 import {
   createMonthlyCategoryBudgetSchema,
   endRecurringMonthlyCategoryBudgetSchema,
@@ -159,6 +160,10 @@ import {
   getVariableProjectionPreference,
   updateVariableProjectionPreference
 } from '../controllers/user-variable-projection-preference.controller';
+import {
+  getPersonalFinancialProfile,
+  savePersonalFinancialProfile
+} from '../controllers/personal-financial-profile.controller';
 import {
   createMonthlyCategoryBudget,
   endRecurringMonthlyCategoryBudget,
@@ -317,6 +322,18 @@ router.put(
 );
 
 router.get(
+  '/planning-profile',
+  requireWorkspacePlanningAccess('READ'),
+  getPersonalFinancialProfile
+);
+router.put(
+  '/planning-profile',
+  requireWorkspacePlanningAccess('MANAGE'),
+  validate(savePersonalFinancialProfileSchema, { source: 'body' }),
+  savePersonalFinancialProfile
+);
+
+router.get(
   '/budgets/monthly',
   requireWorkspacePlanningAccess('READ'),
   validate(getMonthlyCategoryBudgetSchema, { source: 'query' }),
@@ -378,38 +395,45 @@ router.post(
 
 router.get(
   '/budgets/planning-analysis/preview',
+  requireWorkspacePlanningAccess('READ'),
   validate(previewFinancialPlanningAnalysisSchema, { source: 'query' }),
   previewFinancialPlanningAnalysis
 );
 router.get(
   '/budgets/planning-analysis/snapshots',
+  requireWorkspacePlanningAccess('READ'),
   validate(listFinancialPlanningSnapshotsSchema, { source: 'query' }),
   listFinancialPlanningSnapshots
 );
 router.get(
   '/budgets/planning-analysis/snapshots/:id/scenarios',
+  requireWorkspacePlanningAccess('READ'),
   validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
   getFinancialPlanningSnapshotScenarios
 );
 router.post(
   '/budgets/planning-analysis/snapshots/:id/guidance',
+  requireWorkspacePlanningAccess('MANAGE'),
   financialPlanningGuidanceLimit,
   validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
   generateFinancialPlanningGuidance
 );
 router.get(
   '/budgets/planning-analysis/snapshots/:id/guidance',
+  requireWorkspacePlanningAccess('READ'),
   validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
   validate(listFinancialPlanningGuidanceSchema, { source: 'query' }),
   listFinancialPlanningGuidance
 );
 router.get(
   '/budgets/planning-analysis/snapshots/:id',
+  requireWorkspacePlanningAccess('READ'),
   validate(getFinancialPlanningSnapshotSchema, { source: 'params' }),
   getFinancialPlanningSnapshot
 );
 router.post(
   '/budgets/planning-analysis/snapshots',
+  requireWorkspacePlanningAccess('MANAGE'),
   validate(confirmFinancialPlanningAnalysisSchema, { source: 'body' }),
   confirmFinancialPlanningAnalysis
 );

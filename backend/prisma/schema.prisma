@@ -336,9 +336,11 @@ model User {
   budgets                Budget[]
   financialProvisionsCreated FinancialProvision[]
   financialProvisionEntriesCreated FinancialProvisionEntry[]
-  personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileOwner")
-  financialPlanningSnapshots FinancialPlanningSnapshot[] @relation("FinancialPlanningSnapshotOwner")
-  financialPlanningGuidanceRecords FinancialPlanningGuidanceRecord[] @relation("FinancialPlanningGuidanceOwner")
+  financialPlanningProfilesCreated PersonalFinancialProfile[] @relation("FinancialPlanningProfileCreatedBy")
+  financialPlanningProfilesUpdated PersonalFinancialProfile[] @relation("FinancialPlanningProfileUpdatedBy")
+  financialPlanningProfileRevisionsCreated PersonalFinancialProfileRevision[] @relation("FinancialPlanningProfileRevisionCreatedBy")
+  financialPlanningSnapshotsCreated FinancialPlanningSnapshot[] @relation("FinancialPlanningSnapshotCreatedBy")
+  financialPlanningGuidanceRecordsCreated FinancialPlanningGuidanceRecord[] @relation("FinancialPlanningGuidanceCreatedBy")
   savedFilterPresets     SavedFilterPreset[]
   lastUsedFilterPresets  LastUsedFilterPreset[]
   variableProjectionPreferences UserVariableProjectionPreference[]
@@ -389,7 +391,7 @@ model Company {
   monthlyCategoryBudgets MonthlyCategoryBudget[]
   recurringMonthlyCategoryBudgets RecurringMonthlyCategoryBudget[]
   financialProvisions FinancialProvision[]
-  personalFinancialProfile PersonalFinancialProfile? @relation("PersonalFinancialProfileWorkspace")
+  financialPlanningProfile PersonalFinancialProfile? @relation("FinancialPlanningProfileWorkspace")
   financialPlanningSnapshots FinancialPlanningSnapshot[] @relation("FinancialPlanningSnapshotWorkspace")
   financialPlanningGuidanceRecords FinancialPlanningGuidanceRecord[] @relation("FinancialPlanningGuidanceWorkspace")
   savedFilterPresets  SavedFilterPreset[]
@@ -1198,8 +1200,9 @@ model FinancialProvisionEntry {
 
 model PersonalFinancialProfile {
   id                           Int                            @id @default(autoincrement())
-  ownerUserId                  Int                            @unique
-  personalWorkspaceId          Int                            @unique
+  createdByUserId              Int?                           @map("ownerUserId")
+  updatedByUserId              Int?
+  companyId                    Int                            @unique @map("personalWorkspaceId")
   planningContext              PersonalPlanningContext?
   adultsCount                  Int?
   dependentsCount              Int?
@@ -1213,12 +1216,13 @@ model PersonalFinancialProfile {
   createdAt                    DateTime                       @default(now())
   updatedAt                    DateTime                       @updatedAt
 
-  ownerUser                    User                           @relation("PersonalFinancialProfileOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  personalWorkspace            Company                        @relation("PersonalFinancialProfileWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Cascade)
+  createdByUser                User?                          @relation("FinancialPlanningProfileCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedByUser                User?                          @relation("FinancialPlanningProfileUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  company                      Company                        @relation("FinancialPlanningProfileWorkspace", fields: [companyId], references: [id], onDelete: Cascade)
   categoryPreferences          PersonalFinancialCategoryPreference[]
   revisions                    PersonalFinancialProfileRevision[]
 
-  @@index([ownerUserId, personalWorkspaceId])
+  @@index([createdByUserId, companyId], map: "PersonalFinancialProfile_ownerUserId_personalWorkspaceId_idx")
 }
 
 model PersonalFinancialCategoryPreference {
@@ -1238,22 +1242,25 @@ model PersonalFinancialCategoryPreference {
 }
 
 model PersonalFinancialProfileRevision {
-  id        Int                      @id @default(autoincrement())
-  profileId Int
-  version   Int
-  snapshot  Json
-  createdAt DateTime                 @default(now())
+  id              Int                      @id @default(autoincrement())
+  profileId       Int
+  version         Int
+  snapshot        Json
+  createdByUserId Int?
+  createdAt       DateTime                 @default(now())
 
-  profile   PersonalFinancialProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile         PersonalFinancialProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  createdByUser   User?                    @relation("FinancialPlanningProfileRevisionCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@unique([profileId, version], name: "unique_personal_financial_profile_revision", map: "unique_personal_financial_profile_revision")
   @@index([profileId, createdAt])
+  @@index([createdByUserId])
 }
 
 model FinancialPlanningSnapshot {
   id                            Int                             @id @default(autoincrement())
-  ownerUserId                   Int
-  personalWorkspaceId           Int
+  createdByUserId               Int?                            @map("ownerUserId")
+  companyId                     Int                             @map("personalWorkspaceId")
   objectiveKind                 FinancialPlanningObjectiveKind @default(MONTHLY_SAVINGS)
   targetMonthlySavings          Decimal                         @db.Decimal(15, 2)
   historyMonths                 Int
@@ -1278,20 +1285,20 @@ model FinancialPlanningSnapshot {
   confirmedAt                   DateTime                        @default(now())
   createdAt                     DateTime                        @default(now())
 
-  ownerUser                     User                            @relation("FinancialPlanningSnapshotOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  personalWorkspace             Company                         @relation("FinancialPlanningSnapshotWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Cascade)
+  createdByUser                 User?                           @relation("FinancialPlanningSnapshotCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  company                       Company                         @relation("FinancialPlanningSnapshotWorkspace", fields: [companyId], references: [id], onDelete: Cascade)
   guidanceRecords               FinancialPlanningGuidanceRecord[]
 
-  @@index([ownerUserId, createdAt])
-  @@index([personalWorkspaceId, createdAt])
+  @@index([createdByUserId, createdAt], map: "FinancialPlanningSnapshot_ownerUserId_createdAt_idx")
+  @@index([companyId, createdAt], map: "FinancialPlanningSnapshot_personalWorkspaceId_createdAt_idx")
 }
 
 
 model FinancialPlanningGuidanceRecord {
   id                               Int        @id @default(autoincrement())
   snapshotId                       Int
-  ownerUserId                      Int
-  personalWorkspaceId              Int
+  createdByUserId                  Int?       @map("ownerUserId")
+  companyId                        Int        @map("personalWorkspaceId")
   provider                         AiProvider @default(OPENAI)
   providerResponseId               String?    @db.VarChar(180)
   model                            String     @db.VarChar(120)
@@ -1315,12 +1322,12 @@ model FinancialPlanningGuidanceRecord {
   createdAt                        DateTime   @default(now())
 
   snapshot          FinancialPlanningSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
-  ownerUser         User                      @relation("FinancialPlanningGuidanceOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
-  personalWorkspace Company                   @relation("FinancialPlanningGuidanceWorkspace", fields: [personalWorkspaceId], references: [id], onDelete: Cascade)
+  createdByUser     User?                     @relation("FinancialPlanningGuidanceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  company           Company                   @relation("FinancialPlanningGuidanceWorkspace", fields: [companyId], references: [id], onDelete: Cascade)
 
   @@index([snapshotId, id])
-  @@index([ownerUserId, createdAt])
-  @@index([personalWorkspaceId, createdAt])
+  @@index([createdByUserId, createdAt], map: "FinancialPlanningGuidanceRecord_ownerUserId_createdAt_idx")
+  @@index([companyId, createdAt], map: "FinancialPlanningGuidanceRecord_personalWorkspaceId_createdAt_i")
 }
 
 model Process {

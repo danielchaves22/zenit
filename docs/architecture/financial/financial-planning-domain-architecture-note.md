@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-09-17
+last_reviewed: 2026-09-18
 summary: Limites, linguagem e invariantes do dominio de planejamento financeiro do Zenit Cash.
 tags:
   - zenit-cash
@@ -36,9 +36,10 @@ Esses controles respondem a perguntas diferentes. Eles compartilham os mesmos
 dados financeiros, mas nao devem compartilhar significado por coincidencia de
 nome nem reproduzir formulas independentes para o mesmo conceito.
 
-A direcao de produto e pessoal primeiro. Os dados operacionais continuam
-pertencendo ao workspace para que a base tambem suporte MEIs e pequenas equipes
-sem transformar preferencias pessoais em regras globais da empresa.
+A direcao de produto e pessoal primeiro, mas planejamento e dados operacionais
+pertencem ao workspace ativo. Isso permite que o mesmo dominio atenda uma pessoa,
+uma familia, um MEI ou uma pequena equipe sem usar o tipo do workspace como
+bloqueio funcional.
 
 ## Problema
 
@@ -65,9 +66,9 @@ pode ser confiavel se esses conceitos tiverem uma origem canonica e auditavel.
 | Plano de Disponibilidade | Quanto o usuario pode utilizar preservando um saldo final? | Usuario no workspace | Mantem conta sistemica propria e projecoes do plano |
 | Planejamento Mensal | Onde o workspace pretende gastar em determinado mes? | Workspace | Nao altera saldo nem cria transacao |
 | Provisao | Quanto deve ser separado para uma despesa futura previsivel? | Workspace | Mantem reserva logica; nao movimenta uma conta por si so |
-| Perfil Financeiro | Qual e o contexto pessoal usado para orientar decisoes? | Usuario e workspace pessoal | Nao altera dados operacionais |
-| Retrato Financeiro | Qual era a base confirmada para analisar um objetivo? | Usuario e workspace pessoal | Cria snapshot; nao altera transacoes nem planos |
-| Cenarios de Planejamento | Quais limites variaveis poderiam aproximar o usuario do objetivo? | Usuario e workspace pessoal | Simula alternativas; somente envia uma escolha a um rascunho revisavel |
+| Perfil de Planejamento | Qual e o contexto do workspace usado para orientar decisoes? | Workspace | Nao altera dados operacionais; registra autores das revisoes |
+| Retrato Financeiro | Qual era a base confirmada para analisar um objetivo? | Workspace | Cria snapshot imutavel com autor; nao altera transacoes nem planos |
+| Cenarios de Planejamento | Quais limites variaveis poderiam aproximar o workspace do objetivo? | Workspace | Simula alternativas; somente envia uma escolha a um rascunho revisavel |
 
 Os nomes das tabelas existentes podem permanecer durante a consolidacao. APIs,
 componentes e novos modulos devem usar os nomes de dominio acima para evitar que
@@ -94,8 +95,8 @@ todo controle seja chamado genericamente de `Budget`.
 ### Invariantes
 
 1. Toda consulta ou mutacao operacional deve estar restrita ao workspace ativo.
-2. Perfil e retrato pessoais somente podem ser acessados pelo proprietario
-   do workspace pessoal correspondente.
+2. Perfil, retratos, cenarios e pareceres pertencem ao workspace ativo. Leitura e
+   gestao devem seguir a politica explicita de planejamento compartilhado.
 3. Planejamentos e provisoes empresariais exigem politica explicita de leitura e
    alteracao; autenticacao generica nao substitui autorizacao de dominio.
 4. Fatura `CLOSED` nao e fatura `PAID`.
@@ -143,7 +144,7 @@ substituir a validacao final do servidor.
 ### Integridade do retrato confirmado
 
 A previa do retrato possui um `basisHash` SHA-256 deterministico. A
-identificacao vincula usuario, workspace pessoal, versao do perfil, versao da
+identificacao vincula workspace, versao do perfil, versao da
 metodologia, periodo, indicadores objetivos de qualidade e as fontes financeiras
 disponiveis. Textos puramente apresentacionais nao fazem parte do hash.
 
@@ -152,16 +153,18 @@ mesmo contexto autorizado e rejeita a operacao com conflito quando os dados
 mudaram. O hash nao e credencial nem substitui a autorizacao de usuario e tenant.
 
 Uma segunda identificacao deterministica combina a base, o objetivo, a meta e as
-fontes selecionadas. O indice unico de `confirmationHash` torna retries e
-confirmacoes concorrentes idempotentes: uma confirmacao equivalente retorna o
+fontes selecionadas e o usuario que confirmou. O indice unico de
+`confirmationHash` torna retries e confirmacoes concorrentes do mesmo autor
+idempotentes: uma confirmacao equivalente retorna o
 snapshot ja criado. Os campos sao opcionais no banco apenas para manter leitura
 compativel de snapshots anteriores a esta politica; novos registros sempre os
 preenchem.
 
 ### Autorizacao do planejamento compartilhado
 
-Planejamento Mensal por Categoria e Provisoes pertencem ao workspace. A politica
-de acesso distingue consulta de gestao:
+Perfil de Planejamento, Planejamento Mensal por Categoria, Provisoes, retratos,
+cenarios e pareceres pertencem ao workspace. A politica de acesso distingue
+consulta de gestao:
 
 - todo membro do workspace com acesso efetivo ao Zenit Cash pode consultar os
   controles compartilhados;
@@ -171,12 +174,15 @@ de acesso distingue consulta de gestao:
   `access.canManage`, para que a interface apresente o modo somente leitura sem
   reproduzir a regra de autorizacao;
 - permissoes de contas e categorias nao concedem implicitamente permissao de
-  planejamento, pois representam responsabilidades de dominio diferentes.
+  planejamento, pois representam responsabilidades de dominio diferentes;
+- perfil, revisoes, retratos e pareceres registram o usuario autor, mas nao sao
+  apagados quando esse usuario deixa de existir.
 
 O middleware de tenant e o acesso ao aplicativo continuam sendo pre-condicoes.
-A politica acima nao se aplica ao Plano de Disponibilidade, que e individual por
-usuario, nem ao Retrato Financeiro, que exige o proprietario do workspace
-pessoal correspondente.
+A politica acima nao se aplica ao Plano de Disponibilidade, que permanece
+individual por usuario. `isPersonalWorkspace` continua existindo apenas para o
+provisionamento automatico e a compatibilidade do app mobile; nao concede nem
+restringe acesso ao planejamento orientado.
 
 ### Calendario financeiro canonico
 
@@ -317,11 +323,11 @@ cursor decrescente e retorna apenas resumo, totais, versoes, qualidade e
 identificacao da base. Fontes e indicadores completos sao carregados sob demanda
 ao consultar um snapshot especifico, evitando repetir payloads historicos grandes.
 
-Tanto a listagem quanto o detalhe exigem que o usuario seja proprietario do
-workspace pessoal ativo. A consulta nao exige que o perfil atual continue pronto:
-um perfil ausente ou desatualizado bloqueia novas analises, mas nao apaga nem
-oculta a evidencia anteriormente confirmada. Nao existem rotas de atualizacao ou
-exclusao desses snapshots.
+Tanto a listagem quanto o detalhe exigem acesso de leitura ao planejamento do
+workspace ativo. A consulta nao exige que o perfil atual continue pronto: um
+perfil ausente ou desatualizado bloqueia novas analises, mas nao apaga nem oculta
+a evidencia anteriormente confirmada. Nao existem rotas de atualizacao ou
+exclusao desses snapshots. O autor permanece registrado para auditoria.
 
 ### Cenarios deterministas e rascunho mensal
 

@@ -29,8 +29,9 @@ export interface PersonalFinancialCategoryPreference {
 
 export interface PersonalFinancialProfile {
   id: number;
-  ownerUserId: number;
-  personalWorkspace: { id: number; name: string };
+  createdByUserId: number | null;
+  updatedByUserId: number | null;
+  workspace: { id: number; name: string };
   planningContext: PersonalPlanningContext | null;
   adultsCount: number | null;
   dependentsCount: number | null;
@@ -51,8 +52,12 @@ export interface PersonalFinancialProfileResponse {
   state: PersonalFinancialProfileState;
   completionPercentage: number;
   profile: PersonalFinancialProfile | null;
-  personalWorkspace: { id: number; name: string };
+  workspace: { id: number; name: string };
   categories: PersonalFinancialCategory[];
+  access: {
+    canRead: boolean;
+    canManage: boolean;
+  };
 }
 
 export interface SavePersonalFinancialProfileInput {
@@ -72,13 +77,13 @@ export interface SavePersonalFinancialProfileInput {
 }
 
 export async function getPersonalFinancialProfile(): Promise<PersonalFinancialProfileResponse> {
-  const response = await api.get('/me/financial-profile');
+  const response = await api.get('/financial/planning-profile');
   return response.data as PersonalFinancialProfileResponse;
 }
 
 export async function savePersonalFinancialProfile(
   input: SavePersonalFinancialProfileInput
 ): Promise<PersonalFinancialProfileResponse> {
-  const response = await api.put('/me/financial-profile', input);
+  const response = await api.put('/financial/planning-profile', input);
   return response.data as PersonalFinancialProfileResponse;
 }

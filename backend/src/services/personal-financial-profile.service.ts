@@ -8,7 +8,6 @@ import {
   Prisma,
   TransactionType
 } from '@prisma/client';
-import PersonalWorkspaceService from './personal-workspace.service';
 
 
 export type PersonalFinancialProfileState =
@@ -34,7 +33,7 @@ type ProfileInput = {
 };
 
 const profileInclude = {
-  personalWorkspace: { select: { id: true, name: true } },
+  company: { select: { id: true, name: true } },
   categoryPreferences: {
     include: {
       category: {
@@ -116,8 +115,9 @@ function serializeProfile(profile: any) {
   if (!profile) return null;
   return {
     id: profile.id,
-    ownerUserId: profile.ownerUserId,
-    personalWorkspace: profile.personalWorkspace,
+    createdByUserId: profile.createdByUserId,
+    updatedByUserId: profile.updatedByUserId,
+    workspace: profile.company,
     planningContext: profile.planningContext,
     adultsCount: profile.adultsCount,
     dependentsCount: profile.dependentsCount,
@@ -154,25 +154,23 @@ function normalizedInput(input: ProfileInput) {
 }
 
 export default class PersonalFinancialProfileService {
-  private static async resolveWorkspace(userId: number) {
-    const workspace = await PersonalWorkspaceService.getOrCreateForUser(userId);
+  private static async resolveWorkspace(userId: number, companyId: number) {
     const company = await prisma.company.findFirst({
       where: {
-        id: workspace.companyId,
-        isPersonalWorkspace: true,
-        personalWorkspaceOwnerId: userId
+        id: companyId,
+        users: { some: { userId } }
       },
       select: { id: true, name: true }
     });
     if (!company) {
-      throw new Error('Workspace pessoal do usuário não encontrado');
+      throw new Error('Workspace financeiro não encontrado ou não autorizado');
     }
     return company;
   }
 
-  private static async expenseCategories(personalWorkspaceId: number) {
+  private static async expenseCategories(companyId: number) {
     return prisma.financialCategory.findMany({
-      where: { companyId: personalWorkspaceId, type: TransactionType.EXPENSE },
+      where: { companyId, type: TransactionType.EXPENSE },
       select: {
         id: true,
         name: true,
@@ -185,38 +183,34 @@ export default class PersonalFinancialProfileService {
     });
   }
 
-  static async get(userId: number) {
-    const workspace = await this.resolveWorkspace(userId);
+  static async get(userId: number, companyId: number) {
+    const workspace = await this.resolveWorkspace(userId, companyId);
     const [profile, categories] = await Promise.all([
       prisma.personalFinancialProfile.findUnique({
-        where: { ownerUserId: userId },
+        where: { companyId: workspace.id },
         include: profileInclude
       }),
       this.expenseCategories(workspace.id)
     ]);
-
-    if (profile && profile.personalWorkspaceId !== workspace.id) {
-      throw new Error('Perfil financeiro vinculado a um workspace pessoal diferente');
-    }
 
     const expenseCategoryIds = categories.map((category) => category.id);
     return {
       state: profileState({ profile, expenseCategoryIds }),
       completionPercentage: completionPercentage({ profile, expenseCategoryIds }),
       profile: serializeProfile(profile),
-      personalWorkspace: workspace,
+      workspace,
       categories: categories.map(({ createdAt: _createdAt, ...category }) => category)
     };
   }
 
-  static async save(userId: number, input: ProfileInput) {
-    const workspace = await this.resolveWorkspace(userId);
+  static async save(userId: number, companyId: number, input: ProfileInput) {
+    const workspace = await this.resolveWorkspace(userId, companyId);
     const categories = await this.expenseCategories(workspace.id);
     const validCategoryIds = new Set(categories.map((category) => category.id));
     const preferences = input.categoryPreferences ?? [];
 
     if (preferences.some((preference) => !validCategoryIds.has(preference.categoryId))) {
-      throw new Error('Uma ou mais categorias não pertencem ao workspace pessoal');
+      throw new Error('Uma ou mais categorias não pertencem ao workspace atual');
     }
     if (
       input.categoryPrioritiesReviewed &&
@@ -235,11 +229,8 @@ export default class PersonalFinancialProfileService {
 
     await prisma.$transaction(async (transaction) => {
       const existing = await transaction.personalFinancialProfile.findUnique({
-        where: { ownerUserId: userId }
+        where: { companyId: workspace.id }
       });
-      if (existing && existing.personalWorkspaceId !== workspace.id) {
-        throw new Error('Perfil financeiro vinculado a um workspace pessoal diferente');
-      }
 
       const profile = existing
         ? await transaction.personalFinancialProfile.update({
@@ -248,13 +239,15 @@ export default class PersonalFinancialProfileService {
               ...normalized,
               categoryPrioritiesReviewedAt,
               lastReviewedAt,
+              updatedByUserId: userId,
               version: { increment: 1 }
             }
           })
         : await transaction.personalFinancialProfile.create({
             data: {
-              ownerUserId: userId,
-              personalWorkspaceId: workspace.id,
+              createdByUserId: userId,
+              updatedByUserId: userId,
+              companyId: workspace.id,
               ...normalized,
               categoryPrioritiesReviewedAt,
               lastReviewedAt
@@ -283,6 +276,7 @@ export default class PersonalFinancialProfileService {
         data: {
           profileId: profile.id,
           version: profile.version,
+          createdByUserId: userId,
           snapshot: {
             ...normalized,
             categoryPrioritiesReviewed: reviewed,
@@ -296,7 +290,7 @@ export default class PersonalFinancialProfileService {
       });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-    return this.get(userId);
+    return this.get(userId, companyId);
   }
 }
 

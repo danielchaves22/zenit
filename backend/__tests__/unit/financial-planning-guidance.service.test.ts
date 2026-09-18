@@ -230,8 +230,8 @@ describe('FinancialPlanningGuidanceService', () => {
     expect(prisma.financialPlanningGuidanceRecord.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         snapshotId: 50,
-        ownerUserId: 11,
-        personalWorkspaceId: 7,
+        createdByUserId: 11,
+        companyId: 7,
         providerResponseId: 'resp_guidance_test',
         inputTokens: 450,
         outputTokens: 120,

@@ -103,8 +103,9 @@ const initialResponse = {
   state: 'NOT_CONFIGURED' as const,
   completionPercentage: 0,
   profile: null,
-  personalWorkspace: { id: 7, name: 'Workspace pessoal de Ana' },
-  categories
+  workspace: { id: 7, name: 'Casa' },
+  categories,
+  access: { canRead: true, canManage: true }
 };
 
 const readyResponse = {
@@ -113,8 +114,9 @@ const readyResponse = {
   completionPercentage: 100,
   profile: {
     id: 1,
-    ownerUserId: 5,
-    personalWorkspace: initialResponse.personalWorkspace,
+    createdByUserId: 5,
+    updatedByUserId: 5,
+    workspace: initialResponse.workspace,
     planningContext: 'INDIVIDUAL' as const,
     adultsCount: 1,
     dependentsCount: 0,
@@ -151,12 +153,12 @@ describe('PersonalFinancialProfilePage', () => {
     pushMock.mockResolvedValue(true);
   });
 
-  it('builds a reviewed personal profile and returns to the requesting feature', async () => {
+  it('builds a reviewed workspace profile and returns to the requesting feature', async () => {
     const user = userEvent.setup();
     render(<PersonalFinancialProfilePage />);
 
     await screen.findByRole('heading', { name: 'Contexto do planejamento' });
-    expect(screen.getByText('Workspace pessoal de Ana')).toBeInTheDocument();
+    expect(screen.getAllByText('Casa').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Apenas para mim' }));
     await user.type(screen.getByLabelText('Dependentes financeiros'), '0');

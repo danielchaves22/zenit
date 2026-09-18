@@ -46,11 +46,12 @@ describe('Financial planning analysis preparation', () => {
   let incomeCategoryId: number;
   let recurringIncomeId: number;
 
-  const personalHeaders = () => ({
+  const companyHeaders = (companyId: number) => ({
     Authorization: `Bearer ${token}`,
-    'X-Company-Id': String(personalWorkspaceId),
+    'X-Company-Id': String(companyId),
     [APP_KEY_HEADER]: APP_KEY_VALUE
   });
+  const personalHeaders = () => companyHeaders(personalWorkspaceId);
 
   beforeAll(async () => {
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -66,11 +67,11 @@ describe('Financial planning analysis preparation', () => {
     token = generateToken({ userId });
 
     const bootstrap = await request(app)
-      .get('/api/me/financial-profile')
+      .get('/api/cash/personal-workspace')
       .set('Authorization', `Bearer ${token}`)
       .set(APP_KEY_HEADER, APP_KEY_VALUE);
     expect(bootstrap.status).toBe(200);
-    personalWorkspaceId = bootstrap.body.personalWorkspace.id;
+    personalWorkspaceId = bootstrap.body.companyId;
 
     const defaultExpense = await prisma.financialCategory.findFirstOrThrow({
       where: {
@@ -119,13 +120,11 @@ describe('Financial planning analysis preparation', () => {
     creditCardAccountId = creditCard.id;
 
     const profileCategoriesResponse = await request(app)
-      .get('/api/me/financial-profile')
-      .set('Authorization', `Bearer ${token}`)
-      .set(APP_KEY_HEADER, APP_KEY_VALUE);
+      .get('/api/financial/planning-profile')
+      .set(personalHeaders());
     const profileSave = await request(app)
-      .put('/api/me/financial-profile')
-      .set('Authorization', `Bearer ${token}`)
-      .set(APP_KEY_HEADER, APP_KEY_VALUE)
+      .put('/api/financial/planning-profile')
+      .set(personalHeaders())
       .send({
         planningContext: 'INDIVIDUAL',
         adultsCount: 1,
@@ -362,7 +361,13 @@ describe('Financial planning analysis preparation', () => {
     });
     businessCompanyId = business.id;
     await prisma.userCompany.create({
-      data: { userId, companyId: business.id, role: 'USER', isDefault: false }
+      data: {
+        userId,
+        companyId: business.id,
+        role: 'SUPERUSER',
+        isDefault: false,
+        isCompanyOwner: true
+      }
     });
     const cashApp = await prisma.ecosystemApp.findUniqueOrThrow({
       where: { appKey: AppKey.ZENIT_CASH }
@@ -373,11 +378,33 @@ describe('Financial planning analysis preparation', () => {
     await prisma.userAppGrant.create({
       data: { userId, companyId: business.id, appId: cashApp.id, granted: true }
     });
+
+    const businessProfile = await request(app)
+      .put('/api/financial/planning-profile')
+      .set(companyHeaders(business.id))
+      .send({
+        planningContext: 'FAMILY',
+        adultsCount: 2,
+        dependentsCount: 0,
+        financialDataCoverage: 'PARTIAL',
+        emergencyReserveTargetMonths: 6,
+        planningStyle: 'BALANCED',
+        adjustmentPace: 'GRADUAL',
+        categoryPrioritiesReviewed: true,
+        categoryPreferences: []
+      });
+    expect(businessProfile.status).toBe(200);
+    expect(businessProfile.body).toMatchObject({
+      state: 'READY',
+      workspace: { id: business.id }
+    });
   }, 30_000);
 
   afterAll(async () => {
-    await prisma.financialPlanningSnapshot.deleteMany({ where: { ownerUserId: userId } });
-    await prisma.personalFinancialProfile.deleteMany({ where: { ownerUserId: userId } });
+    await prisma.financialPlanningSnapshot.deleteMany({ where: { createdByUserId: userId } });
+    await prisma.personalFinancialProfile.deleteMany({
+      where: { companyId: { in: [personalWorkspaceId, businessCompanyId] } }
+    });
     await prisma.financialProvisionEntry.deleteMany({
       where: { provision: { companyId: personalWorkspaceId } }
     });
@@ -768,8 +795,8 @@ describe('Financial planning analysis preparation', () => {
     const stored = await prisma.financialPlanningSnapshot.findUnique({
       where: { id: response.body.id }
     });
-    expect(stored?.ownerUserId).toBe(userId);
-    expect(stored?.personalWorkspaceId).toBe(personalWorkspaceId);
+    expect(stored?.createdByUserId).toBe(userId);
+    expect(stored?.companyId).toBe(personalWorkspaceId);
     expect(stored?.basisHash).toBe(preview.body.basisHash);
     expect(stored?.confirmationHash).toMatch(/^[a-f0-9]{64}$/);
     expect(Array.isArray(stored?.sourceSnapshot)).toBe(true);
@@ -939,6 +966,7 @@ describe('Financial planning analysis preparation', () => {
         usage: undefined
       },
       audit: {
+        createdByUserId: userId,
         inputHash: 'b'.repeat(64),
         contentHash: 'c'.repeat(64)
       },
@@ -1051,8 +1079,8 @@ describe('Financial planning analysis preparation', () => {
       const stored = await prisma.financialPlanningGuidanceRecord.findUniqueOrThrow({
         where: { id: generated.body.recordId }
       });
-      expect(stored.ownerUserId).toBe(userId);
-      expect(stored.personalWorkspaceId).toBe(personalWorkspaceId);
+      expect(stored.createdByUserId).toBe(userId);
+      expect(stored.companyId).toBe(personalWorkspaceId);
       expect(stored.providerResponseId).toBe('resp_financial_guidance_integration');
       expect(stored.evaluationMethodologyVersion).toBe(1);
       expect(stored.evaluationScore).toBe(100);
@@ -1171,7 +1199,7 @@ describe('Financial planning analysis preparation', () => {
     expect(
       await prisma.financialPlanningSnapshot.count({
         where: {
-          ownerUserId: userId,
+          createdByUserId: userId,
           confirmationHash: { not: null },
           targetMonthlySavings: 1250
         }
@@ -1249,24 +1277,111 @@ describe('Financial planning analysis preparation', () => {
     expect(missing.body.code).toBe('FINANCIAL_PLANNING_SNAPSHOT_NOT_FOUND');
   });
 
-  it('blocks the feature in a business workspace', async () => {
+  it('shares planning reads and history while reserving confirmations for managers', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const collaborator = await prisma.user.create({
+      data: {
+        email: `planning-collaborator-${suffix}@test.com`,
+        password: 'test-hash',
+        name: 'Planning Collaborator',
+        role: 'USER'
+      }
+    });
+    const cashApp = await prisma.ecosystemApp.findUniqueOrThrow({
+      where: { appKey: AppKey.ZENIT_CASH }
+    });
+    await prisma.userCompany.create({
+      data: {
+        userId: collaborator.id,
+        companyId: personalWorkspaceId,
+        role: 'USER',
+        isDefault: true
+      }
+    });
+    await prisma.userAppGrant.create({
+      data: {
+        userId: collaborator.id,
+        companyId: personalWorkspaceId,
+        appId: cashApp.id,
+        granted: true
+      }
+    });
+    const collaboratorToken = generateToken({ userId: collaborator.id });
     const headers = {
-      Authorization: `Bearer ${token}`,
-      'X-Company-Id': String(businessCompanyId),
+      Authorization: `Bearer ${collaboratorToken}`,
+      'X-Company-Id': String(personalWorkspaceId),
       [APP_KEY_HEADER]: APP_KEY_VALUE
     };
+
+    try {
+      const preview = await request(app)
+        .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+        .set(headers);
+      expect(preview.status).toBe(200);
+      expect(preview.body.workspace.id).toBe(personalWorkspaceId);
+
+      const history = await request(app)
+        .get('/api/financial/budgets/planning-analysis/snapshots?limit=1')
+        .set(headers);
+      expect(history.status).toBe(200);
+      expect(history.body.items.length).toBeGreaterThan(0);
+
+      const input = {
+        objectiveKind: 'MONTHLY_SAVINGS',
+        targetMonthlySavings: '1777.77',
+        historyMonths: 3,
+        selectedSourceKeys: preview.body.defaultSelectedSourceKeys,
+        basisHash: preview.body.basisHash
+      };
+      const forbidden = await request(app)
+        .post('/api/financial/budgets/planning-analysis/snapshots')
+        .set(headers)
+        .send(input);
+      expect(forbidden.status).toBe(403);
+      expect(forbidden.body.code).toBe('WORKSPACE_PLANNING_MANAGEMENT_FORBIDDEN');
+
+      await prisma.userCompany.update({
+        where: {
+          userId_companyId: {
+            userId: collaborator.id,
+            companyId: personalWorkspaceId
+          }
+        },
+        data: { role: 'SUPERUSER' }
+      });
+      const confirmed = await request(app)
+        .post('/api/financial/budgets/planning-analysis/snapshots')
+        .set(headers)
+        .send(input);
+      expect(confirmed.status).toBe(201);
+      expect(confirmed.body.createdByUserId).toBe(collaborator.id);
+    } finally {
+      await prisma.financialPlanningSnapshot.deleteMany({
+        where: { createdByUserId: collaborator.id }
+      });
+      await prisma.userAppGrant.deleteMany({ where: { userId: collaborator.id } });
+      await prisma.userCompany.deleteMany({ where: { userId: collaborator.id } });
+      await prisma.user.delete({ where: { id: collaborator.id } });
+    }
+  });
+
+  it('allows the feature in a non-personal workspace', async () => {
+    const headers = companyHeaders(businessCompanyId);
     const response = await request(app)
       .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
       .set(headers);
 
-    expect(response.status).toBe(403);
-    expect(response.body.code).toBe('PERSONAL_WORKSPACE_REQUIRED');
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      workspace: { id: businessCompanyId },
+      profile: { version: 1 }
+    });
 
     const history = await request(app)
       .get('/api/financial/budgets/planning-analysis/snapshots')
       .set(headers);
-    expect(history.status).toBe(403);
-    expect(history.body.code).toBe('PERSONAL_WORKSPACE_REQUIRED');
+    expect(history.status).toBe(200);
+    expect(history.body).toMatchObject({ items: [] });
   });
 
   it('requires a fresh profile for new analyses while preserving snapshot history access', async () => {

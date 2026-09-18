@@ -92,8 +92,8 @@ function compareCanonicalStrings(left: string, right: string): number {
 }
 
 function buildConfirmationHash(params: {
-  ownerUserId: number;
-  personalWorkspaceId: number;
+  createdByUserId: number;
+  companyId: number;
   basisHash: string;
   objectiveKind: FinancialPlanningObjectiveKind;
   targetMonthlySavings: string;
@@ -185,6 +185,7 @@ function serializeSnapshot(snapshot: any) {
   if (!snapshot) return null;
   return {
     id: snapshot.id,
+    createdByUserId: snapshot.createdByUserId ?? null,
     objectiveKind: snapshot.objectiveKind,
     targetMonthlySavings: moneyString(snapshot.targetMonthlySavings),
     historyMonths: snapshot.historyMonths,
@@ -210,6 +211,7 @@ function serializeSnapshotSummary(snapshot: any) {
     : [];
   return {
     id: snapshot.id,
+    createdByUserId: snapshot.createdByUserId ?? null,
     objectiveKind: snapshot.objectiveKind,
     targetMonthlySavings: moneyString(snapshot.targetMonthlySavings),
     historyMonths: snapshot.historyMonths,
@@ -228,19 +230,18 @@ function serializeSnapshotSummary(snapshot: any) {
 }
 
 export default class FinancialPlanningAnalysisService {
-  private static async ownedPersonalWorkspace(userId: number, companyId: number) {
+  private static async authorizedWorkspace(userId: number, companyId: number) {
     const workspace = await prisma.company.findFirst({
       where: {
         id: companyId,
-        isPersonalWorkspace: true,
-        personalWorkspaceOwnerId: userId
+        users: { some: { userId } }
       },
       select: { id: true, name: true }
     });
     if (!workspace) {
       throw new FinancialPlanningAnalysisError(
-        'O planejamento orientado está disponível apenas no seu workspace pessoal',
-        'PERSONAL_WORKSPACE_REQUIRED',
+        'O workspace financeiro não foi encontrado ou você não possui acesso a ele',
+        'FINANCIAL_WORKSPACE_REQUIRED',
         403
       );
     }
@@ -252,14 +253,14 @@ export default class FinancialPlanningAnalysisService {
     companyId: number,
     at?: Date
   ): Promise<AnalysisContext> {
-    const workspace = await this.ownedPersonalWorkspace(userId, companyId);
+    const workspace = await this.authorizedWorkspace(userId, companyId);
 
     const [profileResponse, calendar] = await Promise.all([
-      PersonalFinancialProfileService.get(userId),
+      PersonalFinancialProfileService.get(userId, companyId),
       WorkspaceFinancialCalendarService.getContext(workspace.id, at)
     ]);
     if (
-      profileResponse.personalWorkspace.id !== workspace.id ||
+      profileResponse.workspace.id !== workspace.id ||
       !profileResponse.profile ||
       profileResponse.state !== 'READY'
     ) {
@@ -414,7 +415,7 @@ export default class FinancialPlanningAnalysisService {
           orderBy: [{ date: 'asc' }, { id: 'asc' }]
         }),
         prisma.financialPlanningSnapshot.findFirst({
-          where: { ownerUserId: params.userId, personalWorkspaceId: workspace.id },
+          where: { companyId: workspace.id },
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
         })
       ]);
@@ -734,8 +735,7 @@ export default class FinancialPlanningAnalysisService {
       issues: dataQuality.issues.map(({ code, severity }) => ({ code, severity }))
     };
     const basisHash = hashCanonicalPayload({
-      ownerUserId: params.userId,
-      personalWorkspaceId: workspace.id,
+      companyId: workspace.id,
       profileVersion: profile.version,
       methodologyVersion: FINANCIAL_PLANNING_METHODOLOGY_VERSION,
       period,
@@ -780,16 +780,16 @@ export default class FinancialPlanningAnalysisService {
     cursor?: number;
     limit: number;
   }) {
-    const workspace = await this.ownedPersonalWorkspace(params.userId, params.companyId);
+    const workspace = await this.authorizedWorkspace(params.userId, params.companyId);
     const found = await prisma.financialPlanningSnapshot.findMany({
       where: {
-        ownerUserId: params.userId,
-        personalWorkspaceId: workspace.id,
+        companyId: workspace.id,
         status: FinancialPlanningSnapshotStatus.CONFIRMED,
         ...(params.cursor ? { id: { lt: params.cursor } } : {})
       },
       select: {
         id: true,
+        createdByUserId: true,
         objectiveKind: true,
         targetMonthlySavings: true,
         historyMonths: true,
@@ -817,12 +817,11 @@ export default class FinancialPlanningAnalysisService {
   }
 
   static async getSnapshot(params: { userId: number; companyId: number; snapshotId: number }) {
-    const workspace = await this.ownedPersonalWorkspace(params.userId, params.companyId);
+    const workspace = await this.authorizedWorkspace(params.userId, params.companyId);
     const snapshot = await prisma.financialPlanningSnapshot.findFirst({
       where: {
         id: params.snapshotId,
-        ownerUserId: params.userId,
-        personalWorkspaceId: workspace.id,
+        companyId: workspace.id,
         status: FinancialPlanningSnapshotStatus.CONFIRMED
       }
     });
@@ -986,8 +985,8 @@ export default class FinancialPlanningAnalysisService {
       selected: selected.has(source.key)
     }));
     const confirmationHash = buildConfirmationHash({
-      ownerUserId: params.userId,
-      personalWorkspaceId: prepared.workspace.id,
+      createdByUserId: params.userId,
+      companyId: prepared.workspace.id,
       basisHash: prepared.basisHash,
       objectiveKind: FinancialPlanningObjectiveKind.MONTHLY_SAVINGS,
       targetMonthlySavings: moneyString(target),
@@ -998,8 +997,8 @@ export default class FinancialPlanningAnalysisService {
     });
     if (existing) {
       if (
-        existing.ownerUserId !== params.userId ||
-        existing.personalWorkspaceId !== prepared.workspace.id
+        existing.createdByUserId !== params.userId ||
+        existing.companyId !== prepared.workspace.id
       ) {
         throw new FinancialPlanningAnalysisError(
           'Não foi possível confirmar a integridade do diagnóstico financeiro',
@@ -1013,8 +1012,8 @@ export default class FinancialPlanningAnalysisService {
     try {
       const snapshot = await prisma.financialPlanningSnapshot.create({
         data: {
-          ownerUserId: params.userId,
-          personalWorkspaceId: prepared.workspace.id,
+          createdByUserId: params.userId,
+          companyId: prepared.workspace.id,
           objectiveKind: FinancialPlanningObjectiveKind.MONTHLY_SAVINGS,
           targetMonthlySavings: target,
           historyMonths: params.historyMonths,
@@ -1046,8 +1045,8 @@ export default class FinancialPlanningAnalysisService {
           where: { confirmationHash }
         });
         if (
-          concurrentSnapshot?.ownerUserId === params.userId &&
-          concurrentSnapshot.personalWorkspaceId === prepared.workspace.id
+          concurrentSnapshot?.createdByUserId === params.userId &&
+          concurrentSnapshot.companyId === prepared.workspace.id
         ) {
           return { snapshot: serializeSnapshot(concurrentSnapshot), created: false };
         }

@@ -296,6 +296,7 @@ export default function PersonalFinancialProfilePage() {
 
   const presentation = statePresentation[response.state];
   const StateIcon = presentation.icon;
+  const canManage = response.access.canManage;
 
   return (
     <DashboardLayout title="Perfil de Planejamento Financeiro">
@@ -316,12 +317,12 @@ export default function PersonalFinancialProfilePage() {
               buttonLabel="Ajuda sobre o Perfil de Planejamento Financeiro"
             >
               <p>
-                Este perfil registra seu contexto e suas prioridades. Renda, compromissos e médias
-                continuam sendo calculados com os dados do Zenit.
+                Este perfil registra o contexto e as prioridades do workspace atual. Renda,
+                compromissos e médias continuam sendo calculados com os dados do Zenit.
               </p>
               <p>
-                O perfil é privado, pertence a você e utiliza somente categorias do seu workspace
-                pessoal. Ele não será aplicado a empresas ou MEIs.
+                O perfil é compartilhado com os usuários autorizados deste workspace. Somente
+                gestores podem alterá-lo; cada revisão registra quem realizou a mudança.
               </p>
             </InfoModalButton>
           </div>
@@ -353,11 +354,18 @@ export default function PersonalFinancialProfilePage() {
             </div>
             <div className="text-right text-sm text-gray-400">
               <p>Fonte dos dados</p>
-              <p className="font-medium text-white">{response.personalWorkspace.name}</p>
+              <p className="font-medium text-white">{response.workspace.name}</p>
             </div>
           </div>
         </Card>
 
+        {!canManage && (
+          <div className="rounded-lg border border-blue-900/70 bg-blue-950/20 px-4 py-3 text-sm text-blue-200">
+            Você pode consultar este perfil. Somente gestores do workspace podem alterá-lo.
+          </div>
+        )}
+
+        <fieldset disabled={!canManage} className="space-y-5">
         <Card headerTitle="Contexto do planejamento">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ChoiceGroup
@@ -540,13 +548,16 @@ export default function PersonalFinancialProfilePage() {
         <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-surface/95 p-4 shadow-xl backdrop-blur">
           <div className="flex items-center gap-2 text-sm text-gray-400">
             <ShieldCheck size={17} className="text-emerald-300" />
-            Perfil privado e exclusivo do seu workspace pessoal
+            Perfil compartilhado no workspace {response.workspace.name}
           </div>
-          <Button type="submit" variant="accent" disabled={saving} className="inline-flex items-center gap-2">
-            {saving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
-            {saving ? 'Salvando...' : 'Salvar perfil'}
-          </Button>
+          {canManage && (
+            <Button type="submit" variant="accent" disabled={saving} className="inline-flex items-center gap-2">
+              {saving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />}
+              {saving ? 'Salvando...' : 'Salvar perfil'}
+            </Button>
+          )}
         </div>
+        </fieldset>
       </form>
     </DashboardLayout>
   );

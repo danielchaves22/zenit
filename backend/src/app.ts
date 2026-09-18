@@ -204,11 +204,6 @@ app.use('/api', createRateLimitMiddleware('api'), integrationPublicRoutes);
 
 // 14) Middleware de autenticação
 app.use('/api', authMiddleware);
-app.use(
-  '/api/me',
-  createRateLimitMiddleware('api'),
-  personalFinancialProfileRoutes
-);
 app.use('/api/cash', createRateLimitMiddleware('api'), cashBootstrapRoutes);
 
 // 15) Middleware de tenant
@@ -216,6 +211,11 @@ app.use('/api', tenantMiddleware);
 
 // 15.1) Middleware de acesso por aplicacao (SSO + grants por app)
 app.use('/api', appAccessMiddleware);
+app.use(
+  '/api/me',
+  createRateLimitMiddleware('api'),
+  personalFinancialProfileRoutes
+);
 
 // 16) Rate limiting para APIs autenticadas
 app.use('/api/users', createRateLimitMiddleware('api'), userRoutes);

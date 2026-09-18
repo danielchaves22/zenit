@@ -71,8 +71,8 @@ describe('FinancialPlanningAnalysisService current calculation contract', () => 
 
   it('treats source selection order as irrelevant for confirmation idempotency', () => {
     const base = {
-      ownerUserId: 1,
-      personalWorkspaceId: 2,
+      createdByUserId: 1,
+      companyId: 2,
       basisHash: 'a'.repeat(64),
       objectiveKind: 'MONTHLY_SAVINGS' as const,
       targetMonthlySavings: '1000.00'

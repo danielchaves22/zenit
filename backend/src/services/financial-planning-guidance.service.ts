@@ -304,6 +304,7 @@ function serializeRecord(record: FinancialPlanningGuidanceRecord) {
         : undefined
     },
     audit: {
+      createdByUserId: record.createdByUserId ?? null,
       inputHash: record.inputHash,
       contentHash: record.contentHash
     },
@@ -338,7 +339,7 @@ function extractOutputText(parsed: any): string {
 
 function buildInstructions(): string {
   return [
-    'Voce explica um retrato financeiro pessoal usando exclusivamente o pacote estruturado recebido.',
+    'Voce explica um retrato financeiro usando exclusivamente o pacote estruturado recebido.',
     'Os calculos, severidades e cenarios ja foram determinados pelo Zenit e nao podem ser refeitos ou contestados.',
     'Nao introduza numeros, percentuais, datas, quantidades, metas ou valores monetarios no texto.',
     'Nao invente fatos, referencias, achados ou cenarios.',
@@ -408,8 +409,7 @@ export default class FinancialPlanningGuidanceService {
     const found = await prisma.financialPlanningGuidanceRecord.findMany({
       where: {
         snapshotId: params.snapshotId,
-        ownerUserId: params.userId,
-        personalWorkspaceId: params.companyId,
+        companyId: params.companyId,
         ...(params.cursor ? { id: { lt: params.cursor } } : {})
       },
       orderBy: { id: 'desc' },
@@ -605,8 +605,8 @@ export default class FinancialPlanningGuidanceService {
       const record = await prisma.financialPlanningGuidanceRecord.create({
         data: {
           snapshotId: params.snapshotId,
-          ownerUserId: params.userId,
-          personalWorkspaceId: params.companyId,
+          createdByUserId: params.userId,
+          companyId: params.companyId,
           provider: AiProvider.OPENAI,
           providerResponseId,
           model: selectedModel,

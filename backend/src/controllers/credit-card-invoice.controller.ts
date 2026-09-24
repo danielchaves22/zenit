@@ -149,6 +149,75 @@ export async function createCreditCardInvoiceCredit(req: Request, res: Response)
   }
 }
 
+export async function listCreditCardInstallmentAnticipationCandidates(req: Request, res: Response) {
+  try {
+    const { companyId, userId, role } = getUserContext(req);
+    const invoiceId = Number(req.params.id);
+    const invoice = await CreditCardInvoiceService.getInvoiceById(invoiceId, companyId, false);
+    if (!invoice) {
+      return res.status(404).json({ error: 'Fatura nao encontrada' });
+    }
+
+    const hasAccess = await UserFinancialAccountAccessService.checkUserAccountAccess(
+      userId,
+      invoice.accountId,
+      role,
+      companyId
+    );
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Acesso negado a esta fatura' });
+    }
+
+    const candidates = await CreditCardInvoiceService.listInstallmentAnticipationCandidates({
+      invoiceId,
+      companyId
+    });
+    return res.status(200).json(candidates);
+  } catch (error: any) {
+    logger.error('Erro ao listar parcelas disponiveis para antecipacao:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao listar parcelas disponiveis para antecipacao'
+    });
+  }
+}
+
+export async function anticipateCreditCardInstallments(req: Request, res: Response) {
+  try {
+    const { companyId, userId, role } = getUserContext(req);
+    const invoiceId = Number(req.params.id);
+    const invoice = await CreditCardInvoiceService.getInvoiceById(invoiceId, companyId, false);
+    if (!invoice) {
+      return res.status(404).json({ error: 'Fatura nao encontrada' });
+    }
+
+    const hasAccess = await UserFinancialAccountAccessService.checkUserAccountAccess(
+      userId,
+      invoice.accountId,
+      role,
+      companyId
+    );
+    if (!hasAccess) {
+      return res.status(403).json({ error: 'Acesso negado a esta fatura' });
+    }
+
+    const result = await CreditCardInvoiceService.anticipateInstallments({
+      invoiceId,
+      transactionIds: req.body.transactionIds,
+      anticipatedAt: req.body.anticipatedAt,
+      discountAmount: req.body.discountAmount,
+      notes: req.body.notes,
+      companyId,
+      userId
+    });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    logger.error('Erro ao antecipar parcelas do cartao:', error);
+    return res.status(400).json({
+      error: error.message || 'Erro ao antecipar parcelas do cartao'
+    });
+  }
+}
+
 export async function getProjectedCreditCardInvoice(req: Request, res: Response) {
   try {
     const { companyId } = getUserContext(req);
@@ -233,7 +302,7 @@ export async function payCreditCardInvoice(req: Request, res: Response) {
   try {
     const { companyId, userId, role } = getUserContext(req);
     const invoiceId = Number(req.params.id);
-    const { fromAccountId, paymentDate, notes } = req.body;
+    const { fromAccountId, amount, paymentDate, notes } = req.body;
 
     const preview = await CreditCardInvoiceService.getInvoiceById(invoiceId, companyId);
     if (!preview) {
@@ -262,6 +331,7 @@ export async function payCreditCardInvoice(req: Request, res: Response) {
     const paidInvoice = await CreditCardInvoiceService.payInvoice({
       invoiceId,
       fromAccountId,
+      amount,
       paymentDate,
       notes,
       companyId,
@@ -287,7 +357,11 @@ export async function reopenCreditCardInvoice(req: Request, res: Response) {
       return res.status(404).json({ error: 'Fatura nÃ£o encontrada' });
     }
 
-    const paymentSourceAccountId = preview.paymentTransaction?.fromAccount?.id;
+    const paymentSourceAccountIds = Array.from(new Set(
+      (preview.payments || [])
+        .map((payment) => payment.transaction.fromAccount?.id)
+        .filter((accountId): accountId is number => typeof accountId === 'number')
+    ));
     const accessChecks = [
       UserFinancialAccountAccessService.checkUserAccountAccess(
         userId,
@@ -297,7 +371,7 @@ export async function reopenCreditCardInvoice(req: Request, res: Response) {
       )
     ];
 
-    if (paymentSourceAccountId) {
+    for (const paymentSourceAccountId of paymentSourceAccountIds) {
       accessChecks.push(
         UserFinancialAccountAccessService.checkUserAccountAccess(
           userId,

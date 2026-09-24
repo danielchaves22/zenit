@@ -1318,38 +1318,12 @@ export default class FinancialTransactionService {
 
   private static isCreditCardInvoicePaid(invoice?: {
     status: CreditCardInvoiceStatus;
-    settlementType?: CreditCardInvoiceSettlementType | null;
-    paymentTransaction?: {
-      status: TransactionStatus;
-      effectiveDate?: Date | null;
-      date?: Date | null;
-    } | null;
   } | null): boolean {
     if (!invoice) {
       return false;
     }
 
-    return (
-      invoice.status === CreditCardInvoiceStatus.PAID ||
-      invoice.paymentTransaction?.status === TransactionStatus.COMPLETED ||
-      invoice.settlementType !== null
-    );
-  }
-
-  private static resolveCreditCardTransferSettledAt(invoice: {
-    dueDate: Date;
-    settledAt?: Date | null;
-    paymentTransaction?: {
-      effectiveDate?: Date | null;
-      date?: Date | null;
-    } | null;
-  }): Date {
-    return (
-      invoice.paymentTransaction?.effectiveDate ||
-      invoice.paymentTransaction?.date ||
-      invoice.settledAt ||
-      invoice.dueDate
-    );
+    return invoice.status === CreditCardInvoiceStatus.PAID;
   }
 
   private static async ensureCreditCardInvoiceTx(
@@ -1390,19 +1364,8 @@ export default class FinancialTransactionService {
       (!existingInvoice && allowExternalSettlement);
 
     if (existingInvoice) {
-      const hasCompletedPayment =
-        existingInvoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
-      const settlementType = hasCompletedPayment
-        ? CreditCardInvoiceSettlementType.TRANSFER
-        : existingInvoice.settlementType === CreditCardInvoiceSettlementType.EXTERNAL ||
-            existingInvoice.status === CreditCardInvoiceStatus.PAID
-          ? CreditCardInvoiceSettlementType.EXTERNAL
-          : null;
-      const settledAt = hasCompletedPayment
-        ? this.resolveCreditCardTransferSettledAt(existingInvoice)
-        : settlementType === CreditCardInvoiceSettlementType.EXTERNAL
-          ? existingInvoice.settledAt || reference.dueDate
-          : null;
+      const settlementType = invoiceIsPaid ? existingInvoice.settlementType : null;
+      const settledAt = invoiceIsPaid ? existingInvoice.settledAt || reference.dueDate : null;
       const updated = await tx.creditCardInvoice.update({
         where: { id: existingInvoice.id },
         data: {
@@ -1448,12 +1411,13 @@ export default class FinancialTransactionService {
     const invoice = await tx.creditCardInvoice.findUnique({
       where: { id: invoiceId },
       include: {
-        paymentTransaction: {
+        payments: {
           select: {
-            id: true,
-            status: true,
-            effectiveDate: true,
-            date: true
+            transactionId: true,
+            paymentDate: true,
+            transaction: {
+              select: { status: true }
+            }
           }
         }
       }
@@ -1465,36 +1429,39 @@ export default class FinancialTransactionService {
 
     const totals = await calculateCreditCardInvoiceTotals(tx, invoiceId);
     const totalAmount = totals.totalAmount;
-    const hasCompletedPayment = invoice.paymentTransaction?.status === TransactionStatus.COMPLETED;
-    const paymentTransactionId = hasCompletedPayment ? invoice.paymentTransactionId : null;
+    const completedPayments = invoice.payments
+      .filter((payment) => payment.transaction.status === TransactionStatus.COMPLETED)
+      .sort((left, right) => right.paymentDate.getTime() - left.paymentDate.getTime());
+    const latestPayment = completedPayments[0] ?? null;
     const hasExternalSettlements = totals.externalSettlementCount > 0;
 
-    if (totals.transactionCount === 0 && !paymentTransactionId && !hasExternalSettlements) {
+    if (totals.transactionCount === 0 && totals.paymentAmount.eq(0) && !hasExternalSettlements) {
       await tx.creditCardInvoice.delete({
         where: { id: invoiceId }
       });
       return;
     }
 
-    const settlementType = hasCompletedPayment
-      ? CreditCardInvoiceSettlementType.TRANSFER
-      : hasExternalSettlements
-        ? CreditCardInvoiceSettlementType.EXTERNAL
-        : null;
-    const settledAt = hasCompletedPayment
-      ? this.resolveCreditCardTransferSettledAt(invoice)
-      : settlementType === CreditCardInvoiceSettlementType.EXTERNAL
-        ? invoice.settledAt || invoice.dueDate
-        : null;
+    const lifecycleStatus = resolveCreditCardInvoiceStatus(invoice.closingDate, false);
+    const isSettled =
+      lifecycleStatus === CreditCardInvoiceStatus.CLOSED &&
+      totals.outstandingAmount.lte(0) &&
+      (completedPayments.length > 0 || hasExternalSettlements);
+    const settlementType = isSettled
+      ? completedPayments.length > 0
+        ? CreditCardInvoiceSettlementType.TRANSFER
+        : CreditCardInvoiceSettlementType.EXTERNAL
+      : null;
+    const settledAt = isSettled
+      ? latestPayment?.paymentDate || invoice.settledAt || invoice.dueDate
+      : null;
 
     await tx.creditCardInvoice.update({
       where: { id: invoiceId },
       data: {
         totalAmount,
-        paymentTransactionId,
-        status: settlementType
-          ? CreditCardInvoiceStatus.PAID
-          : resolveCreditCardInvoiceStatus(invoice.closingDate, false),
+        paymentTransactionId: latestPayment?.transactionId ?? null,
+        status: isSettled ? CreditCardInvoiceStatus.PAID : lifecycleStatus,
         settlementType,
         settledAt
       }
@@ -1518,16 +1485,25 @@ export default class FinancialTransactionService {
     tx: Prisma.TransactionClient,
     transactionId: number
   ): Promise<void> {
-    const invoices = await tx.creditCardInvoice.findMany({
-      where: {
-        paymentTransactionId: transactionId
-      },
-      select: {
-        id: true
-      }
-    });
+    const [legacyInvoices, paymentEntries] = await Promise.all([
+      tx.creditCardInvoice.findMany({
+        where: {
+          paymentTransactionId: transactionId
+        },
+        select: {
+          id: true
+        }
+      }),
+      tx.creditCardInvoicePayment.findMany({
+        where: { transactionId },
+        select: { invoiceId: true }
+      })
+    ]);
 
-    await this.syncCreditCardInvoicesTx(tx, invoices.map((invoice) => invoice.id));
+    await this.syncCreditCardInvoicesTx(tx, [
+      ...legacyInvoices.map((invoice) => invoice.id),
+      ...paymentEntries.map((payment) => payment.invoiceId)
+    ]);
   }
 
   private static async getGroupedPurchaseTransactionsTx(
@@ -1956,14 +1932,24 @@ export default class FinancialTransactionService {
       await this.verifyBalanceIntegrity(tx, sortedAccountIds);
     }
 
-    const paymentLinkedInvoiceIds = await tx.creditCardInvoice.findMany({
-      where: {
-        paymentTransactionId: originalTxn.id
-      },
-      select: {
-        id: true
-      }
-    });
+    const [legacyPaymentLinkedInvoices, paymentEntries] = await Promise.all([
+      tx.creditCardInvoice.findMany({
+        where: {
+          paymentTransactionId: originalTxn.id
+        },
+        select: {
+          id: true
+        }
+      }),
+      tx.creditCardInvoicePayment.findMany({
+        where: { transactionId: originalTxn.id },
+        select: { invoiceId: true }
+      })
+    ]);
+    const paymentLinkedInvoiceIds = Array.from(new Set([
+      ...legacyPaymentLinkedInvoices.map((invoice) => invoice.id),
+      ...paymentEntries.map((payment) => payment.invoiceId)
+    ]));
 
     await tx.$executeRaw`
       DELETE FROM "_FinancialTagToFinancialTransaction" WHERE "B" = ${originalTxn.id}
@@ -1990,7 +1976,7 @@ export default class FinancialTransactionService {
     await this.syncCreditCardInvoicesTx(tx, [originalTxn.creditCardInvoiceId]);
     await this.syncCreditCardInvoicesTx(
       tx,
-      paymentLinkedInvoiceIds.map((invoice) => invoice.id)
+      paymentLinkedInvoiceIds
     );
   }
 
@@ -2034,6 +2020,21 @@ export default class FinancialTransactionService {
       const originalTxn = original[0];
       if (originalTxn.archivedAt) {
         throw new Error('Transacoes arquivadas precisam ser desarquivadas antes de editar');
+      }
+      const [invoicePayment, legacyPaidInvoice] = await Promise.all([
+        tx.creditCardInvoicePayment.findUnique({
+          where: { transactionId: id },
+          select: { id: true }
+        }),
+        tx.creditCardInvoice.findFirst({
+          where: { paymentTransactionId: id },
+          select: { id: true }
+        })
+      ]);
+      if (invoicePayment || legacyPaidInvoice) {
+        throw new Error(
+          'Pagamentos de fatura nao podem ser editados como transacoes comuns. Exclua o pagamento e registre-o novamente.'
+        );
       }
       const purchaseScope: PurchaseScope =
         data.purchaseScope ??
@@ -2392,6 +2393,18 @@ export default class FinancialTransactionService {
           referenceMonth: true
         }
       },
+      creditCardInvoicePayment: {
+        select: {
+          invoice: {
+            select: {
+              id: true,
+              accountId: true,
+              referenceYear: true,
+              referenceMonth: true
+            }
+          }
+        }
+      },
       tags: { select: { id: true, name: true } },
       createdByUser: { select: { id: true, name: true } }
     };
@@ -2406,12 +2419,25 @@ export default class FinancialTransactionService {
           referenceYear: true,
           referenceMonth: true
         }
+      },
+      creditCardInvoicePayment: {
+        select: {
+          invoice: {
+            select: {
+              id: true,
+              accountId: true,
+              referenceYear: true,
+              referenceMonth: true
+            }
+          }
+        }
       }
     };
   }
 
   private static decorateMaterializedTransactionForList(transaction: any) {
-    const { paidInvoice, ...baseTransaction } = transaction;
+    const { paidInvoice, creditCardInvoicePayment, ...baseTransaction } = transaction;
+    const paymentInvoice = creditCardInvoicePayment?.invoice || paidInvoice;
 
     return {
       ...baseTransaction,
@@ -2420,13 +2446,13 @@ export default class FinancialTransactionService {
       isFixed: !!transaction.recurringTransactionId,
       fixedTemplateId: transaction.recurringTransactionId ?? null,
       virtualKey: undefined,
-      isCreditCardInvoicePayment: Boolean(paidInvoice),
-      invoiceNavigation: paidInvoice
+      isCreditCardInvoicePayment: Boolean(paymentInvoice),
+      invoiceNavigation: paymentInvoice
         ? this.buildCreditCardInvoiceNavigation({
-            accountId: paidInvoice.accountId,
-            realInvoiceId: paidInvoice.id,
-            referenceYear: paidInvoice.referenceYear,
-            referenceMonth: paidInvoice.referenceMonth
+            accountId: paymentInvoice.accountId,
+            realInvoiceId: paymentInvoice.id,
+            referenceYear: paymentInvoice.referenceYear,
+            referenceMonth: paymentInvoice.referenceMonth
           })
         : undefined
     };

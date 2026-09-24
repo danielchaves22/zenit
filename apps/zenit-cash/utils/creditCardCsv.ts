@@ -29,7 +29,7 @@ interface CreditCardInvoiceCsvTransaction {
   isProjected?: boolean;
   isFixedProjection?: boolean;
   fixedTemplateId?: number | null;
-  creditCardCreditKind?: 'REFUND' | 'CASHBACK' | 'ADJUSTMENT' | null;
+  creditCardCreditKind?: 'REFUND' | 'CASHBACK' | 'ADJUSTMENT' | 'ANTICIPATION_DISCOUNT' | null;
   category?: {
     name: string;
   } | null;
@@ -215,6 +215,10 @@ function buildInvoiceTransactionTypeLabel(transaction: CreditCardInvoiceCsvTrans
 
   if (transaction.creditCardCreditKind === 'ADJUSTMENT') {
     return 'Ajuste de credito';
+  }
+
+  if (transaction.creditCardCreditKind === 'ANTICIPATION_DISCOUNT') {
+    return 'Desconto de antecipacao';
   }
 
   if (transaction.isFixedProjection) {

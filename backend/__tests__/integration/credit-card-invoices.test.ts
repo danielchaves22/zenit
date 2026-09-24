@@ -606,8 +606,11 @@ describe('Credit card invoices', () => {
       });
 
     expect(paymentResponse.status).toBe(200);
-    expect(paymentResponse.body.status).toBe('PAID');
+    expect(paymentResponse.body.status).toBe('OPEN');
     expect(paymentResponse.body.paymentTransaction).toBeTruthy();
+    expect(paymentResponse.body.payments).toHaveLength(1);
+    expect(Number(paymentResponse.body.paymentAmount)).toBe(100);
+    expect(Number(paymentResponse.body.outstandingAmount)).toBe(0);
 
     const paidInvoiceId = paymentResponse.body.paymentTransaction.id;
 
@@ -648,6 +651,7 @@ describe('Credit card invoices', () => {
     expect(reopenedInvoice.status).toBe(200);
     expect(reopenedInvoice.body.status).toBe('OPEN');
     expect(reopenedInvoice.body.paymentTransaction).toBeNull();
+    expect(reopenedInvoice.body.payments).toHaveLength(0);
 
     const payerAccountAfterDelete = await prisma.financialAccount.findUnique({
       where: { id: payerAccountId }
@@ -658,6 +662,181 @@ describe('Credit card invoices', () => {
 
     expect(Number(payerAccountAfterDelete?.balance)).toBe(5000);
     expect(Number(cardAccountAfterDelete?.balance)).toBe(-350);
+  });
+
+  it('keeps an open invoice open across multiple payments and recalculates the remaining balance', async () => {
+    const card = await createCreditCardAccount();
+    const purchaseDate = new Date('2099-05-05T12:00:00.000Z');
+
+    const firstPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra antes do pagamento antecipado',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+    expect(firstPurchase.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+    const invoice = invoicesResponse.body.find(
+      (item: any) => item.referenceYear === 2099 && item.referenceMonth === 5
+    );
+    expect(invoice).toBeTruthy();
+
+    const firstPayment = await request(app)
+      .post(`/api/financial/credit-card-invoices/${invoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        amount: 40,
+        paymentDate: '2099-05-08T12:00:00.000Z'
+      });
+    expect(firstPayment.status).toBe(200);
+    expect(firstPayment.body.status).toBe('OPEN');
+    expect(Number(firstPayment.body.paymentAmount)).toBe(40);
+    expect(Number(firstPayment.body.outstandingAmount)).toBe(60);
+
+    const secondPayment = await request(app)
+      .post(`/api/financial/credit-card-invoices/${invoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        amount: 60,
+        paymentDate: '2099-05-09T12:00:00.000Z'
+      });
+    expect(secondPayment.status).toBe(200);
+    expect(secondPayment.body.status).toBe('OPEN');
+    expect(secondPayment.body.payments).toHaveLength(2);
+    expect(Number(secondPayment.body.paymentAmount)).toBe(100);
+    expect(Number(secondPayment.body.outstandingAmount)).toBe(0);
+
+    const genericPaymentEdit = await request(app)
+      .put(`/api/financial/transactions/${secondPayment.body.payments[0].transactionId}`)
+      .set(authHeaders())
+      .send({ amount: 10 });
+    expect(genericPaymentEdit.status).toBe(400);
+    expect(genericPaymentEdit.body.error).toMatch(/pagamentos de fatura nao podem ser editados/i);
+
+    const laterPurchase = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Compra depois do pagamento antecipado',
+        amount: 25,
+        date: '2099-05-06T12:00:00.000Z',
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId
+      });
+    expect(laterPurchase.status).toBe(201);
+
+    const detail = await request(app)
+      .get(`/api/financial/credit-card-invoices/${invoice.id}`)
+      .set(authHeaders());
+    expect(detail.status).toBe(200);
+    expect(detail.body.status).toBe('OPEN');
+    expect(Number(detail.body.totalAmount)).toBe(125);
+    expect(Number(detail.body.paymentAmount)).toBe(100);
+    expect(Number(detail.body.outstandingAmount)).toBe(25);
+  });
+
+  it('moves future installments into the open invoice with an auditable anticipation discount', async () => {
+    const now = new Date();
+    const purchaseDate = new Date(now.getFullYear(), now.getMonth() + 1, 5, 12, 0, 0, 0);
+    const card = await createCreditCardAccount({
+      creditLimit: 3000,
+      statementClosingDay: 10,
+      statementDueDay: 15
+    });
+    const targetReference = resolveCreditCardInvoiceReference(purchaseDate, 10, 15);
+
+    const purchaseResponse = await request(app)
+      .post('/api/financial/transactions')
+      .set(authHeaders())
+      .send({
+        description: 'Notebook com antecipacao',
+        amount: 100,
+        date: purchaseDate.toISOString(),
+        type: 'EXPENSE',
+        status: 'COMPLETED',
+        fromAccountId: card.id,
+        categoryId: expenseCategoryId,
+        installmentCount: 3
+      });
+    expect(purchaseResponse.status).toBe(201);
+
+    const invoicesResponse = await request(app)
+      .get(`/api/financial/credit-cards/${card.id}/invoices`)
+      .set(authHeaders());
+    const targetInvoice = invoicesResponse.body.find(
+      (item: any) =>
+        item.referenceYear === targetReference.referenceYear &&
+        item.referenceMonth === targetReference.referenceMonth
+    );
+    expect(targetInvoice?.status).toBe('OPEN');
+
+    const candidatesResponse = await request(app)
+      .get(`/api/financial/credit-card-invoices/${targetInvoice.id}/anticipation-candidates`)
+      .set(authHeaders());
+    expect(candidatesResponse.status).toBe(200);
+    expect(candidatesResponse.body).toHaveLength(2);
+    expect(candidatesResponse.body.map((item: any) => item.installmentNumber)).toEqual([2, 3]);
+
+    const anticipationResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${targetInvoice.id}/anticipations`)
+      .set(authHeaders())
+      .send({
+        transactionIds: candidatesResponse.body.map((item: any) => item.id),
+        anticipatedAt: new Date().toISOString(),
+        discountAmount: 15,
+        notes: 'Antecipacao solicitada no banco'
+      });
+    expect(anticipationResponse.status).toBe(200);
+    expect(anticipationResponse.body.anticipatedCount).toBe(2);
+    expect(Number(anticipationResponse.body.anticipatedTotal)).toBe(200);
+    expect(Number(anticipationResponse.body.discountAmount)).toBe(15);
+
+    const detail = anticipationResponse.body.invoice;
+    expect(detail.status).toBe('OPEN');
+    expect(Number(detail.chargeAmount)).toBe(300);
+    expect(Number(detail.creditAmount)).toBe(15);
+    expect(Number(detail.outstandingAmount)).toBe(285);
+    expect(
+      detail.transactions.filter((item: any) => item.creditCardAnticipationItem)
+    ).toHaveLength(2);
+    expect(
+      detail.transactions.find(
+        (item: any) => item.creditCardCreditKind === CreditCardCreditKind.ANTICIPATION_DISCOUNT
+      )
+    ).toBeTruthy();
+
+    const anticipationItems = await prisma.creditCardInstallmentAnticipationItem.findMany({
+      where: {
+        transactionId: { in: candidatesResponse.body.map((item: any) => item.id) }
+      }
+    });
+    expect(anticipationItems).toHaveLength(2);
+    expect(anticipationItems.every((item) => item.originalReferenceMonth !== targetReference.referenceMonth)).toBe(true);
+
+    const paymentResponse = await request(app)
+      .post(`/api/financial/credit-card-invoices/${targetInvoice.id}/pay`)
+      .set(authHeaders())
+      .send({
+        fromAccountId: payerAccountId,
+        amount: 285,
+        paymentDate: new Date().toISOString()
+      });
+    expect(paymentResponse.status).toBe(200);
+    expect(paymentResponse.body.status).toBe('OPEN');
+    expect(Number(paymentResponse.body.outstandingAmount)).toBe(0);
   });
 
   it('can omit paid invoices from the card invoice list', async () => {
@@ -706,6 +885,15 @@ describe('Credit card invoices', () => {
 
     expect(mayInvoice).toBeTruthy();
     expect(juneInvoice).toBeTruthy();
+
+    await prisma.creditCardInvoice.update({
+      where: { id: mayInvoice.id },
+      data: {
+        closingDate: new Date('2026-01-10T12:00:00.000Z'),
+        dueDate: new Date('2026-01-15T12:00:00.000Z'),
+        status: 'CLOSED'
+      }
+    });
 
     const paymentResponse = await request(app)
       .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
@@ -853,6 +1041,15 @@ describe('Credit card invoices', () => {
     const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
     expect(mayInvoice).toBeTruthy();
 
+    await prisma.creditCardInvoice.update({
+      where: { id: mayInvoice.id },
+      data: {
+        closingDate: new Date('2026-01-10T12:00:00.000Z'),
+        dueDate: new Date('2026-01-15T12:00:00.000Z'),
+        status: 'CLOSED'
+      }
+    });
+
     const paymentResponse = await request(app)
       .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
       .set(authHeaders())
@@ -870,7 +1067,7 @@ describe('Credit card invoices', () => {
       .set(authHeaders());
 
     expect(reopenResponse.status).toBe(200);
-    expect(reopenResponse.body.status).toBe('OPEN');
+    expect(reopenResponse.body.status).toBe('CLOSED');
     expect(reopenResponse.body.paymentTransaction).toBeNull();
     expect(reopenResponse.body.settlementType).toBeNull();
     expect(reopenResponse.body.settledAt).toBeNull();
@@ -983,6 +1180,15 @@ describe('Credit card invoices', () => {
     const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
     expect(mayInvoice).toBeTruthy();
 
+    await prisma.creditCardInvoice.update({
+      where: { id: mayInvoice.id },
+      data: {
+        closingDate: new Date('2026-01-10T12:00:00.000Z'),
+        dueDate: new Date('2026-01-15T12:00:00.000Z'),
+        status: 'CLOSED'
+      }
+    });
+
     const paymentResponse = await request(app)
       .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
       .set(authHeaders())
@@ -1039,6 +1245,15 @@ describe('Credit card invoices', () => {
     const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
     expect(mayInvoice).toBeTruthy();
 
+    await prisma.creditCardInvoice.update({
+      where: { id: mayInvoice.id },
+      data: {
+        closingDate: new Date('2026-01-10T12:00:00.000Z'),
+        dueDate: new Date('2026-01-15T12:00:00.000Z'),
+        status: 'CLOSED'
+      }
+    });
+
     const paymentResponse = await request(app)
       .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
       .set(authHeaders())
@@ -1065,6 +1280,14 @@ describe('Credit card invoices', () => {
 
     expect(Array.isArray(retroactivePurchase)).toBe(false);
     expect((retroactivePurchase as any).isExternalCreditCardSettlement).toBe(true);
+
+    await prisma.creditCardInvoice.update({
+      where: { id: mayInvoice.id },
+      data: {
+        closingDate: new Date('2026-01-10T12:00:00.000Z'),
+        dueDate: new Date('2026-01-15T12:00:00.000Z')
+      }
+    });
 
     const reopenResponse = await request(app)
       .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/reopen`)
@@ -1102,6 +1325,15 @@ describe('Credit card invoices', () => {
     const mayInvoice = invoicesResponse.body.find((invoice: any) => invoice.referenceMonth === 5);
     expect(mayInvoice).toBeTruthy();
 
+    await prisma.creditCardInvoice.update({
+      where: { id: mayInvoice.id },
+      data: {
+        closingDate: new Date('2026-01-10T12:00:00.000Z'),
+        dueDate: new Date('2026-01-15T12:00:00.000Z'),
+        status: 'CLOSED'
+      }
+    });
+
     const paymentResponse = await request(app)
       .post(`/api/financial/credit-card-invoices/${mayInvoice.id}/pay`)
       .set(authHeaders())
@@ -1128,6 +1360,14 @@ describe('Credit card invoices', () => {
     const externalPurchaseId = (externalPurchase as any).id;
 
     expect((externalPurchase as any).isExternalCreditCardSettlement).toBe(true);
+
+    await prisma.creditCardInvoice.update({
+      where: { id: mayInvoice.id },
+      data: {
+        closingDate: new Date('2026-01-10T12:00:00.000Z'),
+        dueDate: new Date('2026-01-15T12:00:00.000Z')
+      }
+    });
 
     const deleteResponse = await request(app)
       .delete(`/api/financial/transactions/${externalPurchaseId}`)
@@ -2332,9 +2572,10 @@ describe('Credit card invoices', () => {
       .send({
         fromAccountId: payerAccountId,
         paymentDate: new Date().toISOString()
-      });
+    });
     expect(paymentResponse.status).toBe(200);
-    expect(paymentResponse.body.status).toBe('PAID');
+    expect(paymentResponse.body.status).toBe('OPEN');
+    expect(Number(paymentResponse.body.outstandingAmount)).toBeCloseTo(0, 5);
     expect(Number(paymentResponse.body.paymentTransaction.amount)).toBeCloseTo(42.75, 5);
   });
 

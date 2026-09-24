@@ -7,12 +7,14 @@ import {
   CreditCard,
   Download,
   Edit2,
+  FastForward,
   RefreshCw,
   Maximize,
   Minimize,
   Plus,
   Receipt,
-  Scale
+  Scale,
+  Trash2
 } from 'lucide-react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import {
@@ -24,6 +26,7 @@ import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
+import { CurrencyInput } from '@/components/ui/CurrencyInput';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { useToast } from '@/components/ui/ToastContext';
@@ -66,6 +69,14 @@ interface PaymentTransaction {
   } | null;
 }
 
+interface InvoicePayment {
+  id: number;
+  transactionId: number;
+  amount: string;
+  paymentDate: string;
+  transaction: PaymentTransaction;
+}
+
 interface CreditCardInvoiceListItem {
   id: number | null;
   referenceYear: number;
@@ -89,6 +100,10 @@ interface CreditCardInvoiceListItem {
   externalSettledAmount?: string;
   hasExternalSettlements?: boolean;
   paymentTransaction?: PaymentTransaction | null;
+  payments?: InvoicePayment[];
+  paymentAmount?: string;
+  outstandingAmount?: string;
+  hasPayments?: boolean;
 }
 
 interface CreditCardAccount {
@@ -117,12 +132,21 @@ interface InvoiceTransactionItem {
   isFixedProjection?: boolean;
   fixedTemplateId?: number | null;
   type?: 'INCOME' | 'EXPENSE' | 'TRANSFER';
-  creditCardCreditKind?: 'REFUND' | 'CASHBACK' | 'ADJUSTMENT' | null;
+  creditCardCreditKind?: 'REFUND' | 'CASHBACK' | 'ADJUSTMENT' | 'ANTICIPATION_DISCOUNT' | null;
   refundedAmount?: string;
   refundStatus?: 'REFUNDED' | 'PARTIALLY_REFUNDED' | null;
   refundOfTransaction?: {
     id: number;
     description: string;
+  } | null;
+  creditCardAnticipationItem?: {
+    originalReferenceYear: number;
+    originalReferenceMonth: number;
+    anticipation: {
+      id: number;
+      anticipatedAt: string;
+      discountAmount: string;
+    };
   } | null;
   category?: {
     id: number;
@@ -206,6 +230,27 @@ interface FinancialAccount {
   name: string;
   type: string;
   isActive: boolean;
+}
+
+interface AnticipationCandidate {
+  id: number;
+  description: string;
+  amount: string;
+  installmentNumber?: number | null;
+  totalInstallments?: number | null;
+  purchaseGroupId: string;
+  scheduledDate?: string | null;
+  category?: {
+    id: number;
+    name: string;
+    color: string;
+  } | null;
+  creditCardInvoice: {
+    id: number;
+    referenceYear: number;
+    referenceMonth: number;
+    dueDate: string;
+  };
 }
 
 function formatCurrency(value: string | number) {
@@ -332,6 +377,16 @@ function InvoicesPageInner() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [creditSubmitting, setCreditSubmitting] = useState(false);
+  const [isAnticipationModalOpen, setIsAnticipationModalOpen] = useState(false);
+  const [anticipationCandidates, setAnticipationCandidates] = useState<AnticipationCandidate[]>([]);
+  const [selectedAnticipationIds, setSelectedAnticipationIds] = useState<number[]>([]);
+  const [anticipationLoading, setAnticipationLoading] = useState(false);
+  const [anticipationSubmitting, setAnticipationSubmitting] = useState(false);
+  const [anticipationData, setAnticipationData] = useState({
+    anticipatedAt: getTodayDateValue(),
+    discountAmount: '0',
+    notes: ''
+  });
   const [isFixedMaterializationModalOpen, setIsFixedMaterializationModalOpen] = useState(false);
   const [fixedMaterializationLoading, setFixedMaterializationLoading] = useState(false);
   const [fixedMaterializationSubmitting, setFixedMaterializationSubmitting] = useState(false);
@@ -344,6 +399,7 @@ function InvoicesPageInner() {
   const internalInvoiceSelectionRef = useRef<string | null>(null);
   const [paymentData, setPaymentData] = useState({
     fromAccountId: '',
+    amount: '0',
     paymentDate: getTodayDateValue(),
     notes: ''
   });
@@ -359,15 +415,37 @@ function InvoicesPageInner() {
     return Math.min(100, Math.max(0, (usedLimit / creditLimitValue) * 100));
   }, [card?.creditLimit, creditLimitValue, usedLimit]);
   const invoiceSettlementLabel = invoiceDetail ? getInvoiceSettlementLabel(invoiceDetail.settlementType) : null;
+  const visibleInvoicePayments = useMemo<InvoicePayment[]>(() => {
+    if (invoiceDetail?.payments?.length) {
+      return invoiceDetail.payments;
+    }
+    if (!invoiceDetail?.paymentTransaction) {
+      return [];
+    }
+    const transaction = invoiceDetail.paymentTransaction;
+    return [{
+      id: transaction.id,
+      transactionId: transaction.id,
+      amount: transaction.amount,
+      paymentDate: transaction.effectiveDate || transaction.date || invoiceDetail.settledAt || '',
+      transaction
+    }];
+  }, [invoiceDetail]);
   const invoiceHasExternalSettlements = Boolean(
     invoiceDetail?.hasExternalSettlements && Number(invoiceDetail.externalSettledAmount || 0) > 0
   );
   const canPaySelectedInvoice = Boolean(
     invoiceDetail &&
     !invoiceDetail.isProjected &&
-    !invoiceDetail.hasProjectedTransactions &&
-    !invoiceDetail.paymentTransaction &&
-    invoiceDetail.status !== 'PAID'
+    !(invoiceDetail.status === 'CLOSED' && invoiceDetail.hasProjectedTransactions) &&
+    invoiceDetail.status !== 'PAID' &&
+    Number(invoiceDetail.outstandingAmount ?? invoiceDetail.totalAmount ?? 0) > 0
+  );
+  const canAnticipateSelectedInvoice = Boolean(
+    invoiceDetail &&
+    invoiceDetail.id &&
+    !invoiceDetail.isProjected &&
+    invoiceDetail.status === 'OPEN'
   );
   const canAddCreditToSelectedInvoice = Boolean(
     invoiceDetail &&
@@ -381,10 +459,16 @@ function InvoicesPageInner() {
     invoiceDetail.status === 'PAID' &&
     invoiceDetail.settlementType === 'TRANSFER' &&
     !invoiceHasExternalSettlements &&
-    invoiceDetail.paymentTransaction?.id
+    (invoiceDetail.payments?.length || invoiceDetail.paymentTransaction?.id)
   );
   const canInspectFixedMaterialization = Boolean(
     invoiceDetail && invoiceDetail.status === 'CLOSED'
+  );
+  const selectedAnticipationTotal = useMemo(
+    () => anticipationCandidates
+      .filter((candidate) => selectedAnticipationIds.includes(candidate.id))
+      .reduce((sum, candidate) => sum + Number(candidate.amount || 0), 0),
+    [anticipationCandidates, selectedAnticipationIds]
   );
   const reconciliationSourceType = useMemo(
     () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
@@ -588,6 +672,20 @@ function InvoicesPageInner() {
     }
   }
 
+  function handleOpenPaymentModal() {
+    const outstandingAmount = Math.max(
+      0,
+      Number(invoiceDetail?.outstandingAmount ?? invoiceDetail?.totalAmount ?? 0)
+    );
+    setPaymentData((current) => ({
+      ...current,
+      amount: outstandingAmount.toFixed(2),
+      paymentDate: getTodayDateValue(),
+      notes: ''
+    }));
+    setIsPaymentModalOpen(true);
+  }
+
   async function handlePayInvoice() {
     if (!invoiceDetail?.id) {
       addToast('Selecione uma fatura para pagar', 'error');
@@ -598,34 +696,145 @@ function InvoicesPageInner() {
       addToast('Selecione a conta pagadora', 'error');
       return;
     }
+    const numericAmount = Number(paymentData.amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      addToast('Informe um valor de pagamento maior que zero', 'error');
+      return;
+    }
 
     setPaying(true);
 
     try {
-      await api.post(`/financial/credit-card-invoices/${invoiceDetail.id}/pay`, {
+      const response = await api.post(`/financial/credit-card-invoices/${invoiceDetail.id}/pay`, {
         fromAccountId: Number(paymentData.fromAccountId),
+        amount: numericAmount,
         paymentDate: toIsoDateString(paymentData.paymentDate) || undefined,
         notes: paymentData.notes || undefined
       });
 
-      addToast('Fatura paga com sucesso', 'success');
-      setIsPaymentModalOpen(false);
-      setSelectedInvoiceKey(null);
-      await router.replace(
-        {
-          pathname: router.pathname,
-          query: {
-            accountId
-          }
-        },
-        undefined,
-        { shallow: true }
+      addToast(
+        response.data.status === 'OPEN'
+          ? 'Pagamento registrado. A fatura continua aberta.'
+          : 'Pagamento registrado com sucesso',
+        'success'
       );
-      await fetchPageData();
+      setIsPaymentModalOpen(false);
+      await Promise.all([
+        fetchInvoiceDetail(invoiceDetail),
+        fetchPageData({
+          referenceYear: invoiceDetail.referenceYear,
+          referenceMonth: invoiceDetail.referenceMonth
+        })
+      ]);
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao pagar fatura', 'error');
     } finally {
       setPaying(false);
+    }
+  }
+
+  function handleDeleteInvoicePayment(payment: InvoicePayment) {
+    if (!invoiceDetail?.id) {
+      return;
+    }
+
+    confirmation.confirm(
+      {
+        title: 'Excluir pagamento',
+        message: `Deseja excluir o pagamento de ${formatCurrency(payment.amount)} realizado em ${formatCalendarDate(payment.paymentDate)}? O saldo da fatura e das contas sera recalculado.`,
+        confirmText: 'Excluir pagamento',
+        cancelText: 'Cancelar',
+        type: 'danger'
+      },
+      async () => {
+        try {
+          await api.delete(`/financial/transactions/${payment.transactionId}`);
+          addToast('Pagamento excluido e saldos recalculados', 'success');
+          await Promise.all([
+            fetchInvoiceDetail(invoiceDetail),
+            fetchPageData({
+              referenceYear: invoiceDetail.referenceYear,
+              referenceMonth: invoiceDetail.referenceMonth
+            })
+          ]);
+        } catch (error: any) {
+          addToast(error.response?.data?.error || 'Erro ao excluir pagamento', 'error');
+          throw error;
+        }
+      }
+    );
+  }
+
+  async function handleOpenAnticipationModal() {
+    if (!invoiceDetail?.id) {
+      return;
+    }
+
+    setIsAnticipationModalOpen(true);
+    setAnticipationLoading(true);
+    setAnticipationCandidates([]);
+    setSelectedAnticipationIds([]);
+    setAnticipationData({
+      anticipatedAt: getTodayDateValue(),
+      discountAmount: '0',
+      notes: ''
+    });
+
+    try {
+      const response = await api.get(
+        `/financial/credit-card-invoices/${invoiceDetail.id}/anticipation-candidates`
+      );
+      const candidates = response.data || [];
+      setAnticipationCandidates(candidates);
+      setSelectedAnticipationIds(candidates.map((candidate: AnticipationCandidate) => candidate.id));
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao carregar parcelas futuras', 'error');
+      setIsAnticipationModalOpen(false);
+    } finally {
+      setAnticipationLoading(false);
+    }
+  }
+
+  async function handleAnticipateInstallments() {
+    if (!invoiceDetail?.id || selectedAnticipationIds.length === 0) {
+      addToast('Selecione ao menos uma parcela para antecipar', 'error');
+      return;
+    }
+
+    const discountAmount = Number(anticipationData.discountAmount || 0);
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+      addToast('Informe um desconto válido', 'error');
+      return;
+    }
+    if (discountAmount > selectedAnticipationTotal) {
+      addToast('O desconto não pode exceder o total antecipado', 'error');
+      return;
+    }
+
+    setAnticipationSubmitting(true);
+    try {
+      await api.post(`/financial/credit-card-invoices/${invoiceDetail.id}/anticipations`, {
+        transactionIds: selectedAnticipationIds,
+        anticipatedAt: toIsoDateString(anticipationData.anticipatedAt) || undefined,
+        discountAmount,
+        notes: anticipationData.notes || undefined
+      });
+      addToast(
+        `${selectedAnticipationIds.length} parcela${selectedAnticipationIds.length === 1 ? '' : 's'} antecipada${selectedAnticipationIds.length === 1 ? '' : 's'} com sucesso`,
+        'success'
+      );
+      setIsAnticipationModalOpen(false);
+      await Promise.all([
+        fetchInvoiceDetail(invoiceDetail),
+        fetchPageData({
+          referenceYear: invoiceDetail.referenceYear,
+          referenceMonth: invoiceDetail.referenceMonth
+        })
+      ]);
+    } catch (error: any) {
+      addToast(error.response?.data?.error || 'Erro ao antecipar parcelas', 'error');
+    } finally {
+      setAnticipationSubmitting(false);
     }
   }
 
@@ -658,20 +867,21 @@ function InvoicesPageInner() {
   }
 
   function handleReopenInvoice() {
-    if (!invoiceDetail?.id || !invoiceDetail.paymentTransaction?.id) {
+    if (!invoiceDetail?.id || !(invoiceDetail.payments?.length || invoiceDetail.paymentTransaction?.id)) {
       addToast('Nao foi possivel localizar o pagamento desta fatura', 'error');
       return;
     }
 
-    const payerAccountName = invoiceDetail.paymentTransaction.fromAccount?.name || 'a conta informada';
-    const settledAtLabel = invoiceDetail.paymentTransaction.effectiveDate
-      ? formatCalendarDate(invoiceDetail.paymentTransaction.effectiveDate)
-      : invoiceDetail.settledAt
-        ? formatCalendarDate(invoiceDetail.settledAt)
-        : null;
+    const paymentCount = invoiceDetail.payments?.length || 1;
+    const payerAccountName = invoiceDetail.payments?.[0]?.transaction.fromAccount?.name ||
+      invoiceDetail.paymentTransaction?.fromAccount?.name ||
+      'a conta informada';
+    const settledAtLabel = invoiceDetail.settledAt
+      ? formatCalendarDate(invoiceDetail.settledAt)
+      : null;
     const paymentDetails = settledAtLabel
-      ? ` O pagamento em ${payerAccountName} de ${formatCurrency(invoiceDetail.paymentTransaction.amount)} realizado em ${settledAtLabel} sera removido.`
-      : ` O pagamento em ${payerAccountName} de ${formatCurrency(invoiceDetail.paymentTransaction.amount)} sera removido.`;
+      ? ` ${paymentCount === 1 ? 'O pagamento' : `Os ${paymentCount} pagamentos`} em ${payerAccountName}, no total de ${formatCurrency(invoiceDetail.paymentAmount || invoiceDetail.paymentTransaction?.amount || 0)}, ${paymentCount === 1 ? 'realizado' : 'realizados'} ate ${settledAtLabel}, ${paymentCount === 1 ? 'sera removido' : 'serao removidos'}.`
+      : ` ${paymentCount === 1 ? 'O pagamento sera removido' : `Os ${paymentCount} pagamentos serao removidos`}.`;
 
     confirmation.confirm(
       {
@@ -841,7 +1051,7 @@ function InvoicesPageInner() {
                 </span>
               </div>
             )}{/*
-              Pagamento integral, itens da fatura e histórico de compras agrupadas.
+              Pagamentos, antecipação de parcelas, itens da fatura e histórico de compras agrupadas.
             */}
           </div>
           <div className="flex gap-3">
@@ -1301,15 +1511,27 @@ function InvoicesPageInner() {
                                   Reabrir fatura
                                 </Button>
                               )}
+                              {canAnticipateSelectedInvoice && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => void handleOpenAnticipationModal()}
+                                  disabled={anticipationLoading || anticipationSubmitting}
+                                  className="flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <FastForward size={16} />
+                                  Antecipar parcelas
+                                </Button>
+                              )}
                               {canPaySelectedInvoice && (
                                 <Button
                                   type="button"
                                   variant="accent"
-                                  onClick={() => setIsPaymentModalOpen(true)}
+                                  onClick={handleOpenPaymentModal}
                                   disabled={paying}
                                   className="disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                  {paying ? 'Pagando...' : 'Pagar fatura'}
+                                  {paying ? 'Registrando...' : 'Registrar pagamento'}
                                 </Button>
                               )}
                               <InvoiceDetailViewToggle
@@ -1349,7 +1571,7 @@ function InvoicesPageInner() {
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
                           <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
                             <div className="text-xs uppercase tracking-wide text-gray-400">
                               Valor total
@@ -1377,6 +1599,37 @@ function InvoicesPageInner() {
                               - {formatCurrency(invoiceDetail.creditAmount || 0)}
                             </div>
                           </div>
+                          <div className="rounded-lg border border-blue-800/70 bg-blue-950/20 px-4 py-3">
+                            <div className="text-xs uppercase tracking-wide text-blue-300">
+                              Pagamentos
+                            </div>
+                            <div className="mt-1.5 text-lg font-semibold text-blue-200">
+                              - {formatCurrency(invoiceDetail.paymentAmount || 0)}
+                            </div>
+                          </div>
+                          <div className={`rounded-lg border px-4 py-3 ${
+                            Number(invoiceDetail.outstandingAmount ?? invoiceDetail.totalAmount ?? 0) <= 0
+                              ? 'border-green-800/70 bg-green-950/20'
+                              : 'border-amber-800/70 bg-amber-950/20'
+                          }`}>
+                            <div className={`text-xs uppercase tracking-wide ${
+                              Number(invoiceDetail.outstandingAmount ?? invoiceDetail.totalAmount ?? 0) <= 0
+                                ? 'text-green-300'
+                                : 'text-amber-300'
+                            }`}>
+                              {Number(invoiceDetail.outstandingAmount ?? invoiceDetail.totalAmount ?? 0) < 0
+                                ? 'Crédito excedente'
+                                : 'Saldo atual'}
+                            </div>
+                            <div className="mt-1.5 text-lg font-semibold text-white">
+                              {formatCurrency(Math.abs(Number(invoiceDetail.outstandingAmount ?? invoiceDetail.totalAmount ?? 0)))}
+                            </div>
+                            {invoiceDetail.status === 'OPEN' && Number(invoiceDetail.outstandingAmount ?? invoiceDetail.totalAmount ?? 0) <= 0 && (
+                              <div className="mt-1 text-xs text-green-300">
+                                Fatura aberta com o valor atual coberto
+                              </div>
+                            )}
+                          </div>
                           <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
                             <div className="text-xs uppercase tracking-wide text-gray-400">
                               Subtotal fixas
@@ -1399,20 +1652,48 @@ function InvoicesPageInner() {
                           </div>
                         </div>
 
-                        {invoiceDetail.paymentTransaction ? (
+                        {visibleInvoicePayments.length > 0 ? (
                           <div className="space-y-3">
                             <div className="rounded-xl border border-green-700/50 bg-green-900/10 p-4">
                               <div className="text-sm font-medium text-white">
-                                Pagamento registrado
+                                {visibleInvoicePayments.length === 1
+                                  ? 'Pagamento registrado'
+                                  : `${visibleInvoicePayments.length} pagamentos registrados`}
                               </div>
-                              <div className="mt-2 text-sm text-gray-300">
-                                {invoiceDetail.paymentTransaction.fromAccount?.name ||
-                                  'Conta não identificada'}{' '}
-                                • {formatCurrency(invoiceDetail.paymentTransaction.amount)} •{' '}
-                                {invoiceDetail.paymentTransaction.effectiveDate
-                                  ? formatCalendarDate(invoiceDetail.paymentTransaction.effectiveDate)
-                                  : '-'}
+                              <div className="mt-3 space-y-2">
+                                {visibleInvoicePayments.map((payment) => (
+                                  <div
+                                    key={payment.id}
+                                    className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-300"
+                                  >
+                                    <span>
+                                      {payment.transaction.fromAccount?.name || 'Conta não identificada'}
+                                    </span>
+                                    <span className="flex items-center gap-2">
+                                      <span>
+                                        {formatCurrency(payment.amount)} •{' '}
+                                        {payment.paymentDate
+                                          ? formatCalendarDate(payment.paymentDate)
+                                          : '-'}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteInvoicePayment(payment)}
+                                        className="rounded p-1 text-gray-400 transition-colors hover:bg-red-950/40 hover:text-red-300"
+                                        title="Excluir pagamento"
+                                        aria-label={`Excluir pagamento de ${formatCurrency(payment.amount)}`}
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
+                              {invoiceDetail.status === 'OPEN' && (
+                                <div className="mt-3 text-xs text-green-200">
+                                  A fatura continua aberta e novos lançamentos recalculam o saldo pendente.
+                                </div>
+                              )}
                             </div>
                             {invoiceHasExternalSettlements && (
                               <div className="rounded-xl border border-amber-700/50 bg-amber-900/10 p-4">
@@ -1582,6 +1863,19 @@ function InvoicesPageInner() {
                                           Liquidada fora do sistema
                                         </div>
                                       )}
+                                      {transaction.creditCardAnticipationItem && (
+                                        <div className="mt-1 text-xs text-blue-300">
+                                          Antecipada da fatura{' '}
+                                          {getInvoiceReferenceLabel(
+                                            transaction.creditCardAnticipationItem.originalReferenceYear,
+                                            transaction.creditCardAnticipationItem.originalReferenceMonth
+                                          )}{' '}
+                                          em{' '}
+                                          {formatCalendarDate(
+                                            transaction.creditCardAnticipationItem.anticipation.anticipatedAt
+                                          )}
+                                        </div>
+                                      )}
                                       {transaction.creditCardCreditKind && (
                                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                                           <span className="rounded-full border border-green-700 bg-green-900/20 px-2 py-0.5 text-green-200">
@@ -1589,7 +1883,9 @@ function InvoicesPageInner() {
                                               ? 'Estorno'
                                               : transaction.creditCardCreditKind === 'CASHBACK'
                                                 ? 'Cashback'
-                                                : 'Ajuste de crédito'}
+                                                : transaction.creditCardCreditKind === 'ANTICIPATION_DISCOUNT'
+                                                  ? 'Desconto de antecipação'
+                                                  : 'Ajuste de crédito'}
                                           </span>
                                           {transaction.refundOfTransaction && (
                                             <span className="text-gray-400">
@@ -1895,9 +2191,194 @@ function InvoicesPageInner() {
             </Modal>
 
             <Modal
+              isOpen={Boolean(isAnticipationModalOpen && canAnticipateSelectedInvoice)}
+              onClose={() => setIsAnticipationModalOpen(false)}
+              title="Antecipar parcelas"
+              loading={anticipationSubmitting}
+              footer={
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsAnticipationModalOpen(false)}
+                    disabled={anticipationSubmitting}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    variant="accent"
+                    onClick={() => void handleAnticipateInstallments()}
+                    disabled={
+                      anticipationLoading ||
+                      anticipationSubmitting ||
+                      selectedAnticipationIds.length === 0
+                    }
+                  >
+                    {anticipationSubmitting
+                      ? 'Antecipando...'
+                      : `Antecipar ${selectedAnticipationIds.length || ''} parcela${selectedAnticipationIds.length === 1 ? '' : 's'}`}
+                  </Button>
+                </div>
+              }
+            >
+              <div className="space-y-4">
+                <div className="rounded-lg border border-blue-700/50 bg-blue-900/10 p-3 text-sm text-blue-100">
+                  As parcelas escolhidas sairão das faturas futuras e entrarão nesta fatura aberta.
+                  A compra, a numeração das parcelas e a referência original permanecerão registradas.
+                </div>
+
+                {anticipationLoading ? (
+                  <div className="space-y-2" aria-label="Carregando parcelas futuras">
+                    <div className="h-14 animate-pulse rounded bg-[#1b212c]" />
+                    <div className="h-14 animate-pulse rounded bg-[#1b212c]" />
+                  </div>
+                ) : anticipationCandidates.length === 0 ? (
+                  <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4 text-sm text-gray-300">
+                    Não há parcelas futuras disponíveis para antecipação.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm text-gray-200">
+                      <input
+                        type="checkbox"
+                        checked={selectedAnticipationIds.length === anticipationCandidates.length}
+                        onChange={(event) =>
+                          setSelectedAnticipationIds(
+                            event.target.checked
+                              ? anticipationCandidates.map((candidate) => candidate.id)
+                              : []
+                          )
+                        }
+                        disabled={anticipationSubmitting}
+                        className="rounded border-gray-600 bg-background text-accent focus:ring-accent"
+                      />
+                      Selecionar todas as parcelas futuras
+                    </label>
+                    <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                      {anticipationCandidates.map((candidate) => {
+                        const selected = selectedAnticipationIds.includes(candidate.id);
+                        return (
+                          <label
+                            key={candidate.id}
+                            className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
+                              selected
+                                ? 'border-blue-600 bg-blue-950/20'
+                                : 'border-gray-700 bg-[#11161d]'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() =>
+                                setSelectedAnticipationIds((current) =>
+                                  selected
+                                    ? current.filter((id) => id !== candidate.id)
+                                    : [...current, candidate.id]
+                                )
+                              }
+                              disabled={anticipationSubmitting}
+                              className="mt-1 rounded border-gray-600 bg-background text-accent focus:ring-accent"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block font-medium text-white">
+                                {formatTransactionDescription(
+                                  candidate.description,
+                                  candidate.installmentNumber,
+                                  candidate.totalInstallments
+                                )}
+                              </span>
+                              <span className="mt-1 block text-xs text-gray-400">
+                                Fatura{' '}
+                                {getInvoiceReferenceLabel(
+                                  candidate.creditCardInvoice.referenceYear,
+                                  candidate.creditCardInvoice.referenceMonth
+                                )}
+                              </span>
+                            </span>
+                            <span className="shrink-0 font-medium text-gray-100">
+                              {formatCurrency(candidate.amount)}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Input
+                    label="Data da antecipação"
+                    type="date"
+                    value={anticipationData.anticipatedAt}
+                    onChange={(event) =>
+                      setAnticipationData((current) => ({
+                        ...current,
+                        anticipatedAt: event.target.value
+                      }))
+                    }
+                    disabled={anticipationSubmitting}
+                    className="mb-0"
+                  />
+                  <CurrencyInput
+                    id="credit-card-anticipation-discount"
+                    label="Desconto recebido"
+                    value={anticipationData.discountAmount}
+                    onChange={(discountAmount) =>
+                      setAnticipationData((current) => ({ ...current, discountAmount }))
+                    }
+                    disabled={anticipationSubmitting}
+                    className="mb-0"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm sm:grid-cols-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-400">Parcelas</div>
+                    <div className="mt-1 font-semibold text-white">
+                      {formatCurrency(selectedAnticipationTotal)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-400">Desconto</div>
+                    <div className="mt-1 font-semibold text-green-300">
+                      - {formatCurrency(Number(anticipationData.discountAmount || 0))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-wide text-gray-400">Impacto líquido</div>
+                    <div className="mt-1 font-semibold text-white">
+                      {formatCurrency(
+                        Math.max(0, selectedAnticipationTotal - Number(anticipationData.discountAmount || 0))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300">
+                    Observações
+                  </label>
+                  <textarea
+                    value={anticipationData.notes}
+                    onChange={(event) =>
+                      setAnticipationData((current) => ({
+                        ...current,
+                        notes: event.target.value
+                      }))
+                    }
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Opcional"
+                    disabled={anticipationSubmitting}
+                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  />
+                </div>
+              </div>
+            </Modal>
+
+            <Modal
               isOpen={Boolean(isPaymentModalOpen && canPaySelectedInvoice)}
               onClose={() => setIsPaymentModalOpen(false)}
-              title="Pagar fatura"
+              title="Registrar pagamento"
               loading={paying}
               footer={
                 <div className="flex justify-end gap-3">
@@ -1913,17 +2394,18 @@ function InvoicesPageInner() {
                     onClick={handlePayInvoice}
                     disabled={paying}
                   >
-                    {paying ? 'Pagando...' : 'Pagar fatura'}
+                    {paying ? 'Registrando...' : 'Registrar pagamento'}
                   </Button>
                 </div>
               }
             >
               <div className="space-y-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-300">
+                  <label htmlFor="credit-card-payment-account" className="mb-1 block text-sm font-medium text-gray-300">
                     Conta pagadora
                   </label>
                   <select
+                    id="credit-card-payment-account"
                     value={paymentData.fromAccountId}
                     onChange={(event) =>
                       setPaymentData((prev) => ({
@@ -1943,7 +2425,27 @@ function InvoicesPageInner() {
                   </select>
                 </div>
 
+                <CurrencyInput
+                  id="credit-card-payment-amount"
+                  label="Valor do pagamento"
+                  value={paymentData.amount}
+                  onChange={(amount) =>
+                    setPaymentData((prev) => ({ ...prev, amount }))
+                  }
+                  disabled={paying}
+                  required
+                  className="mb-0"
+                />
+
+                {invoiceDetail && (
+                  <div className="rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2 text-xs text-gray-300">
+                    Saldo atual: {formatCurrency(Math.max(0, Number(invoiceDetail.outstandingAmount ?? invoiceDetail.totalAmount ?? 0)))}.
+                    {invoiceDetail.status === 'OPEN' && ' A fatura continuará aberta após o pagamento.'}
+                  </div>
+                )}
+
                 <Input
+                  id="credit-card-payment-date"
                   label="Data do pagamento"
                   type="date"
                   value={paymentData.paymentDate}

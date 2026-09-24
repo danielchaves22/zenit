@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CreditCardInvoicesPage from '@/pages/financial/credit-cards/[accountId]/invoices'
@@ -33,7 +33,11 @@ const invoice = {
   hasProjectedTransactions: false,
   externalSettledAmount: '0.00',
   hasExternalSettlements: false,
-  paymentTransaction: null
+  paymentTransaction: null,
+  payments: [],
+  paymentAmount: '0.00',
+  outstandingAmount: '450.00',
+  hasPayments: false
 }
 
 const invoiceDetail = {
@@ -119,34 +123,40 @@ vi.mock('@/components/ui/Modal', () => ({
 }))
 
 vi.mock('@/components/ui/ConfirmationModal', () => ({
-  ConfirmationModal: () => null
+  ConfirmationModal: ({
+    isOpen,
+    onClose,
+    onConfirm,
+    title,
+    message,
+    confirmText,
+    cancelText
+  }: {
+    isOpen: boolean
+    onClose: () => void
+    onConfirm: () => void
+    title: string
+    message: string
+    confirmText: string
+    cancelText: string
+  }) => isOpen ? (
+    <div role="dialog" aria-label={title}>
+      <p>{message}</p>
+      <button type="button" onClick={onClose}>{cancelText}</button>
+      <button type="button" onClick={onConfirm}>{confirmText}</button>
+    </div>
+  ) : null
 }))
 
 vi.mock('@/components/ui/ToastContext', () => ({
   useToast: () => ({ addToast: addToastMock })
 }))
 
-vi.mock('@/hooks/useConfirmation', () => ({
-  useConfirmation: () => ({
-    isOpen: false,
-    loading: false,
-    options: {
-      title: '',
-      message: '',
-      confirmText: 'Confirmar',
-      cancelText: 'Cancelar',
-      type: 'info'
-    },
-    confirm: vi.fn(),
-    handleConfirm: vi.fn(),
-    handleClose: vi.fn()
-  })
-}))
-
 vi.mock('@/lib/api', () => ({
   default: {
     get: vi.fn(),
-    post: vi.fn()
+    post: vi.fn(),
+    delete: vi.fn()
   }
 }))
 
@@ -157,6 +167,7 @@ describe('CreditCardInvoicesPage', () => {
     addToastMock.mockReset()
     vi.mocked(api.get).mockReset()
     vi.mocked(api.post).mockReset()
+    vi.mocked(api.delete).mockReset()
     Element.prototype.scrollIntoView = vi.fn()
 
     vi.mocked(api.get).mockImplementation((url: string) => {
@@ -245,6 +256,176 @@ describe('CreditCardInvoicesPage', () => {
     expect(screen.getByRole('button', { name: 'Estorno' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Cashback' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ajuste' })).toBeInTheDocument()
+  })
+
+  it('registra pagamento sem encerrar a fatura aberta', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices?includePaid=false') {
+        return Promise.resolve({ data: [invoice] })
+      }
+      if (url === '/financial/accounts') {
+        return Promise.resolve({
+          data: [{ id: 9, name: 'Conta pagadora', type: 'CHECKING', isActive: true }]
+        })
+      }
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: invoiceDetail })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockResolvedValue({
+      data: {
+        ...invoiceDetail,
+        status: 'OPEN',
+        paymentAmount: '450.00',
+        outstandingAmount: '0.00'
+      }
+    })
+
+    render(<CreditCardInvoicesPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'Registrar pagamento' }))
+    const dialog = screen.getByRole('dialog', { name: 'Registrar pagamento' })
+    await user.selectOptions(within(dialog).getByLabelText('Conta pagadora'), '9')
+    await user.click(within(dialog).getByRole('button', { name: 'Registrar pagamento' }))
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/financial/credit-card-invoices/101/pay',
+        expect.objectContaining({
+          fromAccountId: 9,
+          amount: 450
+        })
+      )
+    })
+    expect(addToastMock).toHaveBeenCalledWith(
+      'Pagamento registrado. A fatura continua aberta.',
+      'success'
+    )
+  })
+
+  it('exclui um pagamento pela confirmacao renderizada e recalcula a fatura', async () => {
+    const user = userEvent.setup()
+    const detailWithPayment = {
+      ...invoiceDetail,
+      paymentAmount: '120.00',
+      outstandingAmount: '330.00',
+      hasPayments: true,
+      payments: [{
+        id: 701,
+        transactionId: 901,
+        amount: '120.00',
+        paymentDate: '2026-09-08T12:00:00.000Z',
+        transaction: {
+          id: 901,
+          description: 'Pagamento da fatura',
+          amount: '120.00',
+          date: '2026-09-08T12:00:00.000Z',
+          effectiveDate: '2026-09-08T12:00:00.000Z',
+          status: 'COMPLETED',
+          fromAccount: { id: 9, name: 'Conta pagadora' }
+        }
+      }]
+    }
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices?includePaid=false') {
+        return Promise.resolve({ data: [{ ...invoice, paymentAmount: '120.00', outstandingAmount: '330.00' }] })
+      }
+      if (url === '/financial/accounts') return Promise.resolve({ data: [] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: detailWithPayment })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.delete).mockResolvedValue({ data: undefined })
+
+    render(<CreditCardInvoicesPage />)
+
+    await user.click(await screen.findByRole('button', { name: /Excluir pagamento de/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Excluir pagamento' })
+    expect(within(dialog).getByText(/O saldo da fatura e das contas sera recalculado/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Excluir pagamento' }))
+
+    await waitFor(() => {
+      expect(api.delete).toHaveBeenCalledWith('/financial/transactions/901')
+    })
+    expect(addToastMock).toHaveBeenCalledWith(
+      'Pagamento excluido e saldos recalculados',
+      'success'
+    )
+  })
+
+  it('antecipa as parcelas futuras selecionadas para a fatura aberta', async () => {
+    const user = userEvent.setup()
+    const candidates = [
+      {
+        id: 502,
+        description: 'Compra parcelada',
+        amount: '100.00',
+        installmentNumber: 2,
+        totalInstallments: 3,
+        purchaseGroupId: 'purchase-1',
+        scheduledDate: '2026-10-05',
+        creditCardInvoice: {
+          id: 102,
+          referenceYear: 2026,
+          referenceMonth: 10,
+          dueDate: '2026-10-17'
+        }
+      },
+      {
+        id: 503,
+        description: 'Compra parcelada',
+        amount: '100.00',
+        installmentNumber: 3,
+        totalInstallments: 3,
+        purchaseGroupId: 'purchase-1',
+        scheduledDate: '2026-11-05',
+        creditCardInvoice: {
+          id: 103,
+          referenceYear: 2026,
+          referenceMonth: 11,
+          dueDate: '2026-11-17'
+        }
+      }
+    ]
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
+      if (url === '/financial/credit-cards/1/invoices?includePaid=false') {
+        return Promise.resolve({ data: [invoice] })
+      }
+      if (url === '/financial/accounts') return Promise.resolve({ data: [] })
+      if (url === '/financial/credit-card-invoices/101') {
+        return Promise.resolve({ data: invoiceDetail })
+      }
+      if (url === '/financial/credit-card-invoices/101/anticipation-candidates') {
+        return Promise.resolve({ data: candidates })
+      }
+      return Promise.reject(new Error(`Unexpected GET request: ${url}`))
+    })
+    vi.mocked(api.post).mockResolvedValue({ data: { invoice: invoiceDetail } })
+
+    render(<CreditCardInvoicesPage />)
+
+    await user.click(await screen.findByRole('button', { name: 'Antecipar parcelas' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Antecipar parcelas' })
+    expect(within(dialog).getByText('Compra parcelada (2 de 3)')).toBeInTheDocument()
+    expect(within(dialog).getByText('Compra parcelada (3 de 3)')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Antecipar 2 parcelas' }))
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith(
+        '/financial/credit-card-invoices/101/anticipations',
+        expect.objectContaining({
+          transactionIds: [502, 503],
+          discountAmount: 0
+        })
+      )
+    })
+    expect(addToastMock).toHaveBeenCalledWith('2 parcelas antecipadas com sucesso', 'success')
   })
 
   it('verifica e corrige parcialmente as fixas ausentes preservando a fatura selecionada', async () => {

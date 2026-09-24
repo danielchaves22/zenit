@@ -72,6 +72,7 @@ enum CreditCardCreditKind {
   REFUND
   CASHBACK
   ADJUSTMENT
+  ANTICIPATION_DISCOUNT
 }
 
 enum CreditCardReconciliationSessionStatus {
@@ -524,6 +525,7 @@ model FinancialAccount {
   outgoingTransactions FinancialTransaction[] @relation("FromAccount")
   incomingTransactions FinancialTransaction[] @relation("ToAccount")
   creditCardInvoices   CreditCardInvoice[]
+  creditCardInstallmentAnticipations CreditCardInstallmentAnticipation[]
   creditCardRecurringDescriptionAliases CreditCardRecurringDescriptionAlias[]
   userAccess            UserFinancialAccountAccess[]
   budget                Budget?
@@ -614,6 +616,9 @@ model FinancialTransaction {
   createdBy       Int
   createdByUser   User                 @relation(fields: [createdBy], references: [id])
   paidInvoice     CreditCardInvoice?   @relation("InvoicePaymentTransaction")
+  creditCardInvoicePayment CreditCardInvoicePayment? @relation("InvoicePaymentEntry")
+  creditCardAnticipationItem CreditCardInstallmentAnticipationItem? @relation("AnticipatedInstallmentTransaction")
+  creditCardAnticipationDiscount CreditCardInstallmentAnticipation? @relation("AnticipationDiscountTransaction")
   tags            FinancialTag[]
   scheduledDate           DateTime?
   recurringTransactionId  Int?
@@ -926,6 +931,8 @@ model CreditCardInvoice {
   totalAmount          Decimal                 @db.Decimal(15, 2) @default(0)
   paymentTransactionId Int?                    @unique
   paymentTransaction   FinancialTransaction?   @relation("InvoicePaymentTransaction", fields: [paymentTransactionId], references: [id], onDelete: SetNull)
+  payments             CreditCardInvoicePayment[]
+  installmentAnticipations CreditCardInstallmentAnticipation[] @relation("InvoiceInstallmentAnticipations")
   transactions         FinancialTransaction[]  @relation("InvoiceTransactions")
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
@@ -933,6 +940,54 @@ model CreditCardInvoice {
   @@unique([accountId, referenceYear, referenceMonth], name: "unique_credit_card_invoice_reference")
   @@index([accountId, dueDate])
   @@index([status, dueDate])
+}
+
+model CreditCardInvoicePayment {
+  id            Int                  @id @default(autoincrement())
+  invoiceId     Int
+  invoice       CreditCardInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  transactionId Int                  @unique
+  transaction   FinancialTransaction @relation("InvoicePaymentEntry", fields: [transactionId], references: [id], onDelete: Cascade)
+  amount        Decimal              @db.Decimal(15, 2)
+  paymentDate   DateTime
+  notes         String?
+  createdAt     DateTime             @default(now())
+
+  @@index([invoiceId, paymentDate])
+}
+
+model CreditCardInstallmentAnticipation {
+  id                    Int                                     @id @default(autoincrement())
+  accountId             Int
+  account               FinancialAccount                        @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  targetInvoiceId       Int
+  targetInvoice         CreditCardInvoice                       @relation("InvoiceInstallmentAnticipations", fields: [targetInvoiceId], references: [id], onDelete: Cascade)
+  anticipatedAt         DateTime
+  discountAmount        Decimal                                 @db.Decimal(15, 2) @default(0)
+  discountTransactionId Int?                                    @unique
+  discountTransaction   FinancialTransaction?                   @relation("AnticipationDiscountTransaction", fields: [discountTransactionId], references: [id], onDelete: SetNull)
+  notes                 String?
+  createdBy             Int
+  createdAt             DateTime                                @default(now())
+  items                 CreditCardInstallmentAnticipationItem[]
+
+  @@index([accountId, anticipatedAt])
+  @@index([targetInvoiceId])
+}
+
+model CreditCardInstallmentAnticipationItem {
+  id                     Int                               @id @default(autoincrement())
+  anticipationId         Int
+  anticipation           CreditCardInstallmentAnticipation @relation(fields: [anticipationId], references: [id], onDelete: Cascade)
+  transactionId          Int                               @unique
+  transaction            FinancialTransaction              @relation("AnticipatedInstallmentTransaction", fields: [transactionId], references: [id], onDelete: Cascade)
+  originalReferenceYear  Int
+  originalReferenceMonth Int
+  originalDueDate        DateTime
+  amount                 Decimal                           @db.Decimal(15, 2)
+  createdAt              DateTime                          @default(now())
+
+  @@index([anticipationId])
 }
 
 model RecurringTransaction {

@@ -132,7 +132,6 @@ export default class FinancialResetService {
       fixedTemplates,
       transactions,
       fixedOccurrences,
-      invoicePayments,
       creditCardInvoices,
       purchaseGroups
     ] = await Promise.all([
@@ -173,22 +172,19 @@ export default class FinancialResetService {
           }
         }
       }),
-      prisma.creditCardInvoice.count({
+      prisma.creditCardInvoice.findMany({
         where: {
           account: {
             companyId,
             purpose: FinancialAccountPurpose.GENERAL
-          },
-          paymentTransactionId: {
-            not: null
           }
-        }
-      }),
-      prisma.creditCardInvoice.count({
-        where: {
-          account: {
-            companyId,
-            purpose: FinancialAccountPurpose.GENERAL
+        },
+        select: {
+          paymentTransactionId: true,
+          payments: {
+            select: {
+              transactionId: true
+            }
           }
         }
       }),
@@ -203,6 +199,17 @@ export default class FinancialResetService {
       })
     ]);
 
+    const invoicePaymentTransactionIds = new Set<number>();
+    for (const invoice of creditCardInvoices) {
+      if (invoice.paymentTransactionId) {
+        invoicePaymentTransactionIds.add(invoice.paymentTransactionId);
+      }
+
+      for (const payment of invoice.payments) {
+        invoicePaymentTransactionIds.add(payment.transactionId);
+      }
+    }
+
     return {
       preserved: {
         accounts,
@@ -213,9 +220,9 @@ export default class FinancialResetService {
       deleted: {
         transactions,
         creditCardPurchases: purchaseGroups.length,
-        creditCardInvoices,
+        creditCardInvoices: creditCardInvoices.length,
         fixedOccurrences,
-        invoicePayments
+        invoicePayments: invoicePaymentTransactionIds.size
       },
       balances: {
         accountsToZero: accounts + creditCards

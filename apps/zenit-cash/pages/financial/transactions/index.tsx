@@ -2052,7 +2052,7 @@ export default function TransactionsListPage() {
                                     <CheckCircle size={14} />
                                   </button>
                                 )}
-	                                {transaction.id && !transaction.archivedAt && (
+	                                {transaction.id && !transaction.archivedAt && !transaction.isCreditCardInvoicePayment && (
 	                                  <Link href={getTransactionEditHref(transaction.id)}>
 	                                    <button
 	                                      className="p-1 text-gray-300 transition-colors hover:text-accent"

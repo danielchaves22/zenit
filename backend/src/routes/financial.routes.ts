@@ -33,6 +33,7 @@ import {
 } from '../validators/financial-transaction.validator';
 import { executeFinancialResetSchema } from '../validators/financial-reset.validator';
 import {
+  anticipateCreditCardInstallmentsSchema,
   creditCardFixedMaterializationSchema,
   createCreditCardInvoiceCreditSchema,
   getCreditCardInvoiceSchema,
@@ -141,11 +142,13 @@ import {
   updateFixedTransaction
 } from '../controllers/fixed-transaction.controller';
 import {
+  anticipateCreditCardInstallments,
   createCreditCardInvoiceCredit,
   getCreditCardFixedMaterialization,
   getCreditCardInvoice,
   getProjectedCreditCardInvoice,
   listCreditCardInvoices,
+  listCreditCardInstallmentAnticipationCandidates,
   listCreditCards,
   listRefundableCreditCardPurchases,
   materializeCreditCardFixedTransactions,
@@ -302,6 +305,8 @@ router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/status'
 router.post('/credit-cards/:accountId/reconciliation/sessions/:sessionId/reset', requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess('accountId'), validate(resetCreditCardReconciliationSessionSchema, { source: ['body', 'params'] }), resetCreditCardReconciliationSession);
 router.get('/credit-card-invoices/:id', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), getCreditCardInvoice);
 router.post('/credit-card-invoices/:id/credits', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(createCreditCardInvoiceCreditSchema), createCreditCardInvoiceCredit);
+router.get('/credit-card-invoices/:id/anticipation-candidates', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(getCreditCardInvoiceSchema), listCreditCardInstallmentAnticipationCandidates);
+router.post('/credit-card-invoices/:id/anticipations', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(anticipateCreditCardInstallmentsSchema), anticipateCreditCardInstallments);
 router.post('/credit-card-invoices/:id/pay', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(payCreditCardInvoiceSchema), payCreditCardInvoice);
 router.post('/credit-card-invoices/:id/reopen', requireFeaturePermission('FINANCIAL_ACCOUNTS'), validate(reopenCreditCardInvoiceSchema), reopenCreditCardInvoice);
 

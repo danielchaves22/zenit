@@ -13,7 +13,11 @@ import { Modal } from '@/components/ui/Modal';
 import api from '@/lib/api';
 import { formatCalendarDate, getTodayDateValue } from '@/utils/financialStatus';
 
-export type CreditCardCreditKind = 'REFUND' | 'CASHBACK' | 'ADJUSTMENT';
+export type CreditCardCreditKind =
+  | 'REFUND'
+  | 'CASHBACK'
+  | 'ADJUSTMENT'
+  | 'ANTICIPATION_DISCOUNT';
 
 export interface CreditCardCreditPayload {
   description: string;

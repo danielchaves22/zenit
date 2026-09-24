@@ -313,21 +313,29 @@ export default class CreditCardResetService {
       recurringTemplateIds
     );
 
-    const [creditCardInvoices, invoicePayments] = await Promise.all([
-      prisma.creditCardInvoice.count({
-        where: {
-          accountId
-        }
-      }),
-      prisma.creditCardInvoice.count({
-        where: {
-          accountId,
-          paymentTransactionId: {
-            not: null
+    const creditCardInvoices = await prisma.creditCardInvoice.findMany({
+      where: {
+        accountId
+      },
+      select: {
+        paymentTransactionId: true,
+        payments: {
+          select: {
+            transactionId: true
           }
         }
-      })
-    ]);
+      }
+    });
+    const invoicePaymentTransactionIds = new Set<number>();
+    for (const invoice of creditCardInvoices) {
+      if (invoice.paymentTransactionId) {
+        invoicePaymentTransactionIds.add(invoice.paymentTransactionId);
+      }
+
+      for (const payment of invoice.payments) {
+        invoicePaymentTransactionIds.add(payment.transactionId);
+      }
+    }
 
     const nonCardBalanceReversals = this.buildNonCardBalanceReversalMap(accountId, transactions);
     const fixedOccurrences = transactions.filter(
@@ -347,10 +355,10 @@ export default class CreditCardResetService {
       deleted: {
         transactions: transactions.length,
         creditCardPurchases: this.countCreditCardPurchases(accountId, transactions),
-        creditCardInvoices,
+        creditCardInvoices: creditCardInvoices.length,
         fixedTemplates: recurringTemplateIds.length,
         fixedOccurrences,
-        invoicePayments
+        invoicePayments: invoicePaymentTransactionIds.size
       },
       balances: {
         affectedAccounts: nonCardBalanceReversals.size,

@@ -115,10 +115,34 @@ export const payCreditCardInvoiceSchema = z.object({
   fromAccountId: z.number()
     .int('ID da conta pagadora deve ser um numero inteiro')
     .positive('ID da conta pagadora deve ser positivo'),
+  amount: z.coerce.number()
+    .positive('Valor do pagamento deve ser positivo')
+    .optional(),
   paymentDate: z.coerce.date({
     errorMap: () => ({ message: 'Data de pagamento deve ser valida' })
   }).optional(),
   notes: z.string()
+    .max(1000, 'Observacoes devem ter no maximo 1000 caracteres')
+    .optional()
+});
+
+export const anticipateCreditCardInstallmentsSchema = z.object({
+  id: z.coerce.number()
+    .int('ID da fatura deve ser um numero inteiro')
+    .positive('ID da fatura deve ser positivo'),
+  transactionIds: z.array(
+    z.coerce.number()
+      .int('ID da parcela deve ser um numero inteiro')
+      .positive('ID da parcela deve ser positivo')
+  ).min(1, 'Selecione ao menos uma parcela para antecipar'),
+  anticipatedAt: z.coerce.date({
+    errorMap: () => ({ message: 'Data da antecipacao deve ser valida' })
+  }).optional(),
+  discountAmount: z.coerce.number()
+    .min(0, 'Desconto da antecipacao nao pode ser negativo')
+    .optional(),
+  notes: z.string()
+    .trim()
     .max(1000, 'Observacoes devem ter no maximo 1000 caracteres')
     .optional()
 });

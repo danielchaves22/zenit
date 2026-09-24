@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-09-18
+last_reviewed: 2026-09-23
 summary: Limites, linguagem e invariantes do dominio de planejamento financeiro do Zenit Cash.
 tags:
   - zenit-cash
@@ -69,6 +69,15 @@ pode ser confiavel se esses conceitos tiverem uma origem canonica e auditavel.
 | Perfil de Planejamento | Qual e o contexto do workspace usado para orientar decisoes? | Workspace | Nao altera dados operacionais; registra autores das revisoes |
 | Retrato Financeiro | Qual era a base confirmada para analisar um objetivo? | Workspace | Cria snapshot imutavel com autor; nao altera transacoes nem planos |
 | Cenarios de Planejamento | Quais limites variaveis poderiam aproximar o workspace do objetivo? | Workspace | Simula alternativas; somente envia uma escolha a um rascunho revisavel |
+| Previsão mensal | Quanto sobra ou falta no mês com as fontes escolhidas? | Contas acessíveis no workspace | Consulta sem escrita; não altera limites ou snapshots |
+
+A [previsão mensal](/docs/products/zenit-cash/monthly-forecast) reutiliza os fatos
+e o motor mensal canônicos. Suas médias variáveis excluem fixas e parcelas,
+enquanto o Planejamento Mensal por Categoria mantém a média própria de todas as
+despesas cobertas. Filtros e ajustes da previsão não modificam esse planejamento.
+Liquidações antecipadas participam da competência original, mas não repetem efeito
+no saldo; pendências de competências anteriores exigem simulação explícita de
+quitação para afetar o caixa da previsão.
 
 Os nomes das tabelas existentes podem permanecer durante a consolidacao. APIs,
 componentes e novos modulos devem usar os nomes de dominio acima para evitar que

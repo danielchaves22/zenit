@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import FinancialDashboardService from '../services/financial-dashboard.service';
+import FinancialForecastService from '../services/financial-forecast.service';
 import UserFinancialAccountAccessService from '../services/user-financial-account-access.service';
 import {
   GetFinancialDashboardHistoryQuery,
@@ -45,6 +46,16 @@ async function resolveDashboardAccess(req: Request) {
     accessFilter,
     accessibleAccountIds
   };
+}
+
+export async function getFinancialForecast(req: Request, res: Response) {
+  try {
+    const context = await resolveDashboardAccess(req);
+    const { month, ...options } = req.body;
+    return res.json(await FinancialForecastService.getForecast({ ...context, month, options }));
+  } catch (error: any) {
+    return res.status(400).json({ error: error.message || 'Erro ao calcular previsão' });
+  }
 }
 
 export async function getFinancialDashboardMonthly(req: Request, res: Response) {

@@ -347,7 +347,7 @@ export const routeSurfaces: RouteSurface[] = [
     pattern: '/financial/dashboard',
     module: 'analytics',
     template: 'overview',
-    title: 'Analises',
+    title: 'Análise financeira',
   },
   {
     pattern: '/financial/reports',

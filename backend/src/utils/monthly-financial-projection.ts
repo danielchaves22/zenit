@@ -11,6 +11,10 @@ export type MonthlyProjectionTransactionType = 'INCOME' | 'EXPENSE';
 export type MonthlyProjectionAggregationState = 'REALIZED' | 'PENDING' | 'PROJECTED';
 
 export type MonthlyProjectionKnownRow = {
+  transactionId?: number;
+  description?: string;
+  accountId?: number | null;
+  variableEligible?: boolean;
   type: MonthlyProjectionTransactionType;
   source: MonthlyProjectionSource;
   competence: MonthlyProjectionCompetence;
@@ -21,6 +25,14 @@ export type MonthlyProjectionKnownRow = {
   isSettled: boolean;
   categoryAggregationState: MonthlyProjectionAggregationState;
 };
+
+/** The historical variable population and its monthly offset must match. */
+export function isVariableProjectionRow(row: MonthlyProjectionKnownRow): boolean {
+  return row.type === 'EXPENSE' &&
+    row.variableEligible !== false &&
+    row.source !== 'FIXED_MATERIALIZED' && row.source !== 'FIXED_PROJECTED' &&
+    row.categoryAggregationState !== 'PROJECTED' && !row.competence.installment;
+}
 
 export type MonthlyProjectionTrackedCategory = {
   id: number;
@@ -141,7 +153,7 @@ function buildVariableProjectionItems(params: {
   const committedByCategoryId = new Map<number, Prisma.Decimal>();
 
   for (const row of params.knownRows) {
-    if (row.type !== 'EXPENSE' || row.categoryId === null) continue;
+    if (!isVariableProjectionRow(row) || row.categoryId === null) continue;
 
     const currentValue = committedByCategoryId.get(row.categoryId) ?? new Prisma.Decimal(0);
     committedByCategoryId.set(row.categoryId, currentValue.plus(row.amount));
@@ -176,6 +188,8 @@ export function calculateMonthlyFinancialProjection(params: {
   trackedCategories: MonthlyProjectionTrackedCategory[];
   historicalAverageByCategoryId: Map<number, Prisma.Decimal>;
   provisionContributionItems?: MonthlyProvisionContributionItem[];
+  // Scenario estimates are computed against all known facts before source filtering.
+  variableProjectionItems?: MonthlyVariableProjectionItem[];
 }): MonthlyFinancialProjection {
   const mismatchedRow = params.knownRows.find((row) => row.competence.month !== params.month);
   if (mismatchedRow) {
@@ -193,12 +207,15 @@ export function calculateMonthlyFinancialProjection(params: {
     );
   }
 
-  const variableProjectionItems = buildVariableProjectionItems({
+  const variableProjectionItems = params.variableProjectionItems ?? buildVariableProjectionItems({
     month: params.month,
     trackedCategories: params.trackedCategories,
     historicalAverageByCategoryId: params.historicalAverageByCategoryId,
     knownRows: params.knownRows
   });
+  if (variableProjectionItems.some((item) => item.month !== params.month || item.remainingProjected.lt(0))) {
+    throw new Error('Estimativa variável incompatível com o mês da projeção');
+  }
   const categoryTotalsMap = new Map<string, MonthlyProjectionCategoryTotal>();
   let incomeTotal = new Prisma.Decimal(0);
   let realizedIncomeTotal = new Prisma.Decimal(0);
@@ -274,15 +291,12 @@ export function calculateMonthlyFinancialProjection(params: {
     (sum, item) => sum.plus(item.amount),
     new Prisma.Decimal(0)
   );
-  const projectedEndingBalance = params.isCurrentMonth
-    ? params.carryOverAmount
-        .plus(remainingIncomeTotal)
-        .minus(remainingCommittedExpenseTotal)
-        .minus(variableProjectedExpenseTotal)
-    : params.carryOverAmount
-        .plus(incomeTotal)
-        .minus(committedExpenseTotal)
-        .minus(variableProjectedExpenseTotal);
+  // The starting cash balance already includes settled movements, even when
+  // their due date is in a future month (advance payments/receipts).
+  const projectedEndingBalance = params.carryOverAmount
+    .plus(remainingIncomeTotal)
+    .minus(remainingCommittedExpenseTotal)
+    .minus(variableProjectedExpenseTotal);
 
   return {
     month: params.month,

@@ -11,6 +11,9 @@ import {
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 import FinancialDashboardService from '../../src/services/financial-dashboard.service';
+import FinancialForecastService from '../../src/services/financial-forecast.service';
+import { defaultForecastOptions } from '../../src/utils/financial-forecast';
+import WorkspaceFinancialCalendarService from '../../src/services/workspace-financial-calendar.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -42,6 +45,7 @@ describe('Financial dashboard', () => {
     'X-Company-Id': companyId.toString(),
     [APP_KEY_HEADER]: APP_KEY_VALUE
   });
+  afterEach(() => jest.restoreAllMocks());
 
   beforeAll(async () => {
     const companyCodeBase = Number(`8${String(Date.now()).slice(-7)}`);
@@ -332,6 +336,84 @@ describe('Financial dashboard', () => {
     }
   });
 
+  it('projects comparable history, carries overdue cash once, and respects account and workspace scope', async () => {
+    const account = await prisma.financialAccount.create({ data: { name: 'Forecast bank', type: 'CHECKING', balance: 1000, companyId: primaryCompanyId } });
+    const category = await prisma.financialCategory.create({ data: { name: 'Forecast food', type: 'EXPENSE', color: '#fff', companyId: primaryCompanyId } });
+    const fixed = await prisma.recurringTransaction.create({ data: {
+      description: 'Inactive historical fixed', amount: 900, type: 'EXPENSE', frequency: 'MONTHLY', startDate: new Date('2026-01-10T12:00:00Z'),
+      nextDueDate: new Date('2026-09-10T12:00:00Z'),
+      isActive: false, fromAccountId: account.id, categoryId: category.id, companyId: primaryCompanyId, createdBy: primaryUserId
+    } });
+    const common = { type: 'EXPENSE' as const, fromAccountId: account.id, categoryId: category.id, companyId: primaryCompanyId, createdBy: primaryUserId };
+    await prisma.financialTransaction.createMany({ data: [
+      { ...common, description: 'July variable', amount: 200, date: new Date('2026-07-10T12:00:00Z'), status: 'COMPLETED' },
+      { ...common, description: 'August variable', amount: 100, date: new Date('2026-08-10T12:00:00Z'), status: 'COMPLETED' },
+      { ...common, description: 'August fixed', amount: 900, recurringTransactionId: fixed.id, date: new Date('2026-08-11T12:00:00Z'), status: 'COMPLETED' },
+      { ...common, description: 'August installment', amount: 300, installmentNumber: 1, totalInstallments: 3, date: new Date('2026-08-12T12:00:00Z'), status: 'COMPLETED' },
+      { ...common, description: 'September variable', amount: 20, date: new Date('2026-09-10T12:00:00Z'), status: 'COMPLETED' },
+      { ...common, description: 'September fixed', amount: 50, recurringTransactionId: fixed.id, date: new Date('2026-09-11T12:00:00Z'), status: 'PENDING' },
+      { ...common, description: 'September installment', amount: 30, installmentNumber: 2, totalInstallments: 3, date: new Date('2026-09-12T12:00:00Z'), status: 'PENDING' },
+      { ...common, description: 'Overdue expense', amount: 60, date: new Date('2026-08-15T12:00:00Z'), status: 'PENDING' },
+      { ...common, description: 'Overdue income', type: 'INCOME', amount: 20, fromAccountId: null, toAccountId: account.id, date: new Date('2026-08-15T12:00:00Z'), status: 'PENDING' },
+      { ...common, description: 'Remaining income', type: 'INCOME', amount: 200, fromAccountId: null, toAccountId: account.id, date: new Date('2026-09-28T12:00:00Z'), status: 'PENDING' }
+    ] });
+    const params = { companyId: primaryCompanyId, at: new Date('2026-09-23T15:00:00Z'), options: { ...defaultForecastOptions, historyMonths: 3 } };
+    const before = await prisma.financialTransaction.findMany({ where: { companyId: primaryCompanyId }, orderBy: { id: 'asc' } });
+    const september = await FinancialForecastService.getForecast(params);
+    expect(september.history.months).toEqual(['2026-07', '2026-08']);
+    expect(september.variables[0]).toMatchObject({ historicalAverage: '150.00', committedInMonth: '20.00', remainingProjected: '130.00' });
+    expect(september).toMatchObject({ income: '200.00', expense: '230.00', result: '-30.00', endingBalance: '990.00' });
+    expect(september.overdue).toMatchObject({ included: false, expense: '60.00', income: '20.00', cashEffect: '0.00' });
+    const october = await FinancialForecastService.getForecast({ ...params, month: '2026-10', options: { ...params.options, includeOverdue: true } });
+    expect(october.timeline.map((point) => point.endingBalance)).toEqual(['950.00', '800.00']);
+    expect(october.timeline.map((point) => point.result)).toEqual(['-30.00', '-150.00']);
+    const partial = await FinancialForecastService.getForecast({ ...params, options: { ...params.options, sources: { ...params.options.sources, other: false } } });
+    expect(partial.variables[0].remainingProjected).toBe('130.00');
+    expect(partial).toMatchObject({ income: '0.00', expense: '180.00', endingBalance: '820.00' });
+    const noAccess = await FinancialForecastService.getForecast({ ...params, accessibleAccountIds: [] });
+    expect(noAccess).toMatchObject({ currentBalance: '0.00', income: '0.00', expense: '0.00', transactions: [], variables: [] });
+    const otherWorkspace = await request(app).post('/api/financial/dashboard/forecast').set(authHeaders(primaryToken, secondaryCompanyId)).send({});
+    expect(otherWorkspace.status).toBe(200);
+    expect(otherWorkspace.body.transactions).toEqual([]);
+    const invalid = await request(app).post('/api/financial/dashboard/forecast').set(authHeaders(primaryToken, primaryCompanyId)).send({ overrides: { [`ACCOUNT:${category.id}`]: '-1' } });
+    expect(invalid.status).toBe(400);
+    expect(await prisma.financialTransaction.findMany({ where: { companyId: primaryCompanyId }, orderBy: { id: 'asc' } })).toEqual(before);
+    expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: account.id } })).balance.toFixed(2)).toBe('1000.00');
+  });
+
+  it('keeps card estimates separate and never adds purchases to a closed invoice', async () => {
+    const card = await prisma.financialAccount.create({ data: { name: 'Forecast card', type: 'CREDIT_CARD', balance: 0, statementClosingDay: 20, statementDueDay: 28, companyId: primaryCompanyId } });
+    const category = await prisma.financialCategory.create({ data: { name: 'Card food', type: 'EXPENSE', color: '#fff', companyId: primaryCompanyId } });
+    const invoices = await Promise.all([7, 8, 9, 10].map((month) => prisma.creditCardInvoice.create({ data: {
+      accountId: card.id, referenceMonth: month, referenceYear: 2026,
+      closingDate: new Date(Date.UTC(2026, month - 1, 20, 12)), dueDate: new Date(Date.UTC(2026, month - 1, 28, 12)),
+      status: month < 9 ? 'PAID' : month === 9 ? 'CLOSED' : 'OPEN'
+    } })));
+    const common = { type: 'EXPENSE' as const, fromAccountId: card.id, categoryId: category.id, companyId: primaryCompanyId, createdBy: primaryUserId, status: 'COMPLETED' as const };
+    await prisma.financialTransaction.createMany({ data: invoices.map((invoice, index) => ({
+      ...common, description: 'Card variable', amount: index === 3 ? 40 : 100, date: invoice.closingDate, creditCardInvoiceId: invoice.id
+    })) });
+    const installment = await prisma.financialTransaction.create({ data: {
+      ...common, description: 'Card installment', amount: 60, date: invoices[3].closingDate, creditCardInvoiceId: invoices[3].id,
+      totalInstallments: 3, installmentNumber: 2, purchaseGroupId: 'forecast-installment'
+    } });
+    await prisma.financialTransaction.create({ data: {
+      ...common, type: 'INCOME', fromAccountId: null, toAccountId: card.id, description: 'Installment refund', amount: 10, date: invoices[3].closingDate, creditCardInvoiceId: invoices[3].id,
+      creditCardCreditKind: 'REFUND', refundOfTransactionId: installment.id
+    } });
+    const params = { companyId: primaryCompanyId, at: new Date('2026-09-23T15:00:00Z'), options: defaultForecastOptions };
+    const september = await FinancialForecastService.getForecast(params);
+    expect(september).toMatchObject({ expense: '100.00', endingBalance: '-100.00' });
+    expect(september.variables[0]).toMatchObject({ historicalAverage: '100.00', included: false, cycleUnavailable: true });
+    const october = await FinancialForecastService.getForecast({ ...params, month: '2026-10' });
+    expect(october.variables[0]).toMatchObject({ historicalAverage: '100.00', committedInMonth: '40.00', remainingProjected: '60.00', included: true });
+    expect(october).toMatchObject({ expense: '150.00', endingBalance: '-250.00' });
+    const known = await FinancialForecastService.getForecast({ ...params, month: '2026-10', options: { ...defaultForecastOptions, cardMode: 'KNOWN_ONLY' } });
+    expect(known).toMatchObject({ expense: '90.00', endingBalance: '-190.00' });
+    // Remove the referencing credit before the original purchase (restrict FK).
+    await prisma.financialTransaction.deleteMany({ where: { refundOfTransactionId: installment.id } });
+  });
+
   it('stores variable projection preferences per user and per company, enforcing the max of 10 categories', async () => {
     const categories = await prisma.financialCategory.createManyAndReturn({
       data: Array.from({ length: 11 }).map((_, index) => ({
@@ -387,6 +469,9 @@ describe('Financial dashboard', () => {
 
   it('returns the monthly dashboard using current balance as the truth and discounts committed items from the variable projection', async () => {
     const now = new Date();
+    const realGetContext = WorkspaceFinancialCalendarService.getContext.bind(WorkspaceFinancialCalendarService);
+    jest.spyOn(WorkspaceFinancialCalendarService, 'getContext').mockImplementation((companyId) =>
+      realGetContext(companyId, new Date(now.getFullYear(), now.getMonth(), 15, 12)));
     const currentMonthKey = buildMonthKey(now);
     const currentMonthIndex = now.getMonth();
     const currentYear = now.getFullYear();
@@ -566,9 +651,9 @@ describe('Financial dashboard', () => {
     expect(response.body.currentMonthBreakdown.income.remaining).toBe('580.00');
     expect(response.body.currentMonthBreakdown.expense.realizedCommitted).toBe('50.00');
     expect(response.body.currentMonthBreakdown.expense.remainingCommitted).toBe('50.00');
-    expect(response.body.currentMonthBreakdown.expense.remainingVariableProjected).toBe('20.00');
-    expect(response.body.variableProjection.total).toBe('20.00');
-    expect(response.body.projectedEndingBalance).toBe('1460.00');
+    expect(response.body.currentMonthBreakdown.expense.remainingVariableProjected).toBe('50.00');
+    expect(response.body.variableProjection.total).toBe('50.00');
+    expect(response.body.projectedEndingBalance).toBe('1430.00');
     expect(response.body.variableProjection.categories).toEqual([
       {
         categoryId: trackedExpenseCategory.id,
@@ -576,8 +661,8 @@ describe('Financial dashboard', () => {
         color: '#f97316',
         month: currentMonthKey,
         historicalAverage: '120.00',
-        committedInMonth: '100.00',
-        remainingProjected: '20.00'
+        committedInMonth: '70.00',
+        remainingProjected: '50.00'
       }
     ]);
     expect(response.body.categoryTotals).toEqual(
@@ -587,10 +672,10 @@ describe('Financial dashboard', () => {
           name: 'Combustivel',
           color: '#f97316',
           type: 'EXPENSE',
-          amount: '120.00',
+          amount: '150.00',
           realizedAmount: '50.00',
           pendingAmount: '20.00',
-          projectedAmount: '50.00'
+          projectedAmount: '80.00'
         },
         {
           categoryId: incomeCategory.id,
@@ -614,17 +699,17 @@ describe('Financial dashboard', () => {
     expect(nextMonthResponse.status).toBe(200);
     expect(nextMonthResponse.body.month).toBe(nextMonthKey);
     expect(nextMonthResponse.body.carryOver).toEqual({
-      amount: '1460.00',
+      amount: '1430.00',
       source: 'PREVIOUS_PROJECTED'
     });
     expect(nextMonthResponse.body.monthlyTotals).toEqual({
       incomeTotal: '80.00',
-      expenseTotal: '120.00',
+      expenseTotal: '150.00',
       committedExpenseTotal: '30.00',
-      variableProjectedExpenseTotal: '90.00',
+      variableProjectedExpenseTotal: '120.00',
       provisionContributionTotal: '0.00'
     });
-    expect(nextMonthResponse.body.projectedEndingBalance).toBe('1420.00');
+    expect(nextMonthResponse.body.projectedEndingBalance).toBe('1360.00');
   });
 
   it('projects provision contributions without turning them into expenses or account movements', async () => {

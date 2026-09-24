@@ -45,6 +45,16 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
   
   const [sidebarCollapsed, setSidebarCollapsed] = useState(getSavedCollapsedState);
 
+  useEffect(() => {
+    const narrowScreen = window.matchMedia('(max-width: 767px)');
+    const updateNavigation = () => {
+      setSidebarCollapsed(narrowScreen.matches ? true : getSavedCollapsedState());
+    };
+    updateNavigation();
+    narrowScreen.addEventListener('change', updateNavigation);
+    return () => narrowScreen.removeEventListener('change', updateNavigation);
+  }, []);
+
   // Esta função será passada para o Sidebar para atualizar o estado aqui
   const handleSidebarToggle = (collapsed: boolean) => {
     setSidebarCollapsed(collapsed);
@@ -102,19 +112,19 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Top Navigation com uma borda sutil */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
-        <div className="flex items-center space-x-4">
-          <Link href="/" className="flex items-center hover:opacity-90">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-3 sm:px-6 flex justify-between gap-3 items-center h-[60px] border-b border-gray-700">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <Link href="/" className="flex shrink-0 items-center hover:opacity-90">
             <Image
               src="/assets/images/logo_principal.png"
               alt="ZENIT"
               width={2000}
               height={1000}
               priority
-              className="h-10 w-auto"
+              className="h-8 sm:h-10 w-auto"
             />
           </Link>
-          <span className="text-white text-lg font-bold font-heading">
+          <span className="truncate text-white text-sm sm:text-lg font-bold font-heading">
             {companyName}
           </span>
           {canSwitchCompany && (
@@ -129,12 +139,12 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           )}
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex shrink-0 items-center space-x-3">
           {/* ✅ SELETOR DE TEMAS (oculto) */}
-          <div>
+          <div className="hidden sm:block">
             <ThemeSelector showLabel={false} size="sm" />
           </div>
-          <span className="text-sm text-gray-300">{userName}</span>
+          <span className="hidden md:block text-sm text-gray-300">{userName}</span>
           
           <div className="relative" ref={userMenuRef}>
             <button 
@@ -184,7 +194,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           sidebarCollapsed ? 'ml-16' : 'ml-52'
         }`}>
           {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-6 bg-background text-gray-300">
+          <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-background text-gray-300">
             {children}
           </main>
         </div>

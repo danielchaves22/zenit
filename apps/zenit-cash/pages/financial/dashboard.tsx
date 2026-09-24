@@ -1,17 +1,17 @@
 import React from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Breadcrumb } from '@/components/ui/Breadcrumb';
-import FinancialDashboard from '@/components/financial/Dashboard';
+import FinancialAnalysis from '@/components/financial/FinancialAnalysis';
 
 export default function FinancialDashboardPage() {
   return (
-    <DashboardLayout title="Dashboard Financeiro">
+    <DashboardLayout title="Análise financeira">
       <Breadcrumb items={[
         { label: 'Início', href: '/' },
-        { label: 'Dashboard Financeiro' }
+        { label: 'Análise financeira' }
       ]} />
       
-      <FinancialDashboard />
+      <FinancialAnalysis />
     </DashboardLayout>
   );
 }

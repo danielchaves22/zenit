@@ -60,6 +60,7 @@ import {
   updateFixedTransactionSchema
 } from '../validators/fixed-transaction.validator';
 import {
+  financialForecastSchema,
   getFinancialDashboardHistorySchema,
   getFinancialDashboardMonthlySchema
 } from '../validators/financial-dashboard.validator';
@@ -152,6 +153,7 @@ import {
   reopenCreditCardInvoice
 } from '../controllers/credit-card-invoice.controller';
 import {
+  getFinancialForecast,
   getFinancialDashboardStructural,
   getFinancialDashboardHistory,
   getFinancialDashboardMonthly
@@ -444,6 +446,8 @@ router.get(
   getFinancialDashboardMonthly
 );
 router.get('/dashboard/structural', getFinancialDashboardStructural);
+// Read-only scenario: no preference, budget, snapshot or transaction is mutated.
+router.post('/dashboard/forecast', validate(financialForecastSchema), getFinancialForecast);
 router.get(
   '/dashboard/history',
   validate(getFinancialDashboardHistorySchema, { source: 'query' }),

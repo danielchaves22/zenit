@@ -184,9 +184,9 @@ export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
     },
     {
       icon: <PieChart size={20} />,
-      label: 'Dashboard',
+      label: 'Análises',
       subItems: [
-        { label: 'Dashboard Financeiro', href: '/financial/dashboard'},
+        { label: 'Análise financeira', href: '/financial/dashboard'},
       ],
     },
     {

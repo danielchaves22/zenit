@@ -578,12 +578,12 @@ function buildCategoryPieData(params: {
   return groupedCategories.sort((left, right) => right.value - left.value);
 }
 
-export default function FinancialDashboard() {
+export default function FinancialDashboard({ historyOnly = false }: { historyOnly?: boolean } = {}) {
   const router = useRouter();
   const { addToast } = useToast();
   const currentMonth = getCurrentMonthKey();
 
-  const [view, setView] = useState<FinancialDashboardView>('monthly');
+  const [view, setView] = useState<FinancialDashboardView>(historyOnly ? 'history' : 'monthly');
   const [month, setMonth] = useState(currentMonth);
   const [categories, setCategories] = useState<Category[]>([]);
   const [trackedExpenseCategoryIds, setTrackedExpenseCategoryIds] = useState<number[]>([]);
@@ -613,11 +613,13 @@ export default function FinancialDashboard() {
       return;
     }
 
-    const nextView = normalizeView(router.query.view);
+    const nextView = historyOnly ? 'history' : normalizeView(router.query.view);
     const nextMonth = normalizeMonthKey(router.query.month, currentMonth);
 
     setView(nextView);
     setMonth(nextMonth);
+
+    if (historyOnly) return;
 
     const shouldReplace = nextView !== router.query.view || nextMonth !== router.query.month;
     if (shouldReplace) {
@@ -634,7 +636,7 @@ export default function FinancialDashboard() {
         { shallow: true }
       );
     }
-  }, [currentMonth, router]);
+  }, [currentMonth, historyOnly, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -684,6 +686,7 @@ export default function FinancialDashboard() {
     let cancelled = false;
 
     async function loadStructural() {
+      if (historyOnly) { setLoadingStructural(false); return; }
       setLoadingStructural(true);
       setStructuralError(null);
 
@@ -713,7 +716,7 @@ export default function FinancialDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [historyOnly]);
 
   useEffect(() => {
     if (loadingBootstrap || view !== 'monthly') {
@@ -1095,7 +1098,7 @@ export default function FinancialDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:gap-4">
+      {!historyOnly && <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:gap-4">
         <div className="shrink-0">
           <div className="text-2xl font-heading font-bold text-white">
             Dashboard financeiro
@@ -1104,18 +1107,18 @@ export default function FinancialDashboard() {
         <h1 className="text-sm text-gray-300 md:text-base">
           Visao analitica do caixa e das tendencias do mes.
         </h1>
-      </div>
+      </div>}
 
-      <StructuralOverview
+      {!historyOnly && <StructuralOverview
         data={structuralData}
         loading={loadingStructural}
         error={structuralError}
-      />
+      />}
 
       <div className="flex flex-col gap-3 rounded-xl border border-gray-800 bg-[#151a22] px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-            Paineis variaveis
+            {historyOnly ? 'Evolução' : 'Paineis variaveis'}
           </div>
           <div className="text-sm text-gray-300">
             {view === 'monthly' ? 'Situacao financeira mensal' : 'Historico financeiro'}
@@ -1124,13 +1127,13 @@ export default function FinancialDashboard() {
 
         {view === 'monthly' ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Select
+            {!historyOnly && <Select
               aria-label="Selecione a visao do dashboard"
               options={VIEW_OPTIONS}
               value={view}
               onChange={(event) => handleViewChange(event.target.value)}
               className="min-w-[280px]"
-            />
+            />}
 
             <div className="flex items-center gap-2 rounded-xl border border-gray-700 bg-[#11161d] px-3 py-2">
               <CalendarRange size={16} className="text-accent" />
@@ -1157,13 +1160,13 @@ export default function FinancialDashboard() {
           </div>
         ) : (
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
-            <Select
+            {!historyOnly && <Select
               aria-label="Selecione a visao do dashboard"
               options={VIEW_OPTIONS}
               value={view}
               onChange={(event) => handleViewChange(event.target.value)}
               className="min-w-[280px]"
-            />
+            />}
 
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">

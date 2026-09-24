@@ -77,7 +77,7 @@ function buildRelevantMonthWhere(startDate: Date, endDate: Date): Prisma.Financi
   };
 }
 
-function buildHistoricalNonCardDateWhere(params: {
+export function buildHistoricalNonCardDateWhere(params: {
   perspective: FinancialRecognitionPerspective;
   startDate: Date;
   endDate: Date;
@@ -108,7 +108,7 @@ function buildHistoricalNonCardDateWhere(params: {
   };
 }
 
-function buildHistoricalCardDateWhere(params: {
+export function buildHistoricalCardDateWhere(params: {
   perspective: FinancialRecognitionPerspective;
   startDate: Date;
   endDate: Date;
@@ -214,7 +214,7 @@ export default class FinancialDashboardService {
     };
   }
 
-  private static async getCurrentBalance(params: {
+  static async getCurrentBalance(params: {
     companyId: number;
     accessibleAccountIds?: number[];
   }): Promise<Prisma.Decimal> {
@@ -402,6 +402,7 @@ export default class FinancialDashboardService {
       categoryIds: trackedCategoryIds,
       transactionCategoryIds: trackedCategoryIds,
       excludeRecurringTransactions: true,
+      excludeInstallments: true,
       accessFilter,
       calendarContext,
       recognitionPerspective: 'SETTLEMENT'
@@ -428,7 +429,7 @@ export default class FinancialDashboardService {
     return result;
   }
 
-  private static async getKnownMonthlyRows(params: {
+  static async getKnownMonthlyRows(params: {
     companyId: number;
     monthStart: Date;
     monthEnd: Date;
@@ -436,6 +437,8 @@ export default class FinancialDashboardService {
     isCurrentMonth: boolean;
     accessibleAccountIds?: number[];
     accessFilter?: Prisma.FinancialTransactionWhereInput;
+    onlyUnsettled?: boolean;
+    includeProjections?: boolean;
   }): Promise<MonthlyProjectionKnownRow[]> {
     const {
       companyId,
@@ -466,6 +469,12 @@ export default class FinancialDashboardService {
     if (accessFilter) {
       sharedFilters.push(accessFilter);
     }
+    if (accessibleAccountIds) {
+      sharedFilters.push({ OR: [
+        { fromAccountId: { in: accessibleAccountIds } },
+        { toAccountId: { in: accessibleAccountIds } }
+      ] });
+    }
 
     const [materializedNonCard, materializedCard] = await Promise.all([
       prisma.financialTransaction.findMany({
@@ -473,12 +482,16 @@ export default class FinancialDashboardService {
           AND: [
             ...sharedFilters,
             {
-              creditCardInvoiceId: null
+              creditCardInvoiceId: null,
+              ...(params.onlyUnsettled ? { status: TransactionStatus.PENDING } : {})
             },
             buildRelevantMonthWhere(monthStart, monthEnd)
           ]
         },
         select: {
+          id: true,
+          description: true,
+          fromAccountId: true,
           type: true,
           amount: true,
           date: true,
@@ -512,6 +525,7 @@ export default class FinancialDashboardService {
               ],
               creditCardInvoice: {
                 is: {
+                  ...(params.onlyUnsettled ? { status: { not: 'PAID' as const } } : {}),
                   dueDate: {
                     gte: monthStart,
                     lte: monthEnd
@@ -522,6 +536,9 @@ export default class FinancialDashboardService {
           ]
         },
         select: {
+          id: true,
+          description: true,
+          fromAccountId: true,
           type: true,
           status: true,
           creditCardCreditKind: true,
@@ -530,6 +547,7 @@ export default class FinancialDashboardService {
           installmentNumber: true,
           totalInstallments: true,
           purchaseGroupId: true,
+          refundOfTransaction: { select: { recurringTransactionId: true, installmentPlanId: true, totalInstallments: true } },
           categoryId: true,
           category: {
             select: {
@@ -539,6 +557,7 @@ export default class FinancialDashboardService {
           },
           creditCardInvoice: {
             select: {
+              accountId: true,
               status: true,
               dueDate: true
             }
@@ -553,6 +572,10 @@ export default class FinancialDashboardService {
       const recognition = recognizeNonCardTransaction(transaction.status);
 
       rows.push({
+        transactionId: transaction.id,
+        description: transaction.description,
+        accountId: transaction.fromAccountId,
+        variableEligible: !transaction.recurringTransactionId && !transaction.installmentPlanId && !(transaction.totalInstallments && transaction.totalInstallments > 1),
         type: transaction.type as MonthlyProjectionTransactionType,
         source: transaction.recurringTransactionId ? 'FIXED_MATERIALIZED' : 'AD_HOC_MATERIALIZED',
         competence: resolveMonthlyProjectionCompetence({
@@ -574,6 +597,7 @@ export default class FinancialDashboardService {
 
     for (const transaction of materializedCard) {
       if (!transaction.creditCardInvoice) continue;
+      const original = transaction.refundOfTransaction;
 
       const recognition = recognizeCreditCardTransaction(
         transaction.status,
@@ -581,6 +605,11 @@ export default class FinancialDashboardService {
       );
 
       rows.push({
+        transactionId: transaction.id,
+        description: transaction.description,
+        accountId: transaction.creditCardInvoice.accountId,
+        variableEligible: !transaction.recurringTransactionId && (transaction.totalInstallments ?? 0) <= 1 &&
+          !(original && (original.recurringTransactionId || original.installmentPlanId || (original.totalInstallments ?? 0) > 1)),
         type: TransactionType.EXPENSE,
         source: 'CREDIT_CARD',
         competence: resolveMonthlyProjectionCompetence({
@@ -598,6 +627,8 @@ export default class FinancialDashboardService {
         categoryAggregationState: toDashboardAggregationState(recognition)
       });
     }
+
+    if (params.includeProjections === false) return rows;
 
     // FixedTransactionService still uses local calendar accessors internally.
     // Noon UTC preserves the intended calendar month across supported hosts.
@@ -669,6 +700,9 @@ export default class FinancialDashboardService {
         );
 
         rows.push({
+          description: template.description,
+          accountId: template.fromAccountId,
+          variableEligible: false,
           type: TransactionType.EXPENSE,
           source: 'CREDIT_CARD',
           competence: resolveMonthlyProjectionCompetence({
@@ -687,6 +721,9 @@ export default class FinancialDashboardService {
       }
 
       rows.push({
+        description: template.description,
+        accountId: template.fromAccountId,
+        variableEligible: false,
         type: template.type as MonthlyProjectionTransactionType,
         source: 'FIXED_PROJECTED',
         competence: resolveMonthlyProjectionCompetence({
@@ -703,6 +740,23 @@ export default class FinancialDashboardService {
     }
 
     return rows;
+  }
+
+  static async getPriorPeriodPendingRows(params: {
+    companyId: number;
+    calendarContext: FinancialCalendarContext;
+    accessibleAccountIds?: number[];
+    accessFilter?: Prisma.FinancialTransactionWhereInput;
+  }) {
+    return this.getKnownMonthlyRows({
+      ...params,
+      monthStart: new Date(Date.UTC(1900, 0, 1)),
+      monthEnd: new Date(startOfMonth(params.calendarContext.businessDate).getTime() - 1),
+      currentDate: params.calendarContext.businessDate,
+      isCurrentMonth: false,
+      onlyUnsettled: true,
+      includeProjections: false
+    });
   }
 
   static async getMonthlyProjection(params: {
@@ -970,6 +1024,7 @@ export default class FinancialDashboardService {
     categoryIds?: number[];
     transactionCategoryIds?: number[];
     excludeRecurringTransactions?: boolean;
+    excludeInstallments?: boolean;
     accessFilter?: Prisma.FinancialTransactionWhereInput;
     calendarContext?: FinancialCalendarContext;
     recognitionPerspective?: FinancialRecognitionPerspective;
@@ -1012,6 +1067,16 @@ export default class FinancialDashboardService {
       sharedFilters.push({
         recurringTransactionId: null
       });
+      sharedFilters.push({ OR: [{ refundOfTransactionId: null }, { refundOfTransaction: { recurringTransactionId: null } }] });
+    }
+    if (params.excludeInstallments) {
+      sharedFilters.push({
+        installmentPlanId: null,
+        OR: [{ totalInstallments: null }, { totalInstallments: { lte: 1 } }]
+      });
+      sharedFilters.push({ OR: [{ refundOfTransactionId: null }, { refundOfTransaction: {
+        installmentPlanId: null, OR: [{ totalInstallments: null }, { totalInstallments: { lte: 1 } }]
+      } }] });
     }
 
     const [materializedNonCard, materializedCard, selectedCategories] = await Promise.all([

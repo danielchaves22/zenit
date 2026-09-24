@@ -623,6 +623,17 @@ describe('Monthly category budget', () => {
       remainingAmount: '90.00',
       status: 'ON_TRACK'
     });
+    const savedBefore = await prisma.monthlyCategoryBudget.findMany({ where: { companyId }, orderBy: { id: 'asc' } });
+    const scenario = await request(app).post('/api/financial/dashboard/forecast').set(authHeaders()).send({
+      month: nextMonth, sources: { fixed: false, other: false, cards: false, variable: true },
+      overrides: { [`ACCOUNT:${childCategoryId}`]: '999.00' }, includeOverdue: true
+    });
+    expect(scenario.status).toBe(200);
+    expect(scenario.body.transactions.every((item: { included: boolean }) => !item.included)).toBe(true);
+    expect(await prisma.monthlyCategoryBudget.findMany({ where: { companyId }, orderBy: { id: 'asc' } })).toEqual(savedBefore);
+    const afterScenario = await request(app).get('/api/financial/budgets/monthly').set(authHeaders()).query({ month: nextMonth });
+    expect(afterScenario.status).toBe(200);
+    expect(afterScenario.body).toEqual(response.body);
   });
 
   it('uses only settled history when calculating the category forecast average', async () => {

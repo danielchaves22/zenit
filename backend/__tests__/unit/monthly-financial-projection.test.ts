@@ -64,24 +64,24 @@ describe('Monthly financial projection', () => {
     });
 
     expect(projection.variableProjectionItems[0]).toMatchObject({
-      committedInMonth: new Prisma.Decimal(100),
-      remainingProjected: new Prisma.Decimal(20)
+      committedInMonth: new Prisma.Decimal(70),
+      remainingProjected: new Prisma.Decimal(50)
     });
     expect(projection.categoryTotals.find((item) => item.categoryId === 10)).toMatchObject({
-      amount: new Prisma.Decimal(120),
+      amount: new Prisma.Decimal(150),
       realizedAmount: new Prisma.Decimal(50),
       pendingAmount: new Prisma.Decimal(20),
-      projectedAmount: new Prisma.Decimal(50),
+      projectedAmount: new Prisma.Decimal(80),
       fixedProjectedAmount: new Prisma.Decimal(30),
-      variableProjectedAmount: new Prisma.Decimal(20)
+      variableProjectedAmount: new Prisma.Decimal(50)
     });
     expect(projection.totals).toMatchObject({
       incomeTotal: new Prisma.Decimal(80),
-      expenseTotal: new Prisma.Decimal(120),
+      expenseTotal: new Prisma.Decimal(150),
       committedExpenseTotal: new Prisma.Decimal(100),
-      variableProjectedExpenseTotal: new Prisma.Decimal(20)
+      variableProjectedExpenseTotal: new Prisma.Decimal(50)
     });
-    expect(projection.projectedEndingBalance.toFixed(2)).toBe('960.00');
+    expect(projection.projectedEndingBalance.toFixed(2)).toBe('930.00');
   });
 
   it('keeps provision contributions separate from expenses and account balance', () => {
@@ -112,7 +112,7 @@ describe('Monthly financial projection', () => {
     expect(projection.projectedEndingBalance.toFixed(2)).toBe('1000.00');
   });
 
-  it('uses every known movement when carrying a future month forward', () => {
+  it('keeps advance payments in future competence without subtracting cash twice', () => {
     const projection = calculateMonthlyFinancialProjection({
       month: '2026-10',
       isCurrentMonth: false,
@@ -151,7 +151,8 @@ describe('Monthly financial projection', () => {
       ]
     });
 
-    expect(projection.projectedEndingBalance.toFixed(2)).toBe('1200.00');
+    expect(projection.totals.expenseTotal.toFixed(2)).toBe('300.00');
+    expect(projection.projectedEndingBalance.toFixed(2)).toBe('1300.00');
   });
 
   it('never creates a negative variable projection', () => {

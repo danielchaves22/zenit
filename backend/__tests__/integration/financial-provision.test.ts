@@ -309,7 +309,8 @@ describe('Financial provisions', () => {
       reservedAmount: '0.00',
       lastUsedAmount: '1150.00'
     });
-    expect(response.body.entries[0]).toMatchObject({
+    // A date-only use can precede today's timestamped initial balance.
+    expect(response.body.entries.find((entry: { type: string }) => entry.type === 'USE')).toMatchObject({
       type: 'USE',
       reservedAmountChange: '-200.00'
     });

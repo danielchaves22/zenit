@@ -1,19 +1,21 @@
 import api from './api';
 
-export type ForecastSource = 'fixed' | 'other' | 'cards' | 'variable';
+export type ForecastSource = 'income' | 'fixed' | 'other' | 'cards' | 'variable';
 export interface ForecastOptions {
   sources: Record<ForecastSource, boolean>;
   cardMode: 'KNOWN_ONLY' | 'ESTIMATE';
   historyMonths: number;
   includeOverdue: boolean;
+  excludedIncomeIds: number[];
   excludedVariableKeys: string[];
   overrides: Record<string, string>;
 }
 export const defaultForecastOptions: ForecastOptions = {
-  sources: { fixed: true, other: true, cards: true, variable: true },
+  sources: { income: true, fixed: true, other: true, cards: true, variable: true },
   cardMode: 'ESTIMATE',
   historyMonths: 6,
   includeOverdue: false,
+  excludedIncomeIds: [],
   excludedVariableKeys: [],
   overrides: {}
 };
@@ -45,6 +47,7 @@ export interface FinancialForecast {
   remainingIncome: string;
   remainingExpense: string;
   sources: Array<{ key: ForecastSource; included: boolean; income: string; expense: string }>;
+  incomes: Array<{ id: number; description: string; amount: string; included: boolean }>;
   history: { months: string[]; requestedMonths: number; uncategorizedCount: number };
   variables: Array<{
     key: string;

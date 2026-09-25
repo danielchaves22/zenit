@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
-  Info,
   Loader2,
   Save,
   ShieldCheck,
@@ -139,6 +138,105 @@ const statePresentation = {
   }
 };
 
+const profileFieldHelp = {
+  planningContext: (
+    <>
+      <p>
+        Escolha <strong>Apenas para mim</strong> quando os lançamentos representam somente a sua
+        vida financeira.
+      </p>
+      <p>
+        Escolha <strong>Para minha família</strong> quando o workspace representa o orçamento
+        compartilhado da casa, mesmo que apenas uma pessoa faça os lançamentos.
+      </p>
+      <p>Essa escolha não adiciona usuários nem altera as permissões do workspace.</p>
+    </>
+  ),
+  dataCoverage: (
+    <>
+      <p>
+        Marque <strong>Representam todo o orçamento</strong> quando as receitas e despesas
+        relevantes estão registradas no Zenit.
+      </p>
+      <p>
+        Marque <strong>Representam apenas uma parte</strong> se ainda existem rendas, contas,
+        cartões ou gastos importantes controlados fora do sistema.
+      </p>
+      <p>
+        A cobertura parcial não impede a análise, mas reduz sua pontuação de qualidade e faz o
+        Zenit apresentar conclusões com mais cautela.
+      </p>
+    </>
+  ),
+  adults: (
+    <>
+      <p>Informe quantos adultos têm receitas ou despesas incluídas neste orçamento.</p>
+      <p>
+        Em um planejamento familiar, conte você, cônjuge ou outro adulto cuja vida financeira
+        faça parte do workspace. Não conte aqui crianças ou outros dependentes financeiros.
+      </p>
+    </>
+  ),
+  dependents: (
+    <>
+      <p>
+        Informe quantas pessoas são sustentadas total ou parcialmente por este orçamento sem
+        possuir uma vida financeira independente nele.
+      </p>
+      <p>
+        Exemplos comuns são filhos, idosos ou outros familiares dependentes. Um cônjuge já contado
+        como adulto não deve ser repetido aqui.
+      </p>
+    </>
+  ),
+  reserve: (
+    <>
+      <p>
+        Defina quantos meses de despesas essenciais você deseja que sua reserva de emergência
+        consiga cobrir.
+      </p>
+      <p>
+        Informe a quantidade de meses, não o saldo atual nem um valor em reais. Por exemplo, 6
+        significa uma meta equivalente a seis meses de despesas essenciais.
+      </p>
+      <p>Essa meta não movimenta dinheiro nem cria uma provisão automaticamente.</p>
+    </>
+  ),
+  planningStyle: (
+    <>
+      <p><strong>Conservador:</strong> prioriza preservar margens de segurança e estabilidade.</p>
+      <p><strong>Equilibrado:</strong> busca conciliar proteção e espaço para ajustes.</p>
+      <p><strong>Flexível:</strong> indica maior disposição para rever gastos discricionários.</p>
+      <p>Essa escolha registra sua preferência e não altera limites automaticamente.</p>
+    </>
+  ),
+  adjustmentPace: (
+    <>
+      <p>
+        Escolha <strong>Gradual</strong> se prefere incorporar mudanças de hábito e de orçamento ao
+        longo dos meses.
+      </p>
+      <p>
+        Escolha <strong>Imediato</strong> se está disposto a aplicar os ajustes já no próximo ciclo
+        de planejamento.
+      </p>
+      <p>O ritmo declarado não agenda nem aplica mudanças sem sua confirmação.</p>
+    </>
+  ),
+  categoryPriorities: (
+    <>
+      <p><strong>Protegida:</strong> não é reduzida pelos cenários sugeridos.</p>
+      <p><strong>Moderada:</strong> só é ajustada depois das categorias flexíveis.</p>
+      <p><strong>Flexível:</strong> é considerada primeiro quando uma redução é necessária.</p>
+      <p>
+        O mínimo mensal funciona como um piso: mesmo quando houver sugestão de ajuste, o cenário
+        preservará pelo menos esse valor.
+      </p>
+      <p>Nenhuma classificação altera seu planejamento sem revisão e confirmação.</p>
+    </>
+  )
+};
+
 export default function PersonalFinancialProfilePage() {
   const router = useRouter();
   const { addToast } = useToast();
@@ -203,7 +301,7 @@ export default function PersonalFinancialProfilePage() {
       ...current,
       planningContext,
       ...(planningContext === 'INDIVIDUAL'
-        ? { adultsCount: '1', financialDataCoverage: 'FULL' as const }
+        ? { adultsCount: '1' }
         : {})
     }));
   }
@@ -365,25 +463,29 @@ export default function PersonalFinancialProfilePage() {
           </div>
         )}
 
-        <fieldset disabled={!canManage} className="space-y-5">
+        <fieldset aria-disabled={!canManage} className="space-y-5">
         <Card headerTitle="Contexto do planejamento">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <ChoiceGroup
               label="Para quem você planeja?"
+              help={profileFieldHelp.planningContext}
               value={draft.planningContext}
               options={[
                 { value: 'INDIVIDUAL', label: 'Apenas para mim' },
                 { value: 'FAMILY', label: 'Para minha família' }
               ]}
+              disabled={!canManage}
               onChange={(value) => selectPlanningContext(value as PersonalPlanningContext)}
             />
             <ChoiceGroup
               label="Cobertura dos dados no Zenit"
+              help={profileFieldHelp.dataCoverage}
               value={draft.financialDataCoverage}
               options={[
                 { value: 'FULL', label: 'Representam todo o orçamento' },
                 { value: 'PARTIAL', label: 'Representam apenas uma parte' }
               ]}
+              disabled={!canManage}
               onChange={(value) =>
                 setDraft((current) => ({
                   ...current,
@@ -393,16 +495,20 @@ export default function PersonalFinancialProfilePage() {
             />
             <NumberField
               label="Adultos contemplados"
+              help={profileFieldHelp.adults}
               value={draft.adultsCount}
               min={1}
               max={20}
+              disabled={!canManage}
               onChange={(adultsCount) => setDraft((current) => ({ ...current, adultsCount }))}
             />
             <NumberField
               label="Dependentes financeiros"
+              help={profileFieldHelp.dependents}
               value={draft.dependentsCount}
               min={0}
               max={30}
+              disabled={!canManage}
               onChange={(dependentsCount) =>
                 setDraft((current) => ({ ...current, dependentsCount }))
               }
@@ -414,17 +520,20 @@ export default function PersonalFinancialProfilePage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <NumberField
               label="Reserva desejada em meses"
+              help={profileFieldHelp.reserve}
               value={draft.emergencyReserveTargetMonths}
               min={0}
               max={24}
+              disabled={!canManage}
               onChange={(emergencyReserveTargetMonths) =>
                 setDraft((current) => ({ ...current, emergencyReserveTargetMonths }))
               }
-              help="É uma meta pessoal. O valor financeiro será calculado posteriormente pelas despesas essenciais."
             />
             <SelectField
               label="Estilo de planejamento"
+              help={profileFieldHelp.planningStyle}
               value={draft.planningStyle}
+              disabled={!canManage}
               onChange={(planningStyle) =>
                 setDraft((current) => ({
                   ...current,
@@ -439,7 +548,9 @@ export default function PersonalFinancialProfilePage() {
             />
             <SelectField
               label="Ritmo dos ajustes"
+              help={profileFieldHelp.adjustmentPace}
               value={draft.adjustmentPace}
+              disabled={!canManage}
               onChange={(adjustmentPace) =>
                 setDraft((current) => ({
                   ...current,
@@ -455,12 +566,11 @@ export default function PersonalFinancialProfilePage() {
         </Card>
 
         <Card headerTitle="Prioridades por categoria">
-          <div className="mb-4 flex items-start gap-3 rounded-lg border border-blue-900/70 bg-blue-950/20 p-3 text-sm text-blue-200">
-            <Info size={18} className="mt-0.5 shrink-0" />
-            <p>
-              A classificação orientará futuras sugestões. Ela não altera categorias, transações ou
-              planejamentos existentes.
-            </p>
+          <div className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-300">
+            <span>Como o Zenit pode ajustar cada categoria?</span>
+            <FieldHelp label="Prioridades por categoria">
+              {profileFieldHelp.categoryPriorities}
+            </FieldHelp>
           </div>
 
           <div className="space-y-3">
@@ -497,8 +607,9 @@ export default function PersonalFinancialProfilePage() {
                       <button
                         key={value}
                         type="button"
+                        disabled={!canManage}
                         onClick={() => updatePreference(category.id, { flexibility: value })}
-                        className={`rounded px-2 py-1.5 text-xs transition-colors ${
+                        className={`rounded px-2 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                           preference.flexibility === value
                             ? 'bg-accent text-white'
                             : 'text-gray-400 hover:bg-elevated hover:text-white'
@@ -514,6 +625,7 @@ export default function PersonalFinancialProfilePage() {
                   <CurrencyInput
                     label={`Mínimo para ${category.name}`}
                     value={preference.minimumMonthlyAmount}
+                    disabled={!canManage}
                     onChange={(minimumMonthlyAmount) =>
                       updatePreference(category.id, { minimumMonthlyAmount })
                     }
@@ -527,6 +639,7 @@ export default function PersonalFinancialProfilePage() {
           <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-gray-700 p-4">
             <input
               type="checkbox"
+              disabled={!canManage}
               checked={draft.categoryPrioritiesReviewed}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -563,28 +676,55 @@ export default function PersonalFinancialProfilePage() {
   );
 }
 
+function FieldHelp({
+  label,
+  children
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <InfoModalButton
+      size="compact"
+      modalTitle={`Como preencher: ${label}`}
+      buttonLabel={`Ajuda sobre ${label}`}
+    >
+      {children}
+    </InfoModalButton>
+  );
+}
+
 function ChoiceGroup({
   label,
+  help,
   value,
   options,
+  disabled = false,
   onChange
 }: {
   label: string;
+  help: React.ReactNode;
   value: string;
   options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
     <fieldset>
-      <legend className="mb-2 text-sm font-medium text-gray-300">{label}</legend>
+      <legend className="sr-only">{label}</legend>
+      <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-300">
+        <span aria-hidden="true">{label}</span>
+        <FieldHelp label={label}>{help}</FieldHelp>
+      </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
+            disabled={disabled}
             onClick={() => onChange(option.value)}
             aria-pressed={value === option.value}
-            className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+            className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
               value === option.value
                 ? 'border-accent bg-accent/15 text-white'
                 : 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white'
@@ -604,49 +744,68 @@ function NumberField({
   min,
   max,
   help,
+  disabled = false,
   onChange
 }: {
   label: string;
   value: string;
   min: number;
   max: number;
-  help?: string;
+  help: React.ReactNode;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const inputId = React.useId();
+
   return (
-    <label className="block text-sm font-medium text-gray-300">
-      {label}
+    <div>
+      <div className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
+        <label htmlFor={inputId}>{label}</label>
+        <FieldHelp label={label}>{help}</FieldHelp>
+      </div>
       <input
+        id={inputId}
         type="number"
         min={min}
         max={max}
+        disabled={disabled}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+        className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring disabled:cursor-not-allowed disabled:opacity-60"
       />
-      {help && <span className="mt-1 block text-xs font-normal text-gray-500">{help}</span>}
-    </label>
+    </div>
   );
 }
 
 function SelectField({
   label,
+  help,
   value,
   options,
+  disabled = false,
   onChange
 }: {
   label: string;
+  help: React.ReactNode;
   value: string;
   options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }) {
+  const selectId = React.useId();
+
   return (
-    <label className="block text-sm font-medium text-gray-300">
-      {label}
+    <div>
+      <div className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
+        <label htmlFor={selectId}>{label}</label>
+        <FieldHelp label={label}>{help}</FieldHelp>
+      </div>
       <select
+        id={selectId}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+        className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring disabled:cursor-not-allowed disabled:opacity-60"
       >
         <option value="">Selecione...</option>
         {options.map((option) => (
@@ -655,6 +814,6 @@ function SelectField({
           </option>
         ))}
       </select>
-    </label>
+    </div>
   );
 }

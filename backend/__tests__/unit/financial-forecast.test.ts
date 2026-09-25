@@ -40,7 +40,11 @@ const fact = (
   ...extra
 });
 const knownRows = [
-  fact('FIXED_PROJECTED', 200, { type: 'INCOME', categoryAggregationState: 'PROJECTED' }),
+  fact('FIXED_PROJECTED', 200, {
+    type: 'INCOME',
+    recurringTransactionId: 10,
+    categoryAggregationState: 'PROJECTED'
+  }),
   fact('FIXED_MATERIALIZED', 50),
   fact('AD_HOC_MATERIALIZED', 20, { isSettled: true, categoryAggregationState: 'REALIZED' }),
   fact('AD_HOC_MATERIALIZED', 30, {
@@ -78,24 +82,26 @@ describe('Monthly forecast scenarios', () => {
     expect(result.projection.projectedEndingBalance.toNumber()).toBe(930);
   });
 
-  it.each(Array.from({ length: 16 }, (_, i) => i))(
+  it.each(Array.from({ length: 32 }, (_, i) => i))(
     'respects source combination %s without resurrecting excluded facts through averages',
     (mask) => {
       const sources = {
         fixed: !!(mask & 1),
         other: !!(mask & 2),
         cards: !!(mask & 4),
-        variable: !!(mask & 8)
+        variable: !!(mask & 8),
+        income: !!(mask & 16)
       };
       const result = calculate({ ...defaultForecastOptions, sources });
       const estimates = sources.variable ? 80 + (sources.cards ? 65 : 0) : 0;
-      expect(result.projection.totals.incomeTotal.toNumber()).toBe(sources.fixed ? 200 : 0);
+      expect(result.projection.totals.incomeTotal.toNumber()).toBe(sources.income ? 200 : 0);
       expect(result.projection.totals.expenseTotal.toNumber()).toBe(
         (sources.fixed ? 50 : 0) + (sources.other ? 50 : 0) + (sources.cards ? 45 : 0) + estimates
       );
       expect(result.projection.projectedEndingBalance.toNumber()).toBe(
         1000 +
-          (sources.fixed ? 150 : 0) -
+          (sources.income ? 200 : 0) -
+          (sources.fixed ? 50 : 0) -
           (sources.other ? 30 : 0) -
           (sources.cards ? 45 : 0) -
           estimates
@@ -113,6 +119,40 @@ describe('Monthly forecast scenarios', () => {
       expect(result.variables[1].included).toBe(false);
       expect(result.sources.find((item) => item.key === 'cards')?.expense.toNumber()).toBe(45);
     }
+  });
+
+  it('selects recurring income without changing expenses or removing settled cash', () => {
+    const result = calculateForecastMonth({
+      month: '2026-09',
+      isCurrentMonth: true,
+      carryOverAmount: decimal(1000),
+      knownRows: [
+        ...knownRows,
+        fact('FIXED_MATERIALIZED', 300, {
+          type: 'INCOME',
+          recurringTransactionId: 10,
+          isSettled: true,
+          categoryAggregationState: 'REALIZED'
+        }),
+        fact('FIXED_MATERIALIZED', 100, { type: 'INCOME', recurringTransactionId: 20 }),
+        fact('AD_HOC_MATERIALIZED', 5000, { type: 'INCOME' }),
+        fact('AD_HOC_MATERIALIZED', 7000, {
+          type: 'INCOME',
+          isSettled: true,
+          categoryAggregationState: 'REALIZED'
+        })
+      ],
+      bases: [],
+      options: { ...defaultForecastOptions, excludedIncomeIds: [10] },
+      unavailableCardIds: new Set()
+    });
+    expect(result.projection.totals.incomeTotal.toNumber()).toBe(100);
+    expect(result.projection.totals.expenseTotal.toNumber()).toBe(145);
+    expect(result.projection.projectedEndingBalance.toNumber()).toBe(975);
+    expect(result.sources.find((source) => source.key === 'income')?.income.toNumber()).toBe(100);
+    expect(result.sources.find((source) => source.key === 'other')?.income.toNumber()).toBe(0);
+    const restored = calculate();
+    expect(restored.projection.totals.incomeTotal.toNumber()).toBe(200);
   });
 
   it('manual estimates never erase known spending and category exclusions affect only estimates', () => {

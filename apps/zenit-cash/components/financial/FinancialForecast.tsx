@@ -27,12 +27,16 @@ const shiftMonth = (month: string, delta: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 };
 const labels: Record<ForecastSource, { title: string; description: string }> = {
+  income: {
+    title: 'Receitas fixas',
+    description: 'Somente receitas recorrentes, previstas ou já registradas'
+  },
   fixed: {
-    title: 'Receitas e despesas fixas',
+    title: 'Despesas fixas',
     description: 'Fora do cartão, previstas ou já registradas'
   },
   other: {
-    title: 'Outros lançamentos',
+    title: 'Outras despesas',
     description: 'Fora do cartão, incluindo parcelas com vencimento no mês'
   },
   cards: {
@@ -158,6 +162,7 @@ export default function FinancialForecast({
   const partial =
     Object.values(options.sources).some((included) => !included) ||
     options.cardMode === 'KNOWN_ONLY' ||
+    options.excludedIncomeIds.length > 0 ||
     options.excludedVariableKeys.length > 0;
   const result = Number(data.result);
   const variableTotal = data.variables
@@ -255,33 +260,85 @@ export default function FinancialForecast({
         </div>
         <fieldset disabled={loading} className="mt-2 divide-y divide-gray-800">
           {data.sources.map((source) => (
-            <label
-              key={source.key}
-              className="grid cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-4 sm:grid-cols-[20px_minmax(0,1fr)_auto]"
-            >
-              <input
-                type="checkbox"
-                checked={options.sources[source.key]}
-                onChange={() => toggleSource(source.key)}
-                className="mt-1 h-4 w-4 accent-blue-500"
-              />
-              <span>
-                <span className="block text-sm font-medium text-gray-100">
-                  {labels[source.key].title}
+            <div key={source.key}>
+              <label className="grid cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-4 sm:grid-cols-[20px_minmax(0,1fr)_auto]">
+                <input
+                  type="checkbox"
+                  checked={options.sources[source.key]}
+                  onChange={() => toggleSource(source.key)}
+                  className="mt-1 h-4 w-4 accent-blue-500"
+                />
+                <span>
+                  <span className="block text-sm font-medium text-gray-100">
+                    {labels[source.key].title}
+                  </span>
+                  <span className="mt-1 block text-xs text-gray-400">
+                    {labels[source.key].description}
+                  </span>
                 </span>
-                <span className="mt-1 block text-xs text-gray-400">
-                  {labels[source.key].description}
+                <span
+                  className={`col-start-2 flex flex-wrap gap-x-4 text-sm tabular-nums sm:col-start-auto sm:block sm:text-right ${source.included ? 'text-gray-200' : 'text-gray-500 line-through'}`}
+                >
+                  {source.key === 'income' ? (
+                    <span className="block">+ {currency(source.income)}</span>
+                  ) : (
+                    <span className="block">− {currency(source.expense)}</span>
+                  )}
                 </span>
-              </span>
-              <span
-                className={`col-start-2 flex flex-wrap gap-x-4 text-sm tabular-nums sm:col-start-auto sm:block sm:text-right ${source.included ? 'text-gray-200' : 'text-gray-500 line-through'}`}
-              >
-                {Number(source.income) !== 0 && (
-                  <span className="block">+ {currency(source.income)}</span>
-                )}
-                <span className="block">− {currency(source.expense)}</span>
-              </span>
-            </label>
+              </label>
+              {source.key === 'income' && (
+                <details className="mb-4 ml-8 rounded-lg border border-gray-700 px-3 py-2">
+                  <summary className="cursor-pointer text-sm text-gray-200">Ver receitas</summary>
+                  <p className="mt-3 text-xs text-gray-400">
+                    Marque as receitas fixas que deseja considerar neste cenário. Receitas variáveis
+                    não entram na previsão nem geram médias.
+                  </p>
+                  {data.incomes.length === 0 ? (
+                    <p className="mt-3 text-sm text-gray-400">
+                      Nenhuma receita fixa prevista ou registrada neste período.
+                    </p>
+                  ) : (
+                    <fieldset
+                      disabled={!options.sources.income}
+                      className="mt-2 divide-y divide-gray-800"
+                    >
+                      {data.incomes.map((income) => (
+                        <label
+                          key={income.id}
+                          className="flex cursor-pointer items-start gap-3 py-3"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!options.excludedIncomeIds.includes(income.id)}
+                            onChange={(event) =>
+                              setOptions((current) => ({
+                                ...current,
+                                excludedIncomeIds: event.target.checked
+                                  ? current.excludedIncomeIds.filter((id) => id !== income.id)
+                                  : [...current.excludedIncomeIds, income.id]
+                              }))
+                            }
+                            className="mt-1 h-4 w-4 shrink-0 accent-blue-500"
+                          />
+                          <span
+                            className={`min-w-0 flex-1 text-sm ${income.included ? 'text-gray-200' : 'text-gray-500'}`}
+                          >
+                            <span className="block break-words">{income.description}</span>
+                            <span
+                              className={`mt-1 block text-xs tabular-nums ${income.included ? '' : 'line-through'}`}
+                            >
+                              {Number(income.amount) !== 0
+                                ? `+ ${currency(income.amount)} no mês`
+                                : 'Sem recebimento no mês escolhido'}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </fieldset>
+                  )}
+                </details>
+              )}
+            </div>
           ))}
         </fieldset>
         <p className="text-xs text-gray-400">

@@ -12,6 +12,7 @@ export type MonthlyProjectionAggregationState = 'REALIZED' | 'PENDING' | 'PROJEC
 
 export type MonthlyProjectionKnownRow = {
   transactionId?: number;
+  recurringTransactionId?: number | null;
   description?: string;
   accountId?: number | null;
   variableEligible?: boolean;

@@ -625,7 +625,7 @@ describe('Monthly category budget', () => {
     });
     const savedBefore = await prisma.monthlyCategoryBudget.findMany({ where: { companyId }, orderBy: { id: 'asc' } });
     const scenario = await request(app).post('/api/financial/dashboard/forecast').set(authHeaders()).send({
-      month: nextMonth, sources: { fixed: false, other: false, cards: false, variable: true },
+      month: nextMonth, sources: { income: false, fixed: false, other: false, cards: false, variable: true },
       overrides: { [`ACCOUNT:${childCategoryId}`]: '999.00' }, includeOverdue: true
     });
     expect(scenario.status).toBe(200);

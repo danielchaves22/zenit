@@ -46,12 +46,14 @@ export type GetFinancialDashboardHistoryQuery = z.infer<
 export const financialForecastSchema = z.object({
   month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Mês inválido').optional(),
   sources: z.object({
+    income: z.boolean().default(true),
     fixed: z.boolean().default(true), other: z.boolean().default(true),
     cards: z.boolean().default(true), variable: z.boolean().default(true)
   }).default({}),
   cardMode: z.enum(['KNOWN_ONLY', 'ESTIMATE']).default('ESTIMATE'),
   historyMonths: z.number().int().min(1).max(12).default(6),
   includeOverdue: z.boolean().default(false),
+  excludedIncomeIds: z.array(z.number().int().positive()).max(500).default([]),
   excludedVariableKeys: z.array(z.string().regex(/^(ACCOUNT|CARD:\d+):\d+$/)).max(500).default([]),
   overrides: z.record(
     z.string().regex(/^(ACCOUNT|CARD:\d+):\d+$/),

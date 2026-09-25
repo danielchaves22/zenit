@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-09-23
+last_reviewed: 2026-09-24
 summary: Cenários de fechamento mensal com fontes selecionáveis e médias sem duplicidade.
 ---
 
@@ -19,12 +19,24 @@ as entradas do mês superam ou ficam abaixo das saídas; o saldo acumulado é se
 
 ## Fontes e uso
 
-O usuário escolhe o mês atual ou um dos próximos 24 meses e combina quatro fontes:
+O usuário escolhe o mês atual ou um dos próximos 24 meses e combina cinco fontes:
 
-- receitas e despesas fixas fora do cartão, materializadas ou projetadas;
-- demais lançamentos fora do cartão, incluindo parcelas;
+- receitas fixas, materializadas ou projetadas, com seleção individual;
+- despesas fixas fora do cartão, materializadas ou projetadas;
+- demais despesas fora do cartão, incluindo parcelas;
 - cartões, incluindo compras, parcelas, fixas e créditos assinados;
 - complemento estimado de gastos variáveis.
+
+**Ver receitas**, logo abaixo do checkbox de receitas fixas, expande as receitas
+recorrentes do cenário. Cada uma tem somente um checkbox: desmarcar exclui e marcar
+inclui novamente. Não existe data de encerramento simulada. A escolha vale para
+todos os meses envolvidos no saldo acumulado e preserva o estado individual quando
+o grupo inteiro é desmarcado e marcado novamente.
+
+Receitas avulsas não compõem a previsão, mesmo quando já estão registradas com
+vencimento futuro. Não existem médias nem extrapolações de receitas. Valores já
+recebidos, fixos ou variáveis, permanecem nos saldos reais das contas.
+Créditos de cartão continuam sendo redutores da despesa da fatura.
 
 Os detalhes contêm médias, meses utilizados, ajustes por categoria e canal,
 compromissos de origem, pendências anteriores e a evolução do saldo.
@@ -39,7 +51,7 @@ de workspace. Não são limites de orçamento nem alterações dos dados operaci
 Reutiliza fatos, competências, reconhecimento, saldo e aritmética decimal do domínio
 financeiro. Respeita o workspace, seu fuso horário e as contas acessíveis ao usuário.
 
-O resultado mensal soma receitas e despesas pela competência: vencimento da
+O resultado mensal soma receitas fixas selecionadas e despesas pela competência: vencimento da
 transação, vencimento da fatura ou ocorrência fixa. Uma liquidação antecipada
 permanece no resultado do mês de vencimento, mas nunca movimenta o saldo novamente.
 
@@ -69,6 +81,10 @@ Pendências materializadas de meses anteriores são exibidas separadamente.
 Por padrão ficam fora do saldo projetado, com aviso explícito. Simular a quitação
 as aplica uma única vez no saldo do mês atual, respeitando as fontes selecionadas.
 Isso não move sua competência nem altera o resultado mensal ou orçamento original.
+As pendências de receita também seguem a seleção individual e a regra de considerar
+somente receitas fixas. Receitas fixas de meses intermediários ou pendências
+anteriores continuam disponíveis na lista mesmo sem valor no mês escolhido,
+pois ainda podem afetar o saldo acumulado.
 
 ## Dependências e limites
 
@@ -76,6 +92,8 @@ Isso não move sua competência nem altera o resultado mensal ou orçamento orig
   média variável e evita repetir no saldo liquidações antecipadas.
 - O Planejamento Mensal por Categoria continua com sua média própria de todas as
   despesas cobertas e com os compromissos canônicos. Não recebe filtros do cenário.
+- A regra de considerar somente receitas fixas pertence à previsão interativa;
+  não filtra receitas nos registros, no histórico ou nos demais planejamentos.
 - Plano de Disponibilidade, provisões, limites, transações, faturas e snapshots
   não são gravados pela consulta. Provisões lógicas não viram despesas.
 - Os retratos de planejamento guiado mantêm sua metodologia e seus snapshots.

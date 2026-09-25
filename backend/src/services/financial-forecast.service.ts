@@ -22,7 +22,10 @@ import {
   cashEffect,
   ForecastOptions,
   ForecastVariableBasis,
-  forecastSource
+  forecastSource,
+  isFixedForecastIncome,
+  isForecastRow,
+  isForecastRowIncluded
 } from '../utils/financial-forecast';
 import type { MonthlyProjectionKnownRow } from '../utils/monthly-financial-projection';
 
@@ -215,7 +218,7 @@ export default class FinancialForecastService {
     if (month < calendar.currentMonthKey || month > calendar.maximumPlanningMonthKey) {
       throw new Error('Escolha um mês entre o atual e os próximos 24 meses');
     }
-    const [currentBalance, overdueRows, cards, invoices] = await Promise.all([
+    const [currentBalance, priorPeriodRows, cards, invoices] = await Promise.all([
       FinancialDashboardService.getCurrentBalance(params),
       FinancialDashboardService.getPriorPeriodPendingRows({ ...params, calendarContext: calendar }),
       prisma.financialAccount.findMany({
@@ -244,9 +247,10 @@ export default class FinancialForecastService {
       historyMonths: params.options.historyMonths,
       activeCardIds: new Set(cards.map((card) => card.id))
     });
-    const selectedOverdue = overdueRows.filter(
-      (row) => params.options.sources[forecastSource(row)]
-    );
+    const overdueRows = priorPeriodRows.filter(isForecastRow);
+    const selectedOverdue = overdueRows.filter((row) => isForecastRowIncluded(row, params.options));
+    // Include income sources from intermediate months/overdues too: they affect accumulated cash.
+    const incomeRows = overdueRows.filter(isFixedForecastIncome);
     const overdueCashEffect = params.options.includeOverdue
       ? cashEffect(selectedOverdue)
       : new Prisma.Decimal(0);
@@ -266,13 +270,16 @@ export default class FinancialForecastService {
       cursor = addFinancialMonths(cursor, 1)
     ) {
       const monthKey = formatFinancialMonthKey(cursor);
-      const knownRows = await FinancialDashboardService.getKnownMonthlyRows({
-        ...params,
-        monthStart: start(cursor),
-        monthEnd: end(cursor),
-        currentDate: calendar.businessDate,
-        isCurrentMonth: monthKey === calendar.currentMonthKey
-      });
+      const knownRows = (
+        await FinancialDashboardService.getKnownMonthlyRows({
+          ...params,
+          monthStart: start(cursor),
+          monthEnd: end(cursor),
+          currentDate: calendar.businessDate,
+          isCurrentMonth: monthKey === calendar.currentMonthKey
+        })
+      ).filter(isForecastRow);
+      incomeRows.push(...knownRows.filter(isFixedForecastIncome));
       const unavailableCardIds = new Set<number>();
       for (const card of cards) {
         if (!card.statementClosingDay || !card.statementDueDay) {
@@ -331,6 +338,21 @@ export default class FinancialForecastService {
     }
     if (!selected) throw new Error('Não foi possível calcular a previsão');
     const p = selected.projection;
+    const incomes = new Map<
+      number,
+      { id: number; description: string; amount: Prisma.Decimal; included: boolean }
+    >();
+    for (const row of incomeRows) {
+      if (row.recurringTransactionId == null) continue;
+      const income = incomes.get(row.recurringTransactionId) ?? {
+        id: row.recurringTransactionId,
+        description: row.description ?? row.categoryName,
+        amount: new Prisma.Decimal(0),
+        included: isForecastRowIncluded(row, params.options)
+      };
+      if (row.competence.month === month) income.amount = income.amount.plus(row.amount);
+      incomes.set(income.id, income);
+    }
     return {
       month,
       currentMonth: calendar.currentMonthKey,
@@ -357,6 +379,9 @@ export default class FinancialForecastService {
         income: money(source.income),
         expense: money(source.expense)
       })),
+      incomes: [...incomes.values()]
+        .sort((a, b) => a.description.localeCompare(b.description) || a.id - b.id)
+        .map((income) => ({ ...income, amount: money(income.amount) })),
       variables: selected.variables.map((item) => ({
         ...item,
         historicalAverage: money(item.historicalAverage),
@@ -367,7 +392,7 @@ export default class FinancialForecastService {
       })),
       transactions: selectedRows.map((row) => ({
         ...serializeRow(row),
-        included: params.options.sources[forecastSource(row)]
+        included: isForecastRowIncluded(row, params.options)
       })),
       overdue: {
         included: params.options.includeOverdue,
@@ -384,7 +409,7 @@ export default class FinancialForecastService {
         ),
         items: overdueRows.map((row) => ({
           ...serializeRow(row),
-          included: params.options.includeOverdue && params.options.sources[forecastSource(row)]
+          included: params.options.includeOverdue && isForecastRowIncluded(row, params.options)
         }))
       },
       cardsWithoutCycle: cards

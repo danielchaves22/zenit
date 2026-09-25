@@ -62,10 +62,6 @@ vi.mock('@/components/ui/CurrencyInput', () => ({
   )
 }));
 
-vi.mock('@/components/ui/InfoModalButton', () => ({
-  InfoModalButton: () => <button type="button">Ajuda</button>
-}));
-
 vi.mock('@/components/ui/Skeleton', () => ({
   Skeleton: () => <div data-testid="skeleton" />
 }));
@@ -153,6 +149,65 @@ describe('PersonalFinancialProfilePage', () => {
     pushMock.mockResolvedValue(true);
   });
 
+  it('explains how to fill the profile fields without occupying permanent space', async () => {
+    const user = userEvent.setup();
+    render(<PersonalFinancialProfilePage />);
+
+    await screen.findByRole('heading', { name: 'Contexto do planejamento' });
+
+    [
+      'Para quem você planeja?',
+      'Cobertura dos dados no Zenit',
+      'Adultos contemplados',
+      'Dependentes financeiros',
+      'Reserva desejada em meses',
+      'Estilo de planejamento',
+      'Ritmo dos ajustes',
+      'Prioridades por categoria'
+    ].forEach((label) => {
+      expect(screen.getByRole('button', { name: `Ajuda sobre ${label}` })).toBeInTheDocument();
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre Cobertura dos dados no Zenit' })
+    );
+
+    expect(
+      screen.getByRole('dialog', { name: 'Como preencher: Cobertura dos dados no Zenit' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/reduz sua pontuação de qualidade/i)
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByText('Fechar'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Ajuda sobre Prioridades por categoria' })
+    );
+    expect(screen.getByText(/não é reduzida pelos cenários sugeridos/i)).toBeInTheDocument();
+    expect(screen.getByText(/funciona como um piso/i)).toBeInTheDocument();
+  });
+
+  it('keeps contextual help available when the profile is read-only', async () => {
+    const user = userEvent.setup();
+    getMock.mockResolvedValue({
+      ...initialResponse,
+      access: { canRead: true, canManage: false }
+    });
+
+    render(<PersonalFinancialProfilePage />);
+
+    expect(await screen.findByRole('button', { name: 'Apenas para mim' })).toBeDisabled();
+    const helpButton = screen.getByRole('button', { name: 'Ajuda sobre Para quem você planeja?' });
+    expect(helpButton).not.toBeDisabled();
+
+    await user.click(helpButton);
+    expect(
+      screen.getByRole('dialog', { name: 'Como preencher: Para quem você planeja?' })
+    ).toBeInTheDocument();
+  });
+
   it('builds a reviewed workspace profile and returns to the requesting feature', async () => {
     const user = userEvent.setup();
     render(<PersonalFinancialProfilePage />);
@@ -161,6 +216,7 @@ describe('PersonalFinancialProfilePage', () => {
     expect(screen.getAllByText('Casa').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: 'Apenas para mim' }));
+    await user.click(screen.getByRole('button', { name: 'Representam todo o orçamento' }));
     await user.type(screen.getByLabelText('Dependentes financeiros'), '0');
     await user.type(screen.getByLabelText(/^Reserva desejada em meses/), '6');
     await user.selectOptions(screen.getByLabelText('Estilo de planejamento'), 'BALANCED');

@@ -573,6 +573,7 @@ export default class FinancialDashboardService {
 
       rows.push({
         transactionId: transaction.id,
+        recurringTransactionId: transaction.recurringTransactionId,
         description: transaction.description,
         accountId: transaction.fromAccountId,
         variableEligible: !transaction.recurringTransactionId && !transaction.installmentPlanId && !(transaction.totalInstallments && transaction.totalInstallments > 1),
@@ -722,6 +723,7 @@ export default class FinancialDashboardService {
 
       rows.push({
         description: template.description,
+        recurringTransactionId: template.id,
         accountId: template.fromAccountId,
         variableEligible: false,
         type: template.type as MonthlyProjectionTransactionType,

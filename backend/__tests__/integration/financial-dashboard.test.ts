@@ -14,6 +14,7 @@ import FinancialDashboardService from '../../src/services/financial-dashboard.se
 import FinancialForecastService from '../../src/services/financial-forecast.service';
 import { defaultForecastOptions } from '../../src/utils/financial-forecast';
 import WorkspaceFinancialCalendarService from '../../src/services/workspace-financial-calendar.service';
+import { buildOccurrenceKeyValue } from '../../src/services/fixed-transaction.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -362,11 +363,11 @@ describe('Financial dashboard', () => {
     const september = await FinancialForecastService.getForecast(params);
     expect(september.history.months).toEqual(['2026-07', '2026-08']);
     expect(september.variables[0]).toMatchObject({ historicalAverage: '150.00', committedInMonth: '20.00', remainingProjected: '130.00' });
-    expect(september).toMatchObject({ income: '200.00', expense: '230.00', result: '-30.00', endingBalance: '990.00' });
-    expect(september.overdue).toMatchObject({ included: false, expense: '60.00', income: '20.00', cashEffect: '0.00' });
+    expect(september).toMatchObject({ income: '0.00', expense: '230.00', result: '-230.00', endingBalance: '790.00' });
+    expect(september.overdue).toMatchObject({ included: false, expense: '60.00', income: '0.00', cashEffect: '0.00' });
     const october = await FinancialForecastService.getForecast({ ...params, month: '2026-10', options: { ...params.options, includeOverdue: true } });
-    expect(october.timeline.map((point) => point.endingBalance)).toEqual(['950.00', '800.00']);
-    expect(october.timeline.map((point) => point.result)).toEqual(['-30.00', '-150.00']);
+    expect(october.timeline.map((point) => point.endingBalance)).toEqual(['730.00', '580.00']);
+    expect(october.timeline.map((point) => point.result)).toEqual(['-230.00', '-150.00']);
     const partial = await FinancialForecastService.getForecast({ ...params, options: { ...params.options, sources: { ...params.options.sources, other: false } } });
     expect(partial.variables[0].remainingProjected).toBe('130.00');
     expect(partial).toMatchObject({ income: '0.00', expense: '180.00', endingBalance: '820.00' });
@@ -379,6 +380,94 @@ describe('Financial dashboard', () => {
     expect(invalid.status).toBe(400);
     expect(await prisma.financialTransaction.findMany({ where: { companyId: primaryCompanyId }, orderBy: { id: 'asc' } })).toEqual(before);
     expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: account.id } })).balance.toFixed(2)).toBe('1000.00');
+  });
+
+  it('selects recurring income across months without changing the ledger or counting variable income', async () => {
+    const account = await prisma.financialAccount.create({ data: {
+      companyId: primaryCompanyId, name: 'Income selection', type: 'CHECKING', balance: 5000
+    } });
+    const incomeCategory = await prisma.financialCategory.create({ data: {
+      companyId: primaryCompanyId, name: 'Recurring income', type: 'INCOME', color: '#22c55e'
+    } });
+    const expenseCategory = await prisma.financialCategory.create({ data: {
+      companyId: primaryCompanyId, name: 'Fixed expense', type: 'EXPENSE', color: '#f97316'
+    } });
+    const common = { companyId: primaryCompanyId, createdBy: primaryUserId };
+    const template = {
+      ...common, type: 'INCOME' as const, frequency: 'MONTHLY' as const, dayOfMonth: 28,
+      startDate: new Date('2026-08-01T12:00:00Z'), nextDueDate: new Date('2026-09-28T12:00:00Z'),
+      categoryId: incomeCategory.id, toAccountId: account.id
+    };
+    const salary = await prisma.recurringTransaction.create({ data: { ...template, description: 'Salary', amount: 1000 } });
+    const rent = await prisma.recurringTransaction.create({ data: { ...template, description: 'Rent received', amount: 500 } });
+    await prisma.recurringTransaction.create({ data: {
+      ...template, type: 'EXPENSE', description: 'Fixed bill', amount: 200,
+      toAccountId: null, fromAccountId: account.id, categoryId: expenseCategory.id
+    } });
+    const septemberDueDate = new Date('2026-09-28T12:00:00Z');
+    await prisma.financialTransaction.createMany({ data: [
+      { ...common, description: 'Salary', type: 'INCOME', amount: 1000, status: 'COMPLETED',
+        date: septemberDueDate, dueDate: septemberDueDate, effectiveDate: new Date('2026-09-15T12:00:00Z'),
+        toAccountId: account.id, categoryId: incomeCategory.id, recurringTransactionId: salary.id,
+        occurrenceKey: buildOccurrenceKeyValue(salary.id, septemberDueDate) },
+      { ...common, description: 'Rent received', type: 'INCOME', amount: 500, status: 'PENDING',
+        date: septemberDueDate, dueDate: septemberDueDate, toAccountId: account.id, categoryId: incomeCategory.id,
+        recurringTransactionId: rent.id, occurrenceKey: buildOccurrenceKeyValue(rent.id, septemberDueDate) },
+      { ...common, description: 'Past variable receipt', type: 'INCOME', amount: 8000, status: 'COMPLETED',
+        date: new Date('2026-08-15T12:00:00Z'), toAccountId: account.id, categoryId: incomeCategory.id },
+      { ...common, description: 'Future variable receipt', type: 'INCOME', amount: 9000, status: 'PENDING',
+        date: new Date('2026-10-15T12:00:00Z'), toAccountId: account.id, categoryId: incomeCategory.id }
+    ] });
+    const params = { companyId: primaryCompanyId, at: new Date('2026-09-23T15:00:00Z'), month: '2026-10', options: defaultForecastOptions };
+    const before = await prisma.financialTransaction.findMany({ where: { companyId: primaryCompanyId }, orderBy: { id: 'asc' } });
+    const complete = await FinancialForecastService.getForecast(params);
+    expect(complete.timeline.map((point) => [point.income, point.endingBalance])).toEqual([
+      ['1500.00', '5300.00'], ['1500.00', '6600.00']
+    ]);
+    expect(complete.variables).toEqual([]);
+    expect(complete.incomes).toEqual([
+      { id: rent.id, description: 'Rent received', amount: '500.00', included: true },
+      { id: salary.id, description: 'Salary', amount: '1000.00', included: true }
+    ]);
+    expect(complete.transactions.some((row) => row.description === 'Future variable receipt')).toBe(false);
+    const withoutSalary = await FinancialForecastService.getForecast({
+      ...params, options: { ...defaultForecastOptions, excludedIncomeIds: [salary.id] }
+    });
+    expect(withoutSalary.timeline.map((point) => [point.income, point.endingBalance])).toEqual([
+      ['500.00', '5300.00'], ['500.00', '5600.00']
+    ]);
+    expect(withoutSalary.incomes.find((income) => income.id === salary.id)?.included).toBe(false);
+    const withoutRent = await FinancialForecastService.getForecast({
+      ...params, options: { ...defaultForecastOptions, excludedIncomeIds: [rent.id] }
+    });
+    expect(withoutRent.timeline.map((point) => [point.income, point.endingBalance])).toEqual([
+      ['1000.00', '4800.00'], ['1000.00', '5600.00']
+    ]);
+    const incomeOff = await FinancialForecastService.getForecast({
+      ...params, options: { ...defaultForecastOptions, sources: { ...defaultForecastOptions.sources, income: false } }
+    });
+    expect(incomeOff).toMatchObject({ income: '0.00', expense: '200.00', endingBalance: '4600.00' });
+    expect(incomeOff.incomes.every((income) => !income.included)).toBe(true);
+    const noAccess = await FinancialForecastService.getForecast({ ...params, accessibleAccountIds: [] });
+    expect(noAccess.incomes).toEqual([]);
+    const response = await request(app).post('/api/financial/dashboard/forecast')
+      .set(authHeaders(primaryToken, primaryCompanyId)).send({ excludedIncomeIds: [salary.id] });
+    expect(response.status).toBe(200);
+    expect(response.body.options.excludedIncomeIds).toEqual([salary.id]);
+    const invalid = await request(app).post('/api/financial/dashboard/forecast')
+      .set(authHeaders(primaryToken, primaryCompanyId)).send({ excludedIncomeIds: [-1] });
+    expect(invalid.status).toBe(400);
+    expect(await prisma.financialTransaction.findMany({ where: { companyId: primaryCompanyId }, orderBy: { id: 'asc' } })).toEqual(before);
+    expect((await prisma.recurringTransaction.findUniqueOrThrow({ where: { id: salary.id } })).isActive).toBe(true);
+    expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: account.id } })).balance.toFixed(2)).toBe('5000.00');
+    // A selected source that exists only before the chosen month still controls accumulated cash.
+    await prisma.recurringTransaction.update({ where: { id: rent.id }, data: { endDate: new Date('2026-09-30T12:00:00Z') } });
+    const earlierIncome = await FinancialForecastService.getForecast(params);
+    expect(earlierIncome.incomes.find((income) => income.id === rent.id)).toMatchObject({ amount: '0.00', included: true });
+    const earlierIncomeOff = await FinancialForecastService.getForecast({
+      ...params, options: { ...defaultForecastOptions, excludedIncomeIds: [rent.id] }
+    });
+    expect(Number(earlierIncome.endingBalance) - Number(earlierIncomeOff.endingBalance)).toBe(500);
   });
 
   it('keeps card estimates separate and never adds purchases to a closed invoice', async () => {

@@ -28,10 +28,15 @@ const fixture: ForecastData = {
   remainingIncome: '500.00',
   remainingExpense: '550.00',
   sources: [
-    { key: 'fixed', included: true, income: '500.00', expense: '100.00' },
+    { key: 'income', included: true, income: '500.00', expense: '0.00' },
+    { key: 'fixed', included: true, income: '0.00', expense: '100.00' },
     { key: 'other', included: true, income: '0.00', expense: '200.00' },
     { key: 'cards', included: true, income: '0.00', expense: '100.00' },
     { key: 'variable', included: true, income: '0.00', expense: '150.00' }
+  ],
+  incomes: [
+    { id: 10, description: 'Salário', amount: '300.00', included: true },
+    { id: 20, description: 'Aluguel recebido', amount: '200.00', included: true }
   ],
   history: { months: ['2026-07', '2026-08'], requestedMonths: 6, uncategorizedCount: 0 },
   variables: [
@@ -73,6 +78,10 @@ beforeEach(() => {
     ...fixture,
     month: month ?? fixture.month,
     options,
+    incomes: fixture.incomes.map((income) => ({
+      ...income,
+      included: options.sources.income && !options.excludedIncomeIds.includes(income.id)
+    })),
     sources: fixture.sources.map((source) => ({ ...source, included: options.sources[source.key] }))
   }));
 });
@@ -95,7 +104,7 @@ describe('Financial forecast', () => {
     const onMonthChange = vi.fn();
     render(<FinancialForecast onMonthChange={onMonthChange} />);
     await screen.findByText('Déficit previsto no mês');
-    await user.click(screen.getByRole('checkbox', { name: /Outros lançamentos/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Outras despesas/ }));
     await waitFor(() => expect(fetchForecast.mock.lastCall?.[1].sources.other).toBe(false));
     await user.click(screen.getByText('Ver detalhes e ajustar projeções'));
     await user.selectOptions(screen.getByLabelText('Projeção dos cartões'), 'KNOWN_ONLY');
@@ -121,6 +130,43 @@ describe('Financial forecast', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Restaurar cenário completo' }));
     await waitFor(() => expect(fetchForecast.mock.lastCall?.[1]).toEqual(defaultForecastOptions));
+  });
+
+  it('opens the income choices inline, toggles one source, and keeps the selection across months', async () => {
+    const user = userEvent.setup();
+    render(<FinancialForecast />);
+    await screen.findByText('Déficit previsto no mês');
+    expect(screen.getByText('Salário')).not.toBeVisible();
+    const sourceGroup = screen.getByText('Ver receitas').closest('details')!.parentElement!;
+    expect(sourceGroup).toContainElement(screen.getByRole('checkbox', { name: /Receitas fixas/ }));
+    await user.click(screen.getByText('Ver receitas'));
+    expect(screen.getByText('Salário')).toBeVisible();
+    expect(screen.getByText('Médias por categoria')).not.toBeVisible();
+    await user.click(screen.getByRole('checkbox', { name: /Salário/ }));
+    await waitFor(() => expect(fetchForecast.mock.lastCall?.[1].excludedIncomeIds).toEqual([10]));
+    expect(fetchForecast.mock.lastCall?.[1].sources.fixed).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Próximo mês' }));
+    await waitFor(() => expect(fetchForecast.mock.lastCall?.[0]).toBe('2026-10'));
+    expect(screen.getByRole('checkbox', { name: /Salário/ })).not.toBeChecked();
+    expect(fetchForecast.mock.lastCall?.[1].excludedIncomeIds).toEqual([10]);
+    await user.click(screen.getByRole('checkbox', { name: /Salário/ }));
+    await waitFor(() => expect(fetchForecast.mock.lastCall?.[1].excludedIncomeIds).toEqual([]));
+  });
+
+  it('switches off fixed income independently and retains individual choices when switched back on', async () => {
+    const user = userEvent.setup();
+    render(<FinancialForecast />);
+    await screen.findByText('Déficit previsto no mês');
+    await user.click(screen.getByText('Ver receitas'));
+    await user.click(screen.getByRole('checkbox', { name: /Salário/ }));
+    await user.click(screen.getByRole('checkbox', { name: /Receitas fixas/ }));
+    await waitFor(() => expect(fetchForecast.mock.lastCall?.[1].sources.income).toBe(false));
+    expect(screen.getByRole('checkbox', { name: /Aluguel recebido/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Despesas fixas/ })).toBeChecked();
+    await user.click(screen.getByRole('checkbox', { name: /Receitas fixas/ }));
+    await waitFor(() => expect(fetchForecast.mock.lastCall?.[1].sources.income).toBe(true));
+    expect(screen.getByRole('checkbox', { name: /Salário/ })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /Aluguel recebido/ })).toBeChecked();
   });
 
   it('shows an error instead of presenting an old result as the new scenario and supports retry', async () => {

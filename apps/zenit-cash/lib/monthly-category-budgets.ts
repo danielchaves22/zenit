@@ -38,6 +38,7 @@ export interface MonthlyCategoryBudgetResponse {
   month: string;
   statsAvailable: boolean;
   historicalMonthsUsed: number;
+  habitualConfigured?: boolean;
   summary: {
     plannedAmount: string;
     realizedAmount: string;

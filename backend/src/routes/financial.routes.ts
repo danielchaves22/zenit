@@ -1,3 +1,5 @@
+import { getHabitualExpensePreference, saveHabitualExpensePreference } from '../controllers/habitual-expense-preference.controller';
+import { saveHabitualExpensePreferenceSchema } from '../validators/habitual-expense-preference.validator';
 import { Router } from 'express';
 import {
   requireAccountAccess,
@@ -320,6 +322,10 @@ router.post('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_C
 router.delete('/categories/:id/set-default', requireFeaturePermission('FINANCIAL_CATEGORIES'), unsetDefaultCategory);
 
 router.get('/tags', validate(listFinancialTagsSchema), listFinancialTags);
+
+router.get('/preferences/habitual-expenses', requireWorkspacePlanningAccess('READ'), getHabitualExpensePreference);
+router.put('/preferences/habitual-expenses', requireWorkspacePlanningAccess('MANAGE'),
+  validate(saveHabitualExpensePreferenceSchema, { source: 'body' }), saveHabitualExpensePreference);
 
 router.get('/preferences/variable-projection', getVariableProjectionPreference);
 router.put(

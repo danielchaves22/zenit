@@ -162,6 +162,7 @@ describe('Financial dashboard', () => {
   });
 
   beforeEach(async () => {
+    await prisma.workspaceHabitualExpensePreference.deleteMany({ where: { companyId: { in: [primaryCompanyId, secondaryCompanyId] } } });
     await prisma.userVariableProjectionPreference.deleteMany({
       where: {
         OR: [
@@ -358,6 +359,7 @@ describe('Financial dashboard', () => {
       { ...common, description: 'Overdue income', type: 'INCOME', amount: 20, fromAccountId: null, toAccountId: account.id, date: new Date('2026-08-15T12:00:00Z'), status: 'PENDING' },
       { ...common, description: 'Remaining income', type: 'INCOME', amount: 200, fromAccountId: null, toAccountId: account.id, date: new Date('2026-09-28T12:00:00Z'), status: 'PENDING' }
     ] });
+    await prisma.workspaceHabitualExpensePreference.create({ data: { companyId: primaryCompanyId, categoryIds: [category.id] } });
     const params = { companyId: primaryCompanyId, at: new Date('2026-09-23T15:00:00Z'), options: { ...defaultForecastOptions, historyMonths: 3 } };
     const before = await prisma.financialTransaction.findMany({ where: { companyId: primaryCompanyId }, orderBy: { id: 'asc' } });
     const september = await FinancialForecastService.getForecast(params);
@@ -490,6 +492,7 @@ describe('Financial dashboard', () => {
       ...common, type: 'INCOME', fromAccountId: null, toAccountId: card.id, description: 'Installment refund', amount: 10, date: invoices[3].closingDate, creditCardInvoiceId: invoices[3].id,
       creditCardCreditKind: 'REFUND', refundOfTransactionId: installment.id
     } });
+    await prisma.workspaceHabitualExpensePreference.create({ data: { companyId: primaryCompanyId, categoryIds: [category.id] } });
     const params = { companyId: primaryCompanyId, at: new Date('2026-09-23T15:00:00Z'), options: defaultForecastOptions };
     const september = await FinancialForecastService.getForecast(params);
     expect(september).toMatchObject({ expense: '100.00', endingBalance: '-100.00' });
@@ -501,6 +504,23 @@ describe('Financial dashboard', () => {
     expect(known).toMatchObject({ expense: '90.00', endingBalance: '-190.00' });
     // Remove the referencing credit before the original purchase (restrict FK).
     await prisma.financialTransaction.deleteMany({ where: { refundOfTransactionId: installment.id } });
+  });
+
+  it('shares habitual settings across workspace members while protecting manager-only writes', async () => {
+    const category = await prisma.financialCategory.create({ data: { companyId: primaryCompanyId, name: 'Habitual', type: 'EXPENSE', color: '#fff' } });
+    await request(app).put('/api/financial/preferences/habitual-expenses').set(authHeaders(primaryToken, primaryCompanyId)).send({ categoryIds: [category.id] }).expect(200);
+    const shared = await request(app).get('/api/financial/preferences/habitual-expenses').set(authHeaders(secondaryToken, primaryCompanyId));
+    expect(shared.body.categoryIds).toEqual([category.id]);
+    const separate = await request(app).get('/api/financial/preferences/habitual-expenses').set(authHeaders(primaryToken, secondaryCompanyId));
+    expect(separate.body).toMatchObject({ configured: false, categoryIds: [] });
+    await prisma.userCompany.updateMany({ where: { userId: secondaryUserId, companyId: primaryCompanyId }, data: { role: 'USER', isCompanyOwner: false } });
+    try {
+      const reader = await request(app).get('/api/financial/preferences/habitual-expenses').set(authHeaders(secondaryToken, primaryCompanyId));
+      expect(reader.body.access.canManage).toBe(false);
+      await request(app).put('/api/financial/preferences/habitual-expenses').set(authHeaders(secondaryToken, primaryCompanyId)).send({ categoryIds: [] }).expect(403);
+    } finally {
+      await prisma.userCompany.updateMany({ where: { userId: secondaryUserId, companyId: primaryCompanyId }, data: { role: 'ADMIN' } });
+    }
   });
 
   it('stores variable projection preferences per user and per company, enforcing the max of 10 categories', async () => {
@@ -727,6 +747,7 @@ describe('Financial dashboard', () => {
         trackedExpenseCategoryIds: [trackedExpenseCategory.id]
       }
     });
+    await prisma.workspaceHabitualExpensePreference.create({ data: { companyId: primaryCompanyId, categoryIds: [trackedExpenseCategory.id] } });
 
     const response = await request(app)
       .get('/api/financial/dashboard/monthly')
@@ -740,9 +761,10 @@ describe('Financial dashboard', () => {
     expect(response.body.currentMonthBreakdown.income.remaining).toBe('580.00');
     expect(response.body.currentMonthBreakdown.expense.realizedCommitted).toBe('50.00');
     expect(response.body.currentMonthBreakdown.expense.remainingCommitted).toBe('50.00');
-    expect(response.body.currentMonthBreakdown.expense.remainingVariableProjected).toBe('50.00');
-    expect(response.body.variableProjection.total).toBe('50.00');
-    expect(response.body.projectedEndingBalance).toBe('1430.00');
+    // Card purchases do not consume a cash-account variable baseline.
+    expect(response.body.currentMonthBreakdown.expense.remainingVariableProjected).toBe('70.00');
+    expect(response.body.variableProjection.total).toBe('70.00');
+    expect(response.body.projectedEndingBalance).toBe('1410.00');
     expect(response.body.variableProjection.categories).toEqual([
       {
         categoryId: trackedExpenseCategory.id,
@@ -750,8 +772,8 @@ describe('Financial dashboard', () => {
         color: '#f97316',
         month: currentMonthKey,
         historicalAverage: '120.00',
-        committedInMonth: '70.00',
-        remainingProjected: '50.00'
+        committedInMonth: '50.00',
+        remainingProjected: '70.00'
       }
     ]);
     expect(response.body.categoryTotals).toEqual(
@@ -761,10 +783,10 @@ describe('Financial dashboard', () => {
           name: 'Combustivel',
           color: '#f97316',
           type: 'EXPENSE',
-          amount: '150.00',
+          amount: '170.00',
           realizedAmount: '50.00',
           pendingAmount: '20.00',
-          projectedAmount: '80.00'
+          projectedAmount: '100.00'
         },
         {
           categoryId: incomeCategory.id,
@@ -788,7 +810,7 @@ describe('Financial dashboard', () => {
     expect(nextMonthResponse.status).toBe(200);
     expect(nextMonthResponse.body.month).toBe(nextMonthKey);
     expect(nextMonthResponse.body.carryOver).toEqual({
-      amount: '1430.00',
+      amount: '1410.00',
       source: 'PREVIOUS_PROJECTED'
     });
     expect(nextMonthResponse.body.monthlyTotals).toEqual({
@@ -798,7 +820,7 @@ describe('Financial dashboard', () => {
       variableProjectedExpenseTotal: '120.00',
       provisionContributionTotal: '0.00'
     });
-    expect(nextMonthResponse.body.projectedEndingBalance).toBe('1360.00');
+    expect(nextMonthResponse.body.projectedEndingBalance).toBe('1340.00');
   });
 
   it('projects provision contributions without turning them into expenses or account movements', async () => {
@@ -1062,6 +1084,7 @@ describe('Financial dashboard', () => {
         trackedExpenseCategoryIds: [expenseCategory.id]
       }
     });
+    await prisma.workspaceHabitualExpensePreference.create({ data: { companyId: primaryCompanyId, categoryIds: [expenseCategory.id] } });
 
     const response = await request(app)
       .get('/api/financial/dashboard/monthly')
@@ -1074,7 +1097,7 @@ describe('Financial dashboard', () => {
         categoryId: expenseCategory.id,
         historicalAverage: '108.33',
         committedInMonth: '0.00',
-        remainingProjected: '108.33'
+        remainingProjected: '100.00'
       })
     ]);
 

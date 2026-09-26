@@ -76,6 +76,8 @@ export type MonthlyProjectionCategoryTotal = {
 };
 
 export type MonthlyFinancialProjection = {
+  historyMonthsUsed?: number;
+  habitualConfigured?: boolean;
   month: string;
   isCurrentMonth: boolean;
   carryOverAmount: Prisma.Decimal;

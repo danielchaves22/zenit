@@ -1,3 +1,5 @@
+import FinancialForecastService from '../../src/services/financial-forecast.service';
+import { defaultForecastOptions } from '../../src/utils/financial-forecast';
 import request from 'supertest';
 import {
   AccountType,
@@ -149,6 +151,7 @@ describe('Monthly category budget', () => {
   });
 
   beforeEach(async () => {
+    await prisma.workspaceHabitualExpensePreference.deleteMany({ where: { companyId } });
     await prisma.financialTransaction.deleteMany({ where: { companyId } });
     await prisma.recurringTransaction.deleteMany({ where: { companyId } });
     await prisma.monthlyCategoryBudget.deleteMany({ where: { companyId } });
@@ -387,6 +390,26 @@ describe('Monthly category budget', () => {
       limitAmount: '550.00',
       baseLimitAmount: '400.00'
     });
+
+    const updatedOverride = await request(app)
+      .put('/api/financial/budgets/monthly')
+      .set(authHeaders())
+      .send({
+        month,
+        allocations: [{
+          categoryId: siblingCategoryId,
+          limitAmount: '650.00',
+          includeChildren: true,
+          recurringChangeScope: 'MONTH_ONLY'
+        }]
+      });
+    expect(updatedOverride.status).toBe(200);
+    expect(updatedOverride.body.items[0]).toMatchObject({
+      origin: 'FIXED_OVERRIDE', limitAmount: '650.00', baseLimitAmount: '400.00'
+    });
+    await expect(prisma.monthlyCategoryBudget.count({
+      where: { companyId, categoryId: siblingCategoryId }
+    })).resolves.toBe(1);
 
     const futureResponse = await request(app)
       .get('/api/financial/budgets/monthly')
@@ -637,6 +660,7 @@ describe('Monthly category budget', () => {
   });
 
   it('uses only settled history when calculating the category forecast average', async () => {
+    await prisma.workspaceHabitualExpensePreference.create({ data: { companyId, categoryIds: [siblingCategoryId] } });
     const month = currentMonthKey();
     const historicalTransactions = [];
 
@@ -690,6 +714,59 @@ describe('Monthly category budget', () => {
       forecastAmount: '100.00',
       status: 'ON_TRACK'
     });
+  });
+
+  it('shares habitual categories across forecasts and budgets without averaging fixed increases or installments', async () => {
+    const month = currentMonthKey();
+    const at = monthDate(month, 0, 1);
+    const fixed = await prisma.recurringTransaction.create({ data: {
+      companyId, createdBy: userId, description: 'Fixa reajustada', amount: 1200, type: 'EXPENSE',
+      frequency: 'MONTHLY', startDate: monthDate(month, -12, 10), dayOfMonth: 10,
+      nextDueDate: monthDate(month, 0, 10), isActive: true, fromAccountId: accountId, categoryId: siblingCategoryId
+    } });
+    const common = { companyId, createdBy: userId, type: 'EXPENSE' as const, fromAccountId: accountId, categoryId: siblingCategoryId };
+    for (let offset = -6; offset < 0; offset++) {
+      await prisma.financialTransaction.createMany({ data: [
+        { ...common, description: 'Fixa antiga', amount: 1000, date: monthDate(month, offset), status: 'COMPLETED', recurringTransactionId: fixed.id },
+        { ...common, description: 'Variável habitual', amount: 500, date: monthDate(month, offset), status: 'COMPLETED' },
+        { ...common, description: 'Parcela antiga', amount: 300, date: monthDate(month, offset), status: 'COMPLETED', totalInstallments: 6, installmentNumber: offset + 7 }
+      ] });
+    }
+    await prisma.financialTransaction.createMany({ data: [
+      { ...common, description: 'Variável já conhecido', amount: 200, date: monthDate(month, 0, 2), dueDate: monthDate(month, 0, 2), status: 'PENDING' },
+      { ...common, description: 'Oficina pontual', amount: 3000, categoryId: parentCategoryId, date: monthDate(month, 0, 3), status: 'PENDING' }
+    ] });
+    const save = await request(app).put('/api/financial/preferences/habitual-expenses').set(authHeaders()).send({ categoryIds: [siblingCategoryId] });
+    expect(save.status).toBe(200);
+    expect(save.body).toMatchObject({ configured: true, categoryIds: [siblingCategoryId] });
+    await MonthlyCategoryBudgetService.createPlanning({ companyId, month, categoryId: siblingCategoryId, limitAmount: '1800.00', includeChildren: false, kind: 'FIXED_MONTHLY', at });
+    const [plan, forecast] = await Promise.all([
+      MonthlyCategoryBudgetService.getPlan({ companyId, userId, month, at }),
+      FinancialForecastService.getForecast({ companyId, month, at, options: defaultForecastOptions })
+    ]);
+    expect(plan.items[0]).toMatchObject({ historicalAverageAmount: '500.00', forecastAmount: '1700.00', forecastVarianceAmount: '100.00' });
+    expect(forecast.budgets).toMatchObject({ coveredForecastAmount: '1700.00', limitAmount: '1800.00', unbudgetedForecastAmount: '3000.00' });
+    expect(forecast.variables).toHaveLength(1);
+    expect(forecast.variables[0]).toMatchObject({ committedInMonth: '200.00', remainingProjected: '300.00' });
+    expect(forecast.expense).toBe('4700.00');
+    await request(app).put('/api/financial/preferences/habitual-expenses').set(authHeaders()).send({ categoryIds: [] }).expect(200);
+    const noEstimates = await FinancialForecastService.getForecast({ companyId, month, at, options: defaultForecastOptions });
+    expect(noEstimates.habitual).toEqual({ configured: true, categoryIds: [] });
+    expect(noEstimates.variables).toEqual([]);
+    expect(noEstimates.expense).toBe('4400.00');
+    expect(noEstimates.budgets.limitAmount).toBe('1800.00');
+  });
+
+  it('validates the shared selection and distinguishes unconfigured from an intentional empty set', async () => {
+    const initial = await request(app).get('/api/financial/preferences/habitual-expenses').set(authHeaders());
+    expect(initial.body).toMatchObject({ configured: false, categoryIds: [] });
+    for (const categoryId of [foreignCategoryId, incomeCategoryId]) {
+      await request(app).put('/api/financial/preferences/habitual-expenses').set(authHeaders()).send({ categoryIds: [categoryId] }).expect(400);
+    }
+    const saved = await request(app).put('/api/financial/preferences/habitual-expenses').set(authHeaders()).send({ categoryIds: [childCategoryId, childCategoryId] });
+    expect(saved.body.categoryIds).toEqual([childCategoryId]);
+    const read = await request(app).get('/api/financial/preferences/habitual-expenses').set(authHeaders());
+    expect(read.body.categoryIds).toEqual([childCategoryId]);
   });
 
   it.each([

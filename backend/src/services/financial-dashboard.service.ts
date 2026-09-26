@@ -1,3 +1,5 @@
+import FinancialHistoryService from './financial-history.service';
+import VariableExpenseProjectionService from './variable-expense-projection.service';
 import prisma from '../lib/prisma';
 import {
   AccountType,
@@ -9,7 +11,6 @@ import {
   TransactionType
 } from '@prisma/client';
 import FixedTransactionService from './fixed-transaction.service';
-import UserVariableProjectionPreferenceService from './user-variable-projection-preference.service';
 import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import { resolveCreditCardInvoiceReference } from '../utils/credit-card';
 import {
@@ -39,6 +40,8 @@ import {
 } from '../utils/monthly-financial-projection';
 import { resolveMonthlyProjectionCompetence } from '../utils/monthly-projection-competence';
 import { calculateProvisionContributionForMonth } from '../utils/financial-provision-calculator';
+
+export { buildHistoricalNonCardDateWhere, buildHistoricalCardDateWhere } from '../utils/financial-history-query';
 
 function startOfMonth(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
@@ -77,77 +80,6 @@ function buildRelevantMonthWhere(startDate: Date, endDate: Date): Prisma.Financi
   };
 }
 
-export function buildHistoricalNonCardDateWhere(params: {
-  perspective: FinancialRecognitionPerspective;
-  startDate: Date;
-  endDate: Date;
-}): Prisma.FinancialTransactionWhereInput {
-  const range = {
-    gte: params.startDate,
-    lte: params.endDate
-  };
-
-  if (params.perspective === 'MATERIALIZED') {
-    return buildRelevantMonthWhere(params.startDate, params.endDate);
-  }
-
-  if (params.perspective === 'ECONOMIC') {
-    return {
-      date: range
-    };
-  }
-
-  return {
-    OR: [
-      { effectiveDate: range },
-      {
-        effectiveDate: null,
-        date: range
-      }
-    ]
-  };
-}
-
-export function buildHistoricalCardDateWhere(params: {
-  perspective: FinancialRecognitionPerspective;
-  startDate: Date;
-  endDate: Date;
-}): Prisma.FinancialTransactionWhereInput {
-  const range = {
-    gte: params.startDate,
-    lte: params.endDate
-  };
-
-  if (params.perspective === 'ECONOMIC') {
-    return {
-      date: range
-    };
-  }
-
-  if (params.perspective === 'SETTLEMENT') {
-    return {
-      creditCardInvoice: {
-        is: {
-          OR: [
-            { settledAt: range },
-            {
-              settledAt: null,
-              dueDate: range
-            }
-          ]
-        }
-      }
-    };
-  }
-
-  return {
-    creditCardInvoice: {
-      is: {
-        dueDate: range
-      }
-    }
-  };
-}
 
 function toDecimal(value: Prisma.Decimal | string | number | null | undefined): Prisma.Decimal {
   if (value === null || value === undefined) {
@@ -338,95 +270,6 @@ export default class FinancialDashboardService {
       accessibleAccountIds: params.accessibleAccountIds,
       referenceDate: calendar.businessDate
     });
-  }
-
-  private static async getTrackedExpenseCategories(params: {
-    userId: number;
-    companyId: number;
-  }) {
-    const preference = await UserVariableProjectionPreferenceService.getPreference(
-      params.userId,
-      params.companyId
-    );
-
-    if (preference.trackedExpenseCategoryIds.length === 0) {
-      return [];
-    }
-
-    const categories = await prisma.financialCategory.findMany({
-      where: {
-        id: { in: preference.trackedExpenseCategoryIds },
-        companyId: params.companyId,
-        type: TransactionType.EXPENSE
-      },
-      select: {
-        id: true,
-        name: true,
-        color: true
-      }
-    });
-
-    const categoryMap = new Map(categories.map((category) => [category.id, category]));
-
-    return preference.trackedExpenseCategoryIds
-      .map((categoryId) => categoryMap.get(categoryId))
-      .filter((category): category is NonNullable<typeof category> => Boolean(category));
-  }
-
-  private static async buildHistoricalAverageMap(params: {
-    companyId: number;
-    trackedCategoryIds: number[];
-    accessFilter?: Prisma.FinancialTransactionWhereInput;
-    calendarContext: FinancialCalendarContext;
-  }): Promise<Map<number, Prisma.Decimal>> {
-    const {
-      companyId,
-      trackedCategoryIds,
-      accessFilter,
-      calendarContext
-    } = params;
-
-    const result = new Map<number, Prisma.Decimal>();
-
-    trackedCategoryIds.forEach((categoryId) => {
-      result.set(categoryId, new Prisma.Decimal(0));
-    });
-
-    if (trackedCategoryIds.length === 0) {
-      return result;
-    }
-
-    const history = await this.getHistoryDashboard({
-      companyId,
-      months: 7,
-      categoryIds: trackedCategoryIds,
-      transactionCategoryIds: trackedCategoryIds,
-      excludeRecurringTransactions: true,
-      excludeInstallments: true,
-      accessFilter,
-      calendarContext,
-      recognitionPerspective: 'SETTLEMENT'
-    });
-    const completeMonthKeys = new Set(
-      history.monthlyTotals
-        .filter((month) => !month.isPartialCurrentMonth)
-        .map((month) => month.month)
-        .slice(-6)
-    );
-
-    for (const series of history.categorySeries) {
-      const total = series.points.reduce(
-        (sum, point) =>
-          completeMonthKeys.has(point.month) ? sum.plus(point.amount) : sum,
-        new Prisma.Decimal(0)
-      );
-      result.set(
-        series.categoryId,
-        completeMonthKeys.size > 0 ? total.div(completeMonthKeys.size) : total
-      );
-    }
-
-    return result;
   }
 
   static async getKnownMonthlyRows(params: {
@@ -782,15 +625,8 @@ export default class FinancialDashboardService {
       throw new Error('Não é permitido consultar meses anteriores ao atual');
     }
 
-    const trackedCategories = await this.getTrackedExpenseCategories({
-      userId: params.userId,
-      companyId: params.companyId
-    });
-    const historicalAverageByCategoryId = await this.buildHistoricalAverageMap({
-      companyId: params.companyId,
-      trackedCategoryIds: trackedCategories.map((category) => category.id),
-      accessFilter: params.accessFilter,
-      calendarContext: calendar
+    const variableContext = await VariableExpenseProjectionService.load({
+      ...params, calendar, historyMonths: 6
     });
     const activeProvisions = await prisma.financialProvision.findMany({
       where: {
@@ -850,8 +686,11 @@ export default class FinancialDashboardService {
         isCurrentMonth: isSameMonth(monthCursor, currentDate),
         carryOverAmount,
         knownRows,
-        trackedCategories,
-        historicalAverageByCategoryId,
+        trackedCategories: [],
+        historicalAverageByCategoryId: new Map(),
+        variableProjectionItems: VariableExpenseProjectionService.estimate({
+          context: variableContext, month: monthKey, knownRows
+        }),
         provisionContributionItems
       });
 
@@ -867,7 +706,8 @@ export default class FinancialDashboardService {
       throw new Error('Não foi possível calcular o dashboard mensal');
     }
 
-    return targetComputation;
+    return { ...targetComputation, historyMonthsUsed: variableContext.history.months.length,
+      habitualConfigured: variableContext.preference.configured };
   }
 
   static async getMonthlyDashboard(params: {
@@ -926,6 +766,15 @@ export default class FinancialDashboardService {
       }
     }
 
+    const variableCategories = new Map<number, MonthlyFinancialProjection['variableProjectionItems'][number]>();
+    for (const item of targetComputation.variableProjectionItems) {
+      const current = variableCategories.get(item.categoryId);
+      variableCategories.set(item.categoryId, current ? {
+        ...current, historicalAverage: current.historicalAverage.plus(item.historicalAverage),
+        committedInMonth: current.committedInMonth.plus(item.committedInMonth),
+        remainingProjected: current.remainingProjected.plus(item.remainingProjected)
+      } : { ...item });
+    }
     return {
       month: targetComputation.month,
       isCurrentMonth: targetComputation.isCurrentMonth,
@@ -981,7 +830,7 @@ export default class FinancialDashboardService {
       },
       variableProjection: {
         total: toMoneyString(targetComputation.totals.variableProjectedExpenseTotal),
-        categories: targetComputation.variableProjectionItems
+        categories: [...variableCategories.values()]
           .filter((item) => item.remainingProjected.gt(0))
           .map((item) => ({
             categoryId: item.categoryId,
@@ -1042,138 +891,28 @@ export default class FinancialDashboardService {
       addFinancialMonths(currentMonthStart, -(totalMonths - 1))
     );
     const rangeEnd = endOfMonth(currentMonthStart);
-    const operationalWhere = buildOperationalTransactionWhere();
     const recognitionPerspective = params.recognitionPerspective ?? 'MATERIALIZED';
-    const sharedFilters: Prisma.FinancialTransactionWhereInput[] = [
-      { companyId: params.companyId },
-      {
-        type: {
-          in: [TransactionType.INCOME, TransactionType.EXPENSE]
-        }
-      },
-      buildFinancialRecognitionWhere(recognitionPerspective),
-      operationalWhere
-    ];
-
-    if (params.accessFilter) {
-      sharedFilters.push(params.accessFilter);
-    }
-    if (params.transactionCategoryIds) {
-      sharedFilters.push({
-        categoryId: {
-          in: params.transactionCategoryIds
-        }
-      });
-    }
-    if (params.excludeRecurringTransactions) {
-      sharedFilters.push({
-        recurringTransactionId: null
-      });
-      sharedFilters.push({ OR: [{ refundOfTransactionId: null }, { refundOfTransaction: { recurringTransactionId: null } }] });
-    }
-    if (params.excludeInstallments) {
-      sharedFilters.push({
-        installmentPlanId: null,
-        OR: [{ totalInstallments: null }, { totalInstallments: { lte: 1 } }]
-      });
-      sharedFilters.push({ OR: [{ refundOfTransactionId: null }, { refundOfTransaction: {
-        installmentPlanId: null, OR: [{ totalInstallments: null }, { totalInstallments: { lte: 1 } }]
-      } }] });
-    }
-
-    const [materializedNonCard, materializedCard, selectedCategories] = await Promise.all([
-      prisma.financialTransaction.findMany({
-        where: {
-          AND: [
-            ...sharedFilters,
-            {
-              creditCardInvoiceId: null
-            },
-            buildHistoricalNonCardDateWhere({
-              perspective: recognitionPerspective,
-              startDate: rangeStart,
-              endDate: rangeEnd
-            })
-          ]
-        },
-        select: {
-          type: true,
-          amount: true,
-          categoryId: true,
-          category: {
-            select: {
-              name: true,
-              color: true,
-              type: true
-            }
-          },
-          dueDate: true,
-          effectiveDate: true,
-          date: true
-        }
+    const [historyRows, selectedCategories] = await Promise.all([
+      FinancialHistoryService.list({
+        companyId: params.companyId, accessFilter: params.accessFilter,
+        startDate: rangeStart, endDate: rangeEnd, perspective: recognitionPerspective,
+        categoryIds: params.transactionCategoryIds,
+        excludeRecurring: params.excludeRecurringTransactions,
+        excludeInstallments: params.excludeInstallments
       }),
-      prisma.financialTransaction.findMany({
-        where: {
-          AND: [
-            ...sharedFilters,
-            {
-              creditCardInvoiceId: { not: null },
-              OR: [
-                { type: TransactionType.EXPENSE },
-                {
-                  type: TransactionType.INCOME,
-                  creditCardCreditKind: { not: null }
-                }
-              ],
-            },
-            buildHistoricalCardDateWhere({
-              perspective: recognitionPerspective,
-              startDate: rangeStart,
-              endDate: rangeEnd
-            })
-          ]
-        },
-        select: {
-          type: true,
-          creditCardCreditKind: true,
-          amount: true,
-          date: true,
-          categoryId: true,
-          category: {
-            select: {
-              name: true,
-              color: true,
-              type: true
-            }
-          },
-          creditCardInvoice: {
-            select: {
-              dueDate: true,
-              settledAt: true
-            }
-          }
-        }
-      }),
-      params.categoryIds && params.categoryIds.length > 0
+      params.categoryIds?.length
         ? prisma.financialCategory.findMany({
             where: {
               companyId: params.companyId,
-              id: {
-                in: params.categoryIds
-              },
-              type: {
-                in: [TransactionType.INCOME, TransactionType.EXPENSE]
-              }
+              id: { in: params.categoryIds },
+              type: { in: [TransactionType.INCOME, TransactionType.EXPENSE] }
             },
-            select: {
-              id: true,
-              name: true,
-              color: true,
-              type: true
-            }
+            select: { id: true, name: true, color: true, type: true }
           })
         : Promise.resolve([])
     ]);
+    const materializedNonCard = historyRows.filter((row) => !row.creditCardInvoice);
+    const materializedCard = historyRows.filter((row) => row.creditCardInvoice);
 
     const monthTotals = new Map<
       string,

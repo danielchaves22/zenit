@@ -397,6 +397,7 @@ model Company {
   financialPlanningGuidanceRecords FinancialPlanningGuidanceRecord[] @relation("FinancialPlanningGuidanceWorkspace")
   savedFilterPresets  SavedFilterPreset[]
   lastUsedFilterPresets LastUsedFilterPreset[]
+  habitualExpensePreference WorkspaceHabitualExpensePreference?
   variableProjectionPreferences UserVariableProjectionPreference[]
   assistantSessions   AssistantSession[]
   assistantTurns      AssistantTurn[]
@@ -1941,6 +1942,13 @@ model SavedFilterPreset {
 
   @@index([userId, companyId, featureKey, updatedAt])
   @@index([companyId])
+}
+
+model WorkspaceHabitualExpensePreference {
+  companyId   Int      @id
+  categoryIds Int[]    @default([])
+  updatedAt   DateTime @updatedAt
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model UserVariableProjectionPreference {

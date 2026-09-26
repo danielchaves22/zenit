@@ -250,7 +250,7 @@ describe('MonthlyCategoryPlanning', () => {
 
     render(<MonthlyCategoryPlanning month="2026-09" />);
 
-    expect(await screen.findByText('Fixo mensal', { selector: 'span' })).toBeInTheDocument();
+    expect(await screen.findByText('Limite mensal contínuo', { selector: 'span' })).toBeInTheDocument();
     const limitInputs = screen.getAllByLabelText('Limite mensal');
     await user.clear(limitInputs[1]);
     await user.type(limitInputs[1], '600.00');

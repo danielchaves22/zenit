@@ -6,9 +6,10 @@ import {
   addFinancialMonths,
   assertFinancialPlanningMonth,
   formatFinancialMonthKey,
+  parseFinancialMonthKey,
   FinancialCalendarContext
 } from '../utils/financial-calendar';
-import type { MonthlyProjectionCategoryTotal } from '../utils/monthly-financial-projection';
+import type { MonthlyFinancialProjection, MonthlyProjectionCategoryTotal } from '../utils/monthly-financial-projection';
 
 
 type RecurringChangeScope = 'MONTH_ONLY' | 'FROM_MONTH';
@@ -72,10 +73,6 @@ function toDecimal(value: Prisma.Decimal | string | number | null | undefined): 
 
 function toMoneyString(value: Prisma.Decimal): string {
   return value.toDecimalPlaces(2).toFixed(2);
-}
-
-function maxDecimal(left: Prisma.Decimal, right: Prisma.Decimal): Prisma.Decimal {
-  return left.greaterThan(right) ? left : right;
 }
 
 function getCoveredCategoryIds(
@@ -661,6 +658,49 @@ export default class MonthlyCategoryBudgetService {
     });
   }
 
+  static async compareProjection(params: {
+    companyId: number; month: string; projection: MonthlyFinancialProjection;
+  }) {
+    const [allocations, categories] = await Promise.all([
+      listEffectiveAllocations({ client: prisma, companyId: params.companyId,
+        referenceMonth: parseFinancialMonthKey(params.month) }),
+      this.listExpenseCategories(params.companyId)
+    ]);
+    const { childrenByParentId } = buildCategoryMaps(categories);
+    const covered = new Set<number>();
+    const expenseTotals = params.projection.categoryTotals.filter((item) => item.type === 'EXPENSE');
+    const money = toMoneyString;
+    const items = allocations.map((allocation) => {
+      const ids = getCoveredCategoryIds(allocation.category.id, allocation.includeChildren, childrenByParentId);
+      ids.forEach((id) => covered.add(id));
+      const totals = expenseTotals.filter((item) => item.categoryId !== null && ids.includes(item.categoryId));
+      const forecast = totals.reduce((sum, item) => sum.plus(item.amount), new Prisma.Decimal(0));
+      const realized = totals.reduce((sum, item) => sum.plus(item.realizedAmount), new Prisma.Decimal(0));
+      const committed = totals.reduce((sum, item) => sum.plus(item.pendingAmount).plus(item.fixedProjectedAmount), new Prisma.Decimal(0));
+      const estimated = totals.reduce((sum, item) => sum.plus(item.variableProjectedAmount), new Prisma.Decimal(0));
+      return {
+        categoryId: allocation.category.id, categoryName: allocation.category.name,
+        includeChildren: allocation.includeChildren, limitAmount: money(allocation.limitAmount),
+        forecastAmount: money(forecast), marginAmount: money(allocation.limitAmount.minus(forecast)),
+        realizedAmount: money(realized), committedAmount: money(committed), estimatedAmount: money(estimated)
+      };
+    });
+    const unbudgeted = expenseTotals.filter((item) => item.categoryId === null || !covered.has(item.categoryId))
+      .map((item) => ({
+        categoryId: item.categoryId, categoryName: item.name, includeChildren: false,
+        limitAmount: null, marginAmount: null, forecastAmount: money(item.amount),
+        realizedAmount: money(item.realizedAmount),
+        committedAmount: money(item.pendingAmount.plus(item.fixedProjectedAmount)),
+        estimatedAmount: money(item.variableProjectedAmount)
+      }));
+    return {
+      items: [...items, ...unbudgeted],
+      coveredForecastAmount: money(items.reduce((sum, item) => sum.plus(item.forecastAmount), new Prisma.Decimal(0))),
+      limitAmount: money(allocations.reduce((sum, item) => sum.plus(item.limitAmount), new Prisma.Decimal(0))),
+      unbudgetedForecastAmount: money(unbudgeted.reduce((sum, item) => sum.plus(item.forecastAmount), new Prisma.Decimal(0)))
+    };
+  }
+
   static async getPlan(params: {
     companyId: number;
     userId: number;
@@ -687,7 +727,6 @@ export default class MonthlyCategoryBudgetService {
     const categories = await this.listExpenseCategories(params.companyId);
     const { childrenByParentId } = buildCategoryMaps(categories);
     const coveredIdsByAllocationId = new Map<number, number[]>();
-    const selectedCategoryIds = new Set<number>();
     allocations.forEach((allocation) => {
       const coveredIds = getCoveredCategoryIds(
         allocation.category.id,
@@ -695,41 +734,17 @@ export default class MonthlyCategoryBudgetService {
         childrenByParentId
       );
       coveredIdsByAllocationId.set(allocation.id, coveredIds);
-      coveredIds.forEach((categoryId) => selectedCategoryIds.add(categoryId));
     });
 
-    const [monthlyProjection, historyDashboard] = await Promise.all([
-      FinancialDashboardService.getMonthlyProjection({
-        companyId: params.companyId,
-        userId: params.userId,
-        month: params.month,
-        accessibleAccountIds: params.accessibleAccountIds,
-        accessFilter: params.accessFilter,
-        calendarContext: calendar
-      }),
-      FinancialDashboardService.getHistoryDashboard({
-        companyId: params.companyId,
-        months: 7,
-        categoryIds: [...selectedCategoryIds],
-        transactionCategoryIds: [...selectedCategoryIds],
-        accessFilter: params.accessFilter,
-        calendarContext: calendar,
-        recognitionPerspective: 'SETTLEMENT'
-      })
-    ]);
-
+    const monthlyProjection = await FinancialDashboardService.getMonthlyProjection({
+      companyId: params.companyId, userId: params.userId, month: params.month,
+      accessibleAccountIds: params.accessibleAccountIds, accessFilter: params.accessFilter,
+      calendarContext: calendar
+    });
     const categoryTotalsById = new Map<number, MonthlyProjectionCategoryTotal>();
     monthlyProjection.categoryTotals.forEach((categoryTotal) => {
       if (categoryTotal.categoryId !== null) categoryTotalsById.set(categoryTotal.categoryId, categoryTotal);
     });
-    const historySeriesByCategoryId = new Map(
-      historyDashboard.categorySeries.map((series) => [series.categoryId, series])
-    );
-    const completeHistoryMonths = historyDashboard.monthlyTotals
-      .filter((historyMonth) => !historyMonth.isPartialCurrentMonth)
-      .map((historyMonth) => historyMonth.month)
-      .slice(-6);
-
     const items = allocations.map((allocation) => {
       const coveredIds = coveredIdsByAllocationId.get(allocation.id) ?? [allocation.category.id];
       let realizedAmount = new Prisma.Decimal(0);
@@ -745,18 +760,12 @@ export default class MonthlyCategoryBudgetService {
       });
       const committedAmount = pendingAmount.plus(fixedProjectedAmount);
       const knownAmount = realizedAmount.plus(committedAmount);
-      let historicalTotal = new Prisma.Decimal(0);
-      completeHistoryMonths.forEach((historyMonth) => {
-        coveredIds.forEach((categoryId) => {
-          const series = historySeriesByCategoryId.get(categoryId);
-          const point = series?.points.find((entry) => entry.month === historyMonth);
-          historicalTotal = historicalTotal.plus(toDecimal(point?.amount));
-        });
-      });
-      const historicalAverageAmount = completeHistoryMonths.length
-        ? historicalTotal.div(completeHistoryMonths.length)
-        : new Prisma.Decimal(0);
-      const forecastAmount = maxDecimal(knownAmount, historicalAverageAmount);
+      const historicalAverageAmount = monthlyProjection.variableProjectionItems
+        .filter((item) => coveredIds.includes(item.categoryId))
+        .reduce((sum, item) => sum.plus(item.historicalAverage), new Prisma.Decimal(0));
+      const additionalVariableAmount = coveredIds.reduce((sum, id) =>
+        sum.plus(toDecimal(categoryTotalsById.get(id)?.variableProjectedAmount)), new Prisma.Decimal(0));
+      const forecastAmount = knownAmount.plus(additionalVariableAmount);
       const remainingAmount = allocation.limitAmount.minus(knownAmount);
       const forecastVarianceAmount = allocation.limitAmount.minus(forecastAmount);
       const status = knownAmount.greaterThan(allocation.limitAmount)
@@ -798,7 +807,8 @@ export default class MonthlyCategoryBudgetService {
     return {
       month: params.month,
       statsAvailable: true,
-      historicalMonthsUsed: completeHistoryMonths.length,
+      historicalMonthsUsed: monthlyProjection.historyMonthsUsed ?? 0,
+      habitualConfigured: monthlyProjection.habitualConfigured,
       summary: {
         plannedAmount: toMoneyString(summary.plannedAmount),
         realizedAmount: toMoneyString(summary.realizedAmount),

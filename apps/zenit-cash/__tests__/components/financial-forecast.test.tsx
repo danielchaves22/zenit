@@ -14,6 +14,11 @@ vi.mock('@/lib/financial-forecast', async (importOriginal) => ({
 }));
 const fetchForecast = vi.mocked(getFinancialForecast);
 const fixture: ForecastData = {
+  habitual: { configured: true, categoryIds: [1] },
+  budgets: { coveredForecastAmount: '550.00', limitAmount: '600.00', unbudgetedForecastAmount: '0.00', items: [
+    { categoryId: 1, categoryName: 'Restaurante', includeChildren: false, forecastAmount: '550.00',
+      limitAmount: '600.00', marginAmount: '50.00', realizedAmount: '200.00', committedAmount: '200.00', estimatedAmount: '150.00' }
+  ] },
   month: '2026-09',
   currentMonth: '2026-09',
   maximumMonth: '2028-09',

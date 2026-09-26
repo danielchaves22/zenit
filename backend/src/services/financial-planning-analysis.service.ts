@@ -1,3 +1,5 @@
+import FinancialHistoryService from './financial-history.service';
+import VariableExpenseProjectionService from './variable-expense-projection.service';
 import prisma from '../lib/prisma';
 import {
   AccountType,
@@ -12,7 +14,6 @@ import {
 import PersonalFinancialProfileService from './personal-financial-profile.service';
 import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import {
-  buildFinancialRecognitionWhere,
   buildOperationalTransactionWhere
 } from '../utils/financial-transaction-query';
 import {
@@ -24,17 +25,13 @@ import {
 } from '../utils/financial-calendar';
 import { calculateProvisionContributionForMonth } from '../utils/financial-provision-calculator';
 import {
-  getCreditCardInvoiceSignedAmount,
-  isCreditCardInvoiceCredit
-} from '../utils/financial-transaction-amount';
-import {
   buildFinancialBudgetScenarios,
   FinancialBudgetScenarioSource
 } from '../utils/financial-budget-scenario';
 import { buildFinancialGuidanceEvidence } from '../utils/financial-guidance-evidence';
 import { hashCanonicalPayload } from '../utils/canonical-hash';
 
-const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 4;
+const FINANCIAL_PLANNING_METHODOLOGY_VERSION = 5;
 
 export type FinancialPlanningSourceKind =
   | 'FIXED_INCOME'
@@ -296,7 +293,7 @@ export default class FinancialPlanningAnalysisService {
     );
     const historyEnd = new Date(historyEndExclusive.getTime() - 1);
 
-    const [recurring, installmentPlans, cardInstallments, provisions, history, latestSnapshot] =
+    const [recurring, installmentPlans, cardInstallments, provisions, history, latestSnapshot, variableContext] =
       await Promise.all([
         prisma.recurringTransaction.findMany({
           where: {
@@ -387,37 +384,14 @@ export default class FinancialPlanningAnalysisService {
           },
           orderBy: [{ targetDate: 'asc' }, { id: 'asc' }]
         }),
-        prisma.financialTransaction.findMany({
-          where: {
-            companyId: workspace.id,
-            type: { in: [TransactionType.INCOME, TransactionType.EXPENSE] },
-            date: { gte: historyStart, lt: historyEndExclusive },
-            AND: [
-              buildFinancialRecognitionWhere('ECONOMIC'),
-              buildOperationalTransactionWhere()
-            ]
-          },
-          select: {
-            id: true,
-            type: true,
-            date: true,
-            amount: true,
-            paidAmount: true,
-            creditCardInvoiceId: true,
-            creditCardCreditKind: true,
-            categoryId: true,
-            recurringTransactionId: true,
-            installmentPlanId: true,
-            purchaseGroupId: true,
-            totalInstallments: true,
-            category: { select: { id: true, name: true } }
-          },
-          orderBy: [{ date: 'asc' }, { id: 'asc' }]
+        FinancialHistoryService.list({
+          companyId: workspace.id, startDate: historyStart, endDate: historyEnd, perspective: 'ECONOMIC'
         }),
         prisma.financialPlanningSnapshot.findFirst({
           where: { companyId: workspace.id },
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }]
-        })
+        }),
+        VariableExpenseProjectionService.load({ companyId: workspace.id, calendar, historyMonths: params.historyMonths })
       ]);
 
     const preferenceByCategory = new Map<
@@ -572,59 +546,23 @@ export default class FinancialPlanningAnalysisService {
     const coveredMonths = new Set(
       history.map((transaction) => formatFinancialMonthKey(transaction.date))
     );
-    const variableByCategory = new Map<
-      number | null,
-      { category: { id: number; name: string } | null; total: Prisma.Decimal; transactions: number }
-    >();
-    history.forEach((transaction) => {
-      const isCardCredit =
-        transaction.type === TransactionType.INCOME &&
-        transaction.creditCardInvoiceId !== null &&
-        isCreditCardInvoiceCredit(transaction);
-      if (transaction.type !== TransactionType.EXPENSE && !isCardCredit) return;
-      if (
-        transaction.recurringTransactionId ||
-        transaction.installmentPlanId ||
-        transaction.purchaseGroupId ||
-        (transaction.totalInstallments ?? 0) > 1
-      ) {
-        return;
-      }
-      const current = variableByCategory.get(transaction.categoryId) ?? {
-        category: transaction.category,
-        total: new Prisma.Decimal(0),
-        transactions: 0
-      };
-      const amount = isCardCredit
-        ? getCreditCardInvoiceSignedAmount(transaction)
-        : (transaction.paidAmount ?? transaction.amount).abs();
-      current.total = current.total.plus(amount);
-      current.transactions += 1;
-      variableByCategory.set(transaction.categoryId, current);
-    });
-    const averagingMonths = Math.max(1, coveredMonths.size);
-    Array.from(variableByCategory.entries())
-      .sort((left, right) => right[1].total.comparedTo(left[1].total))
-      .forEach(([categoryId, item]) => {
-        const average = Prisma.Decimal.max(item.total, 0).div(averagingMonths);
-        if (average.isZero()) return;
-        sources.push({
-          key: `HISTORICAL_CATEGORY:${categoryId ?? 'UNCATEGORIZED'}`,
-          kind: 'VARIABLE_EXPENSE',
-          origin: 'HISTORICAL_CATEGORY',
-          label: item.category?.name ?? 'Despesas sem categoria',
-          detail: `Média de ${item.transactions} lançamento(s) em ${averagingMonths} mês(es) com dados`,
-          monthlyAmount: moneyString(average),
-          selectedByDefault: true,
-          metadata: {
-            categoryId,
-            categoryName: item.category?.name ?? null,
-            ...categoryPreferenceMetadata(categoryId),
-            transactionCount: item.transactions,
-            averagingMonths
-          }
-        });
+    const variableByCategory = new Map<number, { name: string; amount: Prisma.Decimal }>();
+    for (const basis of variableContext.history.bases) {
+      const current = variableByCategory.get(basis.categoryId) ?? { name: basis.categoryName, amount: new Prisma.Decimal(0) };
+      current.amount = current.amount.plus(basis.historicalAverage);
+      variableByCategory.set(basis.categoryId, current);
+    }
+    for (const [categoryId, item] of [...variableByCategory].sort((a, b) => a[0] - b[0])) {
+      if (item.amount.isZero()) continue;
+      sources.push({
+        key: 'HISTORICAL_CATEGORY:' + categoryId, kind: 'VARIABLE_EXPENSE', origin: 'HISTORICAL_CATEGORY',
+        label: item.name,
+        detail: 'Média habitual em ' + variableContext.history.months.length + ' mês(es) completos disponíveis',
+        monthlyAmount: moneyString(item.amount), selectedByDefault: true,
+        metadata: { categoryId, categoryName: item.name, ...categoryPreferenceMetadata(categoryId),
+          averagingMonths: variableContext.history.months.length }
       });
+    }
 
     const expenseHistory = history.filter((transaction) => transaction.type === TransactionType.EXPENSE);
     const categorizedExpenses = expenseHistory.filter((transaction) => transaction.categoryId !== null);
@@ -665,6 +603,10 @@ export default class FinancialPlanningAnalysisService {
     ];
     const score = breakdown.reduce((sum, item) => sum + item.points, 0);
     const issues: Array<{ code: string; severity: 'INFO' | 'WARNING'; message: string }> = [];
+    if (!variableContext.preference.configured) {
+      issues.push({ code: 'HABITUAL_CATEGORIES_NOT_CONFIGURED', severity: 'WARNING',
+        message: 'Configure as categorias habituais na análise financeira para estimar gastos variáveis.' });
+    }
     if (!coverageDeclaredFull) {
       issues.push({
         code: 'PARTIAL_COVERAGE',
@@ -738,6 +680,7 @@ export default class FinancialPlanningAnalysisService {
       companyId: workspace.id,
       profileVersion: profile.version,
       methodologyVersion: FINANCIAL_PLANNING_METHODOLOGY_VERSION,
+      habitualCategoryIds: variableContext.preference.categoryIds,
       period,
       dataQuality: basisDataQuality,
       sources: [...sources]

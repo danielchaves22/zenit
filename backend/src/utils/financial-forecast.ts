@@ -79,17 +79,15 @@ export function cashEffect(rows: MonthlyProjectionKnownRow[]): Prisma.Decimal {
   );
 }
 
-export function calculateForecastMonth(params: {
+export function calculateForecastVariables(params: {
   month: string;
-  isCurrentMonth: boolean;
-  carryOverAmount: Prisma.Decimal;
   knownRows: MonthlyProjectionKnownRow[];
   bases: ForecastVariableBasis[];
   options: ForecastOptions;
   unavailableCardIds: Set<number>;
 }) {
   const { options } = params;
-  const variables = params.bases.map((basis) => {
+  return params.bases.map((basis) => {
     const comparable = params.knownRows.filter(
       (row) =>
         isVariableProjectionRow(row) &&
@@ -124,6 +122,19 @@ export function calculateForecastMonth(params: {
       adjusted: override !== undefined
     };
   });
+}
+
+export function calculateForecastMonth(params: {
+  month: string;
+  isCurrentMonth: boolean;
+  carryOverAmount: Prisma.Decimal;
+  knownRows: MonthlyProjectionKnownRow[];
+  bases: ForecastVariableBasis[];
+  options: ForecastOptions;
+  unavailableCardIds: Set<number>;
+}) {
+  const { options } = params;
+  const variables = calculateForecastVariables(params);
   const estimates: MonthlyVariableProjectionItem[] = variables
     .filter((item) => item.included)
     .map((item) => ({

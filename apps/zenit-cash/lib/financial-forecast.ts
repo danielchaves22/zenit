@@ -33,6 +33,8 @@ export interface ForecastTransaction {
   installment: { number: number | null; total: number | null } | null;
 }
 export interface FinancialForecast {
+  habitual: { configured: boolean; categoryIds: number[] };
+  budgets: ForecastBudgetComparison;
   month: string;
   currentMonth: string;
   maximumMonth: string;
@@ -79,6 +81,22 @@ export interface FinancialForecast {
     expense: string;
     result: string;
     endingBalance: string;
+  }>;
+}
+export interface ForecastBudgetComparison {
+  coveredForecastAmount: string;
+  limitAmount: string;
+  unbudgetedForecastAmount: string;
+  items: Array<{
+    categoryId: number | null;
+    categoryName: string;
+    includeChildren: boolean;
+    limitAmount: string | null;
+    forecastAmount: string;
+    marginAmount: string | null;
+    realizedAmount: string;
+    committedAmount: string;
+    estimatedAmount: string;
   }>;
 }
 export async function getFinancialForecast(

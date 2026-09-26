@@ -7,8 +7,8 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-09-24
-summary: Cenários de fechamento mensal com fontes selecionáveis e médias sem duplicidade.
+last_reviewed: 2026-09-25
+summary: Previsão mensal, categorias habituais compartilhadas e comparação com limites de orçamento.
 ---
 
 # Previsão financeira mensal
@@ -46,6 +46,27 @@ São mantidos ao alternar entre previsão e histórico e descartados ao sair ou 
 de workspace. Não são limites de orçamento nem alterações dos dados operacionais.
 
 ## Cálculo
+
+### Categorias habituais
+
+**Gerenciar categorias** abre uma seleção pesquisável, salva explicitamente para
+o espaço financeiro. A mesma seleção alimenta a previsão, o planejamento mensal
+por categoria e as novas análises do planejamento guiado. Somente gestores podem
+alterá-la; os demais membros podem consultá-la. Marcar uma categoria inclui seus
+lançamentos diretos: subcategorias precisam ser selecionadas explicitamente.
+
+Sem configuração, a tela avisa que só está considerando os compromissos conhecidos.
+Salvar uma seleção vazia desativa intencionalmente as estimativas habituais.
+Categorias fora da seleção continuam contribuindo com seus gastos registrados,
+fixas, parcelas e demais compromissos. Elas apenas não recebem estimativas de novos
+gastos variáveis. O histórico completo não é filtrado por essa configuração.
+
+Os checkboxes e ajustes dentro dos detalhes da previsão continuam sendo temporários
+e não alteram a seleção compartilhada. O endpoint autenticado
+`GET/PUT /api/financial/preferences/habitual-expenses` persiste a configuração;
+a consulta de previsão permanece sem escrita.
+
+### Composição da previsão
 
 `POST /api/financial/dashboard/forecast` é uma consulta autenticada sem escrita.
 Reutiliza fatos, competências, reconhecimento, saldo e aritmética decimal do domínio
@@ -90,16 +111,39 @@ pois ainda podem afetar o saldo acumulado.
 
 - O motor mensal compartilhado corrige o abatimento indevido de fixas/parcelas da
   média variável e evita repetir no saldo liquidações antecipadas.
-- O Planejamento Mensal por Categoria continua com sua média própria de todas as
-  despesas cobertas e com os compromissos canônicos. Não recebe filtros do cenário.
+- O Planejamento Mensal por Categoria usa o mesmo histórico variável habitual e
+  o mesmo complemento por categoria e canal. A previsão soma gastos realizados,
+  compromissos e apenas o complemento ainda não conhecido. Não recebe filtros
+  temporários do cenário. Fixas e parcelas são excluídas antes de calcular a média;
+  um reajuste de aluguel não altera artificialmente a estimativa de gastos variáveis.
 - A regra de considerar somente receitas fixas pertence à previsão interativa;
   não filtra receitas nos registros, no histórico ou nos demais planejamentos.
 - Plano de Disponibilidade, provisões, limites, transações, faturas e snapshots
   não são gravados pela consulta. Provisões lógicas não viram despesas.
-- Os retratos de planejamento guiado mantêm sua metodologia e seus snapshots.
+- Novos retratos de planejamento guiado usam a metodologia 5 e a seleção habitual
+  no componente variável. Equivalentes mensais de fixas, parcelas e provisões
+  continuam sendo componentes próprios. Snapshots anteriores não são reescritos.
 - A análise de ritmo diário/desempenho do mês fica para uma etapa posterior.
 - Pagamentos parciais de fatura seguem a capacidade atual do domínio; a previsão
   não cria um modelo paralelo de cobertura de pagamento.
+
+## Limites de orçamento
+
+O bloco **Previsão e limites por categoria** compara o fechamento previsto com os
+limites efetivos do mês escolhido. Valores iguais ou abaixo do limite aparecem em
+verde; acima, em vermelho; sem limite, em cor neutra. Os detalhes mostram a margem
+ou excesso e a composição entre realizado, compromissos e complemento estimado.
+O resumo compara apenas categorias cobertas por orçamento e informa separadamente
+as despesas sem limite. Orçamentos que incluem subcategorias usam a cobertura
+existente do domínio, sem somar novamente essas categorias como linhas independentes.
+
+A configuração existente de limites é reutilizada: um **limite mensal contínuo**
+vigora automaticamente a partir de seu mês inicial; um **limite específico deste
+mês** substitui o valor apenas para a competência escolhida. Alterações nessa
+exceção sobrescrevem seu valor para o mês inteiro. Encerrar ou alterar uma regra
+contínua preserva os períodos anteriores. Não há cópia mensal obrigatória nem
+rotina de materialização ao fechar o mês. Consultar ou simular a previsão não
+escreve nos limites.
 
 Testes cobrem combinações de fontes, médias comparáveis, créditos, ciclos fechados,
 quitação de atrasados uma única vez, antecipações, isolamento e preservação dos

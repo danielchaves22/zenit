@@ -620,7 +620,7 @@ export function MonthlyCategoryPlanning({
               compara sua intenção com o realizado, o já comprometido e a tendência.
             </p>
             <p>
-              Um planejamento pode existir somente no mês escolhido ou ser fixo mensal. Os fixos são
+              Um limite pode valer apenas no mês escolhido ou continuar automaticamente nos seguintes. Os contínuos são
               projetados virtualmente a partir do mês inicial e só criam um ajuste próprio quando você
               muda um mês específico.
             </p>
@@ -650,6 +650,9 @@ export function MonthlyCategoryPlanning({
           Você pode consultar este planejamento. Somente gestores do workspace podem alterá-lo.
         </div>
       )}
+      {plan?.habitualConfigured === false && <p className="mb-4 text-sm text-amber-200">
+        Configure as categorias habituais na Análise financeira. Até lá, a previsão inclui apenas gastos realizados e compromissos conhecidos.
+      </p>}
 
       {canManage && scenarioDraftNotice && (
         <div className="mb-4 rounded-lg border border-blue-800/70 bg-blue-950/30 px-4 py-3 text-sm text-blue-200">
@@ -741,8 +744,8 @@ export function MonthlyCategoryPlanning({
                 }
                 className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
               >
-                <option value="ONE_TIME">Somente em um mês</option>
-                <option value="FIXED_MONTHLY">Fixo mensal</option>
+                <option value="ONE_TIME">Limite específico deste mês</option>
+                <option value="FIXED_MONTHLY">Limite mensal contínuo</option>
               </select>
             </div>
             <div>
@@ -920,7 +923,7 @@ function CategoryBudgetRow({
     allocation.origin === 'FIXED_OVERRIDE'
       ? 'Fixo ajustado neste mês'
       : allocation.origin === 'FIXED_MONTHLY'
-        ? 'Fixo mensal'
+        ? 'Limite mensal contínuo'
         : 'Somente neste mês';
 
   return (
@@ -1047,7 +1050,7 @@ function CategoryBudgetRow({
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <RowMetric label="Realizado" value={formatMoney(realized)} />
           <RowMetric label="Comprometido" value={formatMoney(committed)} />
-          <RowMetric label="Média histórica" value={formatMoney(historicalAverage)} />
+          <RowMetric label="Média variável habitual" value={formatMoney(historicalAverage)} />
           <RowMetric label="Tendência" value={formatMoney(forecast)} />
           <RowMetric
             label={remaining >= 0 ? 'Margem atual' : 'Excesso atual'}

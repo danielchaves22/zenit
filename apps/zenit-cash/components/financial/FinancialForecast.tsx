@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Loader2, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
+import HabitualExpenseCategories from './HabitualExpenseCategories';
+import ForecastBudgetComparison from './ForecastBudgetComparison';
 import {
   defaultForecastOptions,
   FinancialForecast as ForecastData,
@@ -347,6 +349,9 @@ export default function FinancialForecast({
         </p>
       </Card>
       <div className="space-y-2 text-sm text-gray-300">
+        {!data.habitual.configured && <p className="text-amber-200">Categorias habituais ainda não configuradas. A previsão considera os compromissos, mas ainda não estima novos gastos variáveis.</p>}
+        {data.habitual.configured && data.habitual.categoryIds.length === 0 && <p className="text-amber-200">Nenhuma categoria habitual selecionada. As estimativas automáticas de gastos variáveis estão desativadas.</p>}
+        <HabitualExpenseCategories onSaved={() => setRetry((value) => value + 1)} />
         {variableTotal > 0 && (
           <p>
             {currency(variableTotal)} das saídas são estimativas de gastos que ainda não estão
@@ -382,6 +387,7 @@ export default function FinancialForecast({
           </p>
         )}
       </div>
+      <ForecastBudgetComparison data={data.budgets} month={data.month} partial={partial} />
       <details className="rounded-xl border border-gray-800 bg-surface p-5">
         <summary className="cursor-pointer font-medium text-white">
           Ver detalhes e ajustar projeções
@@ -432,7 +438,7 @@ export default function FinancialForecast({
           <div>
             <h3 className="font-medium text-white">Médias por categoria</h3>
             <p className="mt-1 text-xs text-gray-400">
-              Ajuste o gasto variável mensal esperado. O sistema acrescenta apenas o que falta além
+              Categorias habituais deste espaço financeiro. Desmarcar ou ajustar aqui vale apenas para este cenário. O sistema acrescenta apenas o que falta além
               dos gastos comparáveis já conhecidos. Os ajustes valem para os meses deste cenário.
             </p>
             {data.variables.length === 0 && (

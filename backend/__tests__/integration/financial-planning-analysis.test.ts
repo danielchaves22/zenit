@@ -116,6 +116,7 @@ describe('Financial planning analysis preparation', () => {
       })
     ]);
     variableCategoryId = variableCategory.id;
+    await prisma.workspaceHabitualExpensePreference.create({ data: { companyId: personalWorkspaceId, categoryIds: [variableCategoryId] } });
     incomeCategoryId = incomeCategory.id;
     creditCardAccountId = creditCard.id;
 
@@ -498,7 +499,7 @@ describe('Financial planning analysis preparation', () => {
         at: boundaryInstant
       });
       expect(saoPaulo).toMatchObject({
-        methodologyVersion: 4,
+        methodologyVersion: 5,
         period: {
           historyMonths: 2,
           startDate: '2025-10-01',
@@ -656,7 +657,7 @@ describe('Financial planning analysis preparation', () => {
         (item) => item.categoryId === expenseCategoryId
       );
 
-      expect(diagnosis.methodologyVersion).toBe(4);
+      expect(diagnosis.methodologyVersion).toBe(5);
       expect(dashboard.totals.incomeTotal.toFixed(2)).toBe('10000.00');
       expect(diagnosisSourceAmount('FIXED_INCOME')).toBe('10000.00');
 
@@ -779,7 +780,7 @@ describe('Financial planning analysis preparation', () => {
       objectiveKind: 'MONTHLY_SAVINGS',
       targetMonthlySavings: '1000.00',
       profileVersion: 1,
-      methodologyVersion: 4,
+      methodologyVersion: 5,
       basisHash: preview.body.basisHash,
       dataQualityScore: 100,
       status: 'CONFIRMED',
@@ -800,6 +801,28 @@ describe('Financial planning analysis preparation', () => {
     expect(stored?.basisHash).toBe(preview.body.basisHash);
     expect(stored?.confirmationHash).toMatch(/^[a-f0-9]{64}$/);
     expect(Array.isArray(stored?.sourceSnapshot)).toBe(true);
+
+    const preference = await prisma.workspaceHabitualExpensePreference.findUniqueOrThrow({
+      where: { companyId: personalWorkspaceId }
+    });
+    try {
+      await request(app).put('/api/financial/preferences/habitual-expenses')
+        .set(personalHeaders()).send({ categoryIds: [] }).expect(200);
+      const changedPreview = await request(app)
+        .get('/api/financial/budgets/planning-analysis/preview?historyMonths=3')
+        .set(personalHeaders());
+      expect(changedPreview.status).toBe(200);
+      expect(changedPreview.body.basisHash).not.toBe(preview.body.basisHash);
+      expect(changedPreview.body.sources.filter((source: any) => source.kind === 'VARIABLE_EXPENSE')).toEqual([]);
+      const unchangedSnapshot = await prisma.financialPlanningSnapshot.findUnique({
+        where: { id: response.body.id }
+      });
+      expect(unchangedSnapshot).toEqual(stored);
+    } finally {
+      await prisma.workspaceHabitualExpensePreference.update({
+        where: { companyId: personalWorkspaceId }, data: { categoryIds: preference.categoryIds }
+      });
+    }
   });
 
   it('calculates explainable scenarios from a confirmed portrait without changing the budget', async () => {

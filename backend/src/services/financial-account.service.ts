@@ -10,7 +10,18 @@ import { logger } from '../utils/logger';
 import cacheService from './cache.service';
 import BankService from './bank.service';
 import { parseDecimal } from '../utils/money';
+import { getBankIconPath } from '../catalogs/bank-catalog';
 
+type AccountWithBank = Prisma.FinancialAccountGetPayload<{ include: { bank: true } }>;
+
+function serializeAccountBank(account: AccountWithBank) {
+  return {
+    ...account,
+    bank: account.bank
+      ? { ...account.bank, iconPath: getBankIconPath(account.bank.iconSlug) }
+      : null
+  };
+}
 
 function getAccountTypeLabel(type: AccountType): string {
   const labels: Record<AccountType, string> = {
@@ -247,6 +258,8 @@ export default class FinancialAccountService {
       });
     }
 
+    await cacheService.del(cacheService.getAccountBalanceKey(id));
+
     return updatedAccount;
   }
 
@@ -288,24 +301,29 @@ export default class FinancialAccountService {
       ...(accountIds && accountIds.length > 0 && { id: { in: accountIds } })
     };
 
-    return prisma.financialAccount.findMany({
+    const accounts = await prisma.financialAccount.findMany({
       where,
+      include: { bank: true },
       orderBy: [{ name: 'asc' }, { type: 'asc' }]
     });
+
+    return accounts.map(serializeAccountBank);
   }
 
   static async getAccountById(id: number): Promise<FinancialAccount | null> {
     const cacheKey = cacheService.getAccountBalanceKey(id);
     const cached = await cacheService.get<FinancialAccount>(cacheKey);
 
-    if (cached) {
+    if (cached && 'bank' in cached) {
       logger.debug('Account served from cache', { accountId: id });
       return cached;
     }
 
-    const account = await prisma.financialAccount.findUnique({
-      where: { id }
+    const storedAccount = await prisma.financialAccount.findUnique({
+      where: { id },
+      include: { bank: true }
     });
+    const account = storedAccount ? serializeAccountBank(storedAccount) : null;
 
     if (account) {
       await cacheService.set(cacheKey, account, 300);

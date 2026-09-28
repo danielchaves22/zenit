@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { AlertTriangle, ArrowLeft, HelpCircle, Save, X } from 'lucide-react';
+import BankLogo from '@/components/financial/BankLogo';
+import BankSelect from '@/components/financial/BankSelect';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { CurrencyInput } from '@/components/ui/CurrencyInput';
@@ -8,6 +10,13 @@ import { Input } from '@/components/ui/Input';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
 import api from '@/lib/api';
+import {
+  FinancialBank,
+  FinancialBankReference,
+  findBankByLegacyFields,
+  getBankBySelectValue,
+  getBankDisplayName
+} from '@/utils/banks';
 
 type AccountType = 'CHECKING' | 'SAVINGS' | 'INVESTMENT' | 'CASH';
 
@@ -17,7 +26,10 @@ interface Account {
   type: 'CHECKING' | 'SAVINGS' | 'CREDIT_CARD' | 'INVESTMENT' | 'CASH';
   balance: string;
   accountNumber?: string;
-  bankName?: string;
+  bankId?: number | null;
+  bankName?: string | null;
+  bankCode?: string | null;
+  bank?: FinancialBankReference | null;
   isActive: boolean;
   isDefault: boolean;
   allowNegativeBalance: boolean;
@@ -47,29 +59,49 @@ export default function AccountForm({
   const router = useRouter();
   const { addToast } = useToast();
 
-  const [loading, setLoading] = useState(mode === 'edit');
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [banks, setBanks] = useState<FinancialBank[]>([]);
+  const [preserveExistingBank, setPreserveExistingBank] = useState(false);
   const [existingAccount, setExistingAccount] = useState<Account | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     type: 'CHECKING' as AccountType,
     initialBalance: '0.00',
     accountNumber: '',
-    bankName: '',
+    bankId: '',
     isActive: true,
     allowNegativeBalance: false
   });
 
   useEffect(() => {
-    if (mode === 'edit' && accountId) {
-      void fetchAccount();
-    }
+    void initializeForm();
   }, [accountId, mode]);
 
-  async function fetchAccount() {
+  const selectedBank = getBankBySelectValue(banks, formData.bankId);
+  const previewBank = selectedBank || (preserveExistingBank ? existingAccount?.bank : null);
+  const bankDisplayName = getBankDisplayName(
+    previewBank,
+    preserveExistingBank ? existingAccount?.bankName : null
+  );
+
+  async function initializeForm() {
+    setLoading(true);
     try {
-      const response = await api.get(`/financial/accounts/${accountId}`);
-      const account = response.data as Account;
+      const [banksResponse, accountResponse] = await Promise.all([
+        api.get('/financial/banks'),
+        mode === 'edit' && accountId ? api.get(`/financial/accounts/${accountId}`) : null
+      ]);
+      const availableBanks = (banksResponse.data || []) as FinancialBank[];
+      setBanks(availableBanks);
+
+      if (!accountResponse) {
+        setExistingAccount(null);
+        setPreserveExistingBank(false);
+        return;
+      }
+
+      const account = accountResponse.data as Account;
 
       if (account.type === 'CREDIT_CARD') {
         addToast('Esta tela é destinada apenas a contas financeiras. Use a área de cartões.', 'error');
@@ -77,13 +109,20 @@ export default function AccountForm({
         return;
       }
 
+      const matchedBank = findBankByLegacyFields(
+        availableBanks,
+        account.bankId,
+        account.bankCode,
+        account.bankName
+      );
       setExistingAccount(account);
+      setPreserveExistingBank(!matchedBank && Boolean(account.bankId || account.bankName || account.bankCode));
       setFormData({
         name: account.name,
         type: account.type as AccountType,
         initialBalance: account.balance,
         accountNumber: account.accountNumber || '',
-        bankName: account.bankName || '',
+        bankId: matchedBank ? String(matchedBank.id) : '',
         isActive: account.isActive,
         allowNegativeBalance: account.allowNegativeBalance
       });
@@ -119,7 +158,13 @@ export default function AccountForm({
         name: formData.name,
         type: formData.type,
         accountNumber: formData.accountNumber || null,
-        bankName: formData.bankName || null,
+        ...(preserveExistingBank
+          ? {}
+          : {
+              bankId: formData.bankId ? Number(formData.bankId) : null,
+              bankName: null,
+              bankCode: null
+            }),
         isActive: formData.isActive,
         allowNegativeBalance: formData.allowNegativeBalance,
         ...(mode === 'create' ? { initialBalance: formData.initialBalance } : {})
@@ -263,16 +308,25 @@ export default function AccountForm({
                 disabled={saving}
               />
 
-              <Input
+              <BankSelect
                 label="Banco (opcional)"
-                value={formData.bankName}
-                onChange={(event) =>
-                  setFormData((prev) => ({ ...prev, bankName: event.target.value }))
-                }
-                placeholder="Ex: Banco do Brasil"
+                banks={banks}
+                value={formData.bankId}
+                onChange={(bankId) => {
+                  setPreserveExistingBank(false);
+                  setFormData((prev) => ({ ...prev, bankId }));
+                }}
+                placeholder={bankDisplayName || (banks.length === 0 ? 'Nenhum banco cadastrado' : 'Selecione um banco')}
                 disabled={saving}
               />
             </div>
+
+            {preserveExistingBank && (
+              <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+                O banco atual{bankDisplayName ? ` "${bankDisplayName}"` : ''} não está disponível na lista.
+                O vínculo será mantido até você selecionar outro banco ou escolher "Sem banco definido".
+              </div>
+            )}
 
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -334,6 +388,16 @@ export default function AccountForm({
                   : 'Ajustes de saldo e conta padrão continuam disponíveis na listagem.'}
               </div>
             </div>
+
+            {bankDisplayName && (
+              <div className="flex items-center gap-3 rounded-lg border border-gray-700 bg-[#11161d] p-4">
+                <BankLogo bank={previewBank} bankName={bankDisplayName} size="lg" />
+                <div className="min-w-0">
+                  <div className="text-xs uppercase tracking-wide text-gray-400">Banco</div>
+                  <div className="mt-1 break-words font-semibold text-white">{bankDisplayName}</div>
+                </div>
+              </div>
+            )}
 
             <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
               <div className="text-xs uppercase tracking-wide text-gray-400">Tipo</div>

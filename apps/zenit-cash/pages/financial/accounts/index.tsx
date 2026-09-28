@@ -27,6 +27,8 @@ import {
   X
 } from 'lucide-react';
 import api from '@/lib/api';
+import BankLogo from '@/components/financial/BankLogo';
+import { FinancialBankReference } from '@/utils/banks';
 
 interface Account {
   id: number;
@@ -34,7 +36,8 @@ interface Account {
   type: 'CHECKING' | 'SAVINGS' | 'CREDIT_CARD' | 'INVESTMENT' | 'CASH';
   balance: string;
   accountNumber?: string;
-  bankName?: string;
+  bankName?: string | null;
+  bank?: FinancialBankReference | null;
   isActive: boolean;
   isDefault: boolean;
   allowNegativeBalance: boolean;
@@ -553,11 +556,14 @@ function AccountsPageInner() {
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="font-medium text-white">
-                        {account.name}
-                        {account.isDefault && (
-                          <Star size={12} className="ml-2 inline fill-current text-yellow-400" />
-                        )}
+                      <div className="flex items-center gap-3">
+                        <BankLogo bank={account.bank} bankName={account.bankName} size="sm" />
+                        <div className="font-medium text-white">
+                          {account.name}
+                          {account.isDefault && (
+                            <Star size={12} className="ml-2 inline fill-current text-yellow-400" />
+                          )}
+                        </div>
                       </div>
                     </td>
 
@@ -565,11 +571,11 @@ function AccountsPageInner() {
 
                     <td className="px-4 py-3 text-gray-300">
                       <div>
-                        {account.bankName && <div>{account.bankName}</div>}
+                        {(account.bank?.name || account.bankName) && <div>{account.bank?.name || account.bankName}</div>}
                         {account.accountNumber && (
                           <div className="text-xs text-gray-500">{account.accountNumber}</div>
                         )}
-                        {!account.bankName && !account.accountNumber && '-'}
+                        {!account.bank?.name && !account.bankName && !account.accountNumber && '-'}
                       </div>
                     </td>
 

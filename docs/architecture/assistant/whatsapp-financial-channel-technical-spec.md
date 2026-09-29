@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-06-28
+last_reviewed: 2026-09-29
 summary: Desenho tecnico e nota de implementacao do canal de WhatsApp do Zenit Cash, com onboarding QR-first, binding por usuario e webhook da Meta.
 tags:
   - assistant
@@ -48,11 +48,12 @@ Implementado nesta fase:
 - binding ativo `1:1` entre `waId` e `userId`;
 - uma empresa ativa por vez no canal;
 - uma `assistantSession` por empresa dentro do binding;
-- respostas em texto simples, com confirmacao e cancelamento por linguagem natural.
+- indicador nativo de digitacao durante o processamento, renovado a cada 20 segundos e encerrado antes da resposta;
+- resumo estruturado de rascunho com botoes nativos `Confirmar` e `Cancelar`;
+- confirmacao e cancelamento por linguagem natural continuam disponiveis.
 
 Futuro:
 
-- mensagens interativas da Meta;
 - notificacoes proativas com template;
 - gestao mais rica de contexto e rotacao de conversa.
 
@@ -77,11 +78,21 @@ O objetivo nao inclui substituir a experiencia web para conciliacao, relatorios 
 - criar um binding ativo `1:1` entre numero/`waId` e `userId`;
 - manter contexto de empresa explicito e isolado, com uma empresa ativa por vez no canal;
 - adotar onboarding `QR-first`, com link direto como caminho principal;
-- responder com texto simples nesta fase, incluindo confirmacao e cancelamento por linguagem natural;
+- usar reply buttons para decidir rascunhos e texto simples para outras respostas;
 - manter o WhatsApp focado em captura, revisao rapida e follow-up curto;
 - manter a web como canal principal para fluxos densos.
 
 ## Arquitetura da solucao
+
+### Feedback e decisao pelo WhatsApp
+
+O indicador usa `POST /{phone-number-id}/messages` com `status: read`, o ID da mensagem recebida e `typing_indicator: { type: text }`. A chamada tem timeout de 3 segundos e sua falha nao interrompe o assistente. Durante turnos longos, o indicador e renovado a cada 20 segundos; o timer e encerrado inclusive em falhas.
+
+Rascunhos pendentes sao enviados como `interactive.type: button`, com resumo obtido dos dados estruturados e os botoes `Confirmar` e `Cancelar`. Corpos maiores que 1024 caracteres sao divididos em texto e seguidos de uma pergunta interativa, sem truncar os dados do lancamento. O resumo informa que aguarda confirmacao, evitando anunciar uma despesa como gravada antes da decisao.
+
+Cada ID de botao inclui a decisao, o ID da pending action e sua revisao (`updatedAt`). O webhook valida usuario, empresa ativa, sessao, status e revisao. Cliques antigos, desconhecidos ou ja resolvidos nao sao enviados ao modelo para interpretacao. As decisoes validas reutilizam `PendingActionService` e sao registradas no historico do assistente. A confirmacao reivindica o rascunho e grava o lancamento na mesma transacao de banco, impedindo duplicidade por cliques concorrentes e revertendo a decisao se a gravacao falhar.
+
+Referencias da Meta: [indicador de digitacao](https://www.postman.com/meta/whatsapp-business-platform/request/lhf0duq/send-typing-indicator-and-read-receipt) e [reply buttons](https://www.postman.com/meta/whatsapp-business-platform/request/ne00kt6/send-reply-button).
 
 ### Escopo da fase 1
 

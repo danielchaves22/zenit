@@ -23,6 +23,11 @@ const draftTransactionPayloadSchema = z.object({
 
 export type DraftTransactionPayload = z.infer<typeof draftTransactionPayloadSchema>;
 
+type DecisionContext = {
+  sessionId?: number;
+  expectedUpdatedAt?: Date;
+};
+
 function toIso(value: Date): string {
   return value.toISOString();
 }
@@ -156,7 +161,9 @@ export default class PendingActionService {
 
     const updated = await prisma.assistantPendingAction.update({
       where: {
-        id: params.pendingActionId
+        id: params.pendingActionId,
+        status: AssistantPendingActionStatus.PENDING,
+        updatedAt: pendingAction.updatedAt
       },
       data: {
         summary: params.summary,
@@ -171,12 +178,17 @@ export default class PendingActionService {
     pendingActionId: number;
     userId: number;
     companyId: number;
-  }): Promise<PendingAction> {
+  } & DecisionContext): Promise<PendingAction> {
     await this.getOwnedPendingActionOrThrow(params);
 
     const updated = await prisma.assistantPendingAction.update({
       where: {
-        id: params.pendingActionId
+        id: params.pendingActionId,
+        userId: params.userId,
+        companyId: params.companyId,
+        sessionId: params.sessionId,
+        updatedAt: params.expectedUpdatedAt,
+        status: AssistantPendingActionStatus.PENDING
       },
       data: {
         status: AssistantPendingActionStatus.CANCELED,
@@ -192,7 +204,7 @@ export default class PendingActionService {
     userId: number;
     companyId: number;
     role: Role;
-  }) {
+  } & DecisionContext) {
     const pendingAction = await this.getOwnedPendingActionOrThrow(params);
 
     if (pendingAction.type !== AssistantPendingActionType.CREATE_TRANSACTION_DRAFT) {
@@ -229,39 +241,54 @@ export default class PendingActionService {
       }
     }
 
-    const created = await FinancialTransactionService.createTransaction({
-      description: payload.description,
-      amount: payload.amount,
-      date: toDate(payload.date) as Date,
-      dueDate: toDate(payload.dueDate),
-      effectiveDate: toDate(payload.effectiveDate),
-      type: payload.type,
-      status: payload.status,
-      notes: payload.notes ?? undefined,
-      fromAccountId: payload.fromAccountId ?? undefined,
-      toAccountId: payload.toAccountId ?? undefined,
-      categoryId: payload.categoryId ?? undefined,
-      companyId: params.companyId,
-      createdBy: params.userId,
-      installmentCount: payload.installmentCount ?? 1
-    });
+    return prisma.$transaction(async (tx) => {
+      // Claim this exact draft atomically. A second click must not create another transaction.
+      await tx.assistantPendingAction.update({
+        where: {
+          id: pendingAction.id,
+          userId: params.userId,
+          companyId: params.companyId,
+          sessionId: params.sessionId,
+          status: AssistantPendingActionStatus.PENDING,
+          updatedAt: params.expectedUpdatedAt ?? pendingAction.updatedAt
+        },
+        data: { status: AssistantPendingActionStatus.CONFIRMED }
+      });
 
-    const firstTransaction = Array.isArray(created) ? created[0] : created;
+      const created = await FinancialTransactionService.createTransaction({
+        description: payload.description,
+        amount: payload.amount,
+        date: toDate(payload.date) as Date,
+        dueDate: toDate(payload.dueDate),
+        effectiveDate: toDate(payload.effectiveDate),
+        type: payload.type,
+        status: payload.status,
+        notes: payload.notes ?? undefined,
+        fromAccountId: payload.fromAccountId ?? undefined,
+        toAccountId: payload.toAccountId ?? undefined,
+        categoryId: payload.categoryId ?? undefined,
+        companyId: params.companyId,
+        createdBy: params.userId,
+        installmentCount: payload.installmentCount ?? 1
+      }, tx);
 
-    const updatedAction = await prisma.assistantPendingAction.update({
-      where: {
-        id: params.pendingActionId
-      },
-      data: {
-        status: AssistantPendingActionStatus.CONFIRMED,
-        confirmedAt: new Date(),
-        confirmedTransactionId: firstTransaction.id
-      }
-    });
+      const firstTransaction = Array.isArray(created) ? created[0] : created;
 
-    return {
-      pendingAction: assistantPendingActionToContract(updatedAction),
-      transaction: created
-    };
+      const updatedAction = await tx.assistantPendingAction.update({
+        where: {
+          id: params.pendingActionId
+        },
+        data: {
+          status: AssistantPendingActionStatus.CONFIRMED,
+          confirmedAt: new Date(),
+          confirmedTransactionId: firstTransaction.id
+        }
+      });
+
+      return {
+        pendingAction: assistantPendingActionToContract(updatedAction),
+        transaction: created
+      };
+    }, { timeout: 30000 });
   }
 }

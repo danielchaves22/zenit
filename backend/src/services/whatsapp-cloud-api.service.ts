@@ -12,6 +12,8 @@ type SendTextMessageResult = {
   raw: Record<string, unknown>;
 };
 
+export type WhatsAppReplyButton = { id: string; title: string };
+
 function normalizeDigits(value: string): string {
   return String(value || '').replace(/\D/g, '');
 }
@@ -81,7 +83,7 @@ export default class WhatsAppCloudApiService {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(received));
   }
 
-  static async sendTextMessage(params: SendTextMessageParams): Promise<SendTextMessageResult> {
+  private static async postMessage(payload: Record<string, unknown>, timeoutMs = 30000) {
     this.assertReady();
 
     const endpoint = `https://graph.facebook.com/${INTEGRATIONS_CONFIG.whatsappApiVersion}/${INTEGRATIONS_CONFIG.whatsappPhoneNumberId}/messages`;
@@ -91,17 +93,8 @@ export default class WhatsAppCloudApiService {
         Authorization: `Bearer ${INTEGRATIONS_CONFIG.whatsappAccessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: normalizeDigits(params.to),
-        type: 'text',
-        ...(params.replyToMessageId ? { context: { message_id: params.replyToMessageId } } : {}),
-        text: {
-          preview_url: false,
-          body: params.text
-        }
-      })
+      body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
     const raw = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -111,6 +104,55 @@ export default class WhatsAppCloudApiService {
       );
     }
 
+    return raw;
+  }
+
+  static async sendTypingIndicator(messageId: string): Promise<void> {
+    await this.postMessage({
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: { type: 'text' }
+    }, 3000);
+  }
+
+  static async sendTextMessage(params: SendTextMessageParams): Promise<SendTextMessageResult> {
+    const raw = await this.postMessage({
+      recipient_type: 'individual',
+      to: normalizeDigits(params.to),
+      type: 'text',
+      ...(params.replyToMessageId ? { context: { message_id: params.replyToMessageId } } : {}),
+      text: { preview_url: false, body: params.text }
+    });
+    return this.messageResult(raw);
+  }
+
+  static async sendReplyButtons(params: SendTextMessageParams & {
+    buttons: WhatsAppReplyButton[];
+  }): Promise<SendTextMessageResult> {
+    if (!params.text.trim() || params.text.length > 1024 ||
+        params.buttons.length < 1 || params.buttons.length > 3 ||
+        new Set(params.buttons.map((button) => button.id)).size !== params.buttons.length ||
+        params.buttons.some((button) => !button.id || button.id.length > 256 ||
+          !button.title.trim() || button.title.length > 20)) {
+      throw new Error('Mensagem interativa do WhatsApp fora dos limites permitidos.');
+    }
+    const raw = await this.postMessage({
+      recipient_type: 'individual',
+      to: normalizeDigits(params.to),
+      type: 'interactive',
+      ...(params.replyToMessageId ? { context: { message_id: params.replyToMessageId } } : {}),
+      interactive: {
+        type: 'button',
+        body: { text: params.text },
+        action: {
+          buttons: params.buttons.map((reply) => ({ type: 'reply', reply }))
+        }
+      }
+    });
+    return this.messageResult(raw);
+  }
+
+  private static messageResult(raw: Record<string, unknown>): SendTextMessageResult {
     const messages = Array.isArray(raw.messages) ? raw.messages : [];
     const firstMessage = messages[0] as { id?: string } | undefined;
 

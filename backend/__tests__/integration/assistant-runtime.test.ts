@@ -9,6 +9,8 @@ import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 import AppAccessService from '../../src/services/app-access.service';
 import OpenAiIntegrationService from '../../src/services/openai-integration.service';
+import PendingActionService from '../../src/services/pending-action.service';
+import FinancialTransactionService from '../../src/services/financial-transaction.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -168,6 +170,68 @@ describe('Assistant runtime', () => {
     await prisma.company.deleteMany({ where: { id: companyId } });
     await prisma.user.deleteMany({ where: { id: userId } });
     await prisma.$disconnect();
+  });
+
+  async function createDecisionDraft() {
+    const session = await prisma.assistantSession.create({ data: { userId, companyId } });
+    const turn = await prisma.assistantTurn.create({ data: { sessionId: session.id, userId, companyId } });
+    const account = await prisma.financialAccount.findFirstOrThrow({ where: { companyId } });
+    const category = await prisma.financialCategory.findFirstOrThrow({ where: { companyId, type: 'EXPENSE' } });
+    const action = await PendingActionService.createTransactionDraftAction({
+      sessionId: session.id, turnId: turn.id, userId, companyId,
+      summary: { description: 'Compra por WhatsApp', amount: 36.77, date: '2026-09-29',
+        type: 'EXPENSE', status: 'COMPLETED', fromAccount: { id: account.id, name: account.name } },
+      payload: { description: 'Compra por WhatsApp', amount: 36.77, date: '2026-09-29',
+        type: 'EXPENSE', status: 'COMPLETED', fromAccountId: account.id, categoryId: category.id }
+    });
+    return { pendingActionId: action.id, sessionId: session.id, userId, companyId,
+      role: 'ADMIN' as const, expectedUpdatedAt: new Date(action.updatedAt) };
+  }
+
+  it('grava apenas uma transacao quando dois cliques confirmam o mesmo rascunho', async () => {
+    const decision = await createDecisionDraft();
+    const results = await Promise.allSettled([
+      PendingActionService.confirmTransactionDraft(decision),
+      PendingActionService.confirmTransactionDraft(decision)
+    ]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
+    await expect(PendingActionService.cancelPendingAction(decision)).rejects.toThrow();
+    const stored = await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: decision.pendingActionId } });
+    expect(stored.status).toBe('CONFIRMED');
+    expect(stored.confirmedTransactionId).not.toBeNull();
+  });
+
+  it('rejeita revisao antiga e contexto de outra sessao sem gravar lancamentos', async () => {
+    const decision = await createDecisionDraft();
+    const changed = await prisma.assistantPendingAction.update({
+      where: { id: decision.pendingActionId },
+      data: { updatedAt: new Date(decision.expectedUpdatedAt.getTime() + 1000) }
+    });
+    await expect(PendingActionService.confirmTransactionDraft(decision)).rejects.toThrow();
+    await expect(PendingActionService.cancelPendingAction(decision)).rejects.toThrow();
+    await expect(PendingActionService.confirmTransactionDraft({ ...decision,
+      expectedUpdatedAt: changed.updatedAt, sessionId: decision.sessionId + 1
+    })).rejects.toThrow();
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    expect((await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: decision.pendingActionId } })).status).toBe('PENDING');
+  });
+
+  it('desfaz a confirmacao se a gravacao financeira falhar e permite tentar novamente', async () => {
+    const decision = await createDecisionDraft();
+    const create = jest.spyOn(FinancialTransactionService, 'createTransaction').mockRejectedValueOnce(new Error('simulated failure'));
+    await expect(PendingActionService.confirmTransactionDraft(decision)).rejects.toThrow('simulated failure');
+    expect((await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: decision.pendingActionId } })).status).toBe('PENDING');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    create.mockRestore();
+    await expect(PendingActionService.confirmTransactionDraft(decision)).resolves.toMatchObject({ pendingAction: { status: 'CONFIRMED' } });
+  });
+
+  it('cancelar pelo botao impede uma confirmacao posterior', async () => {
+    const decision = await createDecisionDraft();
+    await expect(PendingActionService.cancelPendingAction(decision)).resolves.toMatchObject({ status: 'CANCELED' });
+    await expect(PendingActionService.confirmTransactionDraft(decision)).rejects.toThrow();
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
   });
 
   it('bloqueia criacao de sessao sem autenticacao e sem cabecalho de app', async () => {

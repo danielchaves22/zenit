@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma';
 import {
   AppKey,
+  AssistantMessageRole,
   Role,
   WhatsAppBindingChallengeStatus,
   WhatsAppMessageDirection,
@@ -9,9 +10,13 @@ import {
 import crypto from 'crypto';
 import AssistantOrchestratorService from './assistant-orchestrator.service';
 import AssistantSessionService from './assistant-session.service';
+import AssistantMessageService from './assistant-message.service';
+import PendingActionService from './pending-action.service';
+import type { PendingAction } from '@zenit/assistant-contracts';
 import AppAccessService from './app-access.service';
 import UserService from './user.service';
-import WhatsAppCloudApiService from './whatsapp-cloud-api.service';
+import WhatsAppCloudApiService, { WhatsAppReplyButton } from './whatsapp-cloud-api.service';
+import { buildPendingActionButtons, formatWhatsAppDraft, parsePendingActionButton } from '../utils/whatsapp-pending-action';
 import { INTEGRATIONS_CONFIG } from '../config';
 import { logger } from '../utils/logger';
 
@@ -552,6 +557,7 @@ export default class WhatsAppIntegrationService {
     companyId?: number | null;
     replyToMessageId?: string | null;
     text: string;
+    buttons?: WhatsAppReplyButton[];
     userId?: number | null;
     waId: string;
   }) {
@@ -569,11 +575,14 @@ export default class WhatsAppIntegrationService {
         })}`
       );
 
-      const sent = await WhatsAppCloudApiService.sendTextMessage({
+      const messageParams = {
         replyToMessageId: params.replyToMessageId,
         text: params.text,
         to: params.waId
-      });
+      };
+      const sent = params.buttons
+        ? await WhatsAppCloudApiService.sendReplyButtons({ ...messageParams, buttons: params.buttons })
+        : await WhatsAppCloudApiService.sendTextMessage(messageParams);
 
       logger.info(
         `WhatsApp outbound send succeeded ${JSON.stringify({
@@ -591,7 +600,7 @@ export default class WhatsAppIntegrationService {
         bindingId: params.bindingId,
         companyId: params.companyId,
         direction: WhatsAppMessageDirection.OUTBOUND,
-        kind: WhatsAppMessageKind.TEXT,
+        kind: params.buttons ? WhatsAppMessageKind.INTERACTIVE : WhatsAppMessageKind.TEXT,
         payload: sent.raw,
         phoneNumber: normalizePhoneNumber(params.waId),
         status: 'sent',
@@ -628,7 +637,7 @@ export default class WhatsAppIntegrationService {
         companyId: params.companyId,
         direction: WhatsAppMessageDirection.OUTBOUND,
         failedAt: new Date(),
-        kind: WhatsAppMessageKind.TEXT,
+        kind: params.buttons ? WhatsAppMessageKind.INTERACTIVE : WhatsAppMessageKind.TEXT,
         payload: {
           error: error instanceof Error ? error.message : String(error)
         },
@@ -775,13 +784,100 @@ export default class WhatsAppIntegrationService {
     };
   }
 
+  private static async withTypingIndicator<T>(messageId: string | null | undefined, work: () => Promise<T>) {
+    if (!messageId) return work();
+    const indicate = async () => {
+      try {
+        await WhatsAppCloudApiService.sendTypingIndicator(messageId);
+      } catch {
+        // Feedback is best-effort: an unavailable indicator must not block the answer.
+        logger.warn('WhatsApp typing indicator unavailable');
+      }
+    };
+    await indicate();
+    let inFlight: Promise<void> | null = null;
+    const timer = setInterval(() => {
+      if (!inFlight) inFlight = indicate().finally(() => { inFlight = null; });
+    }, 20000);
+    timer.unref();
+    try {
+      return await work();
+    } finally {
+      clearInterval(timer);
+      await inFlight;
+    }
+  }
+
+  private static async processButtonDecision(params: {
+    buttonId: string;
+    sessionId: number;
+    userId: number;
+    companyId: number;
+    role: Role;
+  }): Promise<{ message: string; pendingAction?: PendingAction | null }> {
+    const button = parsePendingActionButton(params.buttonId);
+    const invalid = { message: 'Este botão não está mais válido. Peça o resumo atualizado do rascunho para confirmar ou cancelar.' };
+    if (!button) return invalid;
+    const record = await prisma.assistantPendingAction.findFirst({
+      where: {
+        id: button.pendingActionId,
+        sessionId: params.sessionId,
+        userId: params.userId,
+        companyId: params.companyId,
+        type: 'CREATE_TRANSACTION_DRAFT',
+        status: 'PENDING',
+        updatedAt: new Date(button.revision)
+      }
+    });
+    if (!record) return invalid;
+
+    const decisionParams = {
+      pendingActionId: record.id,
+      sessionId: params.sessionId,
+      userId: params.userId,
+      companyId: params.companyId,
+      expectedUpdatedAt: new Date(button.revision),
+      role: params.role
+    };
+    let action: PendingAction;
+    try {
+      action = button.decision === 'confirm'
+        ? (await PendingActionService.confirmTransactionDraft(decisionParams)).pendingAction
+        : await PendingActionService.cancelPendingAction(decisionParams);
+    } catch (error) {
+      logger.warn('WhatsApp pending action decision rejected', {
+        pendingActionId: record.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return { message: 'Não foi possível concluir esta ação. Consulte o rascunho atualizado antes de tentar novamente.' };
+    }
+
+    const message = button.decision === 'confirm'
+      ? `Lançamento confirmado.\n\n${formatWhatsAppDraft(action.summary)}`
+      : 'Rascunho cancelado. Nenhum lançamento foi gravado.';
+    const context = { sessionId: params.sessionId, userId: params.userId, companyId: params.companyId };
+    await AssistantMessageService.createMessage({
+      ...context,
+      role: AssistantMessageRole.USER,
+      text: `${button.decision === 'confirm' ? 'Confirmar' : 'Cancelar'} rascunho #${record.id}`
+    });
+    await AssistantMessageService.createMessage({
+      ...context,
+      role: AssistantMessageRole.ASSISTANT,
+      text: message,
+      content: { pendingAction: action }
+    });
+    return { message, pendingAction: action };
+  }
+
   private static async processBoundMessage(params: {
     binding: Awaited<ReturnType<typeof prisma.whatsAppUserBinding.findUniqueOrThrow>>;
     incomingMessageId?: string | null;
+    interactiveReplyId?: string;
     text: string | null;
     waId: string;
   }) {
-    if (!params.text) {
+    if (!params.text && params.interactiveReplyId === undefined) {
       await this.sendOutboundMessage({
         bindingId: params.binding.id,
         companyId: params.binding.activeCompanyId,
@@ -834,14 +930,21 @@ export default class WhatsAppIntegrationService {
       userId: params.binding.userId
     });
 
-    const response = await AssistantOrchestratorService.processTurn({
+    const turnContext = {
       sessionId: companyContext.assistantSessionId,
       userId: params.binding.userId,
       companyId: params.binding.activeCompanyId,
-      role: userContext.role,
-      message: params.text,
-      onEvent: () => undefined
-    });
+      role: userContext.role
+    };
+    const response = await this.withTypingIndicator(params.incomingMessageId, () =>
+      params.interactiveReplyId !== undefined
+        ? this.processButtonDecision({ ...turnContext, buttonId: params.interactiveReplyId })
+        : AssistantOrchestratorService.processTurn({
+            ...turnContext,
+            message: params.text!,
+            onEvent: () => undefined
+          })
+    );
 
     await prisma.whatsAppBindingCompanyContext.update({
       where: {
@@ -855,21 +958,32 @@ export default class WhatsAppIntegrationService {
       }
     });
 
-    let outboundText = response.message.trim();
+    const outboundContext = {
+      assistantSessionId: companyContext.assistantSessionId,
+      bindingId: params.binding.id,
+      companyId: params.binding.activeCompanyId,
+      replyToMessageId: params.incomingMessageId,
+      userId: params.binding.userId,
+      waId: params.waId
+    };
     if (response.pendingAction?.status === 'PENDING') {
-      outboundText = `${outboundText}\n\nResponda "confirmar" para gravar ou "cancelar" para descartar.`;
+      const text = `Aguardando confirmação\n\n${formatWhatsAppDraft(response.pendingAction.summary)}\n\nDeseja gravar este lançamento?`;
+      if (text.length <= 1024) {
+        await this.sendOutboundMessage({ ...outboundContext, text, buttons: buildPendingActionButtons(response.pendingAction) });
+      } else {
+        for (const chunk of chunkMessage(text)) {
+          await this.sendOutboundMessage({ ...outboundContext, text: chunk });
+        }
+        await this.sendOutboundMessage({
+          ...outboundContext,
+          text: 'Confirma o lançamento descrito acima?',
+          buttons: buildPendingActionButtons(response.pendingAction)
+        });
+      }
+      return;
     }
-
-    for (const chunk of chunkMessage(outboundText)) {
-      await this.sendOutboundMessage({
-        assistantSessionId: companyContext.assistantSessionId,
-        bindingId: params.binding.id,
-        companyId: params.binding.activeCompanyId,
-        replyToMessageId: params.incomingMessageId,
-        text: chunk,
-        userId: params.binding.userId,
-        waId: params.waId
-      });
+    for (const chunk of chunkMessage(response.message)) {
+      await this.sendOutboundMessage({ ...outboundContext, text: chunk });
     }
   }
 
@@ -909,7 +1023,7 @@ export default class WhatsAppIntegrationService {
         deliveredAt: statusValue === 'delivered' ? timestamp : existing.deliveredAt,
         failedAt: statusValue === 'failed' ? timestamp : existing.failedAt,
         kind:
-          existing.kind === WhatsAppMessageKind.TEXT
+          existing.kind === WhatsAppMessageKind.TEXT || existing.kind === WhatsAppMessageKind.INTERACTIVE
             ? existing.kind
             : WhatsAppMessageKind.STATUS,
         payload: status,
@@ -1107,6 +1221,9 @@ export default class WhatsAppIntegrationService {
             await this.processBoundMessage({
               binding,
               incomingMessageId,
+              interactiveReplyId: message.type === 'interactive'
+                ? String(message.interactive?.button_reply?.id || '')
+                : message.type === 'button' ? String(message.button?.payload || '') : undefined,
               text,
               waId
             });

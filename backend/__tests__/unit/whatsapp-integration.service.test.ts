@@ -14,6 +14,7 @@ jest.mock('../../src/services/whatsapp-cloud-api.service', () => ({ __esModule: 
   verifySignature: jest.fn(), sendTextMessage: jest.fn(), sendReplyButtons: jest.fn(), sendTypingIndicator: jest.fn()
 } }));
 jest.mock('../../src/utils/logger', () => ({ logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
+jest.mock('../../src/services/whatsapp-audio.service', () => ({ __esModule: true, default: { transcribe: jest.fn() } }));
 
 import prisma from '../../src/lib/prisma';
 import WhatsAppIntegrationService from '../../src/services/whatsapp-integration.service';
@@ -26,6 +27,8 @@ import Users from '../../src/services/user.service';
 import { buildPendingActionButtons } from '../../src/utils/whatsapp-pending-action';
 import type { PendingAction } from '@zenit/assistant-contracts';
 import { logger } from '../../src/utils/logger';
+import Audio from '../../src/services/whatsapp-audio.service';
+import { WhatsAppAudioError } from '../../src/utils/whatsapp-audio';
 
 const db = prisma as any;
 const binding = { id: 1, userId: 2, activeCompanyId: 3, waId: '5544999990000' };
@@ -62,8 +65,54 @@ describe('WhatsApp native feedback and decisions', () => {
     db.assistantPendingAction.findFirst.mockResolvedValue({ id: action.id });
     jest.mocked(PendingActions.confirmTransactionDraft).mockResolvedValue({ pendingAction: { ...action, status: 'CONFIRMED' } } as any);
     jest.mocked(PendingActions.cancelPendingAction).mockResolvedValue({ ...action, status: 'CANCELED' });
+    jest.mocked(Audio.transcribe).mockResolvedValue({ text: 'Na verdade foram 45 reais na conta Itaú.',
+      telemetry: { model: 'gpt-transcribe', bytes: 1000, latencyMs: 100 } });
   });
   afterEach(() => { jest.useRealTimers(); });
+
+  it('transcribes voice as a continuation of the same owned session and returns text/buttons', async () => {
+    await webhook({ type: 'audio', audio: { id: '123', mime_type: 'audio/ogg; codecs=opus' } });
+    expect(Audio.transcribe).toHaveBeenCalledWith({ companyId: 3, userId: 2, role: 'ADMIN', mediaId: '123' });
+    expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 2, companyId: 3, sessionId: 4, message: 'Na verdade foram 45 reais na conta Itaú.', requireConfirmationButton: true
+    }));
+    expect(jest.mocked(Cloud.sendTypingIndicator).mock.invocationCallOrder[0]).toBeLessThan(jest.mocked(Audio.transcribe).mock.invocationCallOrder[0]);
+    expect(db.whatsAppMessageLog.update).toHaveBeenCalledWith({ where: { whatsappMessageId: 'wamid.incoming' },
+      data: { text: 'Na verdade foram 45 reais na conta Itaú.', status: 'transcribed' } });
+    expect(Cloud.sendReplyButtons).toHaveBeenCalled();
+    expect(JSON.stringify(jest.mocked(logger.info).mock.calls)).toContain('gpt-transcribe');
+    expect(JSON.stringify([jest.mocked(logger.info).mock.calls, jest.mocked(logger.debug).mock.calls])).not.toContain('Na verdade');
+  });
+
+  it.each(['unbound', 'no_company', 'no_channel'])('does not transcribe audio without authorization: %s', async (reason) => {
+    if (reason === 'unbound') db.whatsAppUserBinding.findUnique.mockResolvedValue(null);
+    if (reason === 'no_company') jest.mocked(Users.getUserCompanyContext).mockResolvedValue(null as any);
+    if (reason === 'no_channel') jest.mocked(AppAccess.hasEffectiveAccess).mockResolvedValue(false);
+    await webhook({ type: 'audio', audio: { id: '123' } });
+    expect(Audio.transcribe).not.toHaveBeenCalled();
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+    expect(Cloud.sendTextMessage).toHaveBeenCalled();
+  });
+
+  it.each(['existing', 'race', 'missing_id'])('never retranscribes a duplicate or unidentifiable voice message: %s', async (scenario) => {
+    if (scenario === 'existing') db.whatsAppMessageLog.findUnique.mockResolvedValue({ id: 1 });
+    if (scenario === 'race') db.whatsAppMessageLog.create.mockRejectedValueOnce({ code: 'P2002' });
+    await webhook({ type: 'audio', audio: { id: '123' }, ...(scenario === 'missing_id' ? { id: null } : {}) });
+    expect(Audio.transcribe).not.toHaveBeenCalled();
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    new WhatsAppAudioError('empty_transcription', 'Não consegui entender uma fala neste áudio.'),
+    new Error('private provider details')
+  ])('sends recoverable audio errors without executing a financial tool or logging private details', async (error) => {
+    jest.mocked(Audio.transcribe).mockRejectedValueOnce(error);
+    await webhook({ type: 'audio', audio: { id: '123' } });
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+    expect(Cloud.sendTextMessage).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Não consegui') }));
+    expect(JSON.stringify([jest.mocked(logger.warn).mock.calls, jest.mocked(Cloud.sendTextMessage).mock.calls])).not.toContain('private provider details');
+  });
 
   it('shows typing before processing, then sends a factual draft with both buttons', async () => {
     await webhook({ type: 'text', text: { body: 'Gastei 36,77 no mercado' } });
@@ -121,11 +170,11 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(Cloud.sendTypingIndicator).not.toHaveBeenCalled();
   });
 
-  it('keeps typed confirmations on the existing assistant flow', async () => {
-    jest.mocked(Orchestrator.processTurn).mockResolvedValue({ message: 'Confirmado.', pendingAction: null } as any);
+  it('routes typed confirmations through the button-only assistant context', async () => {
     await webhook({ type: 'text', text: { body: 'confirmar' } });
-    expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ message: 'confirmar' }));
-    expect(Cloud.sendTextMessage).toHaveBeenCalledWith(expect.objectContaining({ text: 'Confirmado.' }));
+    expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ message: 'confirmar', requireConfirmationButton: true }));
+    expect(Cloud.sendReplyButtons).toHaveBeenCalled();
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
   });
 
   it('ignores redelivered inbound messages', async () => {

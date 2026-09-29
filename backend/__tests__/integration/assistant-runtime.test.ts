@@ -11,6 +11,12 @@ import AppAccessService from '../../src/services/app-access.service';
 import OpenAiIntegrationService from '../../src/services/openai-integration.service';
 import PendingActionService from '../../src/services/pending-action.service';
 import FinancialTransactionService from '../../src/services/financial-transaction.service';
+import WhatsAppIntegrationService from '../../src/services/whatsapp-integration.service';
+import WhatsAppCloudApiService from '../../src/services/whatsapp-cloud-api.service';
+import { buildPendingActionButtons } from '../../src/utils/whatsapp-pending-action';
+import type { PendingAction } from '@zenit/assistant-contracts';
+import ToolExecutorService from '../../src/services/tool-executor.service';
+import ToolRegistryService from '../../src/services/tool-registry.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -110,6 +116,8 @@ describe('Assistant runtime', () => {
   beforeEach(async () => {
     jest.restoreAllMocks();
 
+    await prisma.whatsAppMessageLog.deleteMany({ where: { companyId } });
+    await prisma.whatsAppUserBinding.deleteMany({ where: { userId } });
     await prisma.assistantToolTrace.deleteMany({ where: { companyId } });
     await prisma.assistantPendingAction.deleteMany({ where: { companyId } });
     await prisma.assistantMessage.deleteMany({ where: { companyId } });
@@ -154,6 +162,8 @@ describe('Assistant runtime', () => {
   });
 
   afterAll(async () => {
+    await prisma.whatsAppMessageLog.deleteMany({ where: { companyId } });
+    await prisma.whatsAppUserBinding.deleteMany({ where: { userId } });
     await prisma.assistantToolTrace.deleteMany({ where: { companyId } });
     await prisma.assistantPendingAction.deleteMany({ where: { companyId } });
     await prisma.assistantMessage.deleteMany({ where: { companyId } });
@@ -188,6 +198,91 @@ describe('Assistant runtime', () => {
       role: 'ADMIN' as const, expectedUpdatedAt: new Date(action.updatedAt) };
   }
 
+  it('recebe voz, corrige o mesmo rascunho por voz, rejeita botoes antigos e grava apenas a versao revisada', async () => {
+    await AppAccessService.setCompanyEntitlements(companyId, [
+      { appKey: AppKey.ZENIT_CASH, enabled: true }, { appKey: AppKey.ZENIT_WHATSAPP, enabled: true }
+    ]);
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_CASH, granted: true }, { appKey: AppKey.ZENIT_WHATSAPP, granted: true }
+    ]);
+    const waId = `5599${String(userId).padStart(9, '0')}`;
+    await prisma.whatsAppUserBinding.create({ data: { userId, activeCompanyId: companyId, waId, phoneNumber: `+${waId}` } });
+    const nubank = await prisma.financialAccount.findFirstOrThrow({ where: { companyId, name: 'Nubank' } });
+    const itau = await prisma.financialAccount.create({ data: { companyId, name: 'Itau', type: 'CHECKING', balance: 500 } });
+    const category = await prisma.financialCategory.findFirstOrThrow({ where: { companyId, type: 'EXPENSE' } });
+    jest.spyOn(WhatsAppCloudApiService, 'verifySignature').mockReturnValue(true);
+    jest.spyOn(WhatsAppCloudApiService, 'sendTypingIndicator').mockResolvedValue();
+    jest.spyOn(WhatsAppCloudApiService, 'downloadAudio').mockResolvedValue({ buffer: Buffer.from('audio'), mimeType: 'audio/ogg', filename: 'voz.ogg' });
+    let sent = 0;
+    const sendResult = async () => ({ messageId: `wamid.out.${companyId}.${++sent}`, raw: {} });
+    const textSpy = jest.spyOn(WhatsAppCloudApiService, 'sendTextMessage').mockImplementation(sendResult);
+    const buttonsSpy = jest.spyOn(WhatsAppCloudApiService, 'sendReplyButtons').mockImplementation(sendResult);
+    const response = (data: unknown) => new Response(JSON.stringify(data));
+    const tool = (name: string, args: object) => response({ id: `resp.${name}`, output: [
+      { type: 'function_call', name, call_id: `call.${name}`, arguments: JSON.stringify(args) }
+    ] });
+    const final = response({ output_text: '{"mode":"OPERATOR","message":"Confira o rascunho."}' });
+    const fetchSpy = jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(response({ text: 'Gastei cinquenta reais no posto pela conta Nubank.' }))
+      .mockResolvedValueOnce(tool('create_transaction_draft', { description: 'Combustivel no posto', amount: 50, type: 'EXPENSE',
+        fromAccountId: nubank.id, categoryId: category.id }))
+      .mockResolvedValueOnce(final);
+    const inbound = (id: string, message: object) => WhatsAppIntegrationService.processWebhookPayload({ payload: {
+      entry: [{ changes: [{ value: { messages: [{ id: `${companyId}.${id}`, from: waId, ...message }] } }] }]
+    } });
+    await inbound('voice1', { type: 'audio', audio: { id: '123' } });
+    const first = await prisma.assistantPendingAction.findFirstOrThrow({ where: { companyId } });
+    const firstButtons = buttonsSpy.mock.calls[0][0].buttons;
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    expect((first.payload as any).amount).toBe(50);
+
+    fetchSpy.mockResolvedValueOnce(response({ text: 'Na verdade foram quarenta e cinco, e usei a conta Itau.' }))
+      .mockResolvedValueOnce(tool('get_pending_action', {}))
+      .mockResolvedValueOnce(tool('update_transaction_draft', { pendingActionId: first.id, amount: 45, fromAccountId: itau.id }))
+      .mockResolvedValueOnce(response({ output_text: '{"mode":"OPERATOR","message":"Rascunho corrigido. Confira antes de confirmar."}' }));
+    await inbound('voice2', { type: 'audio', audio: { id: '456' } });
+    const revised = await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: first.id } });
+    expect(await prisma.assistantPendingAction.count({ where: { companyId } })).toBe(1);
+    expect(revised.sessionId).toBe(first.sessionId);
+    expect(revised.updatedAt.getTime()).toBeGreaterThan(first.updatedAt.getTime());
+    expect(revised.payload).toMatchObject({ amount: 45, fromAccountId: itau.id, description: 'Combustivel no posto', categoryId: category.id });
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    const secondModelRequest = JSON.parse(String(fetchSpy.mock.calls[4][1]?.body));
+    expect(JSON.stringify(secondModelRequest.input)).toContain('cinquenta reais');
+    expect(JSON.stringify(secondModelRequest.input)).toContain('quarenta e cinco');
+    const voiceLog = await prisma.whatsAppMessageLog.findUniqueOrThrow({ where: { whatsappMessageId: `${companyId}.voice2` } });
+    expect(voiceLog.text).toContain('quarenta e cinco');
+
+    // Even an unexpected model tool call cannot turn a spoken/textual "confirmar" into a write.
+    for (const inputKind of ['text', 'audio']) {
+      if (inputKind === 'audio') fetchSpy.mockResolvedValueOnce(response({ text: 'Pode confirmar.' }));
+      fetchSpy.mockResolvedValueOnce(tool('confirm_pending_action', { pendingActionId: first.id }))
+        .mockResolvedValueOnce(tool('get_pending_action', { pendingActionId: first.id }))
+        .mockResolvedValueOnce(response({ output_text: '{"mode":"OPERATOR","message":"Toque no botão Confirmar."}' }));
+      await inbound(`confirm_by_${inputKind}`, inputKind === 'audio'
+        ? { type: 'audio', audio: { id: '789' } } : { type: 'text', text: { body: 'Confirmar' } });
+      expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    }
+
+    const click = (id: string, button: { id: string; title: string }) => inbound(id,
+      { type: 'interactive', interactive: { button_reply: button } });
+    await click('old_button', firstButtons[0]);
+    expect(textSpy).toHaveBeenLastCalledWith(expect.objectContaining({ text: expect.stringContaining('não está mais válido') }));
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    const revisedAction = await PendingActionService.getPendingAction({ pendingActionId: first.id, userId, companyId });
+    expect(buttonsSpy.mock.calls[1][0].buttons).toEqual(buildPendingActionButtons(revisedAction as PendingAction));
+    await click('new_button', buttonsSpy.mock.calls[1][0].buttons[0]);
+    const transactions = await prisma.financialTransaction.findMany({ where: { companyId } });
+    expect(transactions).toHaveLength(1);
+    expect(Number(transactions[0].amount)).toBe(45);
+    expect(transactions[0].fromAccountId).toBe(itau.id);
+    const callsBeforeReplay = fetchSpy.mock.calls.length;
+    await inbound('voice2', { type: 'audio', audio: { id: '456' } });
+    expect(fetchSpy).toHaveBeenCalledTimes(callsBeforeReplay);
+    expect(WhatsAppCloudApiService.downloadAudio).toHaveBeenCalledTimes(3);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
+  }, 30000);
+
   it('grava apenas uma transacao quando dois cliques confirmam o mesmo rascunho', async () => {
     const decision = await createDecisionDraft();
     const results = await Promise.allSettled([
@@ -200,6 +295,25 @@ describe('Assistant runtime', () => {
     const stored = await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: decision.pendingActionId } });
     expect(stored.status).toBe('CONFIRMED');
     expect(stored.confirmedTransactionId).not.toBeNull();
+  });
+
+  it('preserva campos nulos da tool estrita numa correcao e bloqueia confirmacao por linguagem natural no WhatsApp', async () => {
+    const decision = await createDecisionDraft();
+    const old = await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: decision.pendingActionId } });
+    const other = await prisma.financialAccount.create({ data: { companyId, name: 'Outra conta autorizada', type: 'CHECKING' } });
+    const payload = { ...(old.payload as object), fromAccountId: other.id, notes: 'Preservar observacao', dueDate: '2026-10-10', effectiveDate: '2026-09-20' };
+    await prisma.assistantPendingAction.update({ where: { id: old.id }, data: { payload } });
+    const context = { sessionId: decision.sessionId, turnId: old.turnId, userId, companyId, role: 'ADMIN' as const,
+      mode: 'OPERATOR' as const, requireConfirmationButton: true };
+    const definition = ToolRegistryService.getToolsForMode('OPERATOR').find(tool => tool.name === 'update_transaction_draft')!;
+    const args = Object.fromEntries(Object.keys(definition.parameters.properties as object).map(key => [key, null]));
+    const result = await ToolExecutorService.executeTool('update_transaction_draft', { ...args, amount: 45 }, context);
+    expect(result.data.ok).toBe(true);
+    const revised = await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: old.id } });
+    expect(revised.payload).toMatchObject({ amount: 45, fromAccountId: other.id, notes: 'Preservar observacao',
+      dueDate: '2026-10-10', effectiveDate: '2026-09-20' });
+    await expect(ToolExecutorService.executeTool('confirm_pending_action', { pendingActionId: old.id }, context)).rejects.toThrow('botao Confirmar');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
   });
 
   it('rejeita revisao antiga e contexto de outra sessao sem gravar lancamentos', async () => {

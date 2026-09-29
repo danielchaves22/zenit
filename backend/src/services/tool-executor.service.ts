@@ -141,6 +141,7 @@ export type AssistantToolExecutionContext = {
   companyId: number;
   role: Role;
   mode: AssistantMode;
+  requireConfirmationButton?: boolean;
 };
 
 export type ToolExecutionResult = {
@@ -1024,6 +1025,9 @@ export default class ToolExecutorService {
       case 'update_transaction_draft':
         return this.updateTransactionDraft(argumentsJson, context);
       case 'confirm_pending_action':
+        if (context.requireConfirmationButton) {
+          throw new Error('No WhatsApp, grave o lancamento somente pelo botao Confirmar. Consulte get_pending_action para apresentar o resumo e o botao.');
+        }
         return this.confirmPendingAction(argumentsJson, context);
       case 'search_categories':
         return this.searchCategories(argumentsJson, context);
@@ -1318,35 +1322,31 @@ export default class ToolExecutorService {
       amount: args.amount ?? existingPayload.amount,
       type: args.type ?? existingPayload.type,
       date: args.date ?? existingPayload.date,
-      dueDate:
-        args.dueDate !== undefined ? args.dueDate : (existingPayload.dueDate ?? null),
-      effectiveDate:
-        args.effectiveDate !== undefined
-          ? args.effectiveDate
-          : (existingPayload.effectiveDate ?? null),
+      dueDate: args.dueDate ?? existingPayload.dueDate ?? null,
+      effectiveDate: args.effectiveDate ?? existingPayload.effectiveDate ?? null,
       status: args.status ?? existingPayload.status,
-      notes: args.notes !== undefined ? args.notes : (existingPayload.notes ?? null),
+      notes: args.notes ?? existingPayload.notes ?? null,
       installmentCount: args.installmentCount ?? existingPayload.installmentCount ?? 1,
       accountHint: args.accountHint ?? null,
       fromAccountHint: args.fromAccountHint ?? null,
       toAccountHint: args.toAccountHint ?? null,
       categoryHint: args.categoryHint ?? null,
       fromAccountId:
-        args.fromAccountId !== undefined
+        args.fromAccountId != null
           ? args.fromAccountId
-          : args.fromAccountHint !== undefined || args.accountHint !== undefined
+          : hasExplicitHint(args.fromAccountHint) || hasExplicitHint(args.accountHint)
             ? null
             : existingPayload.fromAccountId ?? null,
       toAccountId:
-        args.toAccountId !== undefined
+        args.toAccountId != null
           ? args.toAccountId
-          : args.toAccountHint !== undefined || args.accountHint !== undefined
+          : hasExplicitHint(args.toAccountHint) || hasExplicitHint(args.accountHint)
             ? null
             : existingPayload.toAccountId ?? null,
       categoryId:
-        args.categoryId !== undefined
+        args.categoryId != null
           ? args.categoryId
-          : args.categoryHint !== undefined
+          : hasExplicitHint(args.categoryHint)
             ? null
             : existingPayload.categoryId ?? null
     });

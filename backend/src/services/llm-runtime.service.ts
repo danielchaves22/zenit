@@ -107,7 +107,7 @@ function getTodayDateString(timeZone = 'America/Sao_Paulo'): string {
   return `${lookup('year')}-${lookup('month')}-${lookup('day')}`;
 }
 
-function buildSystemPrompt(todayDate: string): string {
+function buildSystemPrompt(todayDate: string, requireConfirmationButton = false): string {
   return [
     'Voce e o Operador do Zenit Cash Mobile.',
     'Seu trabalho nesta V1 e ajudar o usuario a registrar transacoes financeiras e responder consultas financeiras rapidas com objetividade.',
@@ -119,9 +119,14 @@ function buildSystemPrompt(todayDate: string): string {
     'Quando o usuario perguntar sobre fatura atual, limite total, limite disponivel, limite usado ou situacao de um cartao de credito, use get_credit_card_overview.',
     'Quando o usuario perguntar o que vence hoje, nesta semana, nos proximos dias ou quanto ainda falta pagar ate o fim do mes, use get_due_obligations.',
     'Quando o usuario quiser registrar despesa, receita ou transferencia, use create_transaction_draft.',
-    'Quando houver um rascunho pendente e o usuario disser "sim", "confirmado", "pode confirmar" ou equivalente, consulte get_pending_action e use confirm_pending_action.',
+    requireConfirmationButton
+      ? 'Neste canal WhatsApp, somente o botao Confirmar pode gravar um lancamento. Se o usuario pedir confirmacao por texto ou voz, consulte get_pending_action e solicite que toque no botao Confirmar do resumo atualizado. Nunca execute confirm_pending_action nem diga que gravou por autorizacao em texto ou audio.'
+      : 'Quando houver um rascunho pendente e o usuario disser "sim", "confirmado", "pode confirmar" ou equivalente, consulte get_pending_action e use confirm_pending_action.',
     'Quando houver um rascunho pendente e o usuario disser "cancele", "nao", "descarta" ou equivalente, consulte get_pending_action e use cancel_pending_action.',
     'Quando o usuario pedir para corrigir um rascunho pendente, primeiro consulte get_pending_action e depois use update_transaction_draft.',
+    'Mensagens podem vir de transcricao de audio. Trate-as como continuacao da mesma conversa. Expressoes como "na verdade", "corrigindo", "troque a conta" e "o valor era" podem corrigir o rascunho pendente: consulte get_pending_action, preserve os campos nao alterados e atualize o mesmo rascunho. Nao crie outro lancamento para representar uma correcao.',
+    'Depois de corrigir, apresente o resumo atualizado e aguarde uma nova confirmacao. Se valor, conta ou intencao estiverem ambiguos, pergunte sem gravar nem afirmar que a correcao foi aplicada. Nesta versao nao edite lancamentos ja confirmados; explique essa limitacao sem criar uma copia.',
+    'Se uma correcao mencionar troca de conta mas o nome nao estiver claro, pergunte qual conta. Nao ignore essa parte da correcao nem mantenha silenciosamente a conta anterior; a transcricao pode confundir nomes de bancos com palavras comuns.',
     'Quando houver duvida sobre categoria, use search_categories antes de criar ou atualizar o rascunho.',
     'Ao buscar categoria, pense por conceito e nao apenas por string literal. Exemplos: "cabeleireiro" pode virar "salao de beleza" ou "beleza"; "posto" pode virar "combustivel"; "tennis", "roupa" ou "sapato" podem virar "vestuario" ou "moda".',
     'Se search_categories devolver candidatos plausiveis da empresa, escolha a melhor categoria disponivel sem exigir correspondencia textual exata, salvo ambiguidade real entre varias opcoes fortes.',
@@ -141,11 +146,11 @@ function buildSystemPrompt(todayDate: string): string {
   ].join(' ');
 }
 
-function buildConversationInput(messages: ConversationMessage[], todayDate: string) {
+function buildConversationInput(messages: ConversationMessage[], todayDate: string, requireConfirmationButton = false) {
   const items = [
     {
       role: 'system',
-      content: [{ type: 'input_text', text: buildSystemPrompt(todayDate) }]
+      content: [{ type: 'input_text', text: buildSystemPrompt(todayDate, requireConfirmationButton) }]
     }
   ];
 
@@ -208,14 +213,15 @@ export default class LlmRuntimeService {
       accumulateOpenAiUsage(usage, result.parsed?.usage);
       return result;
     };
-    const tools = ToolRegistryService.getToolsForMode(AssistantMode.OPERATOR);
+    const tools = ToolRegistryService.getToolsForMode(AssistantMode.OPERATOR)
+      .filter(tool => !params.context.requireConfirmationButton || tool.name !== 'confirm_pending_action');
 
     const performInitialRequest = async (model: string) =>
       request({
         apiKey: credential.apiKey,
         model,
         body: {
-          input: buildConversationInput(params.conversation, todayDate),
+          input: buildConversationInput(params.conversation, todayDate, params.context.requireConfirmationButton),
           tools
         }
       });
@@ -236,6 +242,7 @@ export default class LlmRuntimeService {
     }
 
     let latestPendingAction: ToolExecutionResult['pendingAction'];
+    let correctionNeedsClarification = false;
     let currentResponse = initialResponse;
 
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
@@ -247,7 +254,7 @@ export default class LlmRuntimeService {
           return {
             mode: finalPayload.data.mode,
             message: finalPayload.data.message,
-            pendingAction: latestPendingAction,
+            pendingAction: correctionNeedsClarification ? undefined : latestPendingAction,
             telemetry: {
               model: selectedModel,
               promptVersion: credential.promptVersion,
@@ -265,7 +272,7 @@ export default class LlmRuntimeService {
         return {
           mode: 'OPERATOR',
           message: directMessage,
-          pendingAction: latestPendingAction,
+          pendingAction: correctionNeedsClarification ? undefined : latestPendingAction,
           telemetry: {
             model: selectedModel,
             promptVersion: credential.promptVersion,
@@ -292,6 +299,9 @@ export default class LlmRuntimeService {
           if (result.pendingAction) {
             latestPendingAction = result.pendingAction;
           }
+          if (functionCall.name === 'update_transaction_draft') {
+            correctionNeedsClarification = (result.data as { ok?: boolean }).ok !== true;
+          }
 
           await AssistantTraceService.recordToolTrace({
             turnId: params.context.turnId,
@@ -310,6 +320,7 @@ export default class LlmRuntimeService {
             output: JSON.stringify(result.data)
           });
         } catch (error) {
+          if (functionCall.name === 'update_transaction_draft') correctionNeedsClarification = true;
           const message = error instanceof Error ? error.message : String(error);
           await AssistantTraceService.recordToolTrace({
             turnId: params.context.turnId,

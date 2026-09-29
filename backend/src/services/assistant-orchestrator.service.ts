@@ -71,6 +71,7 @@ export default class AssistantOrchestratorService {
     companyId: number;
     role: any;
     message: string;
+    requireConfirmationButton?: boolean;
     onEvent: (event: AssistantStreamEvent) => Promise<void> | void;
   }): Promise<AssistantTurnResponse> {
     await AssistantSessionService.getOwnedSessionOrThrow({
@@ -116,7 +117,8 @@ export default class AssistantOrchestratorService {
           userId: params.userId,
           companyId: params.companyId,
           role: params.role,
-          mode: AssistantMode.OPERATOR
+          mode: AssistantMode.OPERATOR,
+          requireConfirmationButton: params.requireConfirmationButton
         },
         conversation
       });

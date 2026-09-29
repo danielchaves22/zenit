@@ -57,7 +57,7 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
     type: 'function',
     name: 'update_transaction_draft',
     description:
-      'Atualiza um rascunho pendente ja existente. Use quando o usuario pedir para trocar categoria, conta, valor, descricao, data ou status do rascunho atual.',
+      'Atualiza o mesmo rascunho pendente quando o usuario pedir uma correcao. Informe apenas as alteracoes; campos nulos preservam os valores anteriores. Nunca crie um novo rascunho para corrigir o atual.',
     strict: true,
     parameters: strictObject({
       pendingActionId: { type: ['number', 'null'] },

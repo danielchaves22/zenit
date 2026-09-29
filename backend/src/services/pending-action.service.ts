@@ -167,7 +167,9 @@ export default class PendingActionService {
       },
       data: {
         summary: params.summary,
-        payload: parsedPayload
+        payload: parsedPayload,
+        // Button IDs include this revision, even for corrections within the same millisecond.
+        updatedAt: new Date(Math.max(Date.now(), pendingAction.updatedAt.getTime() + 1))
       }
     });
 

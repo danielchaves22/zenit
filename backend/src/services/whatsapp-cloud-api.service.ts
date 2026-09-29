@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { INTEGRATIONS_CONFIG } from '../config';
+import { assertAudioSize, audioFileType, MAX_WHATSAPP_AUDIO_BYTES, WhatsAppAudioError } from '../utils/whatsapp-audio';
 
 type SendTextMessageParams = {
   replyToMessageId?: string | null;
@@ -19,6 +20,57 @@ function normalizeDigits(value: string): string {
 }
 
 export default class WhatsAppCloudApiService {
+  static async downloadAudio(mediaId: string) {
+    this.assertReady();
+    if (!/^\d+$/.test(mediaId)) {
+      throw new WhatsAppAudioError('invalid_media_id', 'Não consegui acessar o áudio. Envie uma nova mensagem de voz.');
+    }
+    const headers = { Authorization: `Bearer ${INTEGRATIONS_CONFIG.whatsappAccessToken}` };
+    const endpoint = new URL(`https://graph.facebook.com/${INTEGRATIONS_CONFIG.whatsappApiVersion}/${mediaId}`);
+    endpoint.searchParams.set('phone_number_id', INTEGRATIONS_CONFIG.whatsappPhoneNumberId);
+    const metadataResponse = await fetch(endpoint, { headers, redirect: 'error', signal: AbortSignal.timeout(15000) });
+    if (!metadataResponse.ok) throw new Error(`whatsapp_media_metadata_${metadataResponse.status}`);
+    const metadata = await metadataResponse.json() as { url?: string; mime_type?: string; file_size?: number; sha256?: string };
+    assertAudioSize(metadata.file_size ?? 0);
+    const fileType = audioFileType(metadata.mime_type || '');
+    const url = new URL(metadata.url || '');
+    // Only send the Meta credential to its media hosts, never an inbound URL or redirect.
+    if (url.protocol !== 'https:' || url.username || url.password || url.port ||
+        !['fbsbx.com', 'fbcdn.net'].some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
+      throw new Error('whatsapp_media_untrusted_url');
+    }
+    const response = await fetch(url, { headers, redirect: 'error', signal: AbortSignal.timeout(30000) });
+    if (!response.ok || !response.body) throw new Error(`whatsapp_media_download_${response.status}`);
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    try {
+      const length = response.headers.get('content-length');
+      if (length) assertAudioSize(Number(length));
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        bytes += part.value.byteLength;
+        if (bytes > MAX_WHATSAPP_AUDIO_BYTES) assertAudioSize(bytes);
+        chunks.push(part.value);
+      }
+      assertAudioSize(bytes);
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+    const buffer = Buffer.concat(chunks);
+    if (metadata.sha256) {
+      const encoding = /^[a-f0-9]{64}$/i.test(metadata.sha256) ? 'hex' : 'base64';
+      const expected = Buffer.from(metadata.sha256, encoding);
+      const actual = crypto.createHash('sha256').update(buffer).digest();
+      if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+        throw new Error('whatsapp_media_checksum_mismatch');
+      }
+    }
+    return { buffer, ...fileType };
+  }
+
   static getConfigurationStatus() {
     const cloudApiConfigured = Boolean(
       INTEGRATIONS_CONFIG.whatsappAccessToken && INTEGRATIONS_CONFIG.whatsappPhoneNumberId

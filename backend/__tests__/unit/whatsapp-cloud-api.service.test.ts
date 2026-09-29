@@ -1,4 +1,6 @@
 import WhatsAppCloudApiService from '../../src/services/whatsapp-cloud-api.service';
+import crypto from 'crypto';
+import { MAX_WHATSAPP_AUDIO_BYTES } from '../../src/utils/whatsapp-audio';
 
 describe('WhatsApp Cloud API feedback', () => {
   beforeEach(() => {
@@ -49,5 +51,67 @@ describe('WhatsApp Cloud API feedback', () => {
     });
     jest.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: { code: 100 } }) } as Response);
     await expect(WhatsAppCloudApiService.sendTypingIndicator('wamid.incoming')).rejects.toThrow('400');
+  });
+});
+
+describe('WhatsApp audio download boundary', () => {
+  const voice = Buffer.from('ogg voice fixture');
+  const metadata = {
+    url: 'https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=123',
+    mime_type: 'audio/ogg; codecs=opus', file_size: voice.length,
+    sha256: crypto.createHash('sha256').update(voice).digest('hex')
+  };
+  beforeEach(() => {
+    jest.spyOn(WhatsAppCloudApiService, 'assertReady').mockImplementation(() => undefined);
+    jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(metadata)))
+      .mockResolvedValueOnce(new Response(voice));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('retrieves only media belonging to the configured phone and downloads authenticated OGG/Opus', async () => {
+    const downloaded = await WhatsAppCloudApiService.downloadAudio('123');
+    expect(downloaded).toEqual({ buffer: voice, mimeType: 'audio/ogg', filename: 'mensagem.ogg' });
+    const [url, options] = jest.mocked(fetch).mock.calls[0];
+    expect(String(url)).toMatch(/^https:\/\/graph.facebook.com\/v[\d.]+\/123\?phone_number_id=/);
+    expect(options?.redirect).toBe('error');
+    expect(jest.mocked(fetch).mock.calls[1][1]?.headers).toEqual(options?.headers);
+  });
+
+  it.each(['https://evil.test/audio', 'http://lookaside.fbsbx.com/audio', 'https://lookaside.fbsbx.com.evil.test/a'])('does not forward credentials to %s', async (url) => {
+    jest.mocked(fetch).mockReset().mockResolvedValueOnce(new Response(JSON.stringify({ ...metadata, url })));
+    await expect(WhatsAppCloudApiService.downloadAudio('123')).rejects.toThrow('untrusted_url');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects malformed media IDs without contacting Meta', async () => {
+    await expect(WhatsAppCloudApiService.downloadAudio('../messages')).rejects.toMatchObject({ code: 'invalid_media_id' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([0, MAX_WHATSAPP_AUDIO_BYTES + 1])('rejects media size %s before downloading', async (file_size) => {
+    jest.mocked(fetch).mockReset().mockResolvedValueOnce(new Response(JSON.stringify({ ...metadata, file_size })));
+    await expect(WhatsAppCloudApiService.downloadAudio('123')).rejects.toMatchObject({ code: 'invalid_audio_size' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops a streaming download exceeding the limit even if metadata reports a small file', async () => {
+    jest.mocked(fetch).mockReset()
+      .mockResolvedValueOnce(new Response(JSON.stringify(metadata)))
+      .mockResolvedValueOnce(new Response(new Uint8Array(MAX_WHATSAPP_AUDIO_BYTES + 1)));
+    await expect(WhatsAppCloudApiService.downloadAudio('123')).rejects.toMatchObject({ code: 'invalid_audio_size' });
+  });
+
+  it('rejects corrupted audio', async () => {
+    jest.mocked(fetch).mockReset()
+      .mockResolvedValueOnce(new Response(JSON.stringify(metadata)))
+      .mockResolvedValueOnce(new Response('different file'));
+    await expect(WhatsAppCloudApiService.downloadAudio('123')).rejects.toThrow('checksum_mismatch');
+  });
+
+  it('rejects unsupported files before transcription', async () => {
+    jest.mocked(fetch).mockReset().mockResolvedValueOnce(new Response(JSON.stringify({ ...metadata, mime_type: 'application/pdf' })));
+    await expect(WhatsAppCloudApiService.downloadAudio('123')).rejects.toMatchObject({ code: 'unsupported_audio' });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

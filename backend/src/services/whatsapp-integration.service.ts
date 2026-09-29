@@ -8,6 +8,8 @@ import {
   WhatsAppMessageKind
 } from '@prisma/client';
 import crypto from 'crypto';
+import WhatsAppAudioService from './whatsapp-audio.service';
+import { WhatsAppAudioError } from '../utils/whatsapp-audio';
 import AssistantOrchestratorService from './assistant-orchestrator.service';
 import AssistantSessionService from './assistant-session.service';
 import AssistantMessageService from './assistant-message.service';
@@ -143,6 +145,8 @@ function extractInboundText(message: Record<string, any>): string | null {
 
 function mapMessageKind(message: Record<string, any>): WhatsAppMessageKind {
   const type = String(message.type || '').toLowerCase();
+  // Keep the original media type in payload; the text field holds its transcript.
+  if (type === 'audio') return WhatsAppMessageKind.SYSTEM;
   if (type === 'interactive' || type === 'button') {
     return WhatsAppMessageKind.INTERACTIVE;
   }
@@ -291,6 +295,9 @@ async function recordMessageLog(params: {
     });
 
     if (existing) {
+      if (params.direction === WhatsAppMessageDirection.INBOUND) {
+        throw new Error('whatsapp_inbound_duplicate');
+      }
       return existing;
     }
   }
@@ -862,15 +869,16 @@ export default class WhatsAppIntegrationService {
     binding: Awaited<ReturnType<typeof prisma.whatsAppUserBinding.findUniqueOrThrow>>;
     incomingMessageId?: string | null;
     interactiveReplyId?: string;
+    audio?: { mediaId: string };
     text: string | null;
     waId: string;
   }) {
-    if (!params.text && params.interactiveReplyId === undefined) {
+    if (!params.text && !params.audio && params.interactiveReplyId === undefined) {
       await this.sendOutboundMessage({
         bindingId: params.binding.id,
         companyId: params.binding.activeCompanyId,
         replyToMessageId: params.incomingMessageId,
-        text: 'Por enquanto, envie mensagens de texto para interagir com o Zenit no WhatsApp.',
+        text: 'Envie uma mensagem de texto ou de voz para interagir com o Zenit no WhatsApp.',
         userId: params.binding.userId,
         waId: params.waId
       });
@@ -924,15 +932,51 @@ export default class WhatsAppIntegrationService {
       companyId: params.binding.activeCompanyId,
       role: userContext.role
     };
-    const response = await this.withTypingIndicator(params.incomingMessageId, () =>
-      params.interactiveReplyId !== undefined
+    let audioTelemetry: { model: string; bytes: number; latencyMs: number } | undefined;
+    const response = await this.withTypingIndicator(params.incomingMessageId, async () => {
+      let text = params.text;
+      if (params.audio) {
+        try {
+          const transcription = await WhatsAppAudioService.transcribe({
+            companyId: params.binding.activeCompanyId,
+            userId: params.binding.userId,
+            role: userContext.role,
+            mediaId: params.audio.mediaId
+          });
+          text = transcription.text;
+          audioTelemetry = transcription.telemetry;
+          if (params.incomingMessageId) {
+            await prisma.whatsAppMessageLog.update({
+              where: { whatsappMessageId: params.incomingMessageId },
+              data: { text, status: 'transcribed' }
+            });
+          }
+        } catch (error) {
+          const code = error instanceof WhatsAppAudioError ? error.code : 'transcription_failed';
+          logger.warn('WhatsApp audio could not be transcribed', { code });
+          if (params.incomingMessageId) {
+            await prisma.whatsAppMessageLog.update({
+              where: { whatsappMessageId: params.incomingMessageId },
+              data: { status: code, failedAt: new Date() }
+            });
+          }
+          await this.sendOutboundMessage({
+            bindingId: params.binding.id, companyId: params.binding.activeCompanyId,
+            userId: params.binding.userId, waId: params.waId,
+            replyToMessageId: params.incomingMessageId,
+            text: error instanceof WhatsAppAudioError ? error.userMessage :
+              'Não consegui processar este áudio agora. Envie um novo áudio ou escreva o pedido. Nenhum lançamento foi gravado a partir dele.'
+          });
+          return null;
+        }
+      }
+      return params.interactiveReplyId !== undefined
         ? this.processButtonDecision({ ...turnContext, buttonId: params.interactiveReplyId })
         : AssistantOrchestratorService.processTurn({
-            ...turnContext,
-            message: params.text!,
-            onEvent: () => undefined
-          })
-    );
+            ...turnContext, message: text!, requireConfirmationButton: true, onEvent: () => undefined
+          });
+    });
+    if (!response) return { audio: { outcome: 'failed' } };
 
     await prisma.whatsAppBindingCompanyContext.update({
       where: {
@@ -973,7 +1017,9 @@ export default class WhatsAppIntegrationService {
         await this.sendOutboundMessage({ ...outboundContext, text: chunk });
       }
     }
-    return 'telemetry' in response ? response.telemetry : undefined;
+    const assistantTelemetry = 'telemetry' in response && typeof response.telemetry === 'object'
+      ? response.telemetry : undefined;
+    return audioTelemetry ? { ...assistantTelemetry, audio: audioTelemetry } : assistantTelemetry;
   }
 
   private static async processStatusUpdate(status: Record<string, any>) {
@@ -1095,6 +1141,10 @@ export default class WhatsAppIntegrationService {
 
             const text = extractInboundText(message);
             const incomingMessageId = typeof message?.id === 'string' ? message.id : null;
+            if (message.type === 'audio' && !incomingMessageId) {
+              outcome = 'invalid_audio_message';
+              continue;
+            }
 
             if (incomingMessageId) {
               const existingInbound = await prisma.whatsAppMessageLog.findUnique({
@@ -1149,7 +1199,8 @@ export default class WhatsAppIntegrationService {
               assistantSessionId = companyContext?.assistantSessionId || null;
             }
 
-            await recordMessageLog({
+            try {
+              await recordMessageLog({
               assistantSessionId,
               bindingId: binding?.id ?? null,
               companyId: binding?.activeCompanyId ?? null,
@@ -1162,7 +1213,15 @@ export default class WhatsAppIntegrationService {
               userId: binding?.userId ?? null,
               waId,
               whatsappMessageId: incomingMessageId
-            });
+              });
+            } catch (error) {
+              if ((error as { code?: string })?.code === 'P2002' ||
+                  (error instanceof Error && error.message === 'whatsapp_inbound_duplicate')) {
+                outcome = 'duplicate';
+                continue;
+              }
+              throw error;
+            }
 
             logger.debug(
               `WhatsApp inbound message persisted ${JSON.stringify({
@@ -1225,6 +1284,7 @@ export default class WhatsAppIntegrationService {
             telemetry = await this.processBoundMessage({
               binding,
               incomingMessageId,
+              ...(message.type === 'audio' ? { audio: { mediaId: String(message.audio?.id || '') } } : {}),
               interactiveReplyId: message.type === 'interactive'
                 ? String(message.interactive?.button_reply?.id || '')
                 : message.type === 'button' ? String(message.button?.payload || '') : undefined,

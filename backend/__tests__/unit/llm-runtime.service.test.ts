@@ -6,6 +6,7 @@ jest.mock('../../src/services/assistant-trace.service', () => ({ __esModule: tru
 import LlmRuntimeService from '../../src/services/llm-runtime.service';
 import Integration from '../../src/services/openai-integration.service';
 import Executor from '../../src/services/tool-executor.service';
+import Registry from '../../src/services/tool-registry.service';
 import { getOpenAiChatOptions, getOpenAiResponsesOptions } from '../../src/constants/openai';
 
 const context = { sessionId: 1, turnId: 2, userId: 3, companyId: 4, role: 'ADMIN', mode: 'OPERATOR' } as const;
@@ -19,8 +20,26 @@ const final = { id: 'resp.final', output_text: '{"mode":"OPERATOR","message":"Pr
 describe('Explicit economical reasoning and whole-turn usage', () => {
   afterEach(() => jest.restoreAllMocks());
   beforeEach(() => {
+    jest.clearAllMocks();
     jest.mocked(Integration.getDecryptedCredential).mockResolvedValue({ apiKey: 'test-key', model: 'gpt-6-luna', promptVersion: 'v1' } as any);
     jest.mocked(Executor.executeTool).mockResolvedValue({ data: { ok: true } });
+  });
+
+  it.each(['ambiguous', 'rejected'])('returns a clarification instead of buttons for an unapplied correction: %s', async (scenario) => {
+    const pendingAction = { id: 42, status: 'PENDING' } as any;
+    jest.mocked(Executor.executeTool).mockReset().mockResolvedValueOnce({ data: { ok: true }, pendingAction });
+    if (scenario === 'ambiguous') {
+      jest.mocked(Executor.executeTool).mockResolvedValueOnce({ data: { ok: false, missingFields: ['account'] }, pendingAction });
+    } else {
+      jest.mocked(Executor.executeTool).mockRejectedValueOnce(new Error('Conta sem permissao'));
+    }
+    jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(reply({ id: 'read', output: [{ type: 'function_call', name: 'get_pending_action', call_id: 'read', arguments: '{}' }] }))
+      .mockResolvedValueOnce(reply({ id: 'update', output: [{ type: 'function_call', name: 'update_transaction_draft', call_id: 'update', arguments: '{}' }] }))
+      .mockResolvedValueOnce(reply({ output_text: '{"mode":"OPERATOR","message":"Qual conta você quis dizer?"}' }));
+    const result = await LlmRuntimeService.runOperatorTurn({ context, conversation: [] });
+    expect(result.message).toBe('Qual conta você quis dizer?');
+    expect(result.pendingAction).toBeUndefined();
   });
 
   it('uses none on the initial request and tool continuation and sums all usage', async () => {
@@ -58,6 +77,17 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(reply(final));
     const result = await LlmRuntimeService.runOperatorTurn({ context, conversation: [] });
     expect(result.telemetry.usage).toMatchObject({ requests: 1, reportedRequests: 0, totalTokens: 0 });
+  });
+
+  it('does not advertise confirmation tools in WhatsApp and requires the button in its instructions', async () => {
+    jest.mocked(Registry.getToolsForMode).mockReturnValueOnce([
+      { name: 'confirm_pending_action' }, { name: 'get_pending_action' }
+    ] as any);
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(reply(final));
+    await LlmRuntimeService.runOperatorTurn({ context: { ...context, requireConfirmationButton: true }, conversation: [] });
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.tools).toEqual([{ name: 'get_pending_action' }]);
+    expect(body.input[0].content[0].text).toContain('somente o botao Confirmar');
   });
 
   it('applies the correct endpoint shape only to the targeted models and snapshots', () => {

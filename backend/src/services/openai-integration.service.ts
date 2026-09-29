@@ -80,9 +80,10 @@ export default class OpenAiIntegrationService {
       create: {
         companyId: data.companyId,
         provider: 'OPENAI',
-        apiKeyCiphertext: encrypted!.ciphertext,
-        apiKeyIv: encrypted!.iv,
-        apiKeyTag: encrypted!.tag,
+        // Prisma evaluates both upsert branches before choosing update/create.
+        apiKeyCiphertext: encrypted?.ciphertext ?? existing!.apiKeyCiphertext,
+        apiKeyIv: encrypted?.iv ?? existing!.apiKeyIv,
+        apiKeyTag: encrypted?.tag ?? existing!.apiKeyTag,
         model: resolveOpenAiModel(data.model),
         promptVersion: (data.promptVersion || 'v1').trim(),
         isActive: data.isActive ?? true

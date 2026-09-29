@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   LEGACY_OPENAI_MODEL_FALLBACK,
+  getOpenAiChatOptions,
   resolveOpenAiModel,
   shouldRetryWithLegacyOpenAiModel
 } from '../constants/openai';
@@ -89,6 +90,7 @@ async function requestAnalysis(params: {
     signal: AbortSignal.timeout(20_000),
     body: JSON.stringify({
       model: params.model,
+      ...getOpenAiChatOptions(params.model),
       store: false,
       max_completion_tokens: 1200,
       response_format: {

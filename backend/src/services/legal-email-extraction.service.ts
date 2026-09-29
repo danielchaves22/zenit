@@ -1,5 +1,6 @@
 import {
   LEGACY_OPENAI_MODEL_FALLBACK,
+  getOpenAiChatOptions,
   resolveOpenAiModel,
   shouldRetryWithLegacyOpenAiModel
 } from '../constants/openai';
@@ -28,6 +29,7 @@ async function requestExtraction(apiKey: string, model: string, prompt: string) 
     },
     body: JSON.stringify({
       model,
+      ...getOpenAiChatOptions(model),
       messages: [
         {
           role: 'system',
@@ -39,7 +41,7 @@ async function requestExtraction(apiKey: string, model: string, prompt: string) 
         }
       ],
       temperature: 0.1,
-      max_tokens: 180,
+      max_completion_tokens: 180,
       response_format: { type: 'json_object' }
     })
   });

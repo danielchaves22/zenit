@@ -86,7 +86,7 @@ export async function receiveWhatsAppWebhook(req: Request, res: Response) {
     const signatureHeader = String(req.headers['x-hub-signature-256'] || '');
     const payloadSummary = summarizeWebhookPayload(req.body || {});
 
-    logger.info(
+    logger.debug(
       `WhatsApp webhook POST received ${JSON.stringify({
         ...payloadSummary,
         hasRawBody: Boolean(req.rawBody),
@@ -102,7 +102,7 @@ export async function receiveWhatsAppWebhook(req: Request, res: Response) {
       signatureHeader
     });
 
-    logger.info(
+    logger.debug(
       `WhatsApp webhook POST processed ${JSON.stringify({
         ...payloadSummary,
         requestId: req.id || null,

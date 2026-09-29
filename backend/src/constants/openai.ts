@@ -1,6 +1,23 @@
 export const DEFAULT_OPENAI_MODEL = 'gpt-5.4-nano';
 export const LEGACY_OPENAI_MODEL_FALLBACK = 'gpt-4o-mini';
 
+// Preserve the economical agent's effective effort when using either model.
+// Other models (including the legacy fallback) keep their existing parameters.
+export function getOpenAiReasoningEffort(model: string): 'none' | undefined {
+  return /^(gpt-5\.4-nano|gpt-6-luna)(-\d{4}-\d{2}-\d{2})?$/.test(model)
+    ? 'none' : undefined;
+}
+
+export function getOpenAiResponsesOptions(model: string) {
+  const effort = getOpenAiReasoningEffort(model);
+  return effort ? { reasoning: { effort } } : {};
+}
+
+export function getOpenAiChatOptions(model: string) {
+  const effort = getOpenAiReasoningEffort(model);
+  return effort ? { reasoning_effort: effort } : {};
+}
+
 type OpenAiErrorResponse = {
   error?: {
     code?: string | null;

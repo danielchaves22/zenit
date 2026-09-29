@@ -2,6 +2,7 @@ import prisma from '../lib/prisma';
 import { TransactionStatus, TransactionType } from '@prisma/client';
 import {
   LEGACY_OPENAI_MODEL_FALLBACK,
+  getOpenAiChatOptions,
   resolveOpenAiModel,
   shouldRetryWithLegacyOpenAiModel
 } from '../constants/openai';
@@ -596,6 +597,7 @@ async function requestAiSuggestions(params: {
     },
     body: JSON.stringify({
       model: params.model,
+      ...getOpenAiChatOptions(params.model),
       messages: [
         {
           role: 'system',
@@ -626,7 +628,7 @@ async function requestAiSuggestions(params: {
         }
       ],
       temperature: 0.1,
-      max_tokens: 1800,
+      max_completion_tokens: 1800,
       response_format: { type: 'json_object' }
     })
   });

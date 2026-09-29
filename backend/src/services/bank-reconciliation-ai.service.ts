@@ -2,7 +2,7 @@ import prisma from '../lib/prisma';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import OpenAiIntegrationService from './openai-integration.service';
-import { resolveOpenAiModel } from '../constants/openai';
+import { resolveOpenAiModel, getOpenAiChatOptions } from '../constants/openai';
 import { hash } from './bank-statement-parser';
 import { BankCandidate, MatchItem, day } from './bank-reconciliation-matching';
 import type { BankContext } from './bank-reconciliation.service';
@@ -39,6 +39,7 @@ export async function suggestBankMatchByAi(params: SuggestParams): Promise<Sugge
       signal: AbortSignal.timeout(20000),
       body: JSON.stringify({
         model, store: false, max_completion_tokens: 1500,
+        ...getOpenAiChatOptions(model),
         response_format: { type: 'json_schema', json_schema: {
           name: 'bank_match', strict: true, schema: { type: 'object', additionalProperties: false,
             properties: { candidateKey: { anyOf: [{ type: 'string', enum: candidates.map(c => c.key) }, { type: 'null' }] }, reason: { type: 'string' } },

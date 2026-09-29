@@ -1,6 +1,7 @@
 import { AssistantMode } from '@prisma/client';
 import { z } from 'zod';
-import { DEFAULT_OPENAI_MODEL, LEGACY_OPENAI_MODEL_FALLBACK, resolveOpenAiModel, shouldRetryWithLegacyOpenAiModel } from '../constants/openai';
+import { DEFAULT_OPENAI_MODEL, LEGACY_OPENAI_MODEL_FALLBACK, resolveOpenAiModel, shouldRetryWithLegacyOpenAiModel, getOpenAiReasoningEffort, getOpenAiResponsesOptions } from '../constants/openai';
+import { accumulateOpenAiUsage, createOpenAiUsage, OpenAiUsage } from '../utils/openai-usage';
 import OpenAiIntegrationService from './openai-integration.service';
 import ToolRegistryService from './tool-registry.service';
 import ToolExecutorService, { AssistantToolExecutionContext, ToolExecutionResult } from './tool-executor.service';
@@ -29,6 +30,8 @@ type RunAssistantTurnResult = {
     promptVersion: string;
     latencyMs: number;
     toolCalls: number;
+    reasoningEffort?: 'none';
+    usage: OpenAiUsage;
     usedFallbackModel?: boolean;
   };
 };
@@ -172,6 +175,7 @@ async function requestResponsesApi(params: {
     },
     body: JSON.stringify({
       model: params.model,
+      ...getOpenAiResponsesOptions(params.model),
       ...params.body
     })
   });
@@ -198,10 +202,16 @@ export default class LlmRuntimeService {
     let selectedModel = baseModel;
     let usedFallbackModel = false;
     let toolCallsCount = 0;
+    const usage = createOpenAiUsage();
+    const request = async (requestParams: Parameters<typeof requestResponsesApi>[0]) => {
+      const result = await requestResponsesApi(requestParams);
+      accumulateOpenAiUsage(usage, result.parsed?.usage);
+      return result;
+    };
     const tools = ToolRegistryService.getToolsForMode(AssistantMode.OPERATOR);
 
     const performInitialRequest = async (model: string) =>
-      requestResponsesApi({
+      request({
         apiKey: credential.apiKey,
         model,
         body: {
@@ -243,6 +253,8 @@ export default class LlmRuntimeService {
               promptVersion: credential.promptVersion,
               latencyMs: Date.now() - startedAt,
               toolCalls: toolCallsCount,
+              reasoningEffort: getOpenAiReasoningEffort(selectedModel),
+              usage,
               usedFallbackModel: usedFallbackModel || undefined
             }
           };
@@ -259,6 +271,8 @@ export default class LlmRuntimeService {
             promptVersion: credential.promptVersion,
             latencyMs: Date.now() - startedAt,
             toolCalls: toolCallsCount,
+            reasoningEffort: getOpenAiReasoningEffort(selectedModel),
+            usage,
             usedFallbackModel: usedFallbackModel || undefined
           }
         };
@@ -319,7 +333,7 @@ export default class LlmRuntimeService {
         }
       }
 
-      currentResponse = await requestResponsesApi({
+      currentResponse = await request({
         apiKey: credential.apiKey,
         model: selectedModel,
         body: {

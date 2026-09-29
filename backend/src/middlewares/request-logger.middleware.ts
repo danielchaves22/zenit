@@ -19,26 +19,27 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
   // Gera ID único para a requisição
   req.id = uuidv4();
   req.startTime = Date.now();
-  
+  const isWhatsAppWebhook = req.path.replace(/\/$/, '') === '/api/webhooks/whatsapp';
+
   // Log da requisição
-  logger.info('Incoming request', {
+  logger.log(isWhatsAppWebhook ? 'debug' : 'info', 'Incoming request', {
     requestId: req.id,
     method: req.method,
     path: req.path,
     ip: req.ip,
     userAgent: req.get('user-agent')
   });
-  
+
   // Intercepta o fim da resposta
   const originalSend = res.send;
   res.send = function(data: any) {
     res.send = originalSend;
     res.send(data);
-    
+
     const duration = Date.now() - (req.startTime || 0);
-    
+
     // Log da resposta
-    logger.info('Request completed', {
+    logger.log(isWhatsAppWebhook ? (res.statusCode >= 400 ? 'warn' : 'debug') : 'info', 'Request completed', {
       requestId: req.id,
       method: req.method,
       path: req.path,
@@ -46,18 +47,18 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       duration: `${duration}ms`,
       userId: req.user?.id
     });
-    
+
     // Alerta para requisições lentas
-    if (duration > 3000) {
+    if (duration > (isWhatsAppWebhook ? 30000 : 3000)) {
       logger.warn('Slow request detected', {
         requestId: req.id,
         path: req.path,
         duration: `${duration}ms`
       });
     }
-    
+
     return res;
   };
-  
+
   next();
 }

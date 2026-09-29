@@ -4,6 +4,7 @@ import { z } from 'zod';
 import prisma from '../lib/prisma';
 import {
   LEGACY_OPENAI_MODEL_FALLBACK,
+  getOpenAiResponsesOptions,
   resolveOpenAiModel,
   shouldRetryWithLegacyOpenAiModel
 } from '../constants/openai';
@@ -371,6 +372,7 @@ async function requestGuidance(params: {
     },
     body: JSON.stringify({
       model: params.model,
+      ...getOpenAiResponsesOptions(params.model),
       instructions: buildInstructions(),
       input: JSON.stringify(params.input),
       store: false,

@@ -13,7 +13,7 @@ jest.mock('../../src/services/user.service', () => ({ __esModule: true, default:
 jest.mock('../../src/services/whatsapp-cloud-api.service', () => ({ __esModule: true, default: {
   verifySignature: jest.fn(), sendTextMessage: jest.fn(), sendReplyButtons: jest.fn(), sendTypingIndicator: jest.fn()
 } }));
-jest.mock('../../src/utils/logger', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
+jest.mock('../../src/utils/logger', () => ({ logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
 import prisma from '../../src/lib/prisma';
 import WhatsAppIntegrationService from '../../src/services/whatsapp-integration.service';
@@ -25,6 +25,7 @@ import AppAccess from '../../src/services/app-access.service';
 import Users from '../../src/services/user.service';
 import { buildPendingActionButtons } from '../../src/utils/whatsapp-pending-action';
 import type { PendingAction } from '@zenit/assistant-contracts';
+import { logger } from '../../src/utils/logger';
 
 const db = prisma as any;
 const binding = { id: 1, userId: 2, activeCompanyId: 3, waId: '5544999990000' };
@@ -76,6 +77,11 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(reply.buttons).toEqual(buildPendingActionButtons(action));
     expect(Cloud.sendTextMessage).not.toHaveBeenCalled();
     expect(db.whatsAppMessageLog.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ direction: 'OUTBOUND', kind: 'INTERACTIVE' }) }));
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('"outcome":"completed"'));
+    const logs = JSON.stringify([jest.mocked(logger.info).mock.calls, jest.mocked(logger.debug).mock.calls]);
+    expect(logs).not.toContain('Gastei 36,77');
+    expect(logs).not.toContain('textPreview');
   });
 
   it.each([0, 1])('resolves button %s by its ID, scoped to owner, company, session and revision', async (index) => {
@@ -174,5 +180,14 @@ describe('WhatsApp native feedback and decisions', () => {
     } }] }] } });
     expect(db.whatsAppMessageLog.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ kind: 'INTERACTIVE' }) }));
     expect(Cloud.sendTypingIndicator).not.toHaveBeenCalled();
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it('keeps failed delivery visible while routine status callbacks stay quiet', async () => {
+    await WhatsAppIntegrationService.processWebhookPayload({ payload: { entry: [{ changes: [{ value: {
+      statuses: [{ id: 'wamid.failed', status: 'failed', errors: [{ code: 131026 }], recipient_id: binding.waId }]
+    } }] }] } });
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('131026'));
+    expect(logger.info).not.toHaveBeenCalled();
   });
 });

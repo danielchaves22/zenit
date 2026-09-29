@@ -62,6 +62,17 @@ export const assistantTelemetrySchema = z.object({
   promptVersion: z.string().min(1),
   latencyMs: z.number().int().min(0),
   toolCalls: z.number().int().min(0),
+  reasoningEffort: z.literal('none').optional(),
+  usage: z.object({
+    requests: z.number().int().min(0),
+    reportedRequests: z.number().int().min(0),
+    inputTokens: z.number().int().min(0),
+    cachedInputTokens: z.number().int().min(0),
+    cacheWriteTokens: z.number().int().min(0),
+    outputTokens: z.number().int().min(0),
+    reasoningTokens: z.number().int().min(0),
+    totalTokens: z.number().int().min(0)
+  }).optional(),
   usedFallbackModel: z.boolean().optional()
 });
 

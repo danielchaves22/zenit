@@ -1871,7 +1871,8 @@ export default class ToolExecutorService {
         companyId: context.companyId,
         ...buildOperationalTransactionWhere(),
         ...(args.type ? { type: args.type } : {}),
-        ...(accountIds && accountIds.length > 0
+        // An empty list denies access; only privileged roles return undefined.
+        ...(accountIds !== undefined
           ? {
               OR: [{ fromAccountId: { in: accountIds } }, { toAccountId: { in: accountIds } }]
             }

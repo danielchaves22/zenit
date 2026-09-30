@@ -283,7 +283,7 @@ function getTransactionAccountDisplay(transaction: Pick<Transaction, 'fromAccoun
 }
 
 function canSettleTransaction(transaction: Transaction) {
-  if (!transaction.id) {
+  if (transaction.isVirtual ? !transaction.fixedTemplateId : !transaction.id) {
     return false;
   }
 
@@ -299,7 +299,7 @@ function canSettleTransaction(transaction: Transaction) {
     return false;
   }
 
-  if (transaction.isVirtual || transaction.isProjected) {
+  if (transaction.isProjected && !transaction.isVirtual) {
     return false;
   }
 
@@ -1049,7 +1049,7 @@ export default function TransactionsListPage() {
     );
   }
 
-  async function handleMaterializeAndEdit(transaction: Transaction) {
+  async function handleMaterialize(transaction: Transaction, action: 'edit' | 'settle') {
     if (!transaction.fixedTemplateId) {
       addToast('Transação virtual sem template associado', 'error');
       return;
@@ -1071,13 +1071,18 @@ export default function TransactionsListPage() {
         { occurrenceDate }
       );
 
-      const materializedId = response.data?.transaction?.id;
-      if (!materializedId) {
+      const materializedTransaction = response.data?.transaction as Transaction | undefined;
+      if (!materializedTransaction?.id) {
         addToast('Não foi possível materializar a transação virtual', 'error');
         return;
       }
 
-      router.push(getTransactionEditHref(materializedId));
+      if (action === 'settle') {
+        await handleOpenSettlement(materializedTransaction);
+        await fetchData();
+      } else {
+        router.push(getTransactionEditHref(materializedTransaction.id));
+      }
     } catch (error: any) {
       addToast(error.response?.data?.error || 'Erro ao materializar transação virtual', 'error');
     } finally {
@@ -1086,7 +1091,12 @@ export default function TransactionsListPage() {
   }
 
   async function handleOpenSettlement(transaction: Transaction) {
-    if (!canSettleTransaction(transaction) || !transaction.id) {
+    if (!canSettleTransaction(transaction)) {
+      return;
+    }
+
+    if (transaction.isVirtual) {
+      await handleMaterialize(transaction, 'settle');
       return;
     }
 
@@ -1095,6 +1105,10 @@ export default function TransactionsListPage() {
     try {
       const response = await api.get(`/financial/transactions/${transaction.id}`);
       const detail = response.data as Transaction;
+      if (!canSettleTransaction(detail)) {
+        addToast('Esta transação não está disponível para liquidação', 'error');
+        return;
+      }
       const initialAccountId =
         detail.type === 'EXPENSE'
           ? detail.fromAccount?.id?.toString() || ''
@@ -1869,7 +1883,9 @@ export default function TransactionsListPage() {
                 </thead>
 	                <tbody>
 	                  {sortedTransactions.map((transaction) => {
-	                    const isMaterializing = materializingVirtualKey === (transaction.virtualKey || '');
+	                    const isMaterializing = materializingVirtualKey === (
+                          transaction.virtualKey || `${transaction.fixedTemplateId}:${transaction.dueDate || transaction.date}`
+                        );
 	                    const isProjectedLike = Boolean(transaction.isVirtual || transaction.isProjected);
 	                    const displayStatus = getTransactionDisplayStatus(transaction);
 	                    const invoiceHref = getTransactionInvoiceHref(transaction);
@@ -2011,11 +2027,25 @@ export default function TransactionsListPage() {
 	                              </Link>
 	                            ) : transaction.isVirtual ? (
                                 <>
+                                {canSettleTransaction(transaction) && (
+                                  <button
+                                    onClick={() => handleOpenSettlement(transaction)}
+                                    className="p-1 text-gray-300 transition-colors hover:text-green-400"
+                                    title={transaction.type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita'}
+                                    disabled={materializingVirtualKey !== null || settlementLoading}
+                                  >
+                                    {isMaterializing ? (
+                                      <Loader2 size={14} className="animate-spin" />
+                                    ) : (
+                                      <CheckCircle size={14} />
+                                    )}
+                                  </button>
+                                )}
 	                                <button
-	                                  onClick={() => handleMaterializeAndEdit(transaction)}
+	                                  onClick={() => handleMaterialize(transaction, 'edit')}
 	                                  className="p-1 text-gray-300 transition-colors hover:text-accent"
                                   title="Materializar e editar"
-                                  disabled={isMaterializing}
+                                  disabled={materializingVirtualKey !== null || settlementLoading}
                                 >
                                   {isMaterializing ? (
                                     <Loader2 size={14} className="animate-spin" />
@@ -2028,6 +2058,7 @@ export default function TransactionsListPage() {
                                     onClick={() => void handleArchive(transaction)}
                                     className="p-1 text-gray-300 transition-colors hover:text-amber-300"
                                     title="Ignorar projeção"
+                                    disabled={materializingVirtualKey !== null || settlementLoading}
                                   >
                                     <Archive size={14} />
                                   </button>
@@ -2048,6 +2079,7 @@ export default function TransactionsListPage() {
 	                                    onClick={() => handleOpenSettlement(transaction)}
 	                                    className="p-1 text-gray-300 transition-colors hover:text-green-400"
                                     title={transaction.type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita'}
+                                    disabled={materializingVirtualKey !== null || settlementLoading}
                                   >
                                     <CheckCircle size={14} />
                                   </button>

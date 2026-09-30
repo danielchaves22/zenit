@@ -114,6 +114,82 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(JSON.stringify([jest.mocked(logger.warn).mock.calls, jest.mocked(Cloud.sendTextMessage).mock.calls])).not.toContain('private provider details');
   });
 
+  it('returns existing draft buttons to Hub without sending a second WhatsApp message', async () => {
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId, messageId: 'wamid.hub', text: 'Gastei 36,77' });
+    expect(result.replies[0].text).toContain('Aguardando confirmação');
+    expect(result.replies[0].buttons).toEqual(buildPendingActionButtons(action));
+    expect(Cloud.sendTextMessage).not.toHaveBeenCalled();
+    expect(Cloud.sendReplyButtons).not.toHaveBeenCalled();
+    expect(Cloud.sendTypingIndicator).not.toHaveBeenCalled();
+    expect(db.whatsAppMessageLog.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'hub_completed' }) }));
+  });
+
+  it('does not run Hub messages after Cash access is revoked', async () => {
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    jest.mocked(AppAccess.hasEffectiveAccess).mockResolvedValue(false);
+    const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId, messageId: 'wamid.hub', text: 'meus saldos' });
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+    expect(result.replies[0].text).toContain('permissoes');
+  });
+
+  it('handles Hub audio with owned identity, the existing session and button-only confirmation', async () => {
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId, messageId: 'wamid.hub.voice', text: '', audio: { mediaId: '123' } });
+    expect(Audio.transcribe).toHaveBeenCalledWith({ companyId: 3, userId: 2, role: 'ADMIN', mediaId: '123' });
+    expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 4, requireConfirmationButton: true, message: 'Na verdade foram 45 reais na conta Itaú.' }));
+    expect(result.replies[0].buttons).toEqual(buildPendingActionButtons(action));
+    expect(Cloud.sendTextMessage).not.toHaveBeenCalled();
+    expect(Cloud.sendReplyButtons).not.toHaveBeenCalled();
+    expect(Cloud.sendTypingIndicator).not.toHaveBeenCalled();
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+
+  it.each(['unbound', 'no_company', 'no_channel', 'no_cash'])('never transcribes unauthorized Hub audio: %s', async reason => {
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    if (reason === 'unbound') db.whatsAppUserBinding.findUnique.mockResolvedValue(null);
+    if (reason === 'no_company') jest.mocked(Users.getUserCompanyContext).mockResolvedValue(null as any);
+    if (reason === 'no_channel') jest.mocked(AppAccess.hasEffectiveAccess).mockResolvedValue(false);
+    if (reason === 'no_cash') jest.mocked(AppAccess.hasEffectiveAccess).mockImplementation(async (_user, _company, app) => app !== 'ZENIT_CASH');
+    await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId, messageId: 'wamid.hub.voice', text: '', audio: { mediaId: '123' } });
+    expect(Audio.transcribe).not.toHaveBeenCalled();
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+  });
+
+  it('rejects an audio envelope carrying a confirmation button before any processing', async () => {
+    await expect(WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId, messageId: 'wamid.hub.voice', text: '',
+      buttonId: buildPendingActionButtons(action)[0].id, audio: { mediaId: '123' } })).rejects.toThrow('audio invalida');
+    expect(Audio.transcribe).not.toHaveBeenCalled();
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+
+  it('returns a recoverable transcription failure through Hub without a financial operation', async () => {
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    jest.mocked(Audio.transcribe).mockRejectedValueOnce(new Error('private provider detail'));
+    const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId, messageId: 'wamid.hub.voice', text: '', audio: { mediaId: '123' } });
+    expect(result.replies[0].text).toContain('Não consegui processar');
+    expect(JSON.stringify(result)).not.toContain('private provider');
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+    expect(Cloud.sendTextMessage).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates Hub receipts without replaying stale private data and rechecks current permissions', async () => {
+    const cached = [{ text: 'Resposta privada' }];
+    db.whatsAppMessageLog.findUnique.mockResolvedValue({ waId: binding.waId, payload: { hubReplies: cached } });
+    const input = { waId: binding.waId, messageId: 'wamid.hub', text: 'oi' };
+    expect((await WhatsAppIntegrationService.dispatchForHub(input)).replies[0].text).toContain('ja foi recebida');
+    expect(JSON.stringify(await WhatsAppIntegrationService.dispatchForHub(input))).not.toContain('Resposta privada');
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+    jest.mocked(AppAccess.hasEffectiveAccess).mockResolvedValue(false);
+    expect(JSON.stringify(await WhatsAppIntegrationService.dispatchForHub(input))).not.toContain('Resposta privada');
+    await expect(WhatsAppIntegrationService.dispatchForHub({ ...input, waId: '5544000000000' })).rejects.toThrow('outro remetente');
+  });
+
+  it('rejects write tools on the Hub query boundary', async () => {
+    await expect(WhatsAppIntegrationService.queryForHub(binding.waId, 'confirm_pending_action', { pendingActionId: 42 })).rejects.toThrow('nao permitida');
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+
   it('shows typing before processing, then sends a factual draft with both buttons', async () => {
     await webhook({ type: 'text', text: { body: 'Gastei 36,77 no mercado' } });
     expect(Cloud.sendTypingIndicator).toHaveBeenCalledWith('wamid.incoming');

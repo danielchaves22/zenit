@@ -10,6 +10,8 @@ import {
 import crypto from 'crypto';
 import WhatsAppAudioService from './whatsapp-audio.service';
 import { WhatsAppAudioError } from '../utils/whatsapp-audio';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import ToolExecutorService from './tool-executor.service';
 import AssistantOrchestratorService from './assistant-orchestrator.service';
 import AssistantSessionService from './assistant-session.service';
 import AssistantMessageService from './assistant-message.service';
@@ -21,6 +23,10 @@ import WhatsAppCloudApiService, { WhatsAppReplyButton } from './whatsapp-cloud-a
 import { buildPendingActionButtons, formatWhatsAppDraft, parsePendingActionButton } from '../utils/whatsapp-pending-action';
 import { INTEGRATIONS_CONFIG } from '../config';
 import { logger } from '../utils/logger';
+
+export type HubCashReply = { text: string; buttons?: WhatsAppReplyButton[] };
+const hubReplies = new AsyncLocalStorage<HubCashReply[]>();
+const HUB_READ_TOOLS = new Set(['get_financial_overview', 'get_due_obligations', 'get_credit_card_overview', 'get_recent_transactions']);
 
 
 type CompanyChannelAccess = {
@@ -324,6 +330,70 @@ async function recordMessageLog(params: {
 }
 
 export default class WhatsAppIntegrationService {
+  // The first-party Hub authenticates the channel. Cash resolves the verified
+  // binding and current permissions; no user/company/role supplied by Hub is trusted.
+  static async getHubBinding(waId: string) {
+    const binding = await prisma.whatsAppUserBinding.findUnique({ where: { waId } });
+    if (!binding) return null;
+    const context = await UserService.getUserCompanyContext(binding.userId, binding.activeCompanyId);
+    if (!context || !await AppAccessService.hasEffectiveAccess(binding.userId, binding.activeCompanyId, AppKey.ZENIT_WHATSAPP) ||
+        !await AppAccessService.hasEffectiveAccess(binding.userId, binding.activeCompanyId, AppKey.ZENIT_CASH)) return null;
+    return { binding, role: context.role };
+  }
+
+  static async queryForHub(waId: string, tool: string, args: Record<string, unknown>) {
+    if (!HUB_READ_TOOLS.has(tool)) throw new Error('Operacao de leitura nao permitida.');
+    const current = await this.getHubBinding(waId);
+    if (!current) throw new Error('Conexao Cash ausente ou sem permissao.');
+    const { binding, role } = current;
+    const context = await ensureBindingCompanyContext({ bindingId: binding.id, companyId: binding.activeCompanyId, userId: binding.userId });
+    return ToolExecutorService.executeTool(tool, args, {
+      sessionId: context.assistantSessionId, turnId: 0, userId: binding.userId,
+      companyId: binding.activeCompanyId, role, mode: 'OPERATOR'
+    });
+  }
+
+  static async dispatchForHub(params: { waId: string; messageId: string; text: string; buttonId?: string; audio?: { mediaId: string } }) {
+    if (params.audio && (params.text.trim() || params.buttonId !== undefined || !/^\d{1,128}$/.test(params.audio.mediaId))) {
+      throw new Error('Mensagem de audio invalida.');
+    }
+    const existing = await prisma.whatsAppMessageLog.findUnique({ where: { whatsappMessageId: params.messageId } });
+    if (existing) {
+      if (existing.waId !== params.waId) throw new Error('Mensagem pertence a outro remetente.');
+      if (!await this.getHubBinding(params.waId)) return { replies: [{ text: 'Conexao Cash ausente ou sem permissao.' }] };
+      // Never replay private content from a receipt: workspace/account permissions
+      // may have changed since it was produced. A fresh query checks them again.
+      return { replies: [{ text: 'Esta mensagem ja foi recebida pelo Cash. Consulte o estado atual antes de repetir a operacao.' }] };
+    }
+    const receipt = await prisma.whatsAppMessageLog.create({ data: {
+      waId: params.waId, whatsappMessageId: params.messageId, direction: 'INBOUND',
+      kind: params.audio ? 'SYSTEM' : params.buttonId ? 'INTERACTIVE' : 'TEXT', text: params.text, status: 'hub_processing',
+      ...(params.audio ? { payload: { type: 'audio', audio: { id: params.audio.mediaId } } } : {})
+    } });
+    const replies: HubCashReply[] = [];
+    try {
+      await hubReplies.run(replies, async () => {
+        if (!params.audio) {
+          const consumed = await this.consumeBindingChallenge({ text: params.text, waId: params.waId, incomingMessageId: params.messageId });
+          if (consumed.consumed) return;
+        }
+        const current = await this.getHubBinding(params.waId);
+        if (!current) {
+          replies.push({ text: 'Conecte sua conta pelo QR Code no perfil do Cash. Se ela ja estiver conectada, confira suas permissoes no Cash.' });
+          return;
+        }
+        await this.processBoundMessage({ binding: current.binding, incomingMessageId: params.messageId,
+          interactiveReplyId: params.buttonId, text: params.text, waId: params.waId, audio: params.audio });
+      });
+      await prisma.whatsAppMessageLog.update({ where: { id: receipt.id }, data: { status: 'hub_completed',
+        payload: { hubReplies: replies, ...(params.audio ? { type: 'audio', audio: { id: params.audio.mediaId } } : {}) } } });
+      return { replies };
+    } catch (error) {
+      await prisma.whatsAppMessageLog.update({ where: { id: receipt.id }, data: { status: 'hub_uncertain' } });
+      throw error;
+    }
+  }
+
   static async expirePendingChallenges(userId?: number) {
     await prisma.whatsAppBindingChallenge.updateMany({
       where: {
@@ -558,6 +628,11 @@ export default class WhatsAppIntegrationService {
     waId: string;
   }) {
     try {
+      const captured = hubReplies.getStore();
+      if (captured) {
+        captured.push({ text: params.text, ...(params.buttons ? { buttons: params.buttons } : {}) });
+        return;
+      }
       logger.debug(
         `WhatsApp outbound send attempt ${JSON.stringify({
           assistantSessionId: params.assistantSessionId ?? null,
@@ -780,6 +855,7 @@ export default class WhatsAppIntegrationService {
   }
 
   private static async withTypingIndicator<T>(messageId: string | null | undefined, work: () => Promise<T>) {
+    if (hubReplies.getStore()) return work();
     if (!messageId) return work();
     const indicate = async () => {
       try {

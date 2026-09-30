@@ -198,7 +198,7 @@ describe('Assistant runtime', () => {
       role: 'ADMIN' as const, expectedUpdatedAt: new Date(action.updatedAt) };
   }
 
-  it('recebe voz, corrige o mesmo rascunho por voz, rejeita botoes antigos e grava apenas a versao revisada', async () => {
+  it.each(['webhook', 'hub'] as const)('recebe voz, corrige o mesmo rascunho por voz, rejeita botoes antigos e grava apenas a versao revisada (%s)', async (transport) => {
     await AppAccessService.setCompanyEntitlements(companyId, [
       { appKey: AppKey.ZENIT_CASH, enabled: true }, { appKey: AppKey.ZENIT_WHATSAPP, enabled: true }
     ]);
@@ -227,12 +227,22 @@ describe('Assistant runtime', () => {
       .mockResolvedValueOnce(tool('create_transaction_draft', { description: 'Combustivel no posto', amount: 50, type: 'EXPENSE',
         fromAccountId: nubank.id, categoryId: category.id }))
       .mockResolvedValueOnce(final);
-    const inbound = (id: string, message: object) => WhatsAppIntegrationService.processWebhookPayload({ payload: {
-      entry: [{ changes: [{ value: { messages: [{ id: `${companyId}.${id}`, from: waId, ...message }] } }] }]
-    } });
+    const hubReplies: { text: string; buttons?: { id: string; title: string }[] }[] = [];
+    const inbound = async (id: string, message: { type: string; text?: { body: string }; audio?: { id: string }; interactive?: { button_reply: { id: string; title: string } } }) => {
+      if (transport === 'hub') {
+        const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `${companyId}.${id}`,
+          text: message.text?.body || '', buttonId: message.interactive?.button_reply.id,
+          ...(message.audio ? { audio: { mediaId: message.audio.id } } : {}) });
+        hubReplies.push(...result.replies);
+      } else await WhatsAppIntegrationService.processWebhookPayload({ payload: {
+        entry: [{ changes: [{ value: { messages: [{ id: `${companyId}.${id}`, from: waId, ...message }] } }] }]
+      } });
+    };
+    const sentButtons = () => transport === 'hub' ? hubReplies.filter(reply => reply.buttons).map(reply => reply.buttons!)
+      : buttonsSpy.mock.calls.map(call => call[0].buttons);
     await inbound('voice1', { type: 'audio', audio: { id: '123' } });
     const first = await prisma.assistantPendingAction.findFirstOrThrow({ where: { companyId } });
-    const firstButtons = buttonsSpy.mock.calls[0][0].buttons;
+    const firstButtons = sentButtons()[0];
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
     expect((first.payload as any).amount).toBe(50);
 
@@ -267,11 +277,12 @@ describe('Assistant runtime', () => {
     const click = (id: string, button: { id: string; title: string }) => inbound(id,
       { type: 'interactive', interactive: { button_reply: button } });
     await click('old_button', firstButtons[0]);
-    expect(textSpy).toHaveBeenLastCalledWith(expect.objectContaining({ text: expect.stringContaining('não está mais válido') }));
+    const lastText = transport === 'hub' ? hubReplies[hubReplies.length - 1].text : textSpy.mock.calls[textSpy.mock.calls.length - 1][0].text;
+    expect(lastText).toContain('não está mais válido');
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
     const revisedAction = await PendingActionService.getPendingAction({ pendingActionId: first.id, userId, companyId });
-    expect(buttonsSpy.mock.calls[1][0].buttons).toEqual(buildPendingActionButtons(revisedAction as PendingAction));
-    await click('new_button', buttonsSpy.mock.calls[1][0].buttons[0]);
+    expect(sentButtons()[1]).toEqual(buildPendingActionButtons(revisedAction as PendingAction));
+    await click('new_button', sentButtons()[1][0]);
     const transactions = await prisma.financialTransaction.findMany({ where: { companyId } });
     expect(transactions).toHaveLength(1);
     expect(Number(transactions[0].amount)).toBe(45);
@@ -281,6 +292,11 @@ describe('Assistant runtime', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(callsBeforeReplay);
     expect(WhatsAppCloudApiService.downloadAudio).toHaveBeenCalledTimes(3);
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
+    if (transport === 'hub') {
+      expect(textSpy).not.toHaveBeenCalled();
+      expect(buttonsSpy).not.toHaveBeenCalled();
+      expect(WhatsAppCloudApiService.sendTypingIndicator).not.toHaveBeenCalled();
+    }
   }, 30000);
 
   it('grava apenas uma transacao quando dois cliques confirmam o mesmo rascunho', async () => {

@@ -1,4 +1,5 @@
 import '@/styles/globals.css'
+import '@/styles/cash-shell.css'
 import { AppProps } from 'next/app'
 import Head from 'next/head'
 import { AuthProvider } from '@/contexts/AuthContext'

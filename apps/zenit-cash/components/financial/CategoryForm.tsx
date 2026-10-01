@@ -191,7 +191,7 @@ export default function CategoryForm({
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-text">
             {mode === 'create'
               ? `Nova Categoria de ${formData.type === 'EXPENSE' ? 'Despesa' : 'Receita'}`
               : 'Editar Categoria'}
@@ -238,7 +238,7 @@ export default function CategoryForm({
               />
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Tipo</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Tipo</label>
                 <select
                   value={formData.type}
                   onChange={(event) =>
@@ -248,7 +248,7 @@ export default function CategoryForm({
                       parentId: ''
                     }))
                   }
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   disabled={saving}
                 >
                   <option value="EXPENSE">Despesa</option>
@@ -259,7 +259,7 @@ export default function CategoryForm({
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Cor</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Cor</label>
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -267,7 +267,7 @@ export default function CategoryForm({
                     onChange={(event) =>
                       setFormData((prev) => ({ ...prev, color: event.target.value }))
                     }
-                    className="h-10 w-12 cursor-pointer rounded border border-gray-700"
+                    className="h-10 w-12 cursor-pointer rounded border border-border"
                     disabled={saving}
                   />
                   <Input
@@ -319,29 +319,29 @@ export default function CategoryForm({
         <Card>
           <div className="space-y-4">
             <div>
-              <div className="text-sm font-medium text-white">Resumo</div>
-              <div className="mt-1 text-sm text-gray-400">
+              <div className="text-sm font-medium text-text">Resumo</div>
+              <div className="mt-1 text-sm text-text-muted">
                 Use categorias principais e subcategorias para organizar os lancamentos
                 operacionais do dia a dia.
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Pre-visualizacao</div>
+            <div className="rounded-lg border border-border bg-elevated p-4">
+              <div className="text-xs uppercase tracking-wide text-text-muted">Pre-visualizacao</div>
               <div className="mt-3 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-[#0f1419]">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-elevated">
                   <CategoryIcon icon={formData.icon} size={18} color={formData.color} />
                 </div>
-                <div className="text-white">
+                <div className="text-text">
                   {formData.name.trim() || 'Nome da categoria'}
-                  <div className="text-xs text-gray-400">{getCategoryIconLabel(formData.icon)}</div>
+                  <div className="text-xs text-text-muted">{getCategoryIconLabel(formData.icon)}</div>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Estrutura</div>
-              <div className="mt-2 text-sm text-gray-300">
+            <div className="rounded-lg border border-border bg-elevated p-4">
+              <div className="text-xs uppercase tracking-wide text-text-muted">Estrutura</div>
+              <div className="mt-2 text-sm text-text-muted">
                 {formData.parentId
                   ? 'Subcategoria vinculada a uma categoria principal.'
                   : 'Categoria principal, disponivel para receber subcategorias.'}

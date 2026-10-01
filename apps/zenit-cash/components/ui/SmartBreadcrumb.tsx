@@ -283,31 +283,31 @@ export function SmartBreadcrumb({
 
   return (
     <nav
-      className={`mb-4 flex items-center text-sm text-gray-400 ${className}`}
+      className={`mb-4 flex items-center text-sm text-text-muted ${className}`}
       aria-label="Breadcrumb"
     >
       <ol className="flex items-center space-x-1">
         {filteredItems.map((item, index) => (
           <li key={index} className="flex items-center">
-            {index > 0 && <ChevronRight size={14} className="mx-2 text-gray-500" />}
+            {index > 0 && <ChevronRight size={14} className="mx-2 text-text-subtle" />}
 
             {item.href ? (
               <Link
                 href={item.href}
-                className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:text-white focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50"
+                className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:text-text focus:outline-none focus:ring-2 focus:ring-accent focus:ring-opacity-50"
               >
                 {item.icon}
                 <span>{item.label}</span>
               </Link>
             ) : (
-              <span className="flex items-center gap-1 font-medium text-gray-300">
+              <span className="flex items-center gap-1 font-medium text-text-muted">
                 {item.icon}
                 <span>{item.label}</span>
               </span>
             )}
 
             {showPermissionWarnings && item.href && !checkLinkPermission(item.href) && (
-              <span className="ml-1 text-red-400" title="Acesso restrito">
+              <span className="ml-1 text-tone-red" title="Acesso restrito">
                 <Lock size={12} />
               </span>
             )}
@@ -317,7 +317,7 @@ export function SmartBreadcrumb({
 
       {breadcrumbItems.length > maxItems && (
         <span
-          className="ml-2 text-gray-500"
+          className="ml-2 text-text-subtle"
           title={`${breadcrumbItems.length - maxItems} itens ocultos`}
         >
           (+{breadcrumbItems.length - maxItems})

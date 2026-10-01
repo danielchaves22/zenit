@@ -401,7 +401,7 @@ export default function FinancialMovementReport() {
       {/* Filtros */}
       {showFilters && (
         <Card className="mb-4">
-          <h3 className="text-white font-medium mb-3">Filtros do Relatório</h3>
+          <h3 className="text-text font-medium mb-3">Filtros do Relatório</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Input
               label="Data Inicial"
@@ -420,11 +420,11 @@ export default function FinancialMovementReport() {
             />
             
             <div>
-              <label className="block text-sm font-medium mb-1 text-gray-300">Agrupar por</label>
+              <label className="block text-sm font-medium mb-1 text-text-muted">Agrupar por</label>
               <select
                 value={filters.groupBy}
                 onChange={(e) => setFilters(prev => ({ ...prev, groupBy: e.target.value as 'day' | 'week' | 'month' }))}
-                className="w-full px-2 py-1.5 bg-[#1e2126] border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-accent"
+                className="w-full px-2 py-1.5 bg-background border border-border text-text rounded focus:outline-none focus:ring focus:border-accent"
               >
                 <option value="day">Por Dia</option>
                 <option value="week">Por Semana</option>
@@ -435,17 +435,17 @@ export default function FinancialMovementReport() {
 
           {/* Seleção de Contas Financeiras */}
           <div className="mt-4">
-            <label className="block text-sm font-medium mb-2 text-gray-300">
+            <label className="block text-sm font-medium mb-2 text-text-muted">
               Contas de Caixa e Disponibilidade ({filters.financialAccountIds.length} selecionadas)
             </label>
-            <p className="mb-3 text-xs text-gray-400">
+            <p className="mb-3 text-xs text-text-muted">
               Cartões de crédito não entram neste relatório. O impacto no caixa aparece na transferência usada para pagar a fatura.
             </p>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {financialAccounts.map(account => (
                 <label
                   key={account.id}
-                  className="flex items-center space-x-2 p-3 bg-[#1e2126] rounded-lg border border-gray-700 hover:bg-[#262b36] cursor-pointer"
+                  className="flex items-center space-x-2 p-3 bg-background rounded-lg border border-border hover:bg-elevated cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -463,9 +463,9 @@ export default function FinancialMovementReport() {
                         }));
                       }
                     }}
-                    className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                    className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
                   />
-                  <span className="text-sm text-white truncate">
+                  <span className="text-sm text-text truncate">
                     {formatAccountDisplayName(account)}
                   </span>
                 </label>
@@ -484,8 +484,8 @@ export default function FinancialMovementReport() {
         <PageLoader message="Gerando relatório..." />
       ) : reportData.length === 0 ? (
         <Card className="p-8 text-center">
-          <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-400 mb-4">
+          <Calendar size={48} className="mx-auto text-text-muted mb-4" />
+          <p className="text-text-muted mb-4">
             {filters.financialAccountIds.length === 0 
               ? 'Selecione as contas financeiras e clique em "Gerar Relatório"'
               : 'Nenhuma movimentação encontrada para o período selecionado'
@@ -501,32 +501,32 @@ export default function FinancialMovementReport() {
         <Card className="overflow-hidden p-0">
           <div className="space-y-0">
             {/* Toolbar do Relatório */}
-            <div className="flex justify-between items-center bg-[#1e2126] border-b border-gray-700 p-3 print:hidden">
+            <div className="flex justify-between items-center bg-background border-b border-border p-3 print:hidden">
               <div className="flex items-center gap-2">
                 {/* Controles de Zoom */}
-                <div className="flex items-center gap-1 border border-gray-600 rounded bg-[#151921]">
+                <div className="flex items-center gap-1 border border-border-strong rounded bg-surface">
                   <button
                     onClick={decreaseZoom}
                     disabled={zoomLevel <= 50}
-                    className="p-1 hover:bg-[#262b36] disabled:opacity-50 disabled:cursor-not-allowed text-gray-300"
+                    className="p-1 hover:bg-elevated disabled:opacity-50 disabled:cursor-not-allowed text-text-muted"
                     title="Diminuir zoom"
                   >
                     <ZoomOut size={14} />
                   </button>
-                  <span className="px-2 text-sm font-medium text-gray-300 min-w-[50px] text-center">
+                  <span className="px-2 text-sm font-medium text-text-muted min-w-[50px] text-center">
                     {zoomLevel}%
                   </span>
                   <button
                     onClick={increaseZoom}
                     disabled={zoomLevel >= 150}
-                    className="p-1 hover:bg-[#262b36] disabled:opacity-50 disabled:cursor-not-allowed text-gray-300"
+                    className="p-1 hover:bg-elevated disabled:opacity-50 disabled:cursor-not-allowed text-text-muted"
                     title="Aumentar zoom"
                   >
                     <ZoomIn size={14} />
                   </button>
                   <button
                     onClick={resetZoom}
-                    className="p-1 hover:bg-[#262b36] border-l border-gray-600 text-gray-300"
+                    className="p-1 hover:bg-elevated border-l border-border-strong text-text-muted"
                     title="Resetar zoom"
                   >
                     <RotateCcw size={14} />
@@ -539,14 +539,14 @@ export default function FinancialMovementReport() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={exportToPDF}
-                    className="p-2 hover:bg-[#262b36] rounded transition-colors text-gray-300 hover:text-red-400"
+                    className="p-2 hover:bg-elevated rounded transition-colors text-text-muted hover:text-tone-red"
                     title="Exportar PDF"
                   >
                     <FaFilePdf size={16} />
                   </button>
                   <button
                     onClick={exportToExcel}
-                    className="p-2 hover:bg-[#262b36] rounded transition-colors text-gray-300 hover:text-green-400"
+                    className="p-2 hover:bg-elevated rounded transition-colors text-text-muted hover:text-tone-green"
                     title="Exportar Excel"
                   >
                     <FaFileExcel size={16} />

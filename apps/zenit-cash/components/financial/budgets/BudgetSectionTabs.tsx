@@ -26,7 +26,7 @@ export function BudgetSectionTabs({
   return (
     <nav
       aria-label="Áreas do orçamento"
-      className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-gray-700 bg-surface p-1"
+      className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1"
     >
       {tabs.map((tab) => {
         const isActive = tab.view === activeView;
@@ -38,8 +38,8 @@ export function BudgetSectionTabs({
             aria-current={isActive ? 'page' : undefined}
             className={`whitespace-nowrap rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
               isActive
-                ? 'bg-accent text-white shadow-sm'
-                : 'text-gray-400 hover:bg-elevated hover:text-white'
+                ? 'bg-accent text-on-accent shadow-sm'
+                : 'text-text-muted hover:bg-elevated hover:text-text'
             }`}
           >
             {tab.label}

@@ -5,22 +5,33 @@ module.exports = {
     './pages/**/*.{js,ts,jsx,tsx}',
     './components/**/*.{js,ts,jsx,tsx}',
     './contexts/**/*.{js,ts,jsx,tsx}',
+    './utils/**/*.{js,ts,jsx,tsx}',
   ],
   theme: {
     extend: {
       colors: {
         primary: '#1E40AF',
         // ✅ CORES DINÂMICAS USANDO CSS VARIABLES
-        accent: 'var(--color-primary, #f59e0b)', // Fallback para âmbar
+        accent: 'rgb(var(--color-primary-rgb) / <alpha-value>)',
         'accent-hover': 'var(--color-primary-hover, #e08c07)',
         'accent-light': 'var(--color-primary-light, #fbbf24)',
         'accent-dark': 'var(--color-primary-dark, #d97706)',
         // Cores de fundo e texto controladas por variáveis
-        background: 'var(--color-bg, #1e2126)',
-        surface: 'var(--color-bg-secondary, #151921)',
-        elevated: 'var(--color-bg-tertiary, #0f1419)',
-        text: 'var(--color-text, #f5f5f5)',
-        'text-muted': 'var(--color-text-secondary, #d1d5db)',
+        background: 'rgb(var(--color-bg-rgb) / <alpha-value>)',
+        surface: 'rgb(var(--color-surface-rgb) / <alpha-value>)',
+        elevated: 'rgb(var(--color-elevated-rgb) / <alpha-value>)',
+        text: 'rgb(var(--color-text-rgb) / <alpha-value>)',
+        'text-muted': 'rgb(var(--color-muted-rgb) / <alpha-value>)',
+        'text-subtle': 'rgb(var(--color-subtle-rgb) / <alpha-value>)',
+        border: 'rgb(var(--color-border-rgb) / <alpha-value>)',
+        'border-strong': 'rgb(var(--color-border-strong-rgb) / <alpha-value>)',
+        'accent-soft': 'var(--color-accent-soft)',
+        'on-accent': 'rgb(var(--color-on-accent) / <alpha-value>)',
+        'on-solid': '#ffffff',
+        tone: Object.fromEntries(['red', 'rose', 'green', 'emerald', 'blue', 'cyan', 'teal', 'indigo', 'purple', 'pink', 'amber', 'yellow', 'orange', 'sky', 'violet'].map(color => [color, {
+          DEFAULT: `rgb(var(--tone-${color}) / <alpha-value>)`,
+          soft: `rgb(var(--tone-${color}-soft) / <alpha-value>)`,
+        }])),
         // Cores estáticas mantidas
         neutral: '#F3F4F6',
         info: '#2563EB',
@@ -28,8 +39,8 @@ module.exports = {
         danger: '#DC2626',
       },
       fontFamily: {
-        sans: ['Inter', 'sans‑serif'],
-        heading: ['Poppins', 'sans‑serif'],
+        sans: ['Inter', 'Segoe UI', 'sans-serif'],
+        heading: ['Inter', 'Segoe UI', 'sans-serif'],
       },
       spacing: {
         72: '18rem',

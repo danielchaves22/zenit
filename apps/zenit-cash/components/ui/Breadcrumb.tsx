@@ -14,22 +14,22 @@ interface BreadcrumbProps {
 
 export function Breadcrumb({ items }: BreadcrumbProps) {
   return (
-    <nav className="flex items-center text-sm text-gray-400 mb-4">
+    <nav className="flex items-center text-sm text-text-muted mb-4">
       {items.map((item, index) => (
         <React.Fragment key={index}>
           {index > 0 && (
-            <ChevronRight size={14} className="mx-2 text-gray-500" />
+            <ChevronRight size={14} className="mx-2 text-text-subtle" />
           )}
           
           {item.href ? (
             <Link 
               href={item.href}
-              className="hover:text-white transition-colors"
+              className="hover:text-text transition-colors"
             >
               {item.label}
             </Link>
           ) : (
-            <span className="text-gray-300 font-medium">{item.label}</span>
+            <span className="text-text-muted font-medium">{item.label}</span>
           )}
         </React.Fragment>
       ))}

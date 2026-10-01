@@ -263,7 +263,7 @@ function FixedTransactionsPageInner() {
 
   function renderSortIcon(columnKey: FixedTransactionSortKey) {
     if (sortKey !== columnKey) {
-      return <ArrowUpDown size={14} className="text-gray-500" />;
+      return <ArrowUpDown size={14} className="text-text-subtle" />;
     }
 
     if (sortDirection === 'asc') {
@@ -285,7 +285,7 @@ function FixedTransactionsPageInner() {
 
       <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold text-white">Transações Fixas</h1>
+          <h1 className="text-2xl font-semibold text-text">Transações Fixas</h1>
           <InfoModalButton
             modalTitle="Informações sobre transações fixas"
             buttonLabel="Ver informações sobre transações fixas"
@@ -319,9 +319,9 @@ function FixedTransactionsPageInner() {
       </div>
 
       <Card>
-        <div className="mb-4 grid grid-cols-1 gap-4 border-b border-gray-700 pb-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,360px)_minmax(280px,420px)_1fr]">
+        <div className="mb-4 grid grid-cols-1 gap-4 border-b border-border pb-4 md:grid-cols-2 xl:grid-cols-[minmax(240px,360px)_minmax(280px,420px)_1fr]">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Tipo</label>
+            <label className="mb-1 block text-sm font-medium text-text-muted">Tipo</label>
             <MultiSelect
               options={FIXED_TRANSACTION_TYPE_OPTIONS}
               values={selectedTypes}
@@ -332,7 +332,7 @@ function FixedTransactionsPageInner() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Origem das fixas</label>
+            <label className="mb-1 block text-sm font-medium text-text-muted">Origem das fixas</label>
             <MultiSelect
               options={FIXED_TRANSACTION_ACCOUNT_SCOPE_OPTIONS}
               values={selectedAccountScopes}
@@ -347,11 +347,11 @@ function FixedTransactionsPageInner() {
         </div>
 
         {loading ? (
-          <div className="py-8 text-center text-gray-400">Carregando transações fixas...</div>
+          <div className="py-8 text-center text-text-muted">Carregando transações fixas...</div>
         ) : items.length === 0 ? (
           <div className="py-12 text-center">
-            <Repeat size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="mb-4 text-gray-400">Nenhuma transação fixa cadastrada</p>
+            <Repeat size={42} className="mx-auto mb-3 text-text-subtle" />
+            <p className="mb-4 text-text-muted">Nenhuma transação fixa cadastrada</p>
             <Link href="/financial/fixed-transactions/new">
               <Button variant="accent" className="inline-flex items-center gap-2">
                 <Plus size={16} />
@@ -361,20 +361,20 @@ function FixedTransactionsPageInner() {
           </div>
         ) : filteredItems.length === 0 ? (
           <div className="py-12 text-center">
-            <Repeat size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="text-gray-400">Nenhuma transação fixa encontrada para os filtros selecionados</p>
+            <Repeat size={42} className="mx-auto mb-3 text-text-subtle" />
+            <p className="text-text-muted">Nenhuma transação fixa encontrada para os filtros selecionados</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+              <thead className="bg-elevated text-xs uppercase text-text-muted">
                 <tr>
                   <th className="w-24 px-4 py-3 text-center">Ações</th>
                   <th className="px-4 py-3 text-left">
                     <button
                       type="button"
                       onClick={() => handleSortChange('description')}
-                      className="inline-flex items-center gap-1 transition-colors hover:text-white"
+                      className="inline-flex items-center gap-1 transition-colors hover:text-text"
                       aria-label={`Ordenar por descrição ${
                         sortKey === 'description' && sortDirection === 'asc'
                           ? 'decrescente'
@@ -390,7 +390,7 @@ function FixedTransactionsPageInner() {
                     <button
                       type="button"
                       onClick={() => handleSortChange('amount')}
-                      className="inline-flex items-center gap-1 transition-colors hover:text-white"
+                      className="inline-flex items-center gap-1 transition-colors hover:text-text"
                       aria-label={`Ordenar por valor ${
                         sortKey === 'amount' && sortDirection === 'asc'
                           ? 'decrescente'
@@ -408,7 +408,7 @@ function FixedTransactionsPageInner() {
                     <button
                       type="button"
                       onClick={() => handleSortChange('nextDueDate')}
-                      className="inline-flex items-center gap-1 transition-colors hover:text-white"
+                      className="inline-flex items-center gap-1 transition-colors hover:text-text"
                       aria-label={`Ordenar por próximo vencimento ${
                         sortKey === 'nextDueDate' && sortDirection === 'asc'
                           ? 'decrescente'
@@ -426,13 +426,13 @@ function FixedTransactionsPageInner() {
                 {sortedItems.map((item) => (
                   <tr
                     key={item.id}
-                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${!item.isActive ? 'opacity-60' : ''}`}
+                    className={`border-b border-border hover:bg-elevated ${!item.isActive ? 'opacity-60' : ''}`}
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-center gap-1">
                         <Link
                           href={`/financial/fixed-transactions/${item.id}`}
-                          className="p-1 text-gray-300 transition-colors hover:text-accent"
+                          className="p-1 text-text-muted transition-colors hover:text-accent"
                           title="Editar"
                         >
                           <Edit2 size={14} />
@@ -440,7 +440,7 @@ function FixedTransactionsPageInner() {
                         {item.isActive && (
                           <button
                             onClick={() => void handleCancelFixed(item)}
-                            className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                            className="p-1 text-text-muted transition-colors hover:text-tone-red"
                             title="Cancelar"
                           >
                             <Ban size={14} />
@@ -449,7 +449,7 @@ function FixedTransactionsPageInner() {
                         {item.canDelete && (
                           <button
                             onClick={() => void handleDeleteFixed(item)}
-                            className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                            className="p-1 text-text-muted transition-colors hover:text-tone-red"
                             title="Excluir"
                           >
                             <Trash2 size={14} />
@@ -457,13 +457,13 @@ function FixedTransactionsPageInner() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 font-medium text-white">{item.description}</td>
+                    <td className="px-4 py-3 font-medium text-text">{item.description}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs ${
                           item.type === 'INCOME'
-                            ? 'bg-green-900 text-green-300'
-                            : 'bg-red-900 text-red-300'
+                            ? 'bg-tone-green-soft text-tone-green'
+                            : 'bg-tone-red-soft text-tone-red'
                         }`}
                       >
                         {item.type === 'INCOME' ? (
@@ -474,26 +474,26 @@ function FixedTransactionsPageInner() {
                         {item.type === 'INCOME' ? 'Receita' : 'Despesa'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right text-white">
+                    <td className="px-4 py-3 text-right text-text">
                       {formatCurrency(item.amount)}
                     </td>
-                    <td className="px-4 py-3 text-center text-gray-300">
+                    <td className="px-4 py-3 text-center text-text-muted">
                       {formatCompetenceLabel(item)}
                     </td>
-                    <td className="px-4 py-3 text-gray-300">
+                    <td className="px-4 py-3 text-text-muted">
                       {formatAccountDisplayName(item.fromAccount || item.toAccount)}
                     </td>
-                    <td className="px-4 py-3 text-gray-300">{item.category?.name || '-'}</td>
-                    <td className="px-4 py-3 text-gray-300">
+                    <td className="px-4 py-3 text-text-muted">{item.category?.name || '-'}</td>
+                    <td className="px-4 py-3 text-text-muted">
                       <div className="flex items-center gap-2">
-                        <CalendarDays size={14} className="text-gray-500" />
+                        <CalendarDays size={14} className="text-text-subtle" />
                         {formatDate(item.nextDueDate)}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span
                         className={`rounded-full px-2 py-1 text-xs ${
-                          item.isActive ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-300'
+                          item.isActive ? 'bg-tone-green-soft text-tone-green' : 'bg-elevated text-text-muted'
                         }`}
                       >
                         {item.isActive ? 'Ativa' : 'Inativa'}

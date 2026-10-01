@@ -614,8 +614,8 @@ function CreditCardPurchasesPageInner() {
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Compras Parceladas no Cartao</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-semibold text-text">Compras Parceladas no Cartao</h1>
+          <p className="mt-1 text-sm text-text-muted">
             Visualize apenas compras parceladas, com detalhe das parcelas e vencimentos por cartao.
           </p>
         </div>
@@ -659,7 +659,7 @@ function CreditCardPurchasesPageInner() {
             }
             disabled={categoriesLoading || !hasCategoryOptions}
           />
-          <div className="rounded-lg border border-gray-700 bg-[#12161d] px-4 py-3 text-sm text-gray-300">
+          <div className="rounded-lg border border-border bg-elevated px-4 py-3 text-sm text-text-muted">
             <div>{selectedCardsSummary}</div>
             <div className="mt-2">{selectedCategoriesSummary}</div>
           </div>
@@ -668,7 +668,7 @@ function CreditCardPurchasesPageInner() {
 
       {filtersLoading ? (
         <Card>
-          <div className="flex items-center justify-center gap-3 py-12 text-gray-300">
+          <div className="flex items-center justify-center gap-3 py-12 text-text-muted">
             <Loader2 size={18} className="animate-spin" />
             Carregando filtros...
           </div>
@@ -676,15 +676,15 @@ function CreditCardPurchasesPageInner() {
       ) : cards.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
-            <CreditCard size={48} className="mx-auto mb-4 text-gray-500" />
-            <p className="text-gray-400">Nenhum cartao de credito disponivel.</p>
+            <CreditCard size={48} className="mx-auto mb-4 text-text-subtle" />
+            <p className="text-text-muted">Nenhum cartao de credito disponivel.</p>
           </div>
         </Card>
       ) : selectedCardIds.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
-            <CreditCard size={48} className="mx-auto mb-4 text-gray-500" />
-            <p className="text-gray-300">
+            <CreditCard size={48} className="mx-auto mb-4 text-text-subtle" />
+            <p className="text-text-muted">
               Selecione ao menos um cartao para ver as compras parceladas.
             </p>
           </div>
@@ -692,15 +692,15 @@ function CreditCardPurchasesPageInner() {
       ) : hasCategoryOptions && selectedCategoryIds.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
-            <Receipt size={48} className="mx-auto mb-4 text-gray-500" />
-            <p className="text-gray-300">
+            <Receipt size={48} className="mx-auto mb-4 text-text-subtle" />
+            <p className="text-text-muted">
               Selecione ao menos uma categoria para ver as compras parceladas.
             </p>
           </div>
         </Card>
       ) : loading ? (
         <Card>
-          <div className="flex items-center justify-center gap-3 py-12 text-gray-300">
+          <div className="flex items-center justify-center gap-3 py-12 text-text-muted">
             <Loader2 size={18} className="animate-spin" />
             Carregando compras parceladas...
           </div>
@@ -708,8 +708,8 @@ function CreditCardPurchasesPageInner() {
       ) : purchaseGroupsByCard.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
-            <Receipt size={48} className="mx-auto mb-4 text-gray-500" />
-            <p className="text-gray-300">
+            <Receipt size={48} className="mx-auto mb-4 text-text-subtle" />
+            <p className="text-text-muted">
               Nenhuma compra parcelada encontrada para os filtros selecionados.
             </p>
           </div>
@@ -916,13 +916,13 @@ function CreditCardPurchasesPageInner() {
                                   <td className="px-4 py-4">
                                     {purchase.category ? (
                                       <span
-                                        className="inline-flex rounded-full px-2 py-1 text-xs font-medium text-white"
+                                        className="inline-flex rounded-full px-2 py-1 text-xs font-medium text-text"
                                         style={{ backgroundColor: purchase.category.color }}
                                       >
                                         {purchase.category.name}
                                       </span>
                                     ) : (
-                                      <span className="text-gray-500">Sem categoria</span>
+                                      <span className="text-text-subtle">Sem categoria</span>
                                     )}
                                   </td>
                                   <td className="px-4 py-4 text-right">
@@ -930,7 +930,7 @@ function CreditCardPurchasesPageInner() {
                                       <Link href={`/financial/transactions/${purchase.representativeTransactionId}`}>
                                         <button
                                           type="button"
-                                        className="p-1 text-gray-300 transition-colors hover:text-accent"
+                                        className="p-1 text-text-muted transition-colors hover:text-accent"
                                         title="Abrir compra"
                                         aria-label="Abrir compra"
                                       >
@@ -942,7 +942,7 @@ function CreditCardPurchasesPageInner() {
                                           type="button"
                                           onClick={() => handleDeletePurchase(purchase)}
                                           disabled={isDeletingPurchase}
-                                          className="p-1 text-gray-300 transition-colors hover:text-red-400 disabled:cursor-not-allowed disabled:text-gray-600"
+                                          className="p-1 text-text-muted transition-colors hover:text-tone-red disabled:cursor-not-allowed disabled:text-text-subtle"
                                           title={isDeletingPurchase ? 'Excluindo compra' : 'Excluir compra'}
                                           aria-label={isDeletingPurchase ? 'Excluindo compra' : 'Excluir compra'}
                                         >

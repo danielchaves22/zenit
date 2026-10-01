@@ -215,7 +215,7 @@ export default function AccountForm({
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-text">
             {mode === 'create' ? 'Nova Conta Financeira' : 'Editar Conta Financeira'}
           </h1>
         </div>
@@ -264,7 +264,7 @@ export default function AccountForm({
               />
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">
+                <label className="mb-1 block text-sm font-medium text-text-muted">
                   Tipo de Conta
                 </label>
                 <select
@@ -275,7 +275,7 @@ export default function AccountForm({
                       type: event.target.value as AccountType
                     }))
                   }
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   disabled={saving}
                 >
                   <option value="CHECKING">Conta Corrente</option>
@@ -322,7 +322,7 @@ export default function AccountForm({
             </div>
 
             {preserveExistingBank && (
-              <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+              <div className="rounded-lg border border-amber-500/40 bg-tone-amber-soft px-4 py-3 text-sm text-tone-amber">
                 O banco atual{bankDisplayName ? ` "${bankDisplayName}"` : ''} não está disponível na lista.
                 O vínculo será mantido até você selecionar outro banco ou escolher "Sem banco definido".
               </div>
@@ -337,10 +337,10 @@ export default function AccountForm({
                   onChange={(event) =>
                     setFormData((prev) => ({ ...prev, isActive: event.target.checked }))
                   }
-                  className="h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-accent focus:ring-accent"
+                  className="h-4 w-4 rounded border-border bg-background text-accent focus:ring-accent"
                   disabled={saving}
                 />
-                <label htmlFor="account-is-active" className="text-sm text-gray-300">
+                <label htmlFor="account-is-active" className="text-sm text-text-muted">
                   Conta ativa
                 </label>
               </div>
@@ -356,19 +356,19 @@ export default function AccountForm({
                       allowNegativeBalance: event.target.checked
                     }))
                   }
-                  className="mt-0.5 h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-accent focus:ring-accent"
+                  className="mt-0.5 h-4 w-4 rounded border-border bg-background text-accent focus:ring-accent"
                   disabled={saving}
                 />
                 <div className="flex-1">
                   <label
                     htmlFor="allow-negative-balance"
-                    className="cursor-pointer text-sm text-gray-300"
+                    className="cursor-pointer text-sm text-text-muted"
                   >
                     Permitir saldo negativo
                   </label>
                   <div className="mt-1 flex items-center gap-1">
-                    <HelpCircle size={12} className="text-gray-400" />
-                    <span className="text-xs text-gray-400">
+                    <HelpCircle size={12} className="text-text-muted" />
+                    <span className="text-xs text-text-muted">
                       Permite que a conta fique negativa, como em cheque especial.
                     </span>
                   </div>
@@ -381,8 +381,8 @@ export default function AccountForm({
         <Card>
           <div className="space-y-4">
             <div>
-              <div className="text-sm font-medium text-white">Resumo</div>
-              <div className="mt-1 text-sm text-gray-400">
+              <div className="text-sm font-medium text-text">Resumo</div>
+              <div className="mt-1 text-sm text-text-muted">
                 {mode === 'create'
                   ? 'A conta será criada pronta para uso em lançamentos e relatórios.'
                   : 'Ajustes de saldo e conta padrão continuam disponíveis na listagem.'}
@@ -390,18 +390,18 @@ export default function AccountForm({
             </div>
 
             {bankDisplayName && (
-              <div className="flex items-center gap-3 rounded-lg border border-gray-700 bg-[#11161d] p-4">
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-elevated p-4">
                 <BankLogo bank={previewBank} bankName={bankDisplayName} size="lg" />
                 <div className="min-w-0">
-                  <div className="text-xs uppercase tracking-wide text-gray-400">Banco</div>
-                  <div className="mt-1 break-words font-semibold text-white">{bankDisplayName}</div>
+                  <div className="text-xs uppercase tracking-wide text-text-muted">Banco</div>
+                  <div className="mt-1 break-words font-semibold text-text">{bankDisplayName}</div>
                 </div>
               </div>
             )}
 
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Tipo</div>
-              <div className="mt-2 text-xl font-semibold text-white">
+            <div className="rounded-lg border border-border bg-elevated p-4">
+              <div className="text-xs uppercase tracking-wide text-text-muted">Tipo</div>
+              <div className="mt-2 text-xl font-semibold text-text">
                 {formData.type === 'CHECKING'
                   ? 'Conta Corrente'
                   : formData.type === 'SAVINGS'
@@ -413,23 +413,23 @@ export default function AccountForm({
             </div>
 
             {mode === 'create' ? (
-              <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400">Saldo inicial</div>
-                <div className="mt-2 text-xl font-semibold text-white">
+              <div className="rounded-lg border border-border bg-elevated p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted">Saldo inicial</div>
+                <div className="mt-2 text-xl font-semibold text-text">
                   {formatCurrency(formData.initialBalance)}
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400">Saldo atual</div>
-                <div className="mt-2 text-xl font-semibold text-white">
+              <div className="rounded-lg border border-border bg-elevated p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted">Saldo atual</div>
+                <div className="mt-2 text-xl font-semibold text-text">
                   {existingAccount ? formatCurrency(existingAccount.balance) : '-'}
                 </div>
               </div>
             )}
 
             {mode === 'edit' && formData.allowNegativeBalance && (
-              <div className="rounded-lg border border-blue-700/60 bg-blue-900/20 p-4 text-sm text-blue-200">
+              <div className="rounded-lg border border-tone-blue/25 bg-tone-blue-soft p-4 text-sm text-tone-blue">
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={16} className="mt-0.5" />
                   <span>Esta conta aceita saldo negativo autorizado.</span>

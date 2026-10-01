@@ -58,14 +58,14 @@ export function Modal({
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
-            className="bg-surface rounded-2xl shadow-2xl border border-gray-700 overflow-hidden"
+            className="bg-surface rounded-2xl shadow-2xl border border-border overflow-hidden"
           >
             <div className="px-6 pt-6 pb-4 flex items-center justify-between">
-              <h3 id={titleId} className="text-lg font-semibold text-white">{title}</h3>
+              <h3 id={titleId} className="text-lg font-semibold text-text">{title}</h3>
               <button
                 onClick={onClose}
                 disabled={loading}
-                className="p-1 text-gray-400 hover:text-white transition-colors rounded-full hover:bg-gray-800"
+                className="p-1 text-text-muted hover:text-text transition-colors rounded-full hover:bg-elevated"
                 aria-label="Fechar"
               >
                 <X size={18} />
@@ -75,7 +75,7 @@ export function Modal({
             <div className="px-6 pb-6">{children}</div>
 
             {footer && (
-              <div className="px-6 py-4 bg-elevated border-t border-gray-700">
+              <div className="px-6 py-4 bg-elevated border-t border-border">
                 {footer}
               </div>
             )}

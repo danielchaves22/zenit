@@ -62,16 +62,16 @@ function formatBalance(balance: string, allowNegativeBalance: boolean): React.Re
 
   let className = 'font-medium';
   if (isNegative) {
-    className += allowNegativeBalance ? ' text-orange-400' : ' text-red-400';
+    className += allowNegativeBalance ? ' text-tone-orange' : ' text-tone-red';
   } else {
-    className += ' text-green-400';
+    className += ' text-tone-green';
   }
 
   return (
     <span className={className}>
       {formatCurrency(numericBalance)}
       {isNegative && allowNegativeBalance && (
-        <span className="ml-1 text-xs text-orange-300">(autorizado)</span>
+        <span className="ml-1 text-xs text-tone-orange">(autorizado)</span>
       )}
     </span>
   );
@@ -338,7 +338,7 @@ function AccountsPageInner() {
       />
 
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-white">Contas Financeiras</h1>
+        <h1 className="text-2xl font-semibold text-text">Contas Financeiras</h1>
         <div className="flex gap-3">
           <Link href="/financial/credit-cards">
             <Button variant="outline" className="flex items-center gap-2">
@@ -358,11 +358,11 @@ function AccountsPageInner() {
       <Card className="mb-6">
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Tipo de Conta</label>
+            <label className="mb-1 block text-sm font-medium text-text-muted">Tipo de Conta</label>
             <select
               value={filterType}
               onChange={(event) => setFilterType(event.target.value)}
-              className="rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+              className="rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
             >
               <option value="">Todos os tipos</option>
               <option value="CHECKING">Conta Corrente</option>
@@ -373,11 +373,11 @@ function AccountsPageInner() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Status</label>
+            <label className="mb-1 block text-sm font-medium text-text-muted">Status</label>
             <select
               value={filterStatus}
               onChange={(event) => setFilterStatus(event.target.value)}
-              className="rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+              className="rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
             >
               <option value="">Todos</option>
               <option value="true">Ativas</option>
@@ -396,8 +396,8 @@ function AccountsPageInner() {
           </Button>
 
           <div className="ml-auto text-right">
-            <div className="text-sm text-gray-400">Saldo Total (Contas Ativas)</div>
-            <div className="text-xl font-bold text-white">{formatCurrency(totalBalance)}</div>
+            <div className="text-sm text-text-muted">Saldo Total (Contas Ativas)</div>
+            <div className="text-xl font-bold text-text">{formatCurrency(totalBalance)}</div>
           </div>
         </div>
       </Card>
@@ -406,20 +406,20 @@ function AccountsPageInner() {
         {loading ? (
           <div className="space-y-3">
             {[...Array(5)].map((_, index) => (
-              <Skeleton key={index} className="h-12 w-full rounded bg-[#1e2126]" />
+              <Skeleton key={index} className="h-12 w-full rounded bg-background" />
             ))}
           </div>
         ) : error ? (
           <div className="py-10 text-center">
-            <div className="mb-4 text-red-400">{error}</div>
+            <div className="mb-4 text-tone-red">{error}</div>
             <Button variant="outline" onClick={() => void fetchAccounts()}>
               Tentar Novamente
             </Button>
           </div>
         ) : filteredAccounts.length === 0 ? (
           <div className="py-10 text-center">
-            <CreditCard size={48} className="mx-auto mb-4 text-gray-400" />
-            <p className="mb-4 text-gray-400">Nenhuma conta encontrada</p>
+            <CreditCard size={48} className="mx-auto mb-4 text-text-muted" />
+            <p className="mb-4 text-text-muted">Nenhuma conta encontrada</p>
             <Link href="/financial/accounts/new">
               <Button variant="accent" className="inline-flex items-center gap-2">
                 <Plus size={16} />
@@ -430,7 +430,7 @@ function AccountsPageInner() {
         ) : (
           <div className="overflow-x-auto md:overflow-visible">
             <table className="w-full">
-              <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+              <thead className="bg-elevated text-xs uppercase text-text-muted">
                 <tr>
                   <th className="w-40 px-4 py-3 text-center">Acoes</th>
                   <th className="px-4 py-3 text-left">Conta</th>
@@ -445,7 +445,7 @@ function AccountsPageInner() {
                 {filteredAccounts.map((account) => (
                   <tr
                     key={account.id}
-                    className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+                    className={`border-b border-border hover:bg-elevated ${
                       !account.isActive ? 'opacity-60' : ''
                     }`}
                   >
@@ -465,7 +465,7 @@ function AccountsPageInner() {
                                 currentId === account.id ? null : account.id
                               )
                             }
-                            className="flex items-center gap-1 rounded border border-gray-700 px-2 py-1 text-xs text-gray-200 transition-colors hover:border-emerald-500 hover:text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-text transition-colors hover:border-emerald-500 hover:text-tone-emerald disabled:cursor-not-allowed disabled:opacity-50"
                             title="Nova transacao nesta conta"
                             aria-haspopup="menu"
                             aria-expanded={openTransactionMenuAccountId === account.id}
@@ -476,17 +476,17 @@ function AccountsPageInner() {
                           </button>
 
                           {openTransactionMenuAccountId === account.id && (
-                            <div className="absolute left-0 top-full z-50 mt-2 min-w-[160px] rounded-lg border border-gray-700 bg-[#151921] p-1 shadow-2xl">
+                            <div className="absolute left-0 top-full z-50 mt-2 min-w-[160px] rounded-lg border border-border bg-surface p-1 shadow-2xl">
                               <Link
                                 href={buildTransactionCreateHref(account.id, 'EXPENSE')}
-                                className="block rounded px-3 py-2 text-sm text-gray-200 transition-colors hover:bg-[#1f2937] hover:text-red-300"
+                                className="block rounded px-3 py-2 text-sm text-text transition-colors hover:bg-elevated hover:text-tone-red"
                                 onClick={() => setOpenTransactionMenuAccountId(null)}
                               >
                                 Nova Despesa
                               </Link>
                               <Link
                                 href={buildTransactionCreateHref(account.id, 'INCOME')}
-                                className="block rounded px-3 py-2 text-sm text-gray-200 transition-colors hover:bg-[#1f2937] hover:text-green-300"
+                                className="block rounded px-3 py-2 text-sm text-text transition-colors hover:bg-elevated hover:text-tone-green"
                                 onClick={() => setOpenTransactionMenuAccountId(null)}
                               >
                                 Nova Receita
@@ -498,8 +498,8 @@ function AccountsPageInner() {
                           onClick={() => void handleSetDefault(account)}
                           className={`p-1 transition-colors ${
                             account.isDefault
-                              ? 'text-yellow-400 hover:text-yellow-300'
-                              : 'text-gray-300 hover:text-yellow-400'
+                              ? 'text-tone-yellow hover:text-tone-yellow'
+                              : 'text-text-muted hover:text-tone-yellow'
                           }`}
                           title={account.isDefault ? 'Remover como padrao' : 'Definir como padrao'}
                           disabled={formLoading || !account.isActive}
@@ -512,7 +512,7 @@ function AccountsPageInner() {
                         </button>
                         <button
                           onClick={() => openBalanceModal(account)}
-                          className="p-1 text-gray-300 transition-colors hover:text-blue-400"
+                          className="p-1 text-text-muted transition-colors hover:text-tone-blue"
                           title="Ajustar saldo"
                           disabled={formLoading}
                         >
@@ -523,7 +523,7 @@ function AccountsPageInner() {
                             pathname: '/financial/transactions',
                             query: { accountId: account.id }
                           }}
-                          className="p-1 text-gray-300 transition-colors hover:text-emerald-400"
+                          className="p-1 text-text-muted transition-colors hover:text-tone-emerald"
                           title="Ver transacoes da conta"
                         >
                           <Receipt size={16} />
@@ -531,7 +531,7 @@ function AccountsPageInner() {
                         {['CHECKING', 'SAVINGS'].includes(account.type) && account.purpose !== 'BUDGET' && (
                           <Link
                             href={`/financial/accounts/${account.id}/reconciliation`}
-                            className="inline-flex items-center gap-1 rounded border border-gray-700 px-2 py-1 text-xs text-gray-200 hover:border-blue-500 hover:text-blue-300"
+                            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-text hover:border-blue-500 hover:text-tone-blue"
                             title={`Conciliar ${account.name}`}
                           >
                             <Scale size={14} /> Conciliar
@@ -539,14 +539,14 @@ function AccountsPageInner() {
                         )}
                         <Link
                           href={`/financial/accounts/${account.id}`}
-                          className="p-1 text-gray-300 transition-colors hover:text-[#2563eb]"
+                          className="p-1 text-text-muted transition-colors hover:text-accent"
                           title="Editar"
                         >
                           <Edit2 size={16} />
                         </Link>
                         <button
                           onClick={() => void handleDelete(account)}
-                          className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                          className="p-1 text-text-muted transition-colors hover:text-tone-red"
                           title="Excluir"
                           disabled={formLoading}
                         >
@@ -558,22 +558,22 @@ function AccountsPageInner() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
                         <BankLogo bank={account.bank} bankName={account.bankName} size="sm" />
-                        <div className="font-medium text-white">
+                        <div className="font-medium text-text">
                           {account.name}
                           {account.isDefault && (
-                            <Star size={12} className="ml-2 inline fill-current text-yellow-400" />
+                            <Star size={12} className="ml-2 inline fill-current text-tone-yellow" />
                           )}
                         </div>
                       </div>
                     </td>
 
-                    <td className="px-4 py-3 text-gray-300">{getAccountTypeLabel(account.type)}</td>
+                    <td className="px-4 py-3 text-text-muted">{getAccountTypeLabel(account.type)}</td>
 
-                    <td className="px-4 py-3 text-gray-300">
+                    <td className="px-4 py-3 text-text-muted">
                       <div>
                         {(account.bank?.name || account.bankName) && <div>{account.bank?.name || account.bankName}</div>}
                         {account.accountNumber && (
-                          <div className="text-xs text-gray-500">{account.accountNumber}</div>
+                          <div className="text-xs text-text-subtle">{account.accountNumber}</div>
                         )}
                         {!account.bank?.name && !account.bankName && !account.accountNumber && '-'}
                       </div>
@@ -587,7 +587,7 @@ function AccountsPageInner() {
                       <div className="flex items-center justify-center gap-2">
                         {account.allowNegativeBalance && (
                           <div
-                            className="flex items-center gap-1 rounded border border-blue-600 bg-blue-900/30 px-2 py-1 text-blue-300"
+                            className="flex items-center gap-1 rounded border border-blue-600 bg-tone-blue-soft px-2 py-1 text-tone-blue"
                             title="Permite saldo negativo"
                           >
                             <MinusCircle size={12} />
@@ -596,7 +596,7 @@ function AccountsPageInner() {
                         )}
                         {parseFloat(account.balance) < 0 && !account.allowNegativeBalance && (
                           <div
-                            className="flex items-center gap-1 rounded border border-red-600 bg-red-900/30 px-2 py-1 text-red-300"
+                            className="flex items-center gap-1 rounded border border-red-600 bg-tone-red-soft px-2 py-1 text-tone-red"
                             title="Saldo negativo nao autorizado"
                           >
                             <AlertTriangle size={12} />
@@ -609,7 +609,7 @@ function AccountsPageInner() {
                     <td className="px-4 py-3 text-center">
                       <span
                         className={`rounded-full px-2 py-1 text-xs font-medium ${
-                          account.isActive ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'
+                          account.isActive ? 'bg-tone-green-soft text-tone-green' : 'bg-tone-red-soft text-tone-red'
                         }`}
                       >
                         {account.isActive ? 'Ativa' : 'Inativa'}
@@ -625,14 +625,14 @@ function AccountsPageInner() {
 
       {showBalanceModal && adjustingAccount && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-lg border border-gray-700 bg-[#151921]">
-            <div className="border-b border-gray-700 p-6">
+          <div className="w-full max-w-md rounded-lg border border-border bg-surface">
+            <div className="border-b border-border p-6">
               <div className="flex items-center gap-3">
-                <AlertTriangle size={20} className="text-yellow-400" />
-                <h3 className="text-lg font-medium text-white">Ajustar Saldo da Conta</h3>
+                <AlertTriangle size={20} className="text-tone-yellow" />
+                <h3 className="text-lg font-medium text-text">Ajustar Saldo da Conta</h3>
               </div>
-              <p className="mt-2 text-sm text-gray-400">Conta: {adjustingAccount.name}</p>
-              <p className="text-sm text-gray-400">
+              <p className="mt-2 text-sm text-text-muted">Conta: {adjustingAccount.name}</p>
+              <p className="text-sm text-text-muted">
                 Saldo atual: {formatCurrency(adjustingAccount.balance)}
               </p>
             </div>
@@ -647,7 +647,7 @@ function AccountsPageInner() {
               />
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">
+                <label className="mb-1 block text-sm font-medium text-text-muted">
                   Motivo do Ajuste *
                 </label>
                 <textarea
@@ -656,16 +656,16 @@ function AccountsPageInner() {
                     setBalanceData((prev) => ({ ...prev, reason: event.target.value }))
                   }
                   rows={3}
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   placeholder="Ex: conciliacao bancaria"
                   required
                   disabled={formLoading}
                 />
               </div>
 
-              <div className="rounded border border-blue-600/40 bg-blue-900/20 p-3">
-                <div className="text-sm font-medium text-blue-100">Previa do ajuste</div>
-                <div className="mt-2 text-sm text-blue-100/90">
+              <div className="rounded border border-blue-600/40 bg-tone-blue-soft p-3">
+                <div className="text-sm font-medium text-tone-blue">Previa do ajuste</div>
+                <div className="mt-2 text-sm text-tone-blue">
                   {balanceAdjustmentPreview.type === 'INCOME' &&
                     `Sera criada uma entrada de ${formatCurrency(balanceAdjustmentPreview.amount)}.`}
                   {balanceAdjustmentPreview.type === 'EXPENSE' &&
@@ -675,10 +675,10 @@ function AccountsPageInner() {
                 </div>
               </div>
 
-              <div className="rounded border border-yellow-600 bg-yellow-900/20 p-3">
+              <div className="rounded border border-yellow-600 bg-tone-yellow-soft p-3">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle size={16} className="mt-0.5 text-yellow-400" />
-                  <div className="text-sm text-yellow-300">
+                  <AlertTriangle size={16} className="mt-0.5 text-tone-yellow" />
+                  <div className="text-sm text-tone-yellow">
                     <strong>Atencao:</strong> esta operacao cria uma transacao de ajuste para
                     manter o historico.
                   </div>
@@ -686,7 +686,7 @@ function AccountsPageInner() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-4 border-t border-gray-700 p-6">
+            <div className="flex justify-end gap-4 border-t border-border p-6">
               <Button
                 type="button"
                 variant="outline"

@@ -85,16 +85,16 @@ export default function HabitualExpenseCategories({ onSaved }: { onSaved: () => 
         }
       >
         <div className="max-h-[55vh] space-y-4 overflow-y-auto pr-1">
-          <p className="text-sm text-gray-300">
+          <p className="text-sm text-text-muted">
             Esta seleção fica salva neste espaço financeiro e orienta as estimativas nas análises e
             nos planejamentos. Não altera despesas registradas nem limites de orçamento.
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-text-muted">
             Cada marcação inclui os lançamentos diretamente nessa categoria, em contas e cartões.
             Selecione também as subcategorias que deseja estimar.
           </p>
           {error && (
-            <p role="alert" className="text-red-300">
+            <p role="alert" className="text-tone-red">
               {error}
             </p>
           )}
@@ -102,19 +102,19 @@ export default function HabitualExpenseCategories({ onSaved }: { onSaved: () => 
           {data && (
             <>
               {!data.access.canManage && (
-                <p className="text-sm text-gray-400">
+                <p className="text-sm text-text-muted">
                   Somente gestores podem alterar esta configuração compartilhada.
                 </p>
               )}
-              <label className="block text-sm text-gray-200">
+              <label className="block text-sm text-text">
                 Buscar categoria
                 <input
-                  className="mt-2 w-full rounded border border-gray-700 bg-background p-2"
+                  className="mt-2 w-full rounded border border-border bg-background p-2"
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                 />
               </label>
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-text-muted">
                 {selected.length} categoria(s) selecionada(s). Uma seleção vazia desativa as
                 estimativas habituais.
               </p>
@@ -131,7 +131,7 @@ export default function HabitualExpenseCategories({ onSaved }: { onSaved: () => 
                   .map((item) => (
                     <label
                       key={item.id}
-                      className="flex items-start gap-3 rounded p-2 text-sm text-gray-200"
+                      className="flex items-start gap-3 rounded p-2 text-sm text-text"
                     >
                       <input
                         type="checkbox"

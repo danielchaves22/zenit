@@ -140,7 +140,7 @@ function statusPresentation(status: MonthlyCategoryBudgetStatus) {
   if (status === 'EXCEEDED') {
     return {
       label: 'Ultrapassado',
-      badge: 'border-red-800 bg-red-950/50 text-red-300',
+      badge: 'border-tone-red/25 bg-tone-red-soft text-tone-red',
       bar: 'bg-red-500',
       icon: AlertTriangle
     };
@@ -149,7 +149,7 @@ function statusPresentation(status: MonthlyCategoryBudgetStatus) {
   if (status === 'AT_RISK') {
     return {
       label: 'Em risco',
-      badge: 'border-amber-800 bg-amber-950/50 text-amber-300',
+      badge: 'border-tone-amber/25 bg-tone-amber-soft text-tone-amber',
       bar: 'bg-amber-500',
       icon: TrendingUp
     };
@@ -157,7 +157,7 @@ function statusPresentation(status: MonthlyCategoryBudgetStatus) {
 
   return {
     label: 'Dentro do plano',
-    badge: 'border-emerald-800 bg-emerald-950/50 text-emerald-300',
+    badge: 'border-tone-emerald/25 bg-tone-emerald-soft text-tone-emerald',
     bar: 'bg-emerald-500',
     icon: CheckCircle2
   };
@@ -610,7 +610,7 @@ export function MonthlyCategoryPlanning({
     <>
       <div className="mb-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-white">Planejamento mensal por categoria</h2>
+          <h2 className="text-xl font-semibold text-text">Planejamento mensal por categoria</h2>
           <InfoModalButton
             modalTitle="Sobre o Planejamento Mensal"
             buttonLabel="Ajuda sobre o Planejamento Mensal"
@@ -646,18 +646,18 @@ export function MonthlyCategoryPlanning({
       </div>
 
       {!canManage && (
-        <div className="mb-4 rounded-lg border border-blue-900/70 bg-blue-950/20 px-4 py-3 text-sm text-blue-200">
+        <div className="mb-4 rounded-lg border border-tone-blue/25 bg-tone-blue-soft px-4 py-3 text-sm text-tone-blue">
           Você pode consultar este planejamento. Somente gestores do workspace podem alterá-lo.
         </div>
       )}
-      {plan?.habitualConfigured === false && <p className="mb-4 text-sm text-amber-200">
+      {plan?.habitualConfigured === false && <p className="mb-4 text-sm text-tone-amber">
         Configure as categorias habituais na Análise financeira. Até lá, a previsão inclui apenas gastos realizados e compromissos conhecidos.
       </p>}
 
       {canManage && scenarioDraftNotice && (
-        <div className="mb-4 rounded-lg border border-blue-800/70 bg-blue-950/30 px-4 py-3 text-sm text-blue-200">
+        <div className="mb-4 rounded-lg border border-tone-blue/25 bg-tone-blue-soft px-4 py-3 text-sm text-tone-blue">
           <p>
-            O cenário <strong className="text-white">{scenarioDraftNotice.scenarioLabel}</strong>{' '}
+            O cenário <strong className="text-text">{scenarioDraftNotice.scenarioLabel}</strong>{' '}
             {scenarioDraftNotice.appliedCount > 0 ? (
               <>
                 atualizou {scenarioDraftNotice.appliedCount}{' '}
@@ -669,7 +669,7 @@ export function MonthlyCategoryPlanning({
             Nada foi salvo ainda.
           </p>
           {scenarioDraftNotice.unchangedCount > 0 && (
-            <p className="mt-1 text-xs text-blue-200/80">
+            <p className="mt-1 text-xs text-tone-blue">
               {scenarioDraftNotice.unchangedCount}{' '}
               {scenarioDraftNotice.unchangedCount === 1
                 ? 'categoria já estava'
@@ -678,7 +678,7 @@ export function MonthlyCategoryPlanning({
             </p>
           )}
           {scenarioDraftNotice.skippedCategoryNames.length > 0 && (
-            <p className="mt-1 text-xs text-blue-200/80">
+            <p className="mt-1 text-xs text-tone-blue">
               Revise manualmente: {scenarioDraftNotice.skippedCategoryNames.join(', ')}{' '}
               {scenarioDraftNotice.skippedCategoryNames.length === 1
                 ? 'não pôde ser aplicada'
@@ -690,7 +690,7 @@ export function MonthlyCategoryPlanning({
       )}
 
       {canManage && isDirty && !scenarioDraftNotice && (
-        <div className="mb-4 rounded-lg border border-amber-800/70 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+        <div className="mb-4 rounded-lg border border-tone-amber/25 bg-tone-amber-soft px-4 py-3 text-sm text-tone-amber">
           Há alterações no rascunho. Os indicadores definitivos serão recalculados ao salvar.
         </div>
       )}
@@ -730,7 +730,7 @@ export function MonthlyCategoryPlanning({
               className="!mb-0"
             />
             <div>
-              <label htmlFor="monthly-budget-kind" className="mb-1 block text-sm font-medium text-gray-300">
+              <label htmlFor="monthly-budget-kind" className="mb-1 block text-sm font-medium text-text-muted">
                 Tipo
               </label>
               <select
@@ -742,14 +742,14 @@ export function MonthlyCategoryPlanning({
                     kind: event.target.value as MonthlyCategoryBudgetKind
                   }))
                 }
-                className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
+                className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text focus:border-accent focus:outline-none focus:ring"
               >
                 <option value="ONE_TIME">Limite específico deste mês</option>
                 <option value="FIXED_MONTHLY">Limite mensal contínuo</option>
               </select>
             </div>
             <div>
-              <label htmlFor="monthly-budget-start-month" className="mb-1 block text-sm font-medium text-gray-300">
+              <label htmlFor="monthly-budget-start-month" className="mb-1 block text-sm font-medium text-text-muted">
                 {creationDraft.kind === 'FIXED_MONTHLY' ? 'Começa em' : 'Mês do planejamento'}
               </label>
               <select
@@ -764,7 +764,7 @@ export function MonthlyCategoryPlanning({
                     categoryId: ''
                   }));
                 }}
-                className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
+                className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text focus:border-accent focus:outline-none focus:ring"
               >
                 {monthOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -791,7 +791,7 @@ export function MonthlyCategoryPlanning({
             </Button>
           </div>
           {selectedCreationCategory && (selectedCreationCategory._count?.children || 0) > 0 && (
-            <label className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+            <label className="mt-3 flex items-center gap-2 text-xs text-text-muted">
               <input
                 type="checkbox"
                 checked={creationDraft.includeChildren}
@@ -801,7 +801,7 @@ export function MonthlyCategoryPlanning({
                     includeChildren: event.target.checked
                   }))
                 }
-                className="rounded border-gray-600 bg-[#1e2126]"
+                className="rounded border-border-strong bg-background"
               />
               Incluir subcategorias deste grupo
             </label>
@@ -812,9 +812,9 @@ export function MonthlyCategoryPlanning({
       {draft.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
-            <Target size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="mb-2 text-gray-300">Nenhuma categoria planejada neste mês</p>
-            <p className="text-sm text-gray-500">
+            <Target size={42} className="mx-auto mb-3 text-text-subtle" />
+            <p className="mb-2 text-text-muted">Nenhuma categoria planejada neste mês</p>
+            <p className="text-sm text-text-subtle">
               Adicione apenas os gastos que deseja controlar. Não é necessário orçar todas as categorias.
             </p>
           </div>
@@ -847,19 +847,19 @@ export function MonthlyCategoryPlanning({
 
           <Card>
             <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-              <div className="text-gray-400">
+              <div className="text-text-muted">
                 Realizado + comprometido:{' '}
-                <span className="font-semibold text-white">{formatMoney(knownTotal)}</span>
+                <span className="font-semibold text-text">{formatMoney(knownTotal)}</span>
               </div>
-              <div className="text-gray-400">
+              <div className="text-text-muted">
                 Tendência do mês:{' '}
-                <span className={forecastVariance < 0 ? 'font-semibold text-red-300' : 'font-semibold text-emerald-300'}>
+                <span className={forecastVariance < 0 ? 'font-semibold text-tone-red' : 'font-semibold text-tone-emerald'}>
                   {formatMoney(draftSummary.forecast)}
                 </span>
               </div>
-              <div className="text-gray-400">
+              <div className="text-text-muted">
                 Alertas:{' '}
-                <span className="font-semibold text-white">
+                <span className="font-semibold text-text">
                   {draftSummary.exceeded} ultrapassado(s), {draftSummary.atRisk} em risco
                 </span>
               </div>
@@ -931,17 +931,17 @@ function CategoryBudgetRow({
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-700 bg-[#11161d]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-elevated">
               <CategoryIcon icon={category.icon} color={category.color} size={20} />
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="truncate font-semibold text-white">{category.name}</h3>
+                <h3 className="truncate font-semibold text-text">{category.name}</h3>
                 <span
                   className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
                     isRecurring
-                      ? 'border-blue-800 bg-blue-950/40 text-blue-300'
-                      : 'border-gray-700 bg-gray-900/50 text-gray-400'
+                      ? 'border-tone-blue/25 bg-tone-blue-soft text-tone-blue'
+                      : 'border-border bg-elevated/50 text-text-muted'
                   }`}
                 >
                   {isRecurring && <Repeat2 size={11} />}
@@ -949,7 +949,7 @@ function CategoryBudgetRow({
                 </span>
               </div>
               {isRecurring && allocation.recurrenceStartMonth && (
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-text-subtle">
                   Desde {formatMonthLabel(allocation.recurrenceStartMonth)}
                   {allocation.origin === 'FIXED_OVERRIDE' && allocation.baseLimitAmount
                     ? ` · Base fixa: ${formatMoney(allocation.baseLimitAmount)}`
@@ -957,18 +957,18 @@ function CategoryBudgetRow({
                 </p>
               )}
               {hasChildren ? (
-                <label className="mt-1 flex items-center gap-2 text-xs text-gray-400">
+                <label className="mt-1 flex items-center gap-2 text-xs text-text-muted">
                   <input
                     type="checkbox"
                     checked={allocation.includeChildren}
                     disabled={readOnly}
                     onChange={(event) => onChange({ includeChildren: event.target.checked })}
-                    className="rounded border-gray-600 bg-[#1e2126] disabled:cursor-not-allowed disabled:opacity-60"
+                    className="rounded border-border-strong bg-background disabled:cursor-not-allowed disabled:opacity-60"
                   />
                   Incluir subcategorias deste grupo
                 </label>
               ) : (
-                <p className="mt-1 text-xs text-gray-500">Categoria de despesa</p>
+                <p className="mt-1 text-xs text-text-subtle">Categoria de despesa</p>
               )}
             </div>
           </div>
@@ -985,7 +985,7 @@ function CategoryBudgetRow({
                 className="mb-0 w-48"
               />
               {isRecurring && (
-                <label className="mt-2 block text-xs text-gray-400">
+                <label className="mt-2 block text-xs text-text-muted">
                   Aplicar alteração
                   <select
                     value={allocation.recurringChangeScope}
@@ -995,7 +995,7 @@ function CategoryBudgetRow({
                         recurringChangeScope: event.target.value as RecurringBudgetChangeScope
                       })
                     }
-                    className="mt-1 w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-xs text-white focus:border-blue-500 focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-1 w-full rounded border border-border bg-background px-2 py-1.5 text-xs text-text focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <option value="MONTH_ONLY">Somente em {formatMonthLabel(month)}</option>
                     <option value="FROM_MONTH">Neste e nos próximos meses</option>
@@ -1007,7 +1007,7 @@ function CategoryBudgetRow({
               <button
                 type="button"
                 onClick={onRemove}
-                className="mt-6 rounded-lg border border-gray-700 p-2 text-gray-400 transition-colors hover:border-red-800 hover:bg-red-950/30 hover:text-red-300"
+                className="mt-6 rounded-lg border border-border p-2 text-text-muted transition-colors hover:border-tone-red/25 hover:bg-tone-red-soft hover:text-tone-red"
                 aria-label={
                   isRecurring
                     ? `Remover ${category.name} somente deste mês`
@@ -1022,7 +1022,7 @@ function CategoryBudgetRow({
               <button
                 type="button"
                 onClick={onEndRecurring}
-                className="mt-6 rounded-lg border border-gray-700 p-2 text-gray-400 transition-colors hover:border-amber-800 hover:bg-amber-950/30 hover:text-amber-300"
+                className="mt-6 rounded-lg border border-border p-2 text-text-muted transition-colors hover:border-tone-amber/25 hover:bg-tone-amber-soft hover:text-tone-amber"
                 aria-label={`Encerrar planejamento fixo de ${category.name}`}
                 title="Encerrar a partir deste mês"
               >
@@ -1034,7 +1034,7 @@ function CategoryBudgetRow({
 
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="text-gray-400">
+            <span className="text-text-muted">
               Utilizado e comprometido: {formatMoney(known)} de {formatMoney(limit)}
             </span>
             <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 ${presentation.badge}`}>
@@ -1042,7 +1042,7 @@ function CategoryBudgetRow({
               {presentation.label}
             </span>
           </div>
-          <div className="h-2 overflow-hidden rounded-full bg-gray-800">
+          <div className="h-2 overflow-hidden rounded-full bg-elevated">
             <div className={`h-full rounded-full ${presentation.bar}`} style={{ width: `${progress}%` }} />
           </div>
         </div>
@@ -1073,11 +1073,11 @@ function SummaryMetric({
   tone?: 'neutral' | 'success' | 'danger';
 }) {
   const valueClass =
-    tone === 'success' ? 'text-emerald-300' : tone === 'danger' ? 'text-red-300' : 'text-white';
+    tone === 'success' ? 'text-tone-emerald' : tone === 'danger' ? 'text-tone-red' : 'text-text';
 
   return (
     <Card>
-      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="text-xs uppercase tracking-wide text-text-subtle">{label}</p>
       <p className={`mt-2 text-xl font-bold ${valueClass}`}>{value}</p>
     </Card>
   );
@@ -1093,11 +1093,11 @@ function RowMetric({
   tone?: 'neutral' | 'success' | 'danger';
 }) {
   const valueClass =
-    tone === 'success' ? 'text-emerald-300' : tone === 'danger' ? 'text-red-300' : 'text-white';
+    tone === 'success' ? 'text-tone-emerald' : tone === 'danger' ? 'text-tone-red' : 'text-text';
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-[#11161d] p-3">
-      <p className="text-xs text-gray-500">{label}</p>
+    <div className="rounded-lg border border-border bg-elevated p-3">
+      <p className="text-xs text-text-subtle">{label}</p>
       <p className={`mt-1 font-semibold ${valueClass}`}>{value}</p>
     </div>
   );

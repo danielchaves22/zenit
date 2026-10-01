@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BudgetsPage from "@/pages/financial/budgets";
 
 const { pushMock, replaceMock, routerMock } = vi.hoisted(() => {
@@ -95,6 +95,12 @@ vi.mock("@/components/financial/budgets/MonthlyCategoryPlanning", () => ({
 }));
 
 describe("BudgetsPage scenario handoff", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-15T12:00:00Z'));
+  });
+  afterEach(() => vi.useRealTimers());
+
   it("keeps the selected scenario in memory while navigating to the monthly draft", async () => {
     pushMock.mockImplementation(async (target: any) => {
       routerMock.query = target.query;

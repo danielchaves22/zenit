@@ -19,22 +19,22 @@ export default function ForecastBudgetComparison({
   return (
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-semibold text-white">Previsão e limites por categoria</h2>
+        <h2 className="font-semibold text-text">Previsão e limites por categoria</h2>
         <Link
           href={{ pathname: '/financial/budgets', query: { view: 'monthly', month } }}
-          className="text-sm text-blue-300 underline"
+          className="text-sm text-tone-blue underline"
         >
           Configurar orçamentos
         </Link>
       </div>
-      <p className="mt-2 text-xs text-gray-400">
+      <p className="mt-2 text-xs text-text-muted">
         {partial
           ? 'Comparação das fontes incluídas neste cenário.'
           : 'O fechamento previsto inclui gastos realizados, compromissos e estimativas habituais.'}{' '}
         Os limites não representam saldo disponível.
       </p>
       {hasBudgets && (
-        <div className="my-4 rounded-lg bg-background p-3 text-sm text-gray-300">
+        <div className="my-4 rounded-lg bg-background p-3 text-sm text-text-muted">
           <p>
             Categorias com orçamento: previsão de{' '}
             <strong>{currency(data.coveredForecastAmount)}</strong> para limites de{' '}
@@ -49,15 +49,15 @@ export default function ForecastBudgetComparison({
         </div>
       )}
       {data.items.length === 0 && (
-        <p className="py-4 text-sm text-gray-400">
+        <p className="py-4 text-sm text-text-muted">
           Ainda não há despesas previstas ou limites definidos para este mês.
         </p>
       )}
       <details className="mt-3">
-        <summary className="cursor-pointer text-sm text-gray-200">
+        <summary className="cursor-pointer text-sm text-text">
           Ver categorias e orçamentos
         </summary>
-        <div className="mt-3 divide-y divide-gray-800">
+        <div className="mt-3 divide-y divide-border">
           {data.items.map((item) => {
             const margin = item.marginAmount === null ? null : Number(item.marginAmount);
             const status =
@@ -69,30 +69,30 @@ export default function ForecastBudgetComparison({
                     ? 'No limite'
                     : 'Dentro do limite';
             const tone =
-              margin === null ? 'text-gray-200' : margin < 0 ? 'text-red-300' : 'text-emerald-300';
+              margin === null ? 'text-text' : margin < 0 ? 'text-tone-red' : 'text-tone-emerald';
             return (
               <div key={item.categoryId ?? 'uncategorized'} className="py-4">
-                <p className="font-medium text-gray-200">
+                <p className="font-medium text-text">
                   {item.categoryName}
                   {item.includeChildren && (
-                    <span className="ml-2 text-xs text-gray-400">inclui subcategorias</span>
+                    <span className="ml-2 text-xs text-text-muted">inclui subcategorias</span>
                   )}
                 </p>
                 <p className={'mt-1 text-lg font-semibold ' + tone}>
                   Fechamento previsto: {currency(item.forecastAmount)}
                 </p>
                 <p className={'text-sm ' + tone}>{status}</p>
-                <p className="mt-1 text-sm text-gray-400">
+                <p className="mt-1 text-sm text-text-muted">
                   Orçamento mensal:{' '}
                   {item.limitAmount === null ? 'não definido' : currency(item.limitAmount)}
                 </p>
                 {margin !== null && (
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm text-text-muted">
                     {margin < 0 ? 'Excesso previsto: ' : 'Margem prevista: '}
                     {currency(Math.abs(margin))}
                   </p>
                 )}
-                <details className="mt-2 text-xs text-gray-400">
+                <details className="mt-2 text-xs text-text-muted">
                   <summary className="cursor-pointer">
                     Ver composição de {item.categoryName}
                   </summary>

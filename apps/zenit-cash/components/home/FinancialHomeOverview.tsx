@@ -251,10 +251,10 @@ export default function FinancialHomeOverview({
               <Landmark size={14} />
               Resumo das contas e cartoes
             </div>
-            <h3 className="mt-2 text-lg font-semibold text-white sm:text-xl">
+            <h3 className="mt-2 text-lg font-semibold text-text sm:text-xl">
               Saldo, recorrencias e atalho direto para a operacao do dia.
             </h3>
-            <p className="mt-1.5 max-w-2xl text-[13px] text-gray-400">
+            <p className="mt-1.5 max-w-2xl text-[13px] text-text-muted">
               Acompanhe contas, cartoes e compromissos mensais sem sair da tela inicial.
             </p>
           </div>
@@ -263,7 +263,7 @@ export default function FinancialHomeOverview({
             <button
               type="button"
               onClick={onToggleBalances}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-700 bg-[#11161f] px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-accent hover:text-accent"
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-elevated px-3 py-2 text-sm font-medium text-text transition-colors hover:border-accent hover:text-accent"
               aria-pressed={!showBalances}
             >
               {showBalances ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -280,12 +280,12 @@ export default function FinancialHomeOverview({
         </div>
       </Card>
 
-      <Card className="border-gray-700/80 bg-[#11161f] p-0">
+      <Card className="border-border/80 bg-elevated p-0">
         <div className="flex items-start gap-3 p-4 sm:p-5">
           <Receipt size={18} className="mt-0.5 text-accent" />
           <div>
-            <div className="text-sm font-semibold text-white">Leitura rapida do momento</div>
-            <div className="mt-1.5 text-sm text-gray-400">
+            <div className="text-sm font-semibold text-text">Leitura rapida do momento</div>
+            <div className="mt-1.5 text-sm text-text-muted">
               {nextInvoice?.nextInvoice ? (
                 <>
                   A proxima fatura a vencer e de {nextInvoice.name}, referencia{' '}
@@ -301,9 +301,9 @@ export default function FinancialHomeOverview({
                 'Nenhuma fatura aberta apareceu nos cartoes ativos.'
               )}
             </div>
-            <div className="mt-2 text-sm text-gray-400">
+            <div className="mt-2 text-sm text-text-muted">
               O saldo fixo previsto para o mes esta{' '}
-              <span className={fixedNetBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'}>
+              <span className={fixedNetBalance >= 0 ? 'text-tone-emerald' : 'text-tone-rose'}>
                 {fixedNetBalance >= 0 ? 'positivo' : 'negativo'}
               </span>
               , em {formatMoneyValue(fixedNetBalance, showBalances)}.
@@ -319,60 +319,60 @@ export default function FinancialHomeOverview({
           ))
         ) : (
           <>
-            <Card className="border-emerald-900/50 bg-emerald-950/20 p-0">
+            <Card className="border-tone-emerald/25 bg-tone-emerald-soft p-0">
               <div className="p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-emerald-200/80">
+                <div className="text-xs uppercase tracking-[0.18em] text-tone-emerald">
                   Saldo em contas
                 </div>
-                <div className="mt-2 text-xl font-semibold text-white">
+                <div className="mt-2 text-xl font-semibold text-text">
                   {formatMoneyValue(totalAccountsBalance, showBalances)}
                 </div>
-                <div className="mt-1.5 text-xs text-emerald-100/75">
+                <div className="mt-1.5 text-xs text-tone-emerald/75">
                   {activeAccounts.length} conta{activeAccounts.length === 1 ? '' : 's'} ativa
                   {activeAccounts.length === 1 ? '' : 's'}
                 </div>
               </div>
             </Card>
 
-            <Card className="border-sky-900/50 bg-sky-950/20 p-0">
+            <Card className="border-tone-sky/25 bg-tone-sky-soft p-0">
               <div className="p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-sky-200/80">
+                <div className="text-xs uppercase tracking-[0.18em] text-tone-sky">
                   Receitas fixas / mes
                 </div>
-                <div className="mt-2 text-xl font-semibold text-white">
+                <div className="mt-2 text-xl font-semibold text-text">
                   {formatMoneyValue(fixedIncomeTotal, showBalances)}
                 </div>
-                <div className="mt-1.5 text-xs text-sky-100/75">
+                <div className="mt-1.5 text-xs text-tone-sky/75">
                   Entradas recorrentes previstas
                 </div>
               </div>
             </Card>
 
-            <Card className="border-rose-900/50 bg-rose-950/20 p-0">
+            <Card className="border-tone-rose/25 bg-tone-rose-soft p-0">
               <div className="p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-rose-200/80">
+                <div className="text-xs uppercase tracking-[0.18em] text-tone-rose">
                   Despesas fixas / mes
                 </div>
-                <div className="mt-2 text-xl font-semibold text-white">
+                <div className="mt-2 text-xl font-semibold text-text">
                   {formatMoneyValue(fixedExpenseTotal, showBalances)}
                 </div>
-                <div className="mt-1.5 text-xs text-rose-100/75">
+                <div className="mt-1.5 text-xs text-tone-rose/75">
                   Saidas recorrentes previstas
                 </div>
               </div>
             </Card>
 
-            <Card className="border-amber-900/50 bg-amber-950/20 p-0">
+            <Card className="border-tone-amber/25 bg-tone-amber-soft p-0">
               <div className="p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-amber-200/80">
+                <div className="text-xs uppercase tracking-[0.18em] text-tone-amber">
                   Limite disponivel
                 </div>
-                <div className="mt-2 text-xl font-semibold text-white">
+                <div className="mt-2 text-xl font-semibold text-text">
                   {availableCreditTotals.hasConfiguredLimit
                     ? formatMoneyValue(availableCreditTotals.totalAvailable, showBalances)
                     : 'Nao configurado'}
                 </div>
-                <div className="mt-1.5 text-xs text-amber-100/75">
+                <div className="mt-1.5 text-xs text-tone-amber/75">
                   Soma dos cartoes com limite definido
                 </div>
               </div>
@@ -385,11 +385,11 @@ export default function FinancialHomeOverview({
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-base font-semibold text-white">
+              <div className="flex items-center gap-2 text-base font-semibold text-text">
                 <Wallet size={18} className="text-accent" />
                 Contas financeiras
               </div>
-              <p className="mt-1 text-[13px] text-gray-400">
+              <p className="mt-1 text-[13px] text-text-muted">
                 Cada linha leva para a listagem de transacoes filtrada pela conta.
               </p>
             </div>
@@ -403,7 +403,7 @@ export default function FinancialHomeOverview({
           </div>
 
           {!canViewAccountsAndCards ? (
-            <div className="mt-5 rounded-lg border border-gray-700 bg-[#11161f] p-4 text-sm text-gray-300">
+            <div className="mt-5 rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
               Sua permissao atual nao libera o resumo de contas e cartoes.
             </div>
           ) : loading ? (
@@ -413,11 +413,11 @@ export default function FinancialHomeOverview({
               ))}
             </div>
           ) : errors.accounts ? (
-            <div className="mt-5 rounded-lg border border-red-900/60 bg-red-950/25 p-4 text-sm text-red-200">
+            <div className="mt-5 rounded-lg border border-tone-red/25 bg-tone-red-soft p-4 text-sm text-tone-red">
               {errors.accounts}
             </div>
           ) : visibleAccounts.length === 0 ? (
-            <div className="mt-5 rounded-lg border border-gray-700 bg-[#11161f] p-4 text-sm text-gray-300">
+            <div className="mt-5 rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
               Nenhuma conta ativa encontrada.
             </div>
           ) : (
@@ -425,19 +425,19 @@ export default function FinancialHomeOverview({
               {visibleAccounts.map((account) => (
                 <div
                   key={account.id}
-                  className="rounded-xl border border-gray-700 bg-[#11161f] p-3 transition-colors hover:border-accent/70"
+                  className="rounded-xl border border-border bg-elevated p-3 transition-colors hover:border-accent/70"
                 >
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h4 className="text-sm font-semibold text-white">{account.name}</h4>
+                        <h4 className="text-sm font-semibold text-text">{account.name}</h4>
                         {account.isDefault && (
                           <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-accent">
                             Padrao
                           </span>
                         )}
                       </div>
-                      <div className="mt-1 text-xs text-gray-400">
+                      <div className="mt-1 text-xs text-text-muted">
                         {getAccountTypeLabel(account.type)}
                         {account.bankName ? ` - ${account.bankName}` : ''}
                         {account.accountNumber ? ` - ${account.accountNumber}` : ''}
@@ -446,10 +446,10 @@ export default function FinancialHomeOverview({
 
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="text-right">
-                        <div className="text-xs uppercase tracking-wide text-gray-500">Saldo</div>
+                        <div className="text-xs uppercase tracking-wide text-text-subtle">Saldo</div>
                         <div
                           className={`text-base font-semibold ${
-                            Number(account.balance) >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                            Number(account.balance) >= 0 ? 'text-tone-emerald' : 'text-tone-rose'
                           }`}
                         >
                           {formatMoneyValue(account.balance, showBalances)}
@@ -458,7 +458,7 @@ export default function FinancialHomeOverview({
 
                       <Link
                         href={`/financial/transactions?accountId=${account.id}`}
-                        className="inline-flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-accent hover:text-accent"
+                        className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-text transition-colors hover:border-accent hover:text-accent"
                       >
                         Ver transacoes
                         <ArrowRight size={14} />
@@ -475,11 +475,11 @@ export default function FinancialHomeOverview({
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-base font-semibold text-white">
+                <div className="flex items-center gap-2 text-base font-semibold text-text">
                   <CreditCard size={18} className="text-accent" />
                   Cartoes e faturas
                 </div>
-                <p className="mt-1 text-[13px] text-gray-400">
+                <p className="mt-1 text-[13px] text-text-muted">
                   Limite usado, disponivel e proxima fatura em um so lugar.
                 </p>
               </div>
@@ -493,7 +493,7 @@ export default function FinancialHomeOverview({
             </div>
 
             {!canViewAccountsAndCards ? (
-              <div className="mt-5 rounded-lg border border-gray-700 bg-[#11161f] p-4 text-sm text-gray-300">
+              <div className="mt-5 rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
                 O resumo de cartoes depende da permissao de contas financeiras.
               </div>
             ) : loading ? (
@@ -503,11 +503,11 @@ export default function FinancialHomeOverview({
                 ))}
               </div>
             ) : errors.cards ? (
-              <div className="mt-5 rounded-lg border border-red-900/60 bg-red-950/25 p-4 text-sm text-red-200">
+              <div className="mt-5 rounded-lg border border-tone-red/25 bg-tone-red-soft p-4 text-sm text-tone-red">
                 {errors.cards}
               </div>
             ) : activeCards.length === 0 ? (
-              <div className="mt-5 rounded-lg border border-gray-700 bg-[#11161f] p-4 text-sm text-gray-300">
+              <div className="mt-5 rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
                 Nenhum cartao ativo encontrado.
               </div>
             ) : (
@@ -520,12 +520,12 @@ export default function FinancialHomeOverview({
                   return (
                     <div
                       key={card.id}
-                      className="rounded-xl border border-gray-700 bg-[#11161f] p-3 transition-colors hover:border-accent/70"
+                      className="rounded-xl border border-border bg-elevated p-3 transition-colors hover:border-accent/70"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <h4 className="text-sm font-semibold text-white">{card.name}</h4>
-                          <div className="mt-1 text-xs text-gray-400">
+                          <h4 className="text-sm font-semibold text-text">{card.name}</h4>
+                          <div className="mt-1 text-xs text-text-muted">
                             {card.bankName || 'Cartao sem banco informado'}
                           </div>
                         </div>
@@ -541,28 +541,28 @@ export default function FinancialHomeOverview({
 
                       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                         <div>
-                          <div className="text-xs uppercase tracking-wide text-gray-500">
+                          <div className="text-xs uppercase tracking-wide text-text-subtle">
                             Limite usado
                           </div>
-                          <div className="mt-1 text-sm font-semibold text-white">
+                          <div className="mt-1 text-sm font-semibold text-text">
                             {formatMoneyValue(getUsedCreditLimit(card), showBalances)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs uppercase tracking-wide text-gray-500">
+                          <div className="text-xs uppercase tracking-wide text-text-subtle">
                             Disponivel
                           </div>
-                          <div className="mt-1 text-sm font-semibold text-white">
+                          <div className="mt-1 text-sm font-semibold text-text">
                             {getAvailableCreditLimit(card) === null
                               ? 'Nao configurado'
                               : formatMoneyValue(getAvailableCreditLimit(card) || 0, showBalances)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs uppercase tracking-wide text-gray-500">
+                          <div className="text-xs uppercase tracking-wide text-text-subtle">
                             Proxima fatura
                           </div>
-                          <div className="mt-1 text-sm font-semibold text-white">
+                          <div className="mt-1 text-sm font-semibold text-text">
                             {card.nextInvoice
                               ? getInvoiceReferenceLabel(
                                   card.nextInvoice.referenceYear,
@@ -571,7 +571,7 @@ export default function FinancialHomeOverview({
                               : 'Sem fatura aberta'}
                           </div>
                           {card.nextInvoice?.dueDate && (
-                            <div className="mt-1 text-xs text-gray-400">
+                            <div className="mt-1 text-xs text-text-muted">
                               Vence em {formatCalendarDate(card.nextInvoice.dueDate)}
                             </div>
                           )}
@@ -602,11 +602,11 @@ export default function FinancialHomeOverview({
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-base font-semibold text-white">
+                <div className="flex items-center gap-2 text-base font-semibold text-text">
                   <Repeat size={18} className="text-accent" />
                   Fixas do mes
                 </div>
-                <p className="mt-1 text-[13px] text-gray-400">
+                <p className="mt-1 text-[13px] text-text-muted">
                   Receitas, despesas e a projecao recorrente mais proxima.
                 </p>
               </div>
@@ -626,37 +626,37 @@ export default function FinancialHomeOverview({
                 ))}
               </div>
             ) : errors.fixedTransactions ? (
-              <div className="mt-5 rounded-lg border border-red-900/60 bg-red-950/25 p-4 text-sm text-red-200">
+              <div className="mt-5 rounded-lg border border-tone-red/25 bg-tone-red-soft p-4 text-sm text-tone-red">
                 {errors.fixedTransactions}
               </div>
             ) : (
               <>
                 <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-3">
-                    <div className="text-xs uppercase tracking-wide text-gray-500">
+                  <div className="rounded-xl border border-border bg-elevated p-3">
+                    <div className="text-xs uppercase tracking-wide text-text-subtle">
                       Receitas fixas
                     </div>
-                    <div className="mt-1.5 text-base font-semibold text-emerald-300">
+                    <div className="mt-1.5 text-base font-semibold text-tone-emerald">
                       {formatMoneyValue(fixedIncomeTotal, showBalances)}
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-3">
-                    <div className="text-xs uppercase tracking-wide text-gray-500">
+                  <div className="rounded-xl border border-border bg-elevated p-3">
+                    <div className="text-xs uppercase tracking-wide text-text-subtle">
                       Despesas fixas
                     </div>
-                    <div className="mt-1.5 text-base font-semibold text-rose-300">
+                    <div className="mt-1.5 text-base font-semibold text-tone-rose">
                       {formatMoneyValue(fixedExpenseTotal, showBalances)}
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-gray-700 bg-[#11161f] p-3">
-                    <div className="text-xs uppercase tracking-wide text-gray-500">
+                  <div className="rounded-xl border border-border bg-elevated p-3">
+                    <div className="text-xs uppercase tracking-wide text-text-subtle">
                       Saldo fixo previsto
                     </div>
                     <div
                       className={`mt-1.5 text-base font-semibold ${
-                        fixedNetBalance >= 0 ? 'text-emerald-300' : 'text-rose-300'
+                        fixedNetBalance >= 0 ? 'text-tone-emerald' : 'text-tone-rose'
                       }`}
                     >
                       {formatMoneyValue(fixedNetBalance, showBalances)}
@@ -666,34 +666,34 @@ export default function FinancialHomeOverview({
 
                 <div className="mt-5 space-y-3">
                   {upcomingFixedTransactions.length === 0 ? (
-                    <div className="rounded-lg border border-gray-700 bg-[#11161f] p-4 text-sm text-gray-300">
+                    <div className="rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
                       Nenhuma transacao fixa ativa encontrada.
                     </div>
                   ) : (
                     upcomingFixedTransactions.map((item) => (
                       <div
                         key={item.id}
-                        className="flex flex-col gap-3 rounded-xl border border-gray-700 bg-[#11161f] p-3 md:flex-row md:items-center md:justify-between"
+                        className="flex flex-col gap-3 rounded-xl border border-border bg-elevated p-3 md:flex-row md:items-center md:justify-between"
                       >
                         <div>
                           <div className="flex items-center gap-2">
                             <span
                               className={`rounded-full px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide ${
                                 item.type === 'INCOME'
-                                  ? 'bg-emerald-900/40 text-emerald-200'
-                                  : 'bg-rose-900/40 text-rose-200'
+                                  ? 'bg-tone-emerald-soft text-tone-emerald'
+                                  : 'bg-tone-rose-soft text-tone-rose'
                               }`}
                             >
                               {item.type === 'INCOME' ? 'Receita' : 'Despesa'}
                             </span>
-                            <span className="text-sm text-gray-400">
+                            <span className="text-sm text-text-muted">
                               {item.dayOfMonth ? `Dia ${item.dayOfMonth}` : 'Competencia variavel'}
                             </span>
                           </div>
-                          <div className="mt-2 text-sm font-semibold text-white">
+                          <div className="mt-2 text-sm font-semibold text-text">
                             {item.description}
                           </div>
-                          <div className="mt-1 text-xs text-gray-400">
+                          <div className="mt-1 text-xs text-text-muted">
                             {formatAccountDisplayName(item.fromAccount || item.toAccount)}
                           </div>
                         </div>
@@ -701,12 +701,12 @@ export default function FinancialHomeOverview({
                         <div className="text-right">
                           <div
                             className={`text-sm font-semibold ${
-                              item.type === 'INCOME' ? 'text-emerald-300' : 'text-rose-300'
+                              item.type === 'INCOME' ? 'text-tone-emerald' : 'text-tone-rose'
                             }`}
                           >
                             {formatMoneyValue(item.amount, showBalances)}
                           </div>
-                          <div className="mt-1 text-xs text-gray-400">
+                          <div className="mt-1 text-xs text-text-muted">
                             Proximo em {formatCalendarDate(item.nextDueDate)}
                           </div>
                         </div>

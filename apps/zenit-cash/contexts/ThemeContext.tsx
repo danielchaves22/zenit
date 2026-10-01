@@ -20,6 +20,14 @@ export interface Theme {
 
 // ✅ CATÁLOGO COMPLETO DE TEMAS
 export const AVAILABLE_THEMES: Theme[] = [
+  {
+    key: 'petrol', label: 'Azul-petróleo', category: 'standard', accessibility: 'high',
+    colors: {
+      primary: '#24636b', primaryHover: '#1b5058', primaryLight: '#79b4ba', primaryDark: '#194a51',
+      primaryGradient: 'linear-gradient(135deg, #24636b 0%, #194a51 100%)',
+      primaryShadow: '0 8px 20px rgba(36, 99, 107, 0.12)',
+    },
+  },
   // Standard
   {
     key: 'amber',
@@ -203,18 +211,28 @@ interface ThemeContextData {
   availableThemes: Theme[];
   themesByCategory: Record<string, Theme[]>;
   getThemeInfo: (themeKey: string) => Theme;
-  changeTheme: (themeKey: string) => void;
+  changeTheme: (themeKey: string, options?: { restore?: boolean }) => void;
   colorMode: 'dark' | 'light';
   changeColorMode: (mode: 'dark' | 'light') => void;
 }
 
 // ✅ CRIAR CONTEXTO
 const ThemeContext = createContext<ThemeContextData>({} as ThemeContextData);
+export const CASH_THEME_KEY = 'zenit.cash.appearance.theme';
+export const CASH_MODE_KEY = 'zenit.cash.appearance.mode';
+
+function readAppearance(key: string): string | null {
+  try { return typeof window === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
+}
+
+function saveAppearance(key: string, value: string) {
+  try { localStorage.setItem(key, value); } catch { /* The theme remains usable without storage. */ }
+}
 
 // ✅ PROVIDER DO CONTEXTO
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [currentTheme, setCurrentTheme] = useState<string>('amber');
-  const [colorMode, setColorMode] = useState<'dark' | 'light'>('dark');
+  const [currentTheme, setCurrentTheme] = useState<string>('petrol');
+  const [colorMode, setColorMode] = useState<'dark' | 'light'>('light');
 
   // ✅ APLICAR TEMA NAS CSS VARIABLES
   const applyTheme = (theme: Theme) => {
@@ -225,15 +243,22 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--color-primary-dark', theme.colors.primaryDark);
     root.style.setProperty('--color-primary-gradient', theme.colors.primaryGradient);
     root.style.setProperty('--color-primary-shadow', theme.colors.primaryShadow);
+    const channels = theme.colors.primary.match(/[a-f\d]{2}/gi)!.map(value => parseInt(value, 16));
+    root.style.setProperty('--color-primary-rgb', channels.join(' '));
+    const luminance = channels.map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+      .reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+    root.style.setProperty('--color-on-accent', luminance > 0.179 ? '19 37 40' : '255 255 255');
   };
 
   // ✅ CARREGAR TEMA SALVO E APLICAR
   useEffect(() => {
-    const savedTheme = localStorage.getItem('selected-theme');
+    // The new Cash appearance starts in light/petrol. Legacy shared-app choices
+    // must not put the old amber/dark identity back during authentication.
+    const savedTheme = readAppearance(CASH_THEME_KEY);
     if (savedTheme && AVAILABLE_THEMES.find(t => t.key === savedTheme)) {
       setCurrentTheme(savedTheme);
     }
-    const savedMode = localStorage.getItem('color-mode');
+    const savedMode = readAppearance(CASH_MODE_KEY);
     if (savedMode === 'light' || savedMode === 'dark') {
       setColorMode(savedMode);
     }
@@ -249,27 +274,30 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (colorMode === 'light') {
-      root.classList.add('theme-light');
-    } else {
-      root.classList.remove('theme-light');
-    }
+    root.classList.toggle('theme-light', colorMode === 'light');
+    root.classList.toggle('theme-dark', colorMode === 'dark');
+    root.style.colorScheme = colorMode;
   }, [colorMode]);
 
   // ✅ FUNÇÃO PARA MUDAR TEMA
-  const changeTheme = (themeKey: string) => {
-    const theme = AVAILABLE_THEMES.find(t => t.key === themeKey);
+  const changeTheme = (themeKey: string, options?: { restore?: boolean }) => {
+    const requestedTheme = options?.restore
+      ? readAppearance(CASH_THEME_KEY) || (themeKey === 'amber' ? 'petrol' : themeKey)
+      : themeKey;
+    const theme = AVAILABLE_THEMES.find(t => t.key === requestedTheme) || (options?.restore ? AVAILABLE_THEMES[0] : undefined);
     if (theme) {
-      setCurrentTheme(themeKey);
-      localStorage.setItem('selected-theme', themeKey);
+      setCurrentTheme(theme.key);
       applyTheme(theme);
-      api.put('/preferences/color-scheme', { colorScheme: themeKey }).catch(() => {});
+      if (!options?.restore) {
+        saveAppearance(CASH_THEME_KEY, theme.key);
+        api.put('/preferences/color-scheme', { colorScheme: theme.key }).catch(() => {});
+      }
     }
   };
 
   const changeColorMode = (mode: 'dark' | 'light') => {
     setColorMode(mode);
-    localStorage.setItem('color-mode', mode);
+    saveAppearance(CASH_MODE_KEY, mode);
   };
 
   // ✅ AGRUPAR TEMAS POR CATEGORIA

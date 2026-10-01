@@ -105,17 +105,17 @@ function statusTone(status: HealthStatus | string) {
   switch (status) {
     case 'OK':
     case 'SUCCESS':
-      return 'border-green-700 bg-green-900/20 text-green-200';
+      return 'border-tone-green/25 bg-tone-green-soft text-tone-green';
     case 'ERROR':
     case 'FAILED':
-      return 'border-red-700 bg-red-900/20 text-red-200';
+      return 'border-tone-red/25 bg-tone-red-soft text-tone-red';
     case 'WARNING':
     case 'PARTIAL':
-      return 'border-amber-700 bg-amber-900/20 text-amber-200';
+      return 'border-tone-amber/25 bg-tone-amber-soft text-tone-amber';
     case 'RUNNING':
-      return 'border-blue-700 bg-blue-900/20 text-blue-200';
+      return 'border-tone-blue/25 bg-tone-blue-soft text-tone-blue';
     default:
-      return 'border-gray-700 bg-gray-900/20 text-gray-200';
+      return 'border-border bg-elevated/20 text-text';
   }
 }
 
@@ -182,13 +182,13 @@ function JobRunDetails({ run }: { run: JobRun }) {
   const hasReadableDetails = Boolean(generalMessage || itemErrors.length > 0);
 
   return (
-    <div className="rounded-lg border border-gray-700 bg-[#0f1419] p-4 text-sm text-gray-300">
-      <div className="font-medium text-white">Detalhes da execução</div>
+    <div className="rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
+      <div className="font-medium text-text">Detalhes da execução</div>
 
       {generalMessage && (
-        <div className="mt-3 rounded border border-red-800/60 bg-red-950/30 p-3">
-          <div className="text-xs font-medium uppercase tracking-wide text-red-300">Erro geral</div>
-          <p className="mt-1 whitespace-pre-wrap break-words text-red-100">{generalMessage}</p>
+        <div className="mt-3 rounded border border-tone-red/25 bg-tone-red-soft p-3">
+          <div className="text-xs font-medium uppercase tracking-wide text-tone-red">Erro geral</div>
+          <p className="mt-1 whitespace-pre-wrap break-words text-tone-red">{generalMessage}</p>
         </div>
       )}
 
@@ -203,12 +203,12 @@ function JobRunDetails({ run }: { run: JobRun }) {
             return (
               <li
                 key={`${detail.templateId ?? 'template'}-${detail.companyId ?? 'company'}-${index}`}
-                className="rounded border border-amber-800/60 bg-amber-950/20 p-3"
+                className="rounded border border-tone-amber/25 bg-tone-amber-soft p-3"
               >
-                <div className="text-xs font-medium uppercase tracking-wide text-amber-300">
+                <div className="text-xs font-medium uppercase tracking-wide text-tone-amber">
                   {context || `Falha ${index + 1}`}
                 </div>
-                <p className="mt-1 whitespace-pre-wrap break-words text-amber-100">
+                <p className="mt-1 whitespace-pre-wrap break-words text-tone-amber">
                   {readText(detail.error) || 'Falha registrada sem mensagem detalhada.'}
                 </p>
               </li>
@@ -218,7 +218,7 @@ function JobRunDetails({ run }: { run: JobRun }) {
       )}
 
       {!hasReadableDetails && (
-        <p className="mt-2 text-gray-400">
+        <p className="mt-2 text-text-muted">
           Não há falhas detalhadas desta empresa para esta execução global.
         </p>
       )}
@@ -248,7 +248,7 @@ export default function OperationsPage() {
       label: 'Jobs monitorados',
       value: String(overview?.jobs.length || 0),
       icon: <Clock size={18} />,
-      tone: 'border-blue-700 bg-blue-900/20 text-blue-200'
+      tone: 'border-tone-blue/25 bg-tone-blue-soft text-tone-blue'
     },
     {
       label: 'Faturas bloqueadas',
@@ -308,8 +308,8 @@ export default function OperationsPage() {
       <AccessGuard requiredRole="SUPERUSER">
         <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-white">Operacoes do Sistema</h1>
-            <p className="mt-1 text-sm text-gray-400">
+            <h1 className="text-2xl font-semibold text-text">Operacoes do Sistema</h1>
+            <p className="mt-1 text-sm text-text-muted">
               Monitoramento de jobs e diagnosticos financeiros que exigem acao operacional.
             </p>
           </div>
@@ -329,8 +329,8 @@ export default function OperationsPage() {
             <Card key={card.label} className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-xs uppercase text-gray-400">{card.label}</div>
-                  <div className="mt-2 text-2xl font-semibold text-white">{card.value}</div>
+                  <div className="text-xs uppercase text-text-muted">{card.label}</div>
+                  <div className="mt-2 text-2xl font-semibold text-text">{card.value}</div>
                 </div>
                 <div className={`rounded-lg border p-2 ${card.tone}`}>
                   {card.icon}
@@ -341,7 +341,7 @@ export default function OperationsPage() {
         </div>
 
         {totalIssues === 0 && overview && (
-          <div className="mb-6 rounded-lg border border-green-700 bg-green-900/20 p-4 text-sm text-green-200">
+          <div className="mb-6 rounded-lg border border-tone-green/25 bg-tone-green-soft p-4 text-sm text-tone-green">
             Nenhum bloqueio operacional encontrado para a empresa atual.
           </div>
         )}
@@ -351,9 +351,9 @@ export default function OperationsPage() {
             <Card className="p-6">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-white">Jobs</h2>
-                  <p className="text-sm text-gray-400">Ultimas execucoes registradas pelo backend.</p>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <h2 className="text-lg font-semibold text-text">Jobs</h2>
+                  <p className="text-sm text-text-muted">Ultimas execucoes registradas pelo backend.</p>
+                  <p className="mt-1 text-xs text-text-subtle">
                     Status e contadores são globais. Os detalhes exibem somente falhas da empresa atual;
                     rastreamentos técnicos globais ficam restritos.
                   </p>
@@ -368,7 +368,7 @@ export default function OperationsPage() {
 
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#0f1419] text-left text-xs uppercase text-gray-400">
+                  <thead className="bg-elevated text-left text-xs uppercase text-text-muted">
                     <tr>
                       <th className="px-3 py-2">Job</th>
                       <th className="px-3 py-2">Status</th>
@@ -382,7 +382,7 @@ export default function OperationsPage() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={7} className="px-3 py-6 text-sm text-gray-400">
+                        <td colSpan={7} className="px-3 py-6 text-sm text-text-muted">
                           Carregando operacoes...
                         </td>
                       </tr>
@@ -393,10 +393,10 @@ export default function OperationsPage() {
 
                         return (
                           <React.Fragment key={run.id}>
-                            <tr className="border-t border-gray-700 text-sm text-gray-300">
+                            <tr className="border-t border-border text-sm text-text-muted">
                               <td className="px-3 py-3">
-                                <div className="font-medium text-white">{firstJob.displayName}</div>
-                                <div className="mt-1 text-xs text-gray-500">{firstJob.schedule}</div>
+                                <div className="font-medium text-text">{firstJob.displayName}</div>
+                                <div className="mt-1 text-xs text-text-subtle">{firstJob.schedule}</div>
                               </td>
                               <td className="px-3 py-3">
                                 <span className={`rounded-full border px-2 py-1 text-xs font-medium ${statusTone(run.status)}`}>
@@ -410,14 +410,14 @@ export default function OperationsPage() {
                               <td className="px-3 py-3">
                                 <div>{run.failedCount}</div>
                                 {run.companyErrorDetailCount !== undefined && (
-                                  <div className="mt-1 text-xs text-gray-500">
+                                  <div className="mt-1 text-xs text-text-subtle">
                                     {run.companyErrorDetailCount} detalhada(s) nesta empresa
                                   </div>
                                 )}
                                 {hasJobRunDetails(run) && (
                                   <button
                                     type="button"
-                                    className="mt-2 inline-flex items-center gap-1 whitespace-nowrap text-left text-xs font-medium text-blue-300 hover:text-blue-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                                    className="mt-2 inline-flex items-center gap-1 whitespace-nowrap text-left text-xs font-medium text-tone-blue hover:text-tone-blue focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                                     aria-expanded={isExpanded}
                                     aria-controls={detailsId}
                                     onClick={() => toggleRunDetails(run.id)}
@@ -433,7 +433,7 @@ export default function OperationsPage() {
                               </td>
                             </tr>
                             {isExpanded && (
-                              <tr id={detailsId} className="border-t border-gray-800">
+                              <tr id={detailsId} className="border-t border-border">
                                 <td colSpan={7} className="px-3 pb-4 pt-2">
                                   <JobRunDetails run={run} />
                                 </td>
@@ -444,7 +444,7 @@ export default function OperationsPage() {
                       })
                     ) : (
                       <tr>
-                        <td colSpan={7} className="px-3 py-6 text-sm text-gray-400">
+                        <td colSpan={7} className="px-3 py-6 text-sm text-text-muted">
                           Nenhuma execucao registrada.
                         </td>
                       </tr>
@@ -456,15 +456,15 @@ export default function OperationsPage() {
 
             <Card className="p-6">
               <div className="mb-4">
-                <h2 className="text-lg font-semibold text-white">Faturas bloqueadas por fixas projetadas</h2>
-                <p className="text-sm text-gray-400">
+                <h2 className="text-lg font-semibold text-text">Faturas bloqueadas por fixas projetadas</h2>
+                <p className="text-sm text-text-muted">
                   Faturas fechadas e nao pagas que ainda possuem ocorrencias fixas sem transacao real.
                 </p>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#0f1419] text-left text-xs uppercase text-gray-400">
+                  <thead className="bg-elevated text-left text-xs uppercase text-text-muted">
                     <tr>
                       <th className="px-3 py-2">Fatura</th>
                       <th className="px-3 py-2">Cartao</th>
@@ -477,14 +477,14 @@ export default function OperationsPage() {
                   <tbody>
                     {projectionBlocks.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-3 py-6 text-sm text-gray-400">
+                        <td colSpan={6} className="px-3 py-6 text-sm text-text-muted">
                           Nenhuma fatura bloqueada por fixa projetada.
                         </td>
                       </tr>
                     ) : (
                       projectionBlocks.map((invoice) => (
-                        <tr key={invoice.invoiceId} className="border-t border-gray-700 text-sm text-gray-300">
-                          <td className="px-3 py-3 font-medium text-white">
+                        <tr key={invoice.invoiceId} className="border-t border-border text-sm text-text-muted">
+                          <td className="px-3 py-3 font-medium text-text">
                             {getInvoiceReferenceLabel(invoice.referenceYear, invoice.referenceMonth)}
                           </td>
                           <td className="px-3 py-3">{invoice.accountName}</td>
@@ -494,7 +494,7 @@ export default function OperationsPage() {
                           <td className="px-3 py-3">
                             <Link
                               href={`/financial/credit-cards/${invoice.accountId}/invoices?invoiceKey=${encodeURIComponent(invoice.invoiceKey)}`}
-                              className="text-blue-300 hover:text-blue-200"
+                              className="text-tone-blue hover:text-tone-blue"
                             >
                               Abrir fatura
                             </Link>
@@ -511,24 +511,24 @@ export default function OperationsPage() {
           <div className="space-y-6">
             <Card className="p-6">
               <div className="mb-4">
-                <h2 className="text-lg font-semibold text-white">Detalhes das pendencias</h2>
-                <p className="text-sm text-gray-400">Ocorrencias esperadas e ainda nao materializadas.</p>
+                <h2 className="text-lg font-semibold text-text">Detalhes das pendencias</h2>
+                <p className="text-sm text-text-muted">Ocorrencias esperadas e ainda nao materializadas.</p>
               </div>
 
               <div className="space-y-4">
                 {projectionBlocks.length === 0 ? (
-                  <div className="rounded-lg border border-gray-700 p-4 text-sm text-gray-400">
+                  <div className="rounded-lg border border-border p-4 text-sm text-text-muted">
                     Sem ocorrencias pendentes.
                   </div>
                 ) : (
                   projectionBlocks.map((invoice) => (
-                    <div key={invoice.invoiceId} className="rounded-lg border border-gray-700 p-4">
+                    <div key={invoice.invoiceId} className="rounded-lg border border-border p-4">
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div>
-                          <div className="font-medium text-white">
+                          <div className="font-medium text-text">
                             {invoice.accountName} - {getInvoiceReferenceLabel(invoice.referenceYear, invoice.referenceMonth)}
                           </div>
-                          <div className="text-xs text-gray-400">
+                          <div className="text-xs text-text-muted">
                             Vence {formatCalendarDate(invoice.dueDate)}
                           </div>
                         </div>
@@ -539,12 +539,12 @@ export default function OperationsPage() {
 
                       <div className="space-y-3">
                         {invoice.pendingOccurrences.map((occurrence) => (
-                          <div key={occurrence.occurrenceKey} className="rounded border border-gray-800 bg-[#0f1419] p-3">
+                          <div key={occurrence.occurrenceKey} className="rounded border border-border bg-elevated p-3">
                             <div className="flex justify-between gap-3 text-sm">
-                              <span className="font-medium text-white">{occurrence.description}</span>
-                              <span className="text-gray-300">{formatCurrency(occurrence.amount)}</span>
+                              <span className="font-medium text-text">{occurrence.description}</span>
+                              <span className="text-text-muted">{formatCurrency(occurrence.amount)}</span>
                             </div>
-                            <div className="mt-2 text-xs text-gray-500">
+                            <div className="mt-2 text-xs text-text-subtle">
                               Template {occurrence.templateId} - {occurrence.occurrenceKey}
                             </div>
                           </div>
@@ -558,22 +558,22 @@ export default function OperationsPage() {
 
             <Card className="p-6">
               <div className="mb-4">
-                <h2 className="text-lg font-semibold text-white">Cartoes com configuracao incompleta</h2>
-                <p className="text-sm text-gray-400">
+                <h2 className="text-lg font-semibold text-text">Cartoes com configuracao incompleta</h2>
+                <p className="text-sm text-text-muted">
                   Cartoes ativos sem fechamento ou vencimento podem impedir previsao e materializacao.
                 </p>
               </div>
 
               <div className="space-y-3">
                 {configurationIssues.length === 0 ? (
-                  <div className="rounded-lg border border-gray-700 p-4 text-sm text-gray-400">
+                  <div className="rounded-lg border border-border p-4 text-sm text-text-muted">
                     Nenhum cartao ativo com configuracao incompleta.
                   </div>
                 ) : (
                   configurationIssues.map((card) => (
-                    <div key={card.id} className="rounded-lg border border-amber-700/50 bg-amber-900/10 p-4">
-                      <div className="font-medium text-white">{card.name}</div>
-                      <div className="mt-2 text-sm text-amber-200">
+                    <div key={card.id} className="rounded-lg border border-tone-amber/25 bg-tone-amber-soft p-4">
+                      <div className="font-medium text-text">{card.name}</div>
+                      <div className="mt-2 text-sm text-tone-amber">
                         Fechamento: {card.statementClosingDay || 'nao configurado'} - Vencimento:{' '}
                         {card.statementDueDay || 'nao configurado'}
                       </div>

@@ -126,8 +126,8 @@ function CreditCardsPageInner() {
 
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Cartoes e Faturas</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-semibold text-text">Cartoes e Faturas</h1>
+          <p className="mt-1 text-sm text-text-muted">
             Cadastre cartoes, acompanhe limite disponivel e gerencie as faturas.
           </p>
         </div>
@@ -163,15 +163,15 @@ function CreditCardsPageInner() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
           {[...Array(4)].map((_, index) => (
             <Card key={index}>
-              <div className="h-40 animate-pulse rounded bg-[#1b212c]" />
+              <div className="h-40 animate-pulse rounded bg-elevated" />
             </Card>
           ))}
         </div>
       ) : cards.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
-            <CreditCard size={48} className="mx-auto mb-4 text-gray-500" />
-            <p className="text-gray-400">Nenhum cartao de credito encontrado.</p>
+            <CreditCard size={48} className="mx-auto mb-4 text-text-subtle" />
+            <p className="text-text-muted">Nenhum cartao de credito encontrado.</p>
             <Link href="/financial/credit-cards/new" className="mt-4 inline-block">
               <Button variant="accent" className="flex items-center gap-2">
                 <Plus size={16} />

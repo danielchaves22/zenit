@@ -91,20 +91,20 @@ export default function HomePage() {
 
                 <div className="flex items-start gap-3">
                   <div className="rounded-xl bg-accent p-2.5 shadow-[var(--color-primary-shadow)]">
-                    <Landmark size={20} className="text-white" />
+                    <Landmark size={20} className="text-on-accent" />
                   </div>
 
                   <div>
-                    <h2 className="text-xl font-semibold text-white sm:text-[1.65rem]">
+                    <h2 className="text-xl font-semibold text-text sm:text-[1.65rem]">
                       Bem-vindo, {user?.name}
                     </h2>
                   </div>
                 </div>
               </div>
 
-              <div className="w-full max-w-xl rounded-2xl border border-gray-700/80 bg-[#10151d]/95 p-3">
+              <div className="w-full max-w-xl rounded-2xl border border-border/80 bg-elevated/95 p-3">
                 <div className="mb-3 flex items-center justify-between gap-3 px-1">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-subtle">
                     Tipo de tela inicial
                   </div>
                   <button
@@ -115,17 +115,17 @@ export default function HomePage() {
                     Clique para saber mais
                   </button>
                 </div>
-                <div className="grid gap-2 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                   {HOME_SCREEN_OPTIONS.map((option) => {
                     const isActive = option.value === selectedHomeScreen;
 
                     return (
                       <div
                         key={option.value}
-                        className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-all duration-200 ${
+                        className={`flex min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 transition-all duration-200 ${
                           isActive
                             ? 'border-accent bg-accent/10 shadow-[var(--color-primary-shadow)]'
-                            : 'border-gray-700 bg-[#151b23] hover:border-accent/60 hover:bg-[#181f29]'
+                            : 'border-border bg-elevated hover:border-accent/60 hover:bg-elevated'
                         }`}
                       >
                         <button
@@ -134,10 +134,10 @@ export default function HomePage() {
                           className="flex min-w-0 flex-1 items-center gap-2 text-left"
                           aria-pressed={isActive}
                         >
-                          <span className={isActive ? 'text-accent' : 'text-gray-400'}>
+                          <span className={isActive ? 'text-accent' : 'text-text-muted'}>
                             {option.icon}
                           </span>
-                          <span className="truncate text-sm font-semibold text-white">
+                          <span className="truncate text-sm font-semibold text-text">
                             {option.label}
                           </span>
                         </button>
@@ -145,7 +145,7 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => setIsHomeScreenInfoOpen(true)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-[#1a2230] hover:text-accent"
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full p-0 text-text-muted transition-colors hover:bg-elevated hover:text-accent"
                           title={option.description}
                           aria-label={`Mais detalhes sobre ${option.label}`}
                         >
@@ -164,8 +164,8 @@ export default function HomePage() {
           <Card>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-semibold text-white">Acesso Rapido</h3>
-                <p className="mt-1 text-sm text-gray-400">
+                <h3 className="text-base font-semibold text-text">Acesso Rapido</h3>
+                <p className="mt-1 text-sm text-text-muted">
                   Entradas diretas para cadastro, consulta e rotina operacional.
                 </p>
               </div>
@@ -193,7 +193,7 @@ export default function HomePage() {
           </div>
         )}
       >
-        <div className="space-y-4 text-sm leading-relaxed text-gray-300">
+        <div className="space-y-4 text-sm leading-relaxed text-text-muted">
           <p>
             Escolha a experiencia inicial que faz mais sentido para seu fluxo. A ultima selecao
             fica salva e volta automaticamente no proximo acesso.
@@ -201,12 +201,12 @@ export default function HomePage() {
 
           <div className="space-y-3">
             {HOME_SCREEN_OPTIONS.map((option) => (
-              <div key={option.value} className="rounded-xl border border-gray-700 bg-[#11161f] p-3">
-                <div className="flex items-center gap-2 font-semibold text-white">
+              <div key={option.value} className="rounded-xl border border-border bg-elevated p-3">
+                <div className="flex items-center gap-2 font-semibold text-text">
                   <span className="text-accent">{option.icon}</span>
                   {option.label}
                 </div>
-                <p className="mt-1 text-sm text-gray-400">{option.description}</p>
+                <p className="mt-1 text-sm text-text-muted">{option.description}</p>
               </div>
             ))}
           </div>

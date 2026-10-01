@@ -1,495 +1,186 @@
-// frontend/components/layout/Sidebar.tsx - COM REGRAS DE VISIBILIDADE POR ROLE
 import React, { useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { ChevronDown, PanelLeftClose, PanelLeftOpen, Settings2, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  PieChart, CreditCard, Building2, Receipt, Home,
-  Users, Settings, ChevronLeft, ChevronRight, Shield, BarChart3, Repeat, PiggyBank, Activity
-} from 'lucide-react';
+import { useTheme } from '@/contexts/ThemeContext';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useConfirmation } from '@/hooks/useConfirmation';
-import { AccessGuard } from '@/components/ui/AccessGuard';
-import { SmartNavigation } from '@/components/ui/SmartNavigation';
-import { SmartBreadcrumb } from '@/components/ui/SmartBreadcrumb';
-
-// Tipo para submenu - href é opcional para itens não clicáveis
-type SubMenuItem = {
-  label: string;
-  href?: string;
-  isHeader?: boolean
-  hideWhenExpanded?: boolean; // Se true, não será mostrado no modo expandido
-};
-
-// Tipo para item de menu
-type MenuItem = {
-  icon: React.ReactNode;
-  label: string;
-  subItems: SubMenuItem[]; // Todos terão pelo menos um subitem
-  requiredRole?: 'ADMIN' | 'SUPERUSER' | 'USER'; // ✅ NOVO: Role mínimo necessário
-  allowedRoles?: ('ADMIN' | 'SUPERUSER' | 'USER')[]; // ✅ NOVO: Roles específicos permitidos
-  requiredPermission?: 'FINANCIAL_ACCOUNTS' | 'FINANCIAL_CATEGORIES';
-};
-
-// Tipo para título de seção
-type SectionTitle = {
-  title: string;
-  type: 'title';
-  requiredRole?: 'ADMIN' | 'SUPERUSER' | 'USER'; // ✅ NOVO: Role mínimo para mostrar a seção
-};
-
-type SidebarItem = MenuItem | SectionTitle;
+import { isNavigationItemActive, isNavigationLinkActive, mainNavigation, NavigationItem, settingsNavigation } from './navigation';
 
 interface SidebarProps {
-  onToggle?: (collapsed: boolean) => void;
-  isCollapsed?: boolean; 
+  isCollapsed: boolean;
+  onToggle: (collapsed: boolean) => void;
+  isMobile?: boolean;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export function Sidebar({ onToggle, isCollapsed }: SidebarProps) {
-  const SUBMENU_OVERLAP_PX = 16;
-  const SUBMENU_CLOSE_DELAY_MS = 120;
-  const { userRole } = useAuth(); // ✅ OBTER O ROLE DO USUÁRIO
-  const { hasAppPermission } = usePermissions();
-  
-  // Obtém o estado salvo no localStorage ou usa o padrão
-  const getSavedCollapsedState = () => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : false;
-    }
-    return false;
-  };
-  
-  // Se isCollapsed for fornecido, use-o; caso contrário, gerencia o estado internamente
-  const [internalCollapsed, setInternalCollapsed] = useState(getSavedCollapsedState);
-  const collapsed = isCollapsed !== undefined ? isCollapsed : internalCollapsed;
-  
+export function Sidebar({ isCollapsed, onToggle, isMobile = false, mobileOpen = false, onMobileClose }: SidebarProps) {
   const router = useRouter();
-  
-  // Estado para controlar qual submenu está aberto (para flutuante)
-  const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
-  // Coordenadas do submenu flutuante
-  const [submenuPosition, setSubmenuPosition] = useState({ top: 0, left: 0 });
-  const closeSubmenuTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { userRole } = useAuth();
+  const { colorMode } = useTheme();
+  const { hasAppPermission, hasRole } = usePermissions();
+  const sidebarRef = useRef<HTMLElement>(null);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [flyout, setFlyout] = useState<{ item: NavigationItem; top: number } | null>(null);
+  const collapsed = isCollapsed && !isMobile;
+  const settingsActive = settingsNavigation.some(item => isNavigationItemActive(item, router.pathname));
+  const canSee = (item: NavigationItem) => Boolean(userRole) &&
+    (!item.permission || hasAppPermission(item.permission)) && (!item.adminOnly || hasRole('SUPERUSER'));
+  const visibleSettings = settingsNavigation.filter(canSee);
 
-  // Salva o estado atual no localStorage sempre que mudar
   useEffect(() => {
-    localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
-  }, [collapsed]);
+    setFlyout(null);
+    const active = mainNavigation.find(item => item.children && isNavigationItemActive(item, router.pathname));
+    setExpandedItem(active?.id || null);
+    setSettingsOpen(settingsNavigation.some(item => isNavigationItemActive(item, router.pathname)));
+  }, [router.asPath, router.pathname]);
+
+  useEffect(() => { setFlyout(null); }, [collapsed]);
 
   useEffect(() => {
-    return () => {
-      if (closeSubmenuTimeoutRef.current) {
-        clearTimeout(closeSubmenuTimeoutRef.current);
+    if (!flyout) return;
+    flyoutRef.current?.querySelector<HTMLAnchorElement>('a')?.focus();
+    const closeOnOutside = (event: PointerEvent) => {
+      if (!flyoutRef.current?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) setFlyout(null);
+    };
+    const closeOnKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setFlyout(null);
+        triggerRef.current?.focus();
       }
     };
-  }, []);
-
-  const clearCloseSubmenuTimeout = () => {
-    if (closeSubmenuTimeoutRef.current) {
-      clearTimeout(closeSubmenuTimeoutRef.current);
-      closeSubmenuTimeoutRef.current = null;
-    }
-  };
-
-  const scheduleCloseSubmenu = () => {
-    clearCloseSubmenuTimeout();
-    closeSubmenuTimeoutRef.current = setTimeout(() => {
-      setActiveSubmenu(null);
-      closeSubmenuTimeoutRef.current = null;
-    }, SUBMENU_CLOSE_DELAY_MS);
-  };
-
-  // ✅ FUNÇÃO PARA VERIFICAR SE UM ITEM DEVE SER VISÍVEL
-  const isItemVisible = (item: MenuItem | SectionTitle): boolean => {
-    if (!userRole) return false;
-    
-    // Para títulos de seção
-    if ('type' in item && item.type === 'title') {
-      if (!item.requiredRole) return true;
-      return hasPermission(item.requiredRole);
-    }
-    
-    // Para itens de menu
-    const menuItem = item as MenuItem;
-
-    if (menuItem.requiredPermission && !hasAppPermission(menuItem.requiredPermission)) {
-      return false;
-    }
-    
-    // Se tem roles específicos permitidos, verificar se o usuário está na lista
-    if (menuItem.allowedRoles) {
-      return menuItem.allowedRoles.includes(userRole as any);
-    }
-    
-    // Se tem role mínimo necessário, verificar hierarquia
-    if (menuItem.requiredRole) {
-      return hasPermission(menuItem.requiredRole);
-    }
-    
-    // Se não tem restrições, é visível para todos
-    return true;
-  };
-
-  // ✅ FUNÇÃO PARA VERIFICAR PERMISSÕES HIERÁRQUICAS
-  const hasPermission = (requiredRole: 'ADMIN' | 'SUPERUSER' | 'USER'): boolean => {
-    if (!userRole) return false;
-    
-    const roleHierarchy = {
-      'ADMIN': 3,
-      'SUPERUSER': 2,
-      'USER': 1
+    const closeOnScroll = (event: Event) => {
+      if (!flyoutRef.current?.contains(event.target as Node)) setFlyout(null);
     };
-    
-    const userLevel = roleHierarchy[userRole as keyof typeof roleHierarchy] || 0;
-    const requiredLevel = roleHierarchy[requiredRole] || 0;
-    
-    return userLevel >= requiredLevel;
-  };
+    document.addEventListener('pointerdown', closeOnOutside);
+    document.addEventListener('keydown', closeOnKey);
+    window.addEventListener('resize', closeOnScroll);
+    document.addEventListener('scroll', closeOnScroll, true);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnKey);
+      window.removeEventListener('resize', closeOnScroll);
+      document.removeEventListener('scroll', closeOnScroll, true);
+    };
+  }, [flyout]);
 
-  const menuItems: SidebarItem[] = [
-    {
-      title: 'Principal',
-      type: 'title'
-    },
-    {
-      icon: <Home size={20} />,
-      label: 'Início',
-      subItems: [
-        { label: 'Início', href: '/' },
-      ],
-    },
-    {
-      title: 'Financeiro',
-      type: 'title'
-    },
-    {
-      icon: <Receipt size={20} />,
-      label: 'Transações',
-      subItems: [
-        { label: 'Transações', href: '/financial/transactions', hideWhenExpanded: true, isHeader: true },
-        { label: 'Nova Compra no Cartão', href: '/financial/transactions/new-credit-card-purchase' },
-        { label: 'Compras Parceladas', href: '/financial/installment-purchases' },
-        { label: 'Nova Despesa', href: '/financial/transactions/new?type=EXPENSE&locked=true' },
-        { label: 'Nova Receita', href: '/financial/transactions/new?type=INCOME&locked=true' },
-        { label: 'Nova Transferência', href: '/financial/transactions/new?type=TRANSFER&locked=true' },
-      ],
-    },
-    {
-      icon: <Repeat size={20} />,
-      label: 'Fixas',
-      subItems: [
-        { label: 'Transações Fixas', href: '/financial/fixed-transactions' },
-      ],
-    },
-    {
-      icon: <PieChart size={20} />,
-      label: 'Análises',
-      subItems: [
-        { label: 'Análise financeira', href: '/financial/dashboard'},
-      ],
-    },
-    {
-      icon: <PiggyBank size={20} />,
-      label: 'Orçamento',
-      subItems: [
-        { label: 'Visão Geral', href: '/financial/budgets?view=overview' },
-        { label: 'Plano de Disponibilidade', href: '/financial/budgets?view=availability' },
-        { label: 'Planejamento Mensal', href: '/financial/budgets?view=monthly' },
-        { label: 'Provisões', href: '/financial/budgets?view=provisions' },
-      ],
-    },
-    {
-      icon: <CreditCard size={20} />,
-      label: 'Contas',
-      subItems: [
-        { label: 'Contas', href: '/financial/accounts'},
-      ],
-      requiredPermission: 'FINANCIAL_ACCOUNTS'
-    },
-    {
-      icon: <CreditCard size={20} />,
-      label: 'Cartões',
-      subItems: [
-        { label: 'Cartões e Faturas', href: '/financial/credit-cards' },
-        { label: 'Compras Parceladas no Cartão', href: '/financial/credit-cards/purchases' },
-        { label: 'Novo Cartão', href: '/financial/credit-cards/new' },
-      ],
-      requiredPermission: 'FINANCIAL_ACCOUNTS'
-    },
-    {
-      icon: <Building2 size={20} />,
-      label: 'Categorias',
-      subItems: [
-        { label: 'Categorias', href: '/financial/categories' },
-      ],
-      requiredPermission: 'FINANCIAL_CATEGORIES'
-    },
-    {
-      title: 'Relatórios',
-      type: 'title'
-    },
-    {
-      icon: <BarChart3 size={20} />,
-      label: 'Relatórios',
-      subItems: [
-        { label: 'Relatórios', hideWhenExpanded: true, isHeader: true },
-        { label: 'Movimentação de Contas Financeiras', href: '/financial/reports/financial-account-movement' },
-        { label: 'Fluxo de Caixa', href: '/financial/reports/cashflow' }
-      ],
-    },
-    {
-      title: 'Administração',
-      type: 'title',
-      requiredRole: 'SUPERUSER' // ✅ Seção só aparece para SUPERUSER ou ADMIN
-    },
-    {
-      icon: <Users size={20} />,
-      label: 'Usuários',
-      subItems: [
-        { label: 'Usuários', href: '/admin/users' },
-      ],
-      requiredRole: 'SUPERUSER' // ✅ Apenas SUPERUSER e ADMIN podem ver
-    },
-    {
-      icon: <Settings size={20} />,
-      label: 'Configurações',
-      subItems: [
-        { label: 'Configurações', href: '/admin/settings' },
-      ],
-      requiredRole: 'SUPERUSER' // ✅ Apenas SUPERUSER e ADMIN podem ver
-    },
-    {
-      icon: <Activity size={20} />,
-      label: 'Operacoes',
-      subItems: [
-        { label: 'Operacoes do Sistema', href: '/admin/operations' },
-      ],
-      requiredRole: 'SUPERUSER'
-    },
-  ];
+  useEffect(() => {
+    if (!isMobile || !mobileOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusable = () => Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') || [])
+      .filter(element => !element.closest('[hidden]'));
+    focusable()[0]?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onMobileClose?.();
+      if (event.key !== 'Tab') return;
+      const elements = focusable();
+      const first = elements[0];
+      const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', trapFocus);
+      previousFocus?.focus();
+    };
+  }, [isMobile, mobileOpen, onMobileClose]);
 
-  const toggleSidebar = () => {
-    const newCollapsedState = !collapsed;
-    
-    // Se estamos controlando internamente, atualize o estado
-    if (isCollapsed === undefined) {
-      setInternalCollapsed(newCollapsedState);
-    }
-    
-    // Notifica o componente pai (DashboardLayout) sobre a mudança
-    if (onToggle) {
-      onToggle(newCollapsedState);
-    }
+  function toggleChildren(item: NavigationItem, event: React.MouseEvent<HTMLButtonElement>) {
+    if (!collapsed) { setExpandedItem(current => current === item.id ? null : item.id); return; }
+    triggerRef.current = event.currentTarget;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const estimatedHeight = 58 + (item.children?.length || 0) * 42;
+    setFlyout(current => current?.item.id === item.id ? null : {
+      item, top: Math.max(12, Math.min(rect.top, window.innerHeight - estimatedHeight - 12)),
+    });
+  }
 
-    // Fecha qualquer submenu aberto
-    clearCloseSubmenuTimeout();
-    setActiveSubmenu(null);
-  };
+  function renderChildren(item: NavigationItem, floating = false) {
+    return <div className={floating ? 'cash-flyout-links' : 'cash-subnav'}>
+      {item.children?.map(link => <Link key={link.href} href={link.href}
+        className="cash-subnav-link" aria-current={isNavigationLinkActive(link.href, router.asPath || router.pathname) ? 'page' : undefined}
+        onClick={() => { setFlyout(null); onMobileClose?.(); }}>
+        {link.label}
+      </Link>)}
+    </div>;
+  }
 
-  const handleMouseEnter = (item: MenuItem, event: React.MouseEvent) => {
-    clearCloseSubmenuTimeout();
-
-    // No modo colapsado, sempre mostrar o submenu flutuante
-    // No modo expandido, mostrar apenas para itens com mais de um subitem
-    if (collapsed || hasMultipleClickableSubItems(item)) {
-      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-      
-      // Sobrepõe levemente a borda direita do sidebar para cobrir scrollbar e toggle
-      setSubmenuPosition({ 
-        top: rect.top, 
-        left: rect.right - SUBMENU_OVERLAP_PX
-      });
-      
-      setActiveSubmenu(item.label);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    scheduleCloseSubmenu();
-  };
-
-  // Verifica se um item tem mais de um subitem clicável (com href)
-  const hasMultipleClickableSubItems = (item: MenuItem) => {
-    return item.subItems.filter(subItem => subItem.href).length > 1;
-  };
-
-  // Obtém o primeiro subitem clicável
-  const getFirstClickableSubItem = (item: MenuItem) => {
-    return item.subItems.find(subItem => subItem.href);
-  };
-
-  // Determina qual item de menu está ativo
-  const getActiveMenuItem = () => {
-    if (!activeSubmenu) return null;
-    
-    return menuItems.find(item => 
-      !('type' in item) && item.label === activeSubmenu
-    ) as MenuItem | null;
-  };
-
-  const activeMenu = getActiveMenuItem();
-
-  // ✅ FILTRAR ITENS VISÍVEIS BASEADO NO ROLE
-  const visibleMenuItems = menuItems.filter(isItemVisible);
-
-  // ✅ VERIFICAR SE A SEÇÃO DE ADMINISTRAÇÃO TEM ITENS VISÍVEIS
-  const hasAdminItems = menuItems.some(item => {
-    if ('type' in item && item.type === 'title' && item.title === 'Administração') {
-      return false; // Pular o título da seção
-    }
-    
-    // Verificar se há pelo menos um item de administração visível
-    if (!('type' in item)) {
-      const menuItem = item as MenuItem;
-      return (
-        (menuItem.requiredRole === 'SUPERUSER' || menuItem.requiredRole === 'ADMIN' || 
-         menuItem.allowedRoles?.includes('ADMIN') || menuItem.allowedRoles?.includes('SUPERUSER')) &&
-        isItemVisible(menuItem)
-      );
-    }
-    return false;
-  });
-
-  return (
-    <>
-      <div
-        className={`h-[calc(100vh-60px)] bg-surface text-gray-300 flex flex-col transition-all duration-300 fixed z-30 top-[60px] left-0 ${
-          collapsed ? 'w-16' : 'w-52'
-        }`}
-        style={{ marginTop: "-1px" }}
-      >
-        {/* Botão de toggle no centro da borda direita */}
-        <button
-          onClick={toggleSidebar}
-          className="absolute -right-3 top-1/2 transform -translate-y-1/2 bg-surface rounded-full p-1 text-gray-300 z-10"
-          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-        >
-          {collapsed ? (
-            <ChevronRight size={16} />
-          ) : (
-            <ChevronLeft size={16} />
-          )}
-        </button>
-
-        <div className="flex-1 overflow-y-auto">
-          {visibleMenuItems.map((item, index) => {
-            if ('type' in item && item.type === 'title') {
-              // Separadores de seção - apenas no modo expandido
-              if (!collapsed) {
-                return (
-                  <div key={index} className="px-4 py-2 mt-4 first:mt-2">
-                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                      {item.title}
-                    </span>
-                  </div>
-                );
-              }
-              return null;
-            }
-
-            const menuItem = item as MenuItem;
-            const hasMultipleSubItems = hasMultipleClickableSubItems(menuItem);
-            const firstClickableSubItem = getFirstClickableSubItem(menuItem);
-            const href = firstClickableSubItem?.href || '#';
-            
-            // Verificar se algum dos subitens corresponde à rota atual
-            const isActive = menuItem.subItems.some(
-              subItem => subItem.href && router.pathname === subItem.href.split('?')[0]
-            );
-
-            return (
-              <div key={index}>
-                {collapsed ? (
-                  <div 
-                    className={`cursor-pointer px-4 py-3 transition-all duration-200 ${
-                      isActive 
-                        ? 'bg-accent text-white shadow-lg'
-                        : 'text-gray-300 hover:bg-elevated hover:text-accent'
-                    } flex justify-center items-center`}
-                    onMouseEnter={(e) => handleMouseEnter(menuItem, e)}
-                    onMouseLeave={handleMouseLeave}
-                    onClick={() => {
-                      if (href && href !== '#') {
-                        router.push(href);
-                      }
-                    }}
-                  >
-                    {menuItem.icon}
-                  </div>
-                ) : (
-                  <div className="flex flex-col">
-                    <Link
-                      href={href}
-                      className={`flex items-center justify-between px-4 py-3 transition-all duration-200 ${
-                        isActive 
-                          ? 'bg-accent text-white font-medium shadow-lg border-r-2 border-accent-light'
-                          : 'hover:bg-elevated hover:text-accent hover:border-r-2 hover:border-accent/50'
-                      }`}
-                      onMouseEnter={(e) => handleMouseEnter(menuItem, e)}
-                      onMouseLeave={handleMouseLeave}
-                    >
-                      <div className="flex items-center">
-                        <span className="mr-3">{menuItem.icon}</span>
-                        <span>{menuItem.label}</span>
-                      </div>
-                      
-                      {hasMultipleSubItems && <ChevronRight size={16} className="ml-2" />}
-                    </Link>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+  function renderItem(item: NavigationItem) {
+    const active = isNavigationItemActive(item, router.pathname);
+    const expanded = collapsed ? flyout?.item.id === item.id : expandedItem === item.id;
+    const Icon = item.icon;
+    return <div key={item.id} className="cash-nav-group">
+      <div className={`cash-nav-row${active ? ' is-active' : ''}`}>
+        {collapsed && item.children ? (
+          <button type="button" className="cash-nav-link" aria-label={item.label} aria-expanded={expanded}
+            aria-controls={expanded ? 'cash-navigation-flyout' : undefined} onClick={event => toggleChildren(item, event)}>
+            <Icon size={20} aria-hidden="true" /><span className="cash-nav-tooltip" aria-hidden="true">{item.label}</span>
+          </button>
+        ) : (
+          <Link href={item.href} className="cash-nav-link" aria-label={collapsed ? item.label : undefined}
+            aria-current={active ? 'page' : undefined} onClick={onMobileClose}>
+            <Icon size={20} aria-hidden="true" />
+            {collapsed ? <span className="cash-nav-tooltip" aria-hidden="true">{item.label}</span> : <span>{item.label}</span>}
+          </Link>
+        )}
+        {!collapsed && item.children && <button type="button" className="cash-nav-expand"
+          aria-label={`${expanded ? 'Recolher' : 'Expandir'} opções de ${item.label}`} aria-expanded={expanded}
+          aria-controls={`cash-subnav-${item.id}`} onClick={event => toggleChildren(item, event)}>
+          <ChevronDown size={15} className={expanded ? 'rotate-180' : ''} aria-hidden="true" />
+        </button>}
       </div>
+      {!collapsed && item.children && <div id={`cash-subnav-${item.id}`} hidden={!expanded}>{renderChildren(item)}</div>}
+    </div>;
+  }
 
-      {/* Submenu flutuante - para todos os itens no modo colapsado ou apenas múltiplos subitens no expandido */}
-      {activeMenu && (
-        <div
-          className="fixed bg-surface border border-gray-700 rounded shadow-lg z-[60] transition-opacity duration-200 ease-in-out opacity-100"
-          style={{ 
-            left: `${submenuPosition.left}px`,
-            top: submenuPosition.top, 
-            minWidth: '200px',
-            display: 'block'
-          }}
-          onMouseEnter={() => {
-            clearCloseSubmenuTimeout();
-            setActiveSubmenu(activeMenu.label);
-          }}
-          onMouseLeave={handleMouseLeave}
-        >
-          <div className="py-1">
-            {activeMenu.subItems.filter(subItem => !subItem.hideWhenExpanded || collapsed)
-              .map((subItem, index) => {
-                
-                return subItem.isHeader ? (
-                  <div 
-                    key={index}
-                    className="block bg-elevated px-4 py-2 text-gray-300 whitespace-nowrap hover:text-accent transition-colors"
-                    onClick={() => {
-                      if (subItem.href) {
-                        router.push(subItem.href);
-                      }
-                    }}
-                    style={{ cursor: subItem.href ? 'pointer' : 'default' }}
-                  >
-                    {subItem.label}
-                  </div>
-                ) : (
-                  <Link
-                    key={index}
-                    href={subItem.href || '#'}
-                    className="block px-4 py-2 hover:bg-elevated text-gray-300 text-sm whitespace-nowrap hover:text-accent transition-colors"
-                  >
-                    {subItem.label}
-                  </Link>
-                );
-              })}
-          </div>
-        </div>
-      )}
-    </>
-  );
+  return <>
+    {isMobile && mobileOpen && <div className="cash-sidebar-backdrop" onClick={onMobileClose} aria-hidden="true" />}
+    <aside ref={sidebarRef} id="cash-sidebar" className={`cash-sidebar${collapsed ? ' is-collapsed' : ''}${mobileOpen ? ' is-mobile-open' : ''}`}
+      role={isMobile && mobileOpen ? 'dialog' : undefined} aria-modal={isMobile && mobileOpen ? true : undefined}
+      aria-label="Navegação do Zenit Cash">
+      <div className="cash-sidebar-brand">
+        <Link href="/" aria-label="Zenit Cash — início" onClick={onMobileClose}>
+          <Image src={collapsed ? '/assets/images/favicon-symbol.png' : `/assets/images/logo_principal${colorMode === 'light' ? '_light' : ''}.png`}
+            alt="Zenit Cash" width={collapsed ? 32 : 132} height={collapsed ? 32 : 50} priority className="cash-logo" />
+        </Link>
+        {isMobile && <button type="button" className="cash-icon-button" aria-label="Fechar navegação" onClick={onMobileClose}><X size={20} /></button>}
+      </div>
+      <nav className="cash-navigation" aria-label="Menu principal">
+        {!collapsed && <p className="cash-nav-caption">Suas finanças</p>}
+        {mainNavigation.filter(canSee).map(renderItem)}
+        {visibleSettings.length > 0 && <div className="cash-settings-nav">
+          {collapsed ? renderItem({ id: 'adjustments', label: 'Ajustes', href: visibleSettings[0].href, icon: Settings2,
+            matches: visibleSettings.map(item => item.href), children: visibleSettings }) : <>
+            <button type="button" className={`cash-settings-toggle${settingsActive ? ' is-active' : ''}`}
+              aria-expanded={settingsOpen} aria-controls="cash-settings-links" onClick={() => setSettingsOpen(!settingsOpen)}>
+              <Settings2 size={18} aria-hidden="true" /><span>Ajustes</span><ChevronDown size={15} className={settingsOpen ? 'rotate-180' : ''} aria-hidden="true" />
+            </button>
+            <div id="cash-settings-links" hidden={!settingsOpen}>{visibleSettings.map(renderItem)}</div>
+          </>}
+        </div>}
+      </nav>
+      {!isMobile && <div className="cash-sidebar-footer">
+        <button type="button" className="cash-collapse-button" onClick={() => onToggle(!isCollapsed)}
+          aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'} aria-expanded={!collapsed} aria-controls="cash-sidebar">
+          {collapsed ? <PanelLeftOpen size={20} /> : <><PanelLeftClose size={20} /><span>Recolher menu</span></>}
+        </button>
+      </div>}
+    </aside>
+    {collapsed && flyout && <div ref={flyoutRef} id="cash-navigation-flyout" className="cash-navigation-flyout"
+      style={{ top: flyout.top }} aria-label={`Opções de ${flyout.item.label}`}>
+      <div className="cash-flyout-heading"><span>{flyout.item.label}</span><button type="button" className="cash-icon-button"
+        aria-label="Fechar submenu" onClick={() => { setFlyout(null); triggerRef.current?.focus(); }}><X size={16} /></button></div>
+      {renderChildren(flyout.item, true)}
+    </div>}
+  </>;
 }

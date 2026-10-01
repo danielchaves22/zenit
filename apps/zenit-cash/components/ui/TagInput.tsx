@@ -384,15 +384,15 @@ export function TagInput({
   return (
     <div className={`relative mb-4 ${className}`}>
       {label && (
-        <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor={id}>
+        <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor={id}>
           {label}
         </label>
       )}
 
       <div
-        className={`flex min-h-[42px] w-full flex-wrap items-center gap-2 rounded border bg-background px-2 py-1.5 text-sm text-white focus-within:border-[#2563eb] focus-within:outline-none focus-within:ring ${
+        className={`flex min-h-[42px] w-full flex-wrap items-center gap-2 rounded border bg-background px-2 py-1.5 text-sm text-text focus-within:border-accent focus-within:outline-none focus-within:ring ${
           disabled ? 'cursor-not-allowed opacity-60' : 'cursor-text'
-        } ${disabled ? 'border-gray-700' : 'border-gray-700 hover:border-gray-600'}`}
+        } ${disabled ? 'border-border' : 'border-border hover:border-border-strong'}`}
         onClick={() => {
           if (!disabled) {
             inputRef.current?.focus();
@@ -407,14 +407,14 @@ export function TagInput({
               key={normalizeTagKey(tag)}
               className={`inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-1 text-xs ${
                 isPending
-                  ? 'border-green-500/50 bg-green-500/10 text-green-200'
-                  : 'border-gray-600 bg-[#1e2126] text-gray-200'
+                  ? 'border-green-500/50 bg-tone-green-soft text-tone-green'
+                  : 'border-border-strong bg-background text-text'
               }`}
             >
               <span className="truncate">{tag}</span>
               <button
                 type="button"
-                className="rounded-full text-current transition-colors hover:text-white disabled:cursor-not-allowed"
+                className="rounded-full text-current transition-colors hover:text-text disabled:cursor-not-allowed"
                 onClick={(event) => {
                   event.stopPropagation();
                   removeTag(tag);
@@ -442,20 +442,20 @@ export function TagInput({
           onBlur={handleBlur}
           placeholder={value.length === 0 ? placeholder : ''}
           disabled={disabled || !canAddMoreTags}
-          className="min-w-[8ch] flex-1 border-0 bg-transparent p-0 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-0 disabled:cursor-not-allowed"
+          className="min-w-[8ch] flex-1 border-0 bg-transparent p-0 text-sm text-text placeholder:text-text-subtle focus:outline-none focus:ring-0 disabled:cursor-not-allowed"
           autoComplete="off"
           maxLength={TAG_MAX_LENGTH}
         />
 
         {isLoading ? (
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-500 border-t-[#2563eb]" />
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-border-strong border-t-accent" />
         ) : (
-          <Search size={16} className="text-gray-500" />
+          <Search size={16} className="text-text-subtle" />
         )}
       </div>
 
       {showSuggestions && (
-        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded border border-gray-700 bg-surface shadow-lg">
+        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded border border-border bg-surface shadow-lg">
           {suggestionItems.map((item, index) => {
             const isCreate = item.type === 'create';
             const label = isCreate ? item.name : item.suggestion.name;
@@ -467,8 +467,8 @@ export function TagInput({
                 type="button"
                 className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-elevated ${
                   index === activeSuggestionIndex ? 'bg-elevated' : ''
-                } ${index === suggestionItems.length - 1 ? '' : 'border-b border-gray-700'} ${
-                  isCreate ? 'text-green-200' : 'text-white'
+                } ${index === suggestionItems.length - 1 ? '' : 'border-b border-border'} ${
+                  isCreate ? 'text-tone-green' : 'text-text'
                 }`}
                 onMouseDown={(event) => {
                   event.preventDefault();
@@ -485,7 +485,7 @@ export function TagInput({
                   </span>
                 </span>
                 {!isCreate && (
-                  <span className="shrink-0 text-xs text-gray-400">
+                  <span className="shrink-0 text-xs text-text-muted">
                     {usageCount}x
                   </span>
                 )}
@@ -496,7 +496,7 @@ export function TagInput({
       )}
 
       {!canAddMoreTags && (
-        <p className="mt-1 text-xs text-gray-400">Maximo de {maxTags} tags atingido.</p>
+        <p className="mt-1 text-xs text-text-muted">Maximo de {maxTags} tags atingido.</p>
       )}
     </div>
   );

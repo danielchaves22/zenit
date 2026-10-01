@@ -220,20 +220,20 @@ export function getTransactionDisplayStatusLabel(status: TransactionDisplayStatu
 export function getTransactionDisplayStatusClasses(status: TransactionDisplayStatus): string {
   switch (status) {
     case 'OPEN':
-      return 'bg-blue-900 text-blue-300';
+      return 'bg-tone-blue-soft text-tone-blue';
     case 'OVERDUE':
-      return 'bg-red-900 text-red-300';
+      return 'bg-tone-red-soft text-tone-red';
     case 'SETTLED':
-      return 'bg-green-900 text-green-300';
+      return 'bg-tone-green-soft text-tone-green';
     case 'PAID':
-      return 'bg-emerald-900 text-emerald-300';
+      return 'bg-tone-emerald-soft text-tone-emerald';
     case 'CANCELED':
-      return 'bg-gray-700 text-gray-300';
+      return 'bg-elevated text-text-muted';
     case 'ARCHIVED':
-      return 'bg-amber-900 text-amber-200';
+      return 'bg-tone-amber-soft text-tone-amber';
     case 'PROJECTED':
-      return 'bg-sky-900 text-sky-200';
+      return 'bg-tone-sky-soft text-tone-sky';
     default:
-      return 'bg-gray-700 text-gray-300';
+      return 'bg-elevated text-text-muted';
   }
 }

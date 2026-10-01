@@ -138,26 +138,26 @@ function BudgetsPageInner() {
       />
 
       <div className="mb-4 flex items-center gap-2">
-        <h1 className="text-2xl font-semibold text-white">Orçamento</h1>
+        <h1 className="text-2xl font-semibold text-text">Orçamento</h1>
         <InfoModalButton modalTitle="Sobre o Orçamento" buttonLabel="Ajuda sobre o Orçamento">
           <p>
             O Orçamento reúne controles complementares para transformar sua movimentação
             financeira em decisões.
           </p>
           <p>
-            <strong className="text-white">Plano de Disponibilidade:</strong> mostra quanto pode ser
+            <strong className="text-text">Plano de Disponibilidade:</strong> mostra quanto pode ser
             utilizado preservando a meta de saldo.
           </p>
           <p>
-            <strong className="text-white">Planejamento Mensal:</strong> organiza onde você pretende
+            <strong className="text-text">Planejamento Mensal:</strong> organiza onde você pretende
             usar esse dinheiro por categoria.
           </p>
           <p>
-            <strong className="text-white">Provisões:</strong> prepara gradualmente recursos para
+            <strong className="text-text">Provisões:</strong> prepara gradualmente recursos para
             despesas futuras previsíveis.
           </p>
           <p>
-            <strong className="text-white">Planejamento Orientado:</strong> prepara e confirma a
+            <strong className="text-text">Planejamento Orientado:</strong> prepara e confirma a
             base financeira que será usada em futuras sugestões de orçamento.
           </p>
           <p>
@@ -170,12 +170,12 @@ function BudgetsPageInner() {
       <BudgetSectionTabs activeView={view} month={month} />
 
       {view !== 'availability' && view !== 'provisions' && view !== 'guided' && (
-        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-gray-700 bg-surface px-4 py-3">
-          <div className="flex items-center gap-2 text-sm text-gray-400">
+        <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-text-muted">
             <CalendarDays size={18} className="text-accent" />
             Mês de referência
           </div>
-          <span className="text-sm font-semibold text-white">{formatMonthLabel(month)}</span>
+          <span className="text-sm font-semibold text-text">{formatMonthLabel(month)}</span>
           <div className="ml-1 flex items-center gap-2">
             <Button
               variant="outline"

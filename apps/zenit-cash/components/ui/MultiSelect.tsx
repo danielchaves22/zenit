@@ -137,9 +137,9 @@ export function MultiSelect({
   return (
     <div className={`mb-4 ${className}`} ref={containerRef}>
       {label && (
-        <label className="mb-1 block text-sm font-medium text-gray-300">
+        <label className="mb-1 block text-sm font-medium text-text-muted">
           {label}
-          {required && <span className="ml-1 text-red-400">*</span>}
+          {required && <span className="ml-1 text-tone-red">*</span>}
         </label>
       )}
 
@@ -150,20 +150,20 @@ export function MultiSelect({
           aria-label={ariaLabel || label || placeholder}
           disabled={disabled}
           onClick={() => !disabled && setIsOpen((prev) => !prev)}
-          className={`flex w-full items-center justify-between gap-2 rounded border bg-background px-2 py-1.5 text-left text-sm text-white transition-colors focus:outline-none focus:ring focus:border-accent ${
-            error ? 'border-red-500' : 'border-gray-700 hover:border-gray-600'
+          className={`flex w-full items-center justify-between gap-2 rounded border bg-background px-2 py-1.5 text-left text-sm text-text transition-colors focus:outline-none focus:ring focus:border-accent ${
+            error ? 'border-red-500' : 'border-border hover:border-border-strong'
           } ${disabled ? 'cursor-not-allowed opacity-60' : ''} ${triggerClassName}`}
         >
           <span
             className={`min-w-0 flex-1 truncate ${
-              selectedLabels.length === 0 ? 'text-gray-400' : 'text-white'
+              selectedLabels.length === 0 ? 'text-text-muted' : 'text-text'
             }`}
           >
             {getButtonText()}
           </span>
           <ChevronDown
             size={16}
-            className={`text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            className={`text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
           />
         </button>
 
@@ -171,7 +171,7 @@ export function MultiSelect({
           ReactDOM.createPortal(
             <div
               ref={portalRef}
-              className="z-[9999] max-h-64 overflow-auto rounded border border-gray-700 bg-[#1e2126] shadow-lg"
+              className="z-[9999] max-h-64 overflow-auto rounded border border-border bg-background shadow-lg"
               style={{
                 position: 'fixed',
                 top: position.top,
@@ -180,13 +180,13 @@ export function MultiSelect({
               }}
             >
               {options.length > 0 && (
-                <div className="sticky top-0 flex items-center justify-between gap-2 border-b border-gray-700 bg-[#1e2126] px-3 py-2 text-xs text-gray-300">
+                <div className="sticky top-0 flex items-center justify-between gap-2 border-b border-border bg-background px-3 py-2 text-xs text-text-muted">
                   <button
                     type="button"
                     disabled={allSelected}
                     onClick={() => !allSelected && onChange(allValues)}
                     className={`font-semibold uppercase tracking-wide transition-colors ${
-                      allSelected ? 'cursor-default text-gray-500' : 'hover:text-white'
+                      allSelected ? 'cursor-default text-text-subtle' : 'hover:text-text'
                     }`}
                   >
                     Selecionar todos
@@ -198,8 +198,8 @@ export function MultiSelect({
                     onClick={() => hasSelection && onChange([])}
                     className={`font-semibold uppercase tracking-wide transition-colors ${
                       hasSelection
-                        ? 'text-red-300 hover:text-white'
-                        : 'cursor-default text-gray-500'
+                        ? 'text-tone-red hover:text-text'
+                        : 'cursor-default text-text-subtle'
                     }`}
                   >
                     Limpar selecao
@@ -213,8 +213,8 @@ export function MultiSelect({
                 return (
                   <label
                     key={option.value}
-                    className={`flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-[#262b36] ${
-                      checked ? 'text-accent' : 'text-white'
+                    className={`flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-elevated ${
+                      checked ? 'text-accent' : 'text-text'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -222,7 +222,7 @@ export function MultiSelect({
                         type="checkbox"
                         checked={checked}
                         onChange={(event) => toggleOption(option.value, event.target.checked)}
-                        className="h-4 w-4 rounded border-gray-700 bg-[#1e2126]"
+                        className="h-4 w-4 rounded border-border bg-background"
                       />
                       <span className="truncate">{option.label}</span>
                     </div>
@@ -235,7 +235,7 @@ export function MultiSelect({
           )}
       </div>
 
-      {error && <p className="mt-1 text-sm text-red-400">{error}</p>}
+      {error && <p className="mt-1 text-sm text-tone-red">{error}</p>}
     </div>
   );
 }

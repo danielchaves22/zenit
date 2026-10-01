@@ -217,7 +217,7 @@ export function AutocompleteInput({
     
     return parts.map((part, index) => 
       regex.test(part) ? (
-        <span key={index} className="bg-[#2563eb] text-white px-1 rounded"> {/* ✅ ALTERADO */}
+        <span key={index} className="bg-accent text-on-accent px-1 rounded"> {/* ✅ ALTERADO */}
           {part}
         </span>
       ) : part
@@ -227,9 +227,9 @@ export function AutocompleteInput({
   return (
     <div className={`relative ${className}`}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor={id}>
+        <label className="block text-sm font-medium mb-1 text-text-muted" htmlFor={id}>
           {label}
-          {required && <span className="text-red-400 ml-1">*</span>}
+          {required && <span className="text-tone-red ml-1">*</span>}
         </label>
       )}
       
@@ -248,7 +248,7 @@ export function AutocompleteInput({
           autoFocus={autoFocus}
           maxLength={maxLength}
           disabled={disabled}
-          className={`w-full pl-3 pr-10 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] ${
+          className={`w-full pl-3 pr-10 py-1.5 bg-background border border-border text-text rounded focus:outline-none focus:ring focus:border-accent ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           } ${error ? 'border-red-500' : ''}`}
           autoComplete="off"
@@ -257,9 +257,9 @@ export function AutocompleteInput({
         {/* Loading or search icon */}
         <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
           {isLoading ? (
-            <div className="w-4 h-4 border-2 border-gray-400 border-t-[#2563eb] rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-border-strong border-t-accent rounded-full animate-spin" />
           ) : (
-            <Search size={16} className="text-gray-400" />
+            <Search size={16} className="text-text-muted" />
           )}
         </div>
       </div>
@@ -268,7 +268,7 @@ export function AutocompleteInput({
       {showSuggestions && suggestions.length > 0 && hasFocus && (
         <div 
           ref={suggestionsRef}
-          className="absolute z-50 w-full mt-1 bg-surface border border-gray-700 rounded shadow-lg max-h-60 overflow-y-auto"
+          className="absolute z-50 w-full mt-1 bg-surface border border-border rounded shadow-lg max-h-60 overflow-y-auto"
         >
           {suggestions.map((suggestion, index) => (
             <div
@@ -276,7 +276,7 @@ export function AutocompleteInput({
               className={`px-4 py-3 cursor-pointer flex items-center justify-between hover:bg-elevated ${
                 index === activeSuggestionIndex ? 'bg-elevated' : ''
               } ${index === 0 ? 'rounded-t-lg' : ''} ${
-                index === suggestions.length - 1 ? 'rounded-b-lg' : 'border-b border-gray-700'
+                index === suggestions.length - 1 ? 'rounded-b-lg' : 'border-b border-border'
               }`}
               onMouseDown={(e) => {
                 setIsMouseDownOnSuggestion(true);
@@ -290,15 +290,15 @@ export function AutocompleteInput({
               onMouseEnter={() => setActiveSuggestionIndex(index)}
             >
               <div className="flex-1 min-w-0">
-                <div className="text-white text-sm truncate">
+                <div className="text-text text-sm truncate">
                   {highlightMatch(suggestion.description, value)}
                 </div>
-                <div className="mt-1 text-xs text-gray-400 truncate">
+                <div className="mt-1 text-xs text-text-muted truncate">
                   {suggestion.categoryName || 'Sem categoria'}
                 </div>
               </div>
               
-              <div className="flex items-center gap-2 ml-3 text-xs text-gray-400">
+              <div className="flex items-center gap-2 ml-3 text-xs text-text-muted">
                 <Clock size={12} />
                 <span>{suggestion.frequency}x</span>
               </div>
@@ -306,8 +306,8 @@ export function AutocompleteInput({
           ))}
           
           {/* Footer info */}
-          <div className="px-4 py-2 border-t border-gray-700 bg-surface rounded-b-lg">
-            <div className="text-xs text-gray-500 flex items-center justify-between">
+          <div className="px-4 py-2 border-t border-border bg-surface rounded-b-lg">
+            <div className="text-xs text-text-subtle flex items-center justify-between">
               <span>{suggestions.length} sugestões encontradas</span>
               <span>↑↓ navegar • Enter selecionar • Esc fechar</span>
             </div>
@@ -317,7 +317,7 @@ export function AutocompleteInput({
 
       {/* Error message */}
       {error && (
-        <p className="mt-1 text-sm text-red-400">
+        <p className="mt-1 text-sm text-tone-red">
           {error}
         </p>
       )}

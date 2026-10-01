@@ -10,12 +10,12 @@ export function Select({ label, options, className = '', ...props }: SelectProps
   return (
     <div className={`${className}`}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor={props.id}>
+        <label className="block text-sm font-medium mb-1 text-text-muted" htmlFor={props.id}>
           {label}
         </label>
       )}
       <select
-        className="bg-background border border-gray-700 text-white rounded px-2 py-1.5 focus:outline-none focus:ring focus:border-[#2563eb]"
+        className="bg-background border border-border text-text rounded px-2 py-1.5 focus:outline-none focus:ring focus:border-accent"
         {...props}
       >
         {options.map((option) => (

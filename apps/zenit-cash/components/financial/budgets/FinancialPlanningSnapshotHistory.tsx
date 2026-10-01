@@ -96,7 +96,7 @@ export function FinancialPlanningSnapshotHistory() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <History size={18} className="text-accent" />
-          <h3 className="font-semibold text-white">Histórico de retratos financeiros</h3>
+          <h3 className="font-semibold text-text">Histórico de retratos financeiros</h3>
         </div>
         <Button
           type="button"
@@ -111,7 +111,7 @@ export function FinancialPlanningSnapshotHistory() {
       </div>
 
       {open && (
-        <div className="mt-4 border-t border-gray-800 pt-4">
+        <div className="mt-4 border-t border-border pt-4">
           <div className="mb-3 flex justify-end">
             <Button
               type="button"
@@ -126,12 +126,12 @@ export function FinancialPlanningSnapshotHistory() {
           </div>
 
           {loading && !loaded ? (
-            <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-text-muted">
               <Loader2 size={17} className="animate-spin" />
               Carregando retratos financeiros...
             </div>
           ) : items.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-700 px-4 py-6 text-center text-sm text-gray-500">
+            <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-text-subtle">
               Nenhum retrato financeiro foi confirmado ainda.
             </div>
           ) : (
@@ -141,7 +141,7 @@ export function FinancialPlanningSnapshotHistory() {
                 const expanded = expandedId === snapshot.id;
                 const marginIsNegative = Number(snapshot.totals.monthlyBalanceAfterGoal) < 0;
                 return (
-                  <article key={snapshot.id} className="rounded-lg border border-gray-700 bg-[#11161d]">
+                  <article key={snapshot.id} className="rounded-lg border border-border bg-elevated">
                     <button
                       type="button"
                       aria-expanded={expanded}
@@ -149,10 +149,10 @@ export function FinancialPlanningSnapshotHistory() {
                       className="flex w-full flex-wrap items-center justify-between gap-4 p-4 text-left"
                     >
                       <span>
-                        <span className="block text-sm font-medium text-white">
+                        <span className="block text-sm font-medium text-text">
                           Snapshot #{snapshot.id} · {formatDateTime(snapshot.confirmedAt)}
                         </span>
-                        <span className="mt-1 block text-xs text-gray-500">
+                        <span className="mt-1 block text-xs text-text-subtle">
                           Meta {formatMoney(snapshot.targetMonthlySavings)} · qualidade{' '}
                           {snapshot.dataQualityScore}% · {snapshot.selectedSourceCount} fonte(s)
                         </span>
@@ -160,7 +160,7 @@ export function FinancialPlanningSnapshotHistory() {
                       <span className="flex items-center gap-3">
                         <span
                           className={`text-sm font-semibold ${
-                            marginIsNegative ? 'text-red-300' : 'text-emerald-300'
+                            marginIsNegative ? 'text-tone-red' : 'text-tone-emerald'
                           }`}
                         >
                           {formatMoney(snapshot.totals.monthlyBalanceAfterGoal)} após a meta
@@ -170,9 +170,9 @@ export function FinancialPlanningSnapshotHistory() {
                     </button>
 
                     {expanded && (
-                      <div className="border-t border-gray-800 p-4">
+                      <div className="border-t border-border p-4">
                         {detailLoadingId === snapshot.id ? (
-                          <div className="flex items-center gap-2 text-sm text-gray-400">
+                          <div className="flex items-center gap-2 text-sm text-text-muted">
                             <Loader2 size={16} className="animate-spin" />
                             Carregando detalhes...
                           </div>
@@ -239,17 +239,17 @@ function SnapshotAuditDetail({ snapshot }: { snapshot: FinancialPlanningSnapshot
       </div>
 
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+        <p className="text-xs font-medium uppercase tracking-wide text-text-subtle">
           Fontes confirmadas
         </p>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {selectedSources.map((source) => (
             <div
               key={source.key}
-              className="flex items-center justify-between gap-3 rounded border border-gray-800 px-3 py-2 text-sm"
+              className="flex items-center justify-between gap-3 rounded border border-border px-3 py-2 text-sm"
             >
-              <span className="truncate text-gray-300">{source.label}</span>
-              <span className="shrink-0 font-medium text-white">
+              <span className="truncate text-text-muted">{source.label}</span>
+              <span className="shrink-0 font-medium text-text">
                 {formatMoney(source.monthlyAmount)}
               </span>
             </div>
@@ -258,16 +258,16 @@ function SnapshotAuditDetail({ snapshot }: { snapshot: FinancialPlanningSnapshot
       </div>
 
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+        <p className="text-xs font-medium uppercase tracking-wide text-text-subtle">
           Identificador da base
         </p>
-        <code className="mt-2 block break-all rounded bg-background px-3 py-2 text-xs text-gray-400">
+        <code className="mt-2 block break-all rounded bg-background px-3 py-2 text-xs text-text-muted">
           {snapshot.basisHash || 'Não registrado para este snapshot legado'}
         </code>
       </div>
 
       <div>
-        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+        <p className="text-xs font-medium uppercase tracking-wide text-text-subtle">
           Pareceres explicativos salvos
         </p>
         <FinancialPlanningGuidanceArchive snapshotId={snapshot.id} />
@@ -278,9 +278,9 @@ function SnapshotAuditDetail({ snapshot }: { snapshot: FinancialPlanningSnapshot
 
 function AuditField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-gray-800 px-3 py-2">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-1 text-sm font-medium text-gray-200">{value}</p>
+    <div className="rounded border border-border px-3 py-2">
+      <p className="text-xs text-text-subtle">{label}</p>
+      <p className="mt-1 text-sm font-medium text-text">{value}</p>
     </div>
   );
 }
@@ -300,15 +300,15 @@ function AuditSummaryRow({
 }) {
   const valueClass =
     tone === 'success'
-      ? 'text-emerald-300'
+      ? 'text-tone-emerald'
       : tone === 'danger'
-        ? 'text-red-300'
+        ? 'text-tone-red'
         : positive
-          ? 'text-emerald-300'
-          : 'text-white';
+          ? 'text-tone-emerald'
+          : 'text-text';
   return (
     <div className={`flex items-center justify-between gap-3 ${emphasize ? 'py-1' : ''}`}>
-      <span className={emphasize ? 'text-sm font-medium text-gray-300' : 'text-sm text-gray-500'}>
+      <span className={emphasize ? 'text-sm font-medium text-text-muted' : 'text-sm text-text-subtle'}>
         {label}
       </span>
       <span className={`${emphasize ? 'text-base' : 'text-sm'} font-semibold ${valueClass}`}>

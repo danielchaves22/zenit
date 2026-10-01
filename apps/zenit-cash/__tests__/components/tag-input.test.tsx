@@ -37,7 +37,7 @@ describe('TagInput', () => {
     await user.type(screen.getByLabelText('Tags'), 'viagem ');
 
     const chip = await screen.findByText('viagem');
-    expect(chip.parentElement).toHaveClass('text-green-200');
+    expect(chip.parentElement).toHaveClass('text-tone-green');
   });
 
   it('removes the last chip with backspace when the input is empty', async () => {

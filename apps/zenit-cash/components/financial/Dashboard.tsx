@@ -147,11 +147,11 @@ function formatShortMonthLabel(monthKey: string): string {
 
 function buildTooltipStyle() {
   return {
-    backgroundColor: '#0f172a',
-    border: '1px solid #334155',
+    backgroundColor: 'var(--color-bg-secondary)',
+    border: '1px solid var(--color-border)',
     borderRadius: '12px',
-    color: '#f8fafc',
-    boxShadow: '0 18px 40px rgba(2, 6, 23, 0.45)'
+    color: 'var(--color-text)',
+    boxShadow: '0 8px 24px rgba(20, 40, 44, 0.12)'
   };
 }
 
@@ -219,39 +219,39 @@ function SummaryCard({
   const styles =
     tone === 'income'
       ? {
-          card: 'border-emerald-900/60 bg-emerald-950/25',
-          title: 'text-emerald-200/80',
-          value: 'text-emerald-300'
+          card: 'border-tone-emerald/25 bg-tone-emerald-soft',
+          title: 'text-tone-emerald',
+          value: 'text-tone-emerald'
         }
       : tone === 'expense'
         ? {
-            card: 'border-red-900/60 bg-red-950/25',
-            title: 'text-red-200/80',
-            value: 'text-red-300'
+            card: 'border-tone-red/25 bg-tone-red-soft',
+            title: 'text-tone-red',
+            value: 'text-tone-red'
           }
         : tone === 'balance'
           ? parseAmount(value) >= 0
             ? {
-                card: 'border-sky-900/60 bg-sky-950/25',
-                title: 'text-sky-200/80',
-                value: 'text-sky-300'
+                card: 'border-tone-sky/25 bg-tone-sky-soft',
+                title: 'text-tone-sky',
+                value: 'text-tone-sky'
               }
             : {
-                card: 'border-red-900/60 bg-red-950/25',
-                title: 'text-red-200/80',
-                value: 'text-red-300'
+                card: 'border-tone-red/25 bg-tone-red-soft',
+                title: 'text-tone-red',
+                value: 'text-tone-red'
               }
           : {
-              card: 'border-gray-700 bg-slate-900/40',
-              title: 'text-slate-300/80',
-              value: 'text-slate-100'
+              card: 'border-border bg-elevated/40',
+              title: 'text-text-muted/80',
+              value: 'text-text'
             };
 
   return (
     <div className={`rounded-xl border px-4 py-3 ${styles.card}`}>
       <div className={`text-[11px] font-medium uppercase tracking-wide ${styles.title}`}>{title}</div>
       <div className={`mt-1 text-xl font-semibold ${styles.value}`}>{formatCurrency(value)}</div>
-      {subtitle ? <div className="mt-2 text-xs text-gray-400">{subtitle}</div> : null}
+      {subtitle ? <div className="mt-2 text-xs text-text-muted">{subtitle}</div> : null}
     </div>
   );
 }
@@ -1100,11 +1100,11 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
     <div className="space-y-6">
       {!historyOnly && <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:gap-4">
         <div className="shrink-0">
-          <div className="text-2xl font-heading font-bold text-white">
+          <div className="text-2xl font-heading font-bold text-text">
             Dashboard financeiro
           </div>
         </div>
-        <h1 className="text-sm text-gray-300 md:text-base">
+        <h1 className="text-sm text-text-muted md:text-base">
           Visao analitica do caixa e das tendencias do mes.
         </h1>
       </div>}
@@ -1115,12 +1115,12 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
         error={structuralError}
       />}
 
-      <div className="flex flex-col gap-3 rounded-xl border border-gray-800 bg-[#151a22] px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-elevated px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
             {historyOnly ? 'Evolução' : 'Paineis variaveis'}
           </div>
-          <div className="text-sm text-gray-300">
+          <div className="text-sm text-text-muted">
             {view === 'monthly' ? 'Situacao financeira mensal' : 'Historico financeiro'}
           </div>
         </div>
@@ -1135,9 +1135,9 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
               className="min-w-[280px]"
             />}
 
-            <div className="flex items-center gap-2 rounded-xl border border-gray-700 bg-[#11161d] px-3 py-2">
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-elevated px-3 py-2">
               <CalendarRange size={16} className="text-accent" />
-              <span className="text-sm text-gray-300">{formatMonthLabel(month)}</span>
+              <span className="text-sm text-text-muted">{formatMonthLabel(month)}</span>
             </div>
 
             <Button
@@ -1169,7 +1169,7 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
             />}
 
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-subtle">
                 Categorias
               </span>
               <MultiSelect
@@ -1263,16 +1263,16 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
 
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,0.85fr)_minmax(420px,1.35fr)]">
                 <Card className="p-5">
-                  <h3 className="text-lg font-medium text-white">Composicao do mes</h3>
-                  <p className="mt-1 text-sm text-gray-400">
+                  <h3 className="text-lg font-medium text-text">Composicao do mes</h3>
+                  <p className="mt-1 text-sm text-text-muted">
                     Receitas, saidas e aportes logicos para despesas futuras previsiveis.
                   </p>
                   <div className="mt-5 h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={monthlyBarData} margin={{ top: 12, right: 18, left: 6, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
-                        <XAxis dataKey="name" stroke="#94a3b8" />
-                        <YAxis stroke="#94a3b8" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                        <XAxis dataKey="name" stroke="var(--color-text-secondary)" />
+                        <YAxis stroke="var(--color-text-secondary)" />
                         <Tooltip
                           contentStyle={buildTooltipStyle()}
                           formatter={(value) => formatCurrency(Number(value))}
@@ -1291,23 +1291,23 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                   <div className="flex flex-col gap-3">
                     <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                       <div>
-                        <h3 className="text-lg font-medium text-white">
+                        <h3 className="text-lg font-medium text-text">
                           {categoryPieMode === 'EXPENSE' ? 'Gastos por categoria' : 'Receitas por categoria'}
                         </h3>
-                        <p className="mt-1 text-sm text-gray-400">
+                        <p className="mt-1 text-sm text-text-muted">
                           Distribuicao por categoria considerando {pieCategorySummary}. Compras no
                           cartao seguem a competencia da fatura.
                         </p>
                       </div>
 
-                      <div className="flex rounded-lg border border-gray-700 bg-[#11161d] p-1">
+                      <div className="flex rounded-lg border border-border bg-elevated p-1">
                         <button
                           type="button"
                           onClick={() => setCategoryPieMode('EXPENSE')}
                           className={`rounded-md px-3 py-1.5 text-sm ${
                             categoryPieMode === 'EXPENSE'
-                              ? 'bg-red-600 text-white'
-                              : 'text-gray-400 hover:text-white'
+                              ? 'bg-red-600 text-on-solid'
+                              : 'text-text-muted hover:text-text'
                           }`}
                         >
                           Despesas
@@ -1317,8 +1317,8 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                           onClick={() => setCategoryPieMode('INCOME')}
                           className={`rounded-md px-3 py-1.5 text-sm ${
                             categoryPieMode === 'INCOME'
-                              ? 'bg-green-600 text-white'
-                              : 'text-gray-400 hover:text-white'
+                              ? 'bg-green-600 text-on-solid'
+                              : 'text-text-muted hover:text-text'
                           }`}
                         >
                           Receitas
@@ -1332,8 +1332,8 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                         onClick={() => setIncludePendingInCategoryPie((current) => !current)}
                         className={`rounded-full border px-3 py-1.5 text-sm transition ${
                           includePendingInCategoryPie
-                            ? 'border-sky-500 bg-sky-500/15 text-sky-100'
-                            : 'border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white'
+                            ? 'border-sky-500 bg-tone-sky-soft text-tone-sky'
+                            : 'border-border text-text-muted hover:border-border-strong hover:text-text'
                         }`}
                       >
                         Incluir pendentes
@@ -1343,20 +1343,20 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                         onClick={() => setIncludeProjectedInCategoryPie((current) => !current)}
                         className={`rounded-full border px-3 py-1.5 text-sm transition ${
                           includeProjectedInCategoryPie
-                            ? 'border-amber-500 bg-amber-500/15 text-amber-100'
-                            : 'border-gray-700 text-gray-400 hover:border-gray-500 hover:text-white'
+                            ? 'border-amber-500 bg-tone-amber-soft text-tone-amber'
+                            : 'border-border text-text-muted hover:border-border-strong hover:text-text'
                         }`}
                       >
                         Incluir projetadas
                       </button>
-                      <div className="flex rounded-full border border-gray-700 bg-[#11161d] p-1">
+                      <div className="flex rounded-full border border-border bg-elevated p-1">
                         <button
                           type="button"
                           onClick={() => setCategoryPieBreakdownMode('CATEGORY')}
                           className={`rounded-full px-3 py-1.5 text-sm transition ${
                             categoryPieBreakdownMode === 'CATEGORY'
-                              ? 'bg-slate-200 text-slate-950'
-                              : 'text-gray-400 hover:text-white'
+                              ? 'bg-elevated text-text-subtle'
+                              : 'text-text-muted hover:text-text'
                           }`}
                         >
                           Agrupar subcategorias
@@ -1366,8 +1366,8 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                           onClick={() => setCategoryPieBreakdownMode('SUBCATEGORY')}
                           className={`rounded-full px-3 py-1.5 text-sm transition ${
                             categoryPieBreakdownMode === 'SUBCATEGORY'
-                              ? 'bg-slate-200 text-slate-950'
-                              : 'text-gray-400 hover:text-white'
+                              ? 'bg-elevated text-text-subtle'
+                              : 'text-text-muted hover:text-text'
                           }`}
                         >
                           Quebrar em subcategorias
@@ -1377,7 +1377,7 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                   </div>
 
                   {pieCategoryTotals.length === 0 ? (
-                    <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-10 text-center text-sm text-gray-400">
+                    <div className="mt-6 rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-muted">
                       Nenhuma categoria encontrada para esta leitura do mes.
                     </div>
                   ) : (
@@ -1402,8 +1402,8 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                                 formatter={(value) => formatCurrency(Number(value))}
                                 contentStyle={buildTooltipStyle()}
                                 wrapperStyle={{ zIndex: 40 }}
-                                labelStyle={{ color: '#f8fafc', fontWeight: 600 }}
-                                itemStyle={{ color: '#f8fafc' }}
+                                labelStyle={{ color: 'var(--color-text)', fontWeight: 600 }}
+                                itemStyle={{ color: 'var(--color-text)' }}
                               />
                             </PieChart>
                           </ResponsiveContainer>
@@ -1411,13 +1411,13 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
 
                         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
                           <div className="text-center">
-                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-400">
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-text-muted">
                               Total exibido
                             </div>
-                            <div className="mt-2 text-2xl font-semibold text-white">
+                            <div className="mt-2 text-2xl font-semibold text-text">
                               {formatCurrency(pieCategoryTotalAmount)}
                             </div>
-                            <div className="mt-2 text-xs text-gray-500">
+                            <div className="mt-2 text-xs text-text-subtle">
                               Fatias abaixo de {smallSliceThresholdPercentDraft}% entram em{' '}
                               {categoryPieMode === 'EXPENSE' ? 'Outras despesas' : 'Outras receitas'}.
                             </div>
@@ -1433,7 +1433,7 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                           return (
                             <div
                               key={`${category.id}-legend`}
-                              className="rounded-xl border border-gray-800 bg-[#0f1419] px-3 py-2.5"
+                              className="rounded-xl border border-border bg-elevated px-3 py-2.5"
                             >
                               <div className="flex items-center gap-2">
                                 {canNavigate ? (
@@ -1447,15 +1447,15 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                                       style={{ backgroundColor: category.color }}
                                     />
                                     <span
-                                      className="min-w-0 flex-1 truncate text-sm text-gray-200 transition group-hover:text-white"
+                                      className="min-w-0 flex-1 truncate text-sm text-text transition group-hover:text-text"
                                       title={category.fullLabel}
                                     >
                                       {category.name}
                                     </span>
-                                    <span className="text-[11px] tabular-nums text-gray-500">
+                                    <span className="text-[11px] tabular-nums text-text-subtle">
                                       {formatPercent(category.share * 100)}
                                     </span>
-                                    <span className="text-sm font-semibold tabular-nums text-white">
+                                    <span className="text-sm font-semibold tabular-nums text-text">
                                       {formatCurrency(category.value)}
                                     </span>
                                   </button>
@@ -1466,15 +1466,15 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                                       style={{ backgroundColor: category.color }}
                                     />
                                     <span
-                                      className="min-w-0 flex-1 truncate text-sm text-gray-200"
+                                      className="min-w-0 flex-1 truncate text-sm text-text"
                                       title={category.fullLabel}
                                     >
                                       {category.name}
                                     </span>
-                                    <span className="text-[11px] tabular-nums text-gray-500">
+                                    <span className="text-[11px] tabular-nums text-text-subtle">
                                       {formatPercent(category.share * 100)}
                                     </span>
-                                    <span className="text-sm font-semibold tabular-nums text-white">
+                                    <span className="text-sm font-semibold tabular-nums text-text">
                                       {formatCurrency(category.value)}
                                     </span>
                                   </div>
@@ -1484,7 +1484,7 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                                   <button
                                     type="button"
                                     onClick={() => togglePieLegendExpansion(category.id)}
-                                    className="rounded-md p-1 text-gray-500 transition hover:bg-slate-800 hover:text-white"
+                                    className="rounded-md p-1 text-text-subtle transition hover:bg-elevated hover:text-text"
                                     aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${category.name}`}
                                   >
                                     <ChevronDown
@@ -1496,7 +1496,7 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                               </div>
 
                               {isExpanded ? (
-                                <div className="mt-2 space-y-1 border-t border-gray-800 pt-2">
+                                <div className="mt-2 space-y-1 border-t border-border pt-2">
                                   {category.children.map((child) => {
                                     const canNavigateChild = child.categoryIds.length > 0;
 
@@ -1505,22 +1505,22 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                                         key={child.id}
                                         type="button"
                                         onClick={() => openTransactionsForCategory(child.categoryIds)}
-                                        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-slate-900/80"
+                                        className="group flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left hover:bg-elevated/80"
                                       >
                                         <span
                                           className="ml-4 inline-block h-2.5 w-2.5 rounded-full"
                                           style={{ backgroundColor: child.color }}
                                         />
                                         <span
-                                          className="min-w-0 flex-1 truncate text-sm text-gray-400 transition group-hover:text-gray-200"
+                                          className="min-w-0 flex-1 truncate text-sm text-text-muted transition group-hover:text-text"
                                           title={child.fullLabel}
                                         >
                                           {child.label}
                                         </span>
-                                        <span className="text-[11px] tabular-nums text-gray-500">
+                                        <span className="text-[11px] tabular-nums text-text-subtle">
                                           {formatPercent(child.share * 100)}
                                         </span>
-                                        <span className="text-sm font-medium tabular-nums text-gray-200">
+                                        <span className="text-sm font-medium tabular-nums text-text">
                                           {formatCurrency(child.value)}
                                         </span>
                                       </button>
@@ -1534,15 +1534,15 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                                           style={{ backgroundColor: child.color }}
                                         />
                                         <span
-                                          className="min-w-0 flex-1 truncate text-sm text-gray-400"
+                                          className="min-w-0 flex-1 truncate text-sm text-text-muted"
                                           title={child.fullLabel}
                                         >
                                           {child.label}
                                         </span>
-                                        <span className="text-[11px] tabular-nums text-gray-500">
+                                        <span className="text-[11px] tabular-nums text-text-subtle">
                                           {formatPercent(child.share * 100)}
                                         </span>
-                                        <span className="text-sm font-medium tabular-nums text-gray-200">
+                                        <span className="text-sm font-medium tabular-nums text-text">
                                           {formatCurrency(child.value)}
                                         </span>
                                       </div>
@@ -1563,11 +1563,11 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                 <Card className="p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-2 text-lg font-medium text-white">
+                      <div className="flex items-center gap-2 text-lg font-medium text-text">
                         <Settings2 size={16} className="text-accent" />
                         Preferencias do dashboard
                       </div>
-                      <p className="mt-1 text-sm text-gray-400">
+                      <p className="mt-1 text-sm text-text-muted">
                         Configure as categorias observadas e a regra de agrupamento das fatias menores.
                       </p>
                     </div>
@@ -1593,7 +1593,7 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                       onChange={(event) => handleSmallSliceThresholdChange(event.target.value)}
                       className="mb-0"
                     />
-                    <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
+                    <div className="flex items-center justify-between gap-3 text-xs text-text-subtle">
                       <span>
                         {trackedExpenseCategoryDraft.length}/10 categorias observadas · agrupamento abaixo de{' '}
                         {smallSliceThresholdPercentDraft}%
@@ -1612,14 +1612,14 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                 </Card>
 
                 <Card className="p-5">
-                  <h3 className="text-lg font-medium text-white">Variaveis estimadas por categoria</h3>
-                  <p className="mt-1 text-sm text-gray-400">
+                  <h3 className="text-lg font-medium text-text">Variaveis estimadas por categoria</h3>
+                  <p className="mt-1 text-sm text-text-muted">
                     A media usa os 6 meses fechados anteriores. O restante some quando a categoria ja
                     consumiu toda a media no mes.
                   </p>
 
                   {monthlyData.variableProjection.categories.length === 0 ? (
-                    <div className="mt-5 rounded-xl border border-dashed border-gray-700 px-4 py-8 text-center text-sm text-gray-400">
+                    <div className="mt-5 rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-muted">
                       {trackedExpenseCategoryIds.length === 0
                         ? 'Selecione categorias observadas para gerar a estimativa variavel.'
                         : 'Nenhuma categoria observada possui projecao restante neste mes.'}
@@ -1627,7 +1627,7 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                   ) : (
                     <div className="mt-4 overflow-x-auto">
                       <table className="w-full min-w-[640px]">
-                        <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+                        <thead className="bg-elevated text-xs uppercase text-text-muted">
                           <tr>
                             <th className="px-3 py-3 text-left">Categoria</th>
                             <th className="px-3 py-3 text-right">Media 6 meses</th>
@@ -1637,21 +1637,21 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
                         </thead>
                         <tbody>
                           {monthlyData.variableProjection.categories.map((item) => (
-                            <tr key={item.categoryId} className="border-t border-gray-800">
-                              <td className="px-3 py-3 text-sm text-gray-200">
+                            <tr key={item.categoryId} className="border-t border-border">
+                              <td className="px-3 py-3 text-sm text-text">
                                 <span
                                   className="mr-2 inline-block h-2.5 w-2.5 rounded-full"
                                   style={{ backgroundColor: item.color }}
                                 />
                                 {item.categoryName}
                               </td>
-                              <td className="px-3 py-3 text-right text-sm text-gray-300">
+                              <td className="px-3 py-3 text-right text-sm text-text-muted">
                                 {formatCurrency(item.historicalAverage)}
                               </td>
-                              <td className="px-3 py-3 text-right text-sm text-gray-300">
+                              <td className="px-3 py-3 text-right text-sm text-text-muted">
                                 {formatCurrency(item.committedInMonth)}
                               </td>
-                              <td className="px-3 py-3 text-right text-sm font-medium text-amber-300">
+                              <td className="px-3 py-3 text-right text-sm font-medium text-tone-amber">
                                 {formatCurrency(item.remainingProjected)}
                               </td>
                             </tr>
@@ -1675,16 +1675,16 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
           ) : historyData ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <Card className="p-5">
-                <h3 className="text-lg font-medium text-white">Receitas x despesas</h3>
-                <p className="mt-1 text-sm text-gray-400">
+                <h3 className="text-lg font-medium text-text">Receitas x despesas</h3>
+                <p className="mt-1 text-sm text-text-muted">
                   Ultimos 12 meses, com o mes atual marcado como parcial.
                 </p>
                 <div className="mt-5 h-80">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={historyTotalsData} margin={{ top: 12, right: 18, left: 6, bottom: 4 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
-                      <XAxis dataKey="label" stroke="#94a3b8" />
-                      <YAxis stroke="#94a3b8" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                      <XAxis dataKey="label" stroke="var(--color-text-secondary)" />
+                      <YAxis stroke="var(--color-text-secondary)" />
                       <Tooltip
                         contentStyle={buildTooltipStyle()}
                         formatter={(value) => formatCurrency(Number(value))}
@@ -1699,22 +1699,22 @@ export default function FinancialDashboard({ historyOnly = false }: { historyOnl
               </Card>
 
               <Card className="p-5">
-                <h3 className="text-lg font-medium text-white">Categorias selecionadas</h3>
-                <p className="mt-1 text-sm text-gray-400">
+                <h3 className="text-lg font-medium text-text">Categorias selecionadas</h3>
+                <p className="mt-1 text-sm text-text-muted">
                   Comeca vazio por padrao. Adicione as categorias que deseja acompanhar.
                 </p>
 
                 {historyData.categorySeries.length === 0 ? (
-                  <div className="mt-6 rounded-xl border border-dashed border-gray-700 px-4 py-10 text-center text-sm text-gray-400">
+                  <div className="mt-6 rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-text-muted">
                     Nenhuma categoria selecionada para o grafico historico.
                   </div>
                 ) : (
                   <div className="mt-5 h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={historyCategoryChartData} margin={{ top: 12, right: 18, left: 6, bottom: 4 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#243041" />
-                        <XAxis dataKey="label" stroke="#94a3b8" />
-                        <YAxis stroke="#94a3b8" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
+                        <XAxis dataKey="label" stroke="var(--color-text-secondary)" />
+                        <YAxis stroke="var(--color-text-secondary)" />
                         <Tooltip
                           contentStyle={buildTooltipStyle()}
                           formatter={(value) => formatCurrency(Number(value))}

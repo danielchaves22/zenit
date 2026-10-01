@@ -258,28 +258,28 @@ export function GuidedPlanning({
       <div className="space-y-5">
         <Card className="mx-auto max-w-2xl">
           <div className="flex items-start gap-4">
-            <div className="rounded-full bg-amber-950/50 p-3 text-amber-300">
+            <div className="rounded-full bg-tone-amber-soft p-3 text-tone-amber">
               {requiresProfile ? <ClipboardCheck size={24} /> : <LockKeyhole size={24} />}
             </div>
             <div className="flex-1">
-              <h2 className="text-xl font-semibold text-white">
+              <h2 className="text-xl font-semibold text-text">
                 {requiresProfile ? 'Perfil financeiro necessário' : 'Workspace indisponível'}
               </h2>
-              <p className="mt-2 text-sm text-gray-400">{gateError.error}</p>
+              <p className="mt-2 text-sm text-text-muted">{gateError.error}</p>
               {requiresProfile ? (
                 <Link
                   href={{
                     pathname: '/profile/financial',
                     query: { returnTo: '/financial/budgets?view=guided' }
                   }}
-                  className="mt-5 inline-flex rounded bg-accent px-3 py-2 font-semibold text-white transition-colors hover:bg-accent-hover"
+                  className="mt-5 inline-flex rounded bg-accent px-3 py-2 font-semibold text-on-accent transition-colors hover:bg-accent-hover"
                 >
                   {gateError.code === 'FINANCIAL_PROFILE_OUTDATED'
                     ? 'Revisar perfil financeiro'
                     : 'Configurar perfil financeiro'}
                 </Link>
               ) : (
-                <p className="mt-4 rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
+                <p className="mt-4 rounded-lg border border-border bg-elevated p-3 text-sm text-text-muted">
                   Troque o workspace ativo pelo seu workspace pessoal no seletor do Zenit.
                 </p>
               )}
@@ -294,18 +294,18 @@ export function GuidedPlanning({
   if (!preview) {
     return (
       <Card className="mx-auto max-w-xl text-center">
-        <AlertTriangle className="mx-auto text-amber-300" size={28} />
-        <p className="mt-3 text-white">Não foi possível preparar o retrato financeiro.</p>
+        <AlertTriangle className="mx-auto text-tone-amber" size={28} />
+        <p className="mt-3 text-text">Não foi possível preparar o retrato financeiro.</p>
       </Card>
     );
   }
 
   const qualityTone =
     preview.dataQuality.rating === 'HIGH'
-      ? 'text-emerald-300'
+      ? 'text-tone-emerald'
       : preview.dataQuality.rating === 'MEDIUM'
-        ? 'text-amber-300'
-        : 'text-red-300';
+        ? 'text-tone-amber'
+        : 'text-tone-red';
   const result = confirmedSnapshot || preview.latestSnapshot;
   const resultValidity = result ? getSnapshotValidity(result, preview) : null;
   const ResultStatusIcon = resultValidity === 'CURRENT' ? CheckCircle2 : AlertTriangle;
@@ -323,16 +323,16 @@ export function GuidedPlanning({
         : 'Este retrato foi criado antes do controle de integridade da base. Confirme um novo retrato para atualizar a referência.';
   const resultStatusClass =
     resultValidity === 'CURRENT'
-      ? 'border-emerald-900/60 bg-emerald-950/20 text-emerald-300'
+      ? 'border-tone-emerald/25 bg-tone-emerald-soft text-tone-emerald'
       : resultValidity === 'STALE'
-        ? 'border-amber-900/60 bg-amber-950/20 text-amber-300'
-        : 'border-blue-900/60 bg-blue-950/20 text-blue-300';
+        ? 'border-tone-amber/25 bg-tone-amber-soft text-tone-amber'
+        : 'border-tone-blue/25 bg-tone-blue-soft text-tone-blue';
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-white">Planejamento orientado</h2>
+          <h2 className="text-xl font-semibold text-text">Planejamento orientado</h2>
           <InfoModalButton
             modalTitle="Sobre o Planejamento Orientado"
             buttonLabel="Ajuda sobre o Planejamento Orientado"
@@ -347,8 +347,8 @@ export function GuidedPlanning({
             </p>
           </InfoModalButton>
         </div>
-        <span className="inline-flex items-center gap-2 rounded-full border border-gray-700 bg-surface px-3 py-1.5 text-sm text-gray-300">
-          <ShieldCheck size={15} className="text-emerald-300" />
+        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-text-muted">
+          <ShieldCheck size={15} className="text-tone-emerald" />
           {preview.workspace.name}
         </span>
       </div>
@@ -368,12 +368,12 @@ export function GuidedPlanning({
                 selectOnFocus
                 className="mb-0"
               />
-              <label className="block text-sm font-medium text-gray-300">
+              <label className="block text-sm font-medium text-text-muted">
                 Histórico para calcular médias
                 <select
                   value={historyMonths}
                   onChange={(event) => setHistoryMonths(Number(event.target.value))}
-                  className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+                  className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
                 >
                   <option value={3}>Últimos 3 meses completos</option>
                   <option value={6}>Últimos 6 meses completos</option>
@@ -381,7 +381,7 @@ export function GuidedPlanning({
                 </select>
               </label>
             </div>
-            <div className="mt-4 flex items-center gap-2 text-xs text-gray-500">
+            <div className="mt-4 flex items-center gap-2 text-xs text-text-subtle">
               <History size={14} />
               Período analisado: {formatDateKey(preview.period.startDate)} a{' '}
               {formatDateKey(preview.period.endDate)}
@@ -397,17 +397,17 @@ export function GuidedPlanning({
                     <div className="mb-2 flex items-center justify-between gap-3">
                       <h3
                         id={`source-group-${group.kind}`}
-                        className="text-sm font-semibold text-gray-200"
+                        className="text-sm font-semibold text-text"
                       >
                         {group.title}
                       </h3>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-text-subtle">
                         {sources.filter((source) => selectedKeys.has(source.key)).length}/
                         {sources.length} incluída(s)
                       </span>
                     </div>
                     {sources.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-gray-700 px-4 py-3 text-sm text-gray-500">
+                      <div className="rounded-lg border border-dashed border-border px-4 py-3 text-sm text-text-subtle">
                         {group.emptyLabel}
                       </div>
                     ) : (
@@ -418,7 +418,7 @@ export function GuidedPlanning({
                             className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 transition-colors ${
                               selectedKeys.has(source.key)
                                 ? 'border-accent/60 bg-accent/5'
-                                : 'border-gray-700 bg-[#11161d] opacity-70'
+                                : 'border-border bg-elevated opacity-70'
                             }`}
                           >
                             <input
@@ -426,17 +426,17 @@ export function GuidedPlanning({
                               checked={selectedKeys.has(source.key)}
                               onChange={() => toggleSource(source.key)}
                               aria-label={`Considerar ${source.label}`}
-                              className="h-4 w-4 rounded border-gray-600 bg-background text-accent focus:ring-accent"
+                              className="h-4 w-4 rounded border-border-strong bg-background text-accent focus:ring-accent"
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-white">
+                              <span className="block truncate text-sm font-medium text-text">
                                 {source.label}
                               </span>
-                              <span className="mt-0.5 block truncate text-xs text-gray-500">
+                              <span className="mt-0.5 block truncate text-xs text-text-subtle">
                                 {source.detail}
                               </span>
                             </span>
-                            <span className="shrink-0 text-sm font-semibold text-white">
+                            <span className="shrink-0 text-sm font-semibold text-text">
                               {formatMoney(source.monthlyAmount)}
                             </span>
                           </label>
@@ -454,7 +454,7 @@ export function GuidedPlanning({
           <Card>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm text-gray-400">Qualidade dos dados</p>
+                <p className="text-sm text-text-muted">Qualidade dos dados</p>
                 <p className={`mt-1 text-3xl font-semibold ${qualityTone}`}>
                   {preview.dataQuality.score}%
                 </p>
@@ -464,7 +464,7 @@ export function GuidedPlanning({
               </div>
               <Database className={qualityTone} size={28} />
             </div>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-gray-800">
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-elevated">
               <div
                 className="h-full rounded-full bg-accent"
                 style={{ width: `${preview.dataQuality.score}%` }}
@@ -473,8 +473,8 @@ export function GuidedPlanning({
             <div className="mt-4 space-y-2">
               {preview.dataQuality.breakdown.map((item) => (
                 <div key={item.key} className="flex justify-between gap-3 text-xs">
-                  <span className="text-gray-500">{item.label}</span>
-                  <span className="text-gray-300">
+                  <span className="text-text-subtle">{item.label}</span>
+                  <span className="text-text-muted">
                     {item.points}/{item.maximum}
                   </span>
                 </div>
@@ -485,7 +485,7 @@ export function GuidedPlanning({
                 {preview.dataQuality.issues.map((issue) => (
                   <div
                     key={issue.code}
-                    className="flex items-start gap-2 rounded-lg border border-amber-900/60 bg-amber-950/20 p-2.5 text-xs text-amber-200"
+                    className="flex items-start gap-2 rounded-lg border border-tone-amber/25 bg-tone-amber-soft p-2.5 text-xs text-tone-amber"
                   >
                     <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                     {issue.message}
@@ -501,7 +501,7 @@ export function GuidedPlanning({
               <SummaryRow label="Fixas e parcelas" value={totals.monthlyCommittedExpenses} />
               <SummaryRow label="Gastos variáveis" value={totals.monthlyVariableExpenses} />
               <SummaryRow label="Provisões" value={totals.monthlyProvisionContribution} />
-              <div className="border-t border-gray-700 pt-3">
+              <div className="border-t border-border pt-3">
                 <SummaryRow
                   label="Disponível antes da meta"
                   value={totals.monthlyAvailableBeforeGoal}
@@ -517,7 +517,7 @@ export function GuidedPlanning({
             </div>
 
             {!selectedFixedIncome && (
-              <div className="mt-4 rounded-lg border border-red-900/60 bg-red-950/20 p-3 text-xs text-red-200">
+              <div className="mt-4 rounded-lg border border-tone-red/25 bg-tone-red-soft p-3 text-xs text-tone-red">
                 Selecione ao menos uma receita fixa para confirmar o retrato financeiro.
               </div>
             )}
@@ -539,16 +539,16 @@ export function GuidedPlanning({
                 <ResultStatusIcon
                   className={`mt-0.5 shrink-0 ${
                     resultValidity === 'CURRENT'
-                      ? 'text-emerald-300'
+                      ? 'text-tone-emerald'
                       : resultValidity === 'STALE'
-                        ? 'text-amber-300'
-                        : 'text-blue-300'
+                        ? 'text-tone-amber'
+                        : 'text-tone-blue'
                   }`}
                   size={21}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-white">{resultStatusTitle}</p>
-                  <p className="mt-1 text-sm text-gray-400">{resultStatusDescription}</p>
+                  <p className="font-medium text-text">{resultStatusTitle}</p>
+                  <p className="mt-1 text-sm text-text-muted">{resultStatusDescription}</p>
                   <div className={`mt-3 rounded-lg border p-3 ${resultStatusClass}`}>
                     <p className="text-sm font-medium">
                       {confirmedSnapshot ? 'Retrato confirmado agora' : 'Último retrato confirmado'}
@@ -557,11 +557,11 @@ export function GuidedPlanning({
                       Snapshot #{result.id} · {formatDateTime(result.confirmedAt)}
                     </p>
                   </div>
-                  <p className="mt-1 text-sm text-gray-400">
+                  <p className="mt-1 text-sm text-text-muted">
                     Meta de {formatMoney(result.targetMonthlySavings)} por mês · qualidade{' '}
                     {result.dataQualityScore}%
                   </p>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs text-text-subtle">
                     Perfil v{result.profileVersion} · metodologia v{result.methodologyVersion}
                   </p>
                 </div>
@@ -600,15 +600,15 @@ function SummaryRow({
 }) {
   const valueClass =
     tone === 'success'
-      ? 'text-emerald-300'
+      ? 'text-tone-emerald'
       : tone === 'danger'
-        ? 'text-red-300'
+        ? 'text-tone-red'
         : positive
-          ? 'text-emerald-300'
-          : 'text-white';
+          ? 'text-tone-emerald'
+          : 'text-text';
   return (
     <div className={`flex items-center justify-between gap-3 ${emphasize ? 'py-1' : ''}`}>
-      <span className={emphasize ? 'text-sm font-medium text-gray-300' : 'text-sm text-gray-500'}>
+      <span className={emphasize ? 'text-sm font-medium text-text-muted' : 'text-sm text-text-subtle'}>
         {label}
       </span>
       <span className={`${emphasize ? 'text-base' : 'text-sm'} font-semibold ${valueClass}`}>

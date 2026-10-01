@@ -26,8 +26,8 @@ export function InfoModalButton({
         onClick={() => setIsOpen(true)}
         className={
           compact
-            ? 'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-elevated hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60'
-            : 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-600 text-gray-300 transition-colors hover:border-accent hover:bg-elevated hover:text-accent'
+            ? 'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-text-subtle transition-colors hover:bg-elevated hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/60'
+            : 'inline-flex h-9 w-9 items-center justify-center rounded-full border border-border-strong text-text-muted transition-colors hover:border-accent hover:bg-elevated hover:text-accent'
         }
         aria-label={buttonLabel}
         title={buttonLabel}
@@ -47,7 +47,7 @@ export function InfoModalButton({
           </div>
         )}
       >
-        <div className="space-y-3 text-sm leading-relaxed text-gray-300">
+        <div className="space-y-3 text-sm leading-relaxed text-text-muted">
           {children}
         </div>
       </Modal>

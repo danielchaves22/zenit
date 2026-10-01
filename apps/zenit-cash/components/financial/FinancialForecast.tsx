@@ -53,15 +53,15 @@ const labels: Record<ForecastSource, { title: string; description: string }> = {
 
 function Transactions({ items }: { items: ForecastTransaction[] }) {
   return (
-    <ul className="divide-y divide-gray-800">
+    <ul className="divide-y divide-border">
       {items.map((item, index) => (
         <li
           key={`${item.transactionId ?? 'projected'}-${index}`}
           className={`flex flex-wrap justify-between gap-2 py-3 ${item.included ? '' : 'opacity-50'}`}
         >
           <div className="min-w-0">
-            <p className="break-words text-sm text-gray-200">{item.description}</p>
-            <p className="text-xs text-gray-400">
+            <p className="break-words text-sm text-text">{item.description}</p>
+            <p className="text-xs text-text-muted">
               {item.categoryName} ·{' '}
               {item.projected ? 'Fixa projetada' : item.settled ? 'Liquidado' : 'A liquidar'}
               {item.installment &&
@@ -69,7 +69,7 @@ function Transactions({ items }: { items: ForecastTransaction[] }) {
               {!item.included && ' · Fora do cenário'}
             </p>
           </div>
-          <span className="text-sm tabular-nums text-gray-200">
+          <span className="text-sm tabular-nums text-text">
             {Number(item.amount) * (item.type === 'INCOME' ? 1 : -1) >= 0 ? '+' : '−'}{' '}
             {currency(Math.abs(Number(item.amount)))}
           </span>
@@ -133,7 +133,7 @@ export default function FinancialForecast({
   if (!data && loading)
     return (
       <Card>
-        <div className="flex items-center gap-3 text-gray-300" role="status">
+        <div className="flex items-center gap-3 text-text-muted" role="status">
           <Loader2 className="animate-spin" size={20} /> Calculando previsão…
         </div>
       </Card>
@@ -174,8 +174,8 @@ export default function FinancialForecast({
     <div className="space-y-5" aria-busy={loading}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-sm text-gray-400">Como este mês deve terminar?</p>
-          <h2 className="text-xl font-semibold text-white">{monthName(data.month)}</h2>
+          <p className="text-sm text-text-muted">Como este mês deve terminar?</p>
+          <h2 className="text-xl font-semibold text-text">{monthName(data.month)}</h2>
         </div>
         <div className="flex max-w-full items-center gap-2">
           <Button
@@ -196,7 +196,7 @@ export default function FinancialForecast({
               max={data.maximumMonth}
               disabled={loading}
               onChange={(event) => selectMonth(event.target.value)}
-              className="w-full rounded-lg border border-gray-700 bg-surface px-3 py-2 text-sm text-white"
+              className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text"
             />
           </label>
           <Button
@@ -215,7 +215,7 @@ export default function FinancialForecast({
           aria-live="polite"
           className={`p-5 sm:p-7 ${loading ? 'opacity-50' : ''}`}
         >
-          <p className="text-sm text-gray-300">
+          <p className="text-sm text-text-muted">
             {loading
               ? 'Atualizando previsão…'
               : result > 0
@@ -225,28 +225,28 @@ export default function FinancialForecast({
                   : 'Entradas e saídas em equilíbrio'}
           </p>
           <p
-            className={`mt-2 break-words text-3xl font-semibold tabular-nums sm:text-4xl ${result < 0 ? 'text-red-300' : 'text-emerald-300'}`}
+            className={`mt-2 break-words text-3xl font-semibold tabular-nums sm:text-4xl ${result < 0 ? 'text-tone-red' : 'text-tone-emerald'}`}
           >
             {currency(Math.abs(result))}
           </p>
-          <div className="mt-5 flex flex-wrap gap-x-8 gap-y-2 text-sm text-gray-300">
+          <div className="mt-5 flex flex-wrap gap-x-8 gap-y-2 text-sm text-text-muted">
             <span>
-              Entradas <strong className="ml-2 text-white">{currency(data.income)}</strong>
+              Entradas <strong className="ml-2 text-text">{currency(data.income)}</strong>
             </span>
             <span>
-              Saídas <strong className="ml-2 text-white">{currency(data.expense)}</strong>
+              Saídas <strong className="ml-2 text-text">{currency(data.expense)}</strong>
             </span>
           </div>
-          <div className="mt-5 border-t border-gray-700 pt-4">
-            <p className="text-sm text-gray-300">
+          <div className="mt-5 border-t border-border pt-4">
+            <p className="text-sm text-text-muted">
               Saldo acumulado neste cenário{' '}
               <strong
-                className={`ml-2 tabular-nums ${Number(data.endingBalance) < 0 ? 'text-red-300' : 'text-white'}`}
+                className={`ml-2 tabular-nums ${Number(data.endingBalance) < 0 ? 'text-tone-red' : 'text-text'}`}
               >
                 {currency(data.endingBalance)}
               </strong>
             </p>
-            <p className="mt-1 text-xs text-gray-400">
+            <p className="mt-1 text-xs text-text-muted">
               Parte do saldo atual de {currency(data.currentBalance)} e considera os movimentos
               restantes até o mês escolhido.
             </p>
@@ -255,12 +255,12 @@ export default function FinancialForecast({
       </Card>
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-medium text-white">O que entra nesta previsão</h3>
-          <span className="text-xs text-gray-400">
+          <h3 className="font-medium text-text">O que entra nesta previsão</h3>
+          <span className="text-xs text-text-muted">
             {partial ? 'Cenário com fontes limitadas' : 'Todas as fontes incluídas'}
           </span>
         </div>
-        <fieldset disabled={loading} className="mt-2 divide-y divide-gray-800">
+        <fieldset disabled={loading} className="mt-2 divide-y divide-border">
           {data.sources.map((source) => (
             <div key={source.key}>
               <label className="grid cursor-pointer grid-cols-[20px_minmax(0,1fr)] items-start gap-x-3 gap-y-2 py-4 sm:grid-cols-[20px_minmax(0,1fr)_auto]">
@@ -271,15 +271,15 @@ export default function FinancialForecast({
                   className="mt-1 h-4 w-4 accent-blue-500"
                 />
                 <span>
-                  <span className="block text-sm font-medium text-gray-100">
+                  <span className="block text-sm font-medium text-text">
                     {labels[source.key].title}
                   </span>
-                  <span className="mt-1 block text-xs text-gray-400">
+                  <span className="mt-1 block text-xs text-text-muted">
                     {labels[source.key].description}
                   </span>
                 </span>
                 <span
-                  className={`col-start-2 flex flex-wrap gap-x-4 text-sm tabular-nums sm:col-start-auto sm:block sm:text-right ${source.included ? 'text-gray-200' : 'text-gray-500 line-through'}`}
+                  className={`col-start-2 flex flex-wrap gap-x-4 text-sm tabular-nums sm:col-start-auto sm:block sm:text-right ${source.included ? 'text-text' : 'text-text-subtle line-through'}`}
                 >
                   {source.key === 'income' ? (
                     <span className="block">+ {currency(source.income)}</span>
@@ -289,20 +289,20 @@ export default function FinancialForecast({
                 </span>
               </label>
               {source.key === 'income' && (
-                <details className="mb-4 ml-8 rounded-lg border border-gray-700 px-3 py-2">
-                  <summary className="cursor-pointer text-sm text-gray-200">Ver receitas</summary>
-                  <p className="mt-3 text-xs text-gray-400">
+                <details className="mb-4 ml-8 rounded-lg border border-border px-3 py-2">
+                  <summary className="cursor-pointer text-sm text-text">Ver receitas</summary>
+                  <p className="mt-3 text-xs text-text-muted">
                     Marque as receitas fixas que deseja considerar neste cenário. Receitas variáveis
                     não entram na previsão nem geram médias.
                   </p>
                   {data.incomes.length === 0 ? (
-                    <p className="mt-3 text-sm text-gray-400">
+                    <p className="mt-3 text-sm text-text-muted">
                       Nenhuma receita fixa prevista ou registrada neste período.
                     </p>
                   ) : (
                     <fieldset
                       disabled={!options.sources.income}
-                      className="mt-2 divide-y divide-gray-800"
+                      className="mt-2 divide-y divide-border"
                     >
                       {data.incomes.map((income) => (
                         <label
@@ -323,7 +323,7 @@ export default function FinancialForecast({
                             className="mt-1 h-4 w-4 shrink-0 accent-blue-500"
                           />
                           <span
-                            className={`min-w-0 flex-1 text-sm ${income.included ? 'text-gray-200' : 'text-gray-500'}`}
+                            className={`min-w-0 flex-1 text-sm ${income.included ? 'text-text' : 'text-text-subtle'}`}
                           >
                             <span className="block break-words">{income.description}</span>
                             <span
@@ -343,14 +343,14 @@ export default function FinancialForecast({
             </div>
           ))}
         </fieldset>
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-text-muted">
           As escolhas valem para todos os meses desta projeção. Os movimentos já realizados
           permanecem no saldo atual.
         </p>
       </Card>
-      <div className="space-y-2 text-sm text-gray-300">
-        {!data.habitual.configured && <p className="text-amber-200">Categorias habituais ainda não configuradas. A previsão considera os compromissos, mas ainda não estima novos gastos variáveis.</p>}
-        {data.habitual.configured && data.habitual.categoryIds.length === 0 && <p className="text-amber-200">Nenhuma categoria habitual selecionada. As estimativas automáticas de gastos variáveis estão desativadas.</p>}
+      <div className="space-y-2 text-sm text-text-muted">
+        {!data.habitual.configured && <p className="text-tone-amber">Categorias habituais ainda não configuradas. A previsão considera os compromissos, mas ainda não estima novos gastos variáveis.</p>}
+        {data.habitual.configured && data.habitual.categoryIds.length === 0 && <p className="text-tone-amber">Nenhuma categoria habitual selecionada. As estimativas automáticas de gastos variáveis estão desativadas.</p>}
         <HabitualExpenseCategories onSaved={() => setRetry((value) => value + 1)} />
         {variableTotal > 0 && (
           <p>
@@ -359,7 +359,7 @@ export default function FinancialForecast({
           </p>
         )}
         {data.history.months.length < options.historyMonths && (
-          <p className="text-amber-200">
+          <p className="text-tone-amber">
             Histórico disponível: {data.history.months.length} de {options.historyMonths} meses.{' '}
             {data.history.months.length === 0
               ? 'As médias ainda não acrescentam gastos à previsão.'
@@ -367,18 +367,18 @@ export default function FinancialForecast({
           </p>
         )}
         {data.history.uncategorizedCount > 0 && (
-          <p className="text-amber-200">
+          <p className="text-tone-amber">
             Há gastos sem categoria no histórico que não geraram estimativa variável.
           </p>
         )}
         {data.cardsWithoutCycle.length > 0 && (
-          <p className="text-amber-200">
+          <p className="text-tone-amber">
             Configure fechamento e vencimento para estimar novas compras:{' '}
             {data.cardsWithoutCycle.join(', ')}.
           </p>
         )}
         {data.overdue.items.length > 0 && (
-          <p className="text-amber-200">
+          <p className="text-tone-amber">
             Pendências de meses anteriores: {currency(data.overdue.expense)} a pagar e{' '}
             {currency(data.overdue.income)} a receber.{' '}
             {options.includeOverdue
@@ -388,13 +388,13 @@ export default function FinancialForecast({
         )}
       </div>
       <ForecastBudgetComparison data={data.budgets} month={data.month} partial={partial} />
-      <details className="rounded-xl border border-gray-800 bg-surface p-5">
-        <summary className="cursor-pointer font-medium text-white">
+      <details className="rounded-xl border border-border bg-surface p-5">
+        <summary className="cursor-pointer font-medium text-text">
           Ver detalhes e ajustar projeções
         </summary>
         <div className="mt-5 space-y-6">
           <fieldset disabled={loading} className="grid gap-4 sm:grid-cols-2">
-            <label className="text-sm text-gray-300">
+            <label className="text-sm text-text-muted">
               Histórico utilizado
               <select
                 value={options.historyMonths}
@@ -404,7 +404,7 @@ export default function FinancialForecast({
                     historyMonths: Number(event.target.value)
                   }))
                 }
-                className="mt-2 block w-full rounded-lg border border-gray-700 bg-elevated p-2 text-white"
+                className="mt-2 block w-full rounded-lg border border-border bg-elevated p-2 text-text"
               >
                 {[3, 6, 12].map((n) => (
                   <option key={n} value={n}>
@@ -413,7 +413,7 @@ export default function FinancialForecast({
                 ))}
               </select>
             </label>
-            <label className="text-sm text-gray-300">
+            <label className="text-sm text-text-muted">
               Projeção dos cartões
               <select
                 value={options.cardMode}
@@ -423,33 +423,33 @@ export default function FinancialForecast({
                     cardMode: event.target.value as ForecastOptions['cardMode']
                   }))
                 }
-                className="mt-2 block w-full rounded-lg border border-gray-700 bg-elevated p-2 text-white"
+                className="mt-2 block w-full rounded-lg border border-border bg-elevated p-2 text-text"
               >
                 <option value="ESTIMATE">Incluir novos gastos variáveis</option>
                 <option value="KNOWN_ONLY">Somente valores das faturas</option>
               </select>
             </label>
           </fieldset>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-text-muted">
             O histórico termina no mês anterior ao atual. Fixas e parcelas ficam fora das médias
             variáveis. Meses sem movimentos após o primeiro mês com registros entram como zero; os
             anteriores ficam fora da média.
           </p>
           <div>
-            <h3 className="font-medium text-white">Médias por categoria</h3>
-            <p className="mt-1 text-xs text-gray-400">
+            <h3 className="font-medium text-text">Médias por categoria</h3>
+            <p className="mt-1 text-xs text-text-muted">
               Categorias habituais deste espaço financeiro. Desmarcar ou ajustar aqui vale apenas para este cenário. O sistema acrescenta apenas o que falta além
               dos gastos comparáveis já conhecidos. Os ajustes valem para os meses deste cenário.
             </p>
             {data.variables.length === 0 && (
-              <p className="py-5 text-sm text-gray-400">
+              <p className="py-5 text-sm text-text-muted">
                 Ainda não há histórico de gastos variáveis categorizados para estimar.
               </p>
             )}
-            <div className="mt-3 divide-y divide-gray-800">
+            <div className="mt-3 divide-y divide-border">
               {data.variables.map((item) => (
                 <div key={item.key} className="py-4">
-                  <label className="flex items-start gap-3 text-sm text-white">
+                  <label className="flex items-start gap-3 text-sm text-text">
                     <input
                       type="checkbox"
                       className="mt-1 accent-blue-500"
@@ -466,29 +466,29 @@ export default function FinancialForecast({
                     />
                     <span>
                       {item.categoryName}
-                      <span className="block text-xs text-gray-400">
+                      <span className="block text-xs text-text-muted">
                         {item.channel === 'CARD' ? item.accountName : 'Fora do cartão'}
                       </span>
                     </span>
                   </label>
-                  <dl className="my-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-gray-300">
+                  <dl className="my-3 flex flex-wrap gap-x-6 gap-y-2 text-xs text-text-muted">
                     <div>
                       <dt>Média histórica</dt>
-                      <dd className="text-sm text-white">{currency(item.historicalAverage)}</dd>
+                      <dd className="text-sm text-text">{currency(item.historicalAverage)}</dd>
                     </div>
                     <div>
                       <dt>Já considerado</dt>
-                      <dd className="text-sm text-white">{currency(item.committedInMonth)}</dd>
+                      <dd className="text-sm text-text">{currency(item.committedInMonth)}</dd>
                     </div>
                     <div>
                       <dt>Adicional incluído</dt>
-                      <dd className="text-sm text-white">
+                      <dd className="text-sm text-text">
                         {currency(item.included ? item.remainingProjected : 0)}
                       </dd>
                     </div>
                   </dl>
                   {item.cycleUnavailable && (
-                    <p className="mb-3 text-xs text-amber-200">
+                    <p className="mb-3 text-xs text-tone-amber">
                       Este ciclo não recebe novas compras. A estimativa só entra nos próximos ciclos
                       disponíveis.
                     </p>
@@ -525,7 +525,7 @@ export default function FinancialForecast({
                       </Button>
                     )}
                   </div>
-                  <details className="mt-3 text-xs text-gray-400">
+                  <details className="mt-3 text-xs text-text-muted">
                     <summary className="cursor-pointer">Meses usados na média</summary>
                     <ul className="mt-2 space-y-1">
                       {item.history.map((point) => (
@@ -553,15 +553,15 @@ export default function FinancialForecast({
             </Button>
           </div>
           <details>
-            <summary className="cursor-pointer text-sm font-medium text-white">
+            <summary className="cursor-pointer text-sm font-medium text-text">
               Compromissos do mês ({data.transactions.length})
             </summary>
             <Transactions items={data.transactions} />
           </details>
           {data.overdue.items.length > 0 && (
-            <div className="space-y-3 border-t border-gray-800 pt-5">
-              <h3 className="font-medium text-white">Pendências de meses anteriores</h3>
-              <label className="flex items-start gap-3 text-sm text-gray-200">
+            <div className="space-y-3 border-t border-border pt-5">
+              <h3 className="font-medium text-text">Pendências de meses anteriores</h3>
+              <label className="flex items-start gap-3 text-sm text-text">
                 <input
                   type="checkbox"
                   className="mt-1 accent-blue-500"
@@ -573,7 +573,7 @@ export default function FinancialForecast({
                 />
                 <span>
                   Simular a quitação no mês atual
-                  <span className="mt-1 block text-xs text-gray-400">
+                  <span className="mt-1 block text-xs text-text-muted">
                     Afeta o saldo acumulado uma única vez. O resultado dos meses e os vencimentos
                     originais são preservados.
                   </span>
@@ -583,10 +583,10 @@ export default function FinancialForecast({
             </div>
           )}
           <details>
-            <summary className="cursor-pointer text-sm font-medium text-white">
+            <summary className="cursor-pointer text-sm font-medium text-text">
               Como o saldo chega ao mês escolhido
             </summary>
-            <p className="my-3 text-xs text-gray-400">
+            <p className="my-3 text-xs text-text-muted">
               Saldo atual: {currency(data.currentBalance)}. No mês atual, apenas movimentos ainda
               não liquidados alteram esse saldo.
               {options.includeOverdue &&
@@ -595,7 +595,7 @@ export default function FinancialForecast({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
-                  <tr className="text-gray-400">
+                  <tr className="text-text-muted">
                     <th className="py-2 pr-3">Mês</th>
                     <th className="px-3 text-right">Resultado</th>
                     <th className="pl-3 text-right">Saldo ao final</th>
@@ -603,7 +603,7 @@ export default function FinancialForecast({
                 </thead>
                 <tbody>
                   {data.timeline.map((point) => (
-                    <tr key={point.month} className="border-t border-gray-800 text-gray-200">
+                    <tr key={point.month} className="border-t border-border text-text">
                       <td className="py-3 pr-3">{monthName(point.month)}</td>
                       <td className="px-3 text-right tabular-nums">{currency(point.result)}</td>
                       <td className="pl-3 text-right tabular-nums">

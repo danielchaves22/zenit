@@ -63,19 +63,19 @@ interface InstallmentPlan {
 const PLAN_STATUS: Record<PlanStatus, { label: string; classes: string }> = {
   IN_PROGRESS: {
     label: 'Em andamento',
-    classes: 'bg-blue-900 text-blue-200'
+    classes: 'bg-tone-blue-soft text-tone-blue'
   },
   OVERDUE: {
     label: 'Atrasada',
-    classes: 'bg-red-900 text-red-200'
+    classes: 'bg-tone-red-soft text-tone-red'
   },
   COMPLETED: {
     label: 'Quitada',
-    classes: 'bg-green-900 text-green-200'
+    classes: 'bg-tone-green-soft text-tone-green'
   },
   CANCELED: {
     label: 'Cancelada',
-    classes: 'bg-gray-700 text-gray-300'
+    classes: 'bg-elevated text-text-muted'
   }
 };
 
@@ -90,7 +90,7 @@ function getInstallmentStatus(installment: InstallmentItem) {
   if (installment.archivedAt) {
     return {
       label: 'Ignorada',
-      classes: 'bg-amber-900 text-amber-200'
+      classes: 'bg-tone-amber-soft text-tone-amber'
     };
   }
 
@@ -161,8 +161,8 @@ function InstallmentPurchasesPageInner() {
 
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Compras Parceladas</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-semibold text-text">Compras Parceladas</h1>
+          <p className="mt-1 text-sm text-text-muted">
             Compromissos parcelados pagos fora do cartão de crédito.
           </p>
         </div>
@@ -179,12 +179,12 @@ function InstallmentPurchasesPageInner() {
       {!loading && plans.length > 0 && (
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Card>
-            <div className="text-xs uppercase tracking-wide text-gray-400">Compras cadastradas</div>
-            <div className="mt-2 text-2xl font-semibold text-white">{plans.length}</div>
+            <div className="text-xs uppercase tracking-wide text-text-muted">Compras cadastradas</div>
+            <div className="mt-2 text-2xl font-semibold text-text">{plans.length}</div>
           </Card>
           <Card>
-            <div className="text-xs uppercase tracking-wide text-gray-400">Saldo parcelado restante</div>
-            <div className="mt-2 text-2xl font-semibold text-white">
+            <div className="text-xs uppercase tracking-wide text-text-muted">Saldo parcelado restante</div>
+            <div className="mt-2 text-2xl font-semibold text-text">
               {formatCurrency(activeRemainingAmount)}
             </div>
           </Card>
@@ -193,13 +193,13 @@ function InstallmentPurchasesPageInner() {
 
       {loading ? (
         <Card>
-          <div className="py-12 text-center text-gray-400">Carregando compras parceladas...</div>
+          <div className="py-12 text-center text-text-muted">Carregando compras parceladas...</div>
         </Card>
       ) : plans.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
-            <Receipt size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="mb-4 text-gray-400">Nenhuma compra parcelada cadastrada</p>
+            <Receipt size={42} className="mx-auto mb-3 text-text-subtle" />
+            <p className="mb-4 text-text-muted">Nenhuma compra parcelada cadastrada</p>
             <Link
               href={`/financial/transactions/new?type=EXPENSE&locked=true&installment=true&returnTo=${encodeURIComponent('/financial/installment-purchases')}`}
             >
@@ -225,20 +225,20 @@ function InstallmentPurchasesPageInner() {
                   aria-expanded={expanded}
                 >
                   <div className="flex min-w-0 items-start gap-3">
-                    <div className="mt-1 text-gray-400">
+                    <div className="mt-1 text-text-muted">
                       {expanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
                     </div>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="truncate text-lg font-semibold text-white">{plan.description}</h2>
-                        <span className="rounded-full bg-violet-900 px-2 py-0.5 text-[10px] uppercase text-violet-200">
+                        <h2 className="truncate text-lg font-semibold text-text">{plan.description}</h2>
+                        <span className="rounded-full bg-tone-violet-soft px-2 py-0.5 text-[10px] uppercase text-tone-violet">
                           Parcelada
                         </span>
                         <span className={`rounded-full px-2 py-0.5 text-xs ${status.classes}`}>
                           {status.label}
                         </span>
                       </div>
-                      <div className="mt-1 text-sm text-gray-400">
+                      <div className="mt-1 text-sm text-text-muted">
                         {plan.installmentCount} parcelas · total {formatCurrency(plan.totalAmount)}
                         {plan.account ? ` · ${plan.account.name}` : ''}
                         {plan.category ? ` · ${plan.category.name}` : ''}
@@ -248,24 +248,24 @@ function InstallmentPurchasesPageInner() {
 
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 pl-8 text-sm lg:min-w-[500px] lg:pl-0">
                     <div>
-                      <div className="text-xs uppercase text-gray-500">Progresso</div>
-                      <div className="mt-1 text-white">
+                      <div className="text-xs uppercase text-text-subtle">Progresso</div>
+                      <div className="mt-1 text-text">
                         {plan.paidInstallmentCount} pagas · {plan.pendingInstallmentCount} restantes
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase text-gray-500">Saldo restante</div>
-                      <div className="mt-1 text-white">{formatCurrency(plan.remainingAmount)}</div>
+                      <div className="text-xs uppercase text-text-subtle">Saldo restante</div>
+                      <div className="mt-1 text-text">{formatCurrency(plan.remainingAmount)}</div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase text-gray-500">Próxima parcela</div>
-                      <div className="mt-1 text-gray-300">
+                      <div className="text-xs uppercase text-text-subtle">Próxima parcela</div>
+                      <div className="mt-1 text-text-muted">
                         {plan.nextDueDate ? formatCalendarDate(plan.nextDueDate) : '-'}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs uppercase text-gray-500">Término</div>
-                      <div className="mt-1 text-gray-300">
+                      <div className="text-xs uppercase text-text-subtle">Término</div>
+                      <div className="mt-1 text-text-muted">
                         {plan.lastDueDate ? formatCalendarDate(plan.lastDueDate) : '-'}
                       </div>
                     </div>
@@ -273,9 +273,9 @@ function InstallmentPurchasesPageInner() {
                 </button>
 
                 {expanded && (
-                  <div className="mt-5 overflow-x-auto border-t border-gray-700 pt-5">
+                  <div className="mt-5 overflow-x-auto border-t border-border pt-5">
                     <table className="w-full">
-                      <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+                      <thead className="bg-elevated text-xs uppercase text-text-muted">
                         <tr>
                           <th className="px-3 py-2 text-left">Parcela</th>
                           <th className="px-3 py-2 text-left">Vencimento</th>
@@ -289,17 +289,17 @@ function InstallmentPurchasesPageInner() {
                           const installmentStatus = getInstallmentStatus(installment);
 
                           return (
-                            <tr key={installment.id} className="border-t border-gray-700 text-sm text-gray-300">
+                            <tr key={installment.id} className="border-t border-border text-sm text-text-muted">
                               <td className="px-3 py-3">
                                 {installment.installmentNumber} de {installment.totalInstallments}
                               </td>
                               <td className="px-3 py-3">
                                 <div className="flex items-center gap-2">
-                                  <CalendarDays size={14} className="text-gray-500" />
+                                  <CalendarDays size={14} className="text-text-subtle" />
                                   {installment.dueDate ? formatCalendarDate(installment.dueDate) : '-'}
                                 </div>
                               </td>
-                              <td className="px-3 py-3 text-right text-white">
+                              <td className="px-3 py-3 text-right text-text">
                                 {formatCurrency(installment.amount)}
                               </td>
                               <td className="px-3 py-3">

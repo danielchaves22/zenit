@@ -87,22 +87,22 @@ function formatDateTime(value: string | null) {
 const financialProfileStatePresentation = {
   NOT_CONFIGURED: {
     label: 'Não configurado',
-    className: 'border-gray-700 bg-gray-900 text-gray-300',
+    className: 'border-border bg-elevated text-text-muted',
     icon: UserRoundCog
   },
   INCOMPLETE: {
     label: 'Incompleto',
-    className: 'border-amber-800 bg-amber-950/40 text-amber-300',
+    className: 'border-tone-amber/25 bg-tone-amber-soft text-tone-amber',
     icon: AlertTriangle
   },
   READY: {
     label: 'Pronto',
-    className: 'border-emerald-800 bg-emerald-950/40 text-emerald-300',
+    className: 'border-tone-emerald/25 bg-tone-emerald-soft text-tone-emerald',
     icon: CheckCircle2
   },
   OUTDATED: {
     label: 'Precisa de revisão',
-    className: 'border-orange-800 bg-orange-950/40 text-orange-300',
+    className: 'border-tone-orange/25 bg-tone-orange-soft text-tone-orange',
     icon: Clock3
   }
 };
@@ -338,7 +338,7 @@ export default function ProfilePage() {
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-medium text-white">
+                  <h2 className="text-lg font-medium text-text">
                     Perfil de planejamento financeiro
                   </h2>
                   {!loadingFinancialProfile && (
@@ -351,9 +351,9 @@ export default function ProfilePage() {
                   )}
                 </div>
                 {loadingFinancialProfile ? (
-                  <div className="mt-3 h-2 w-52 animate-pulse rounded-full bg-gray-700" />
+                  <div className="mt-3 h-2 w-52 animate-pulse rounded-full bg-elevated" />
                 ) : (
-                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-400">
+                  <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-text-muted">
                     <span>{financialProfile?.completionPercentage || 0}% preenchido</span>
                     <span>
                       Workspace: {financialProfile?.workspace.name || 'workspace atual'}
@@ -365,7 +365,7 @@ export default function ProfilePage() {
 
             <Link
               href="/profile/financial"
-              className="inline-flex shrink-0 items-center justify-center rounded border border-gray-600 px-3 py-1.5 font-semibold text-gray-300 transition-all duration-200 hover:border-accent hover:bg-elevated hover:text-accent"
+              className="inline-flex shrink-0 items-center justify-center rounded border border-border-strong px-3 py-1.5 font-semibold text-text-muted transition-all duration-200 hover:border-accent hover:bg-elevated hover:text-accent"
             >
               {financialProfileActionLabel}
             </Link>
@@ -421,33 +421,33 @@ export default function ProfilePage() {
             headerTitle="Canal do WhatsApp"
           >
           <div className="space-y-5">
-            <div className="rounded-xl border border-gray-700 bg-[#1a1f2b] p-4">
+            <div className="rounded-xl border border-border bg-elevated p-4">
               <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-green-600/20 p-2">
-                  <MessageCircle className="text-green-300" size={18} />
+                <div className="rounded-lg bg-tone-green-soft p-2">
+                  <MessageCircle className="text-tone-green" size={18} />
                 </div>
                 <div className="flex-1">
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-sm font-semibold text-text">
                     {whatsAppStatus?.binding ? 'Conectado' : 'Nao conectado'}
                   </div>
-                  <div className="text-sm text-gray-400">
+                  <div className="text-sm text-text-muted">
                     {whatsAppStatus?.binding
                       ? `Numero vinculado: ${whatsAppStatus.binding.phoneNumber}`
                       : 'Gere um QR Code e envie a mensagem pre-preenchida para o numero do Zenit.'}
                   </div>
                 </div>
                 {refreshingWhatsApp && (
-                  <RefreshCw className="animate-spin text-gray-400" size={16} />
+                  <RefreshCw className="animate-spin text-text-muted" size={16} />
                 )}
               </div>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-300">
+              <label className="mb-2 block text-sm font-medium text-text-muted">
                 Empresa ativa no canal
               </label>
               <select
-                className="w-full rounded border border-gray-700 bg-background px-3 py-2 text-white"
+                className="w-full rounded border border-border bg-background px-3 py-2 text-text"
                 disabled={loadingWhatsApp || actionLoading || allowedCompanies.length === 0}
                 onChange={(event) => void handleChangeActiveCompany(Number(event.target.value))}
                 value={selectedCompanyId || ''}
@@ -465,22 +465,22 @@ export default function ProfilePage() {
             </div>
 
             {blockedCompanies.length > 0 && (
-              <div className="rounded-lg border border-yellow-700/50 bg-yellow-900/10 p-4 text-sm text-yellow-100">
+              <div className="rounded-lg border border-tone-yellow/25 bg-tone-yellow-soft p-4 text-sm text-tone-yellow">
                 Existem empresas sem acesso ao canal para este usuario. O superusuario precisa
                 habilitar o app na empresa e conceder o grant no cadastro do usuario.
               </div>
             )}
 
             {!whatsAppStatus?.backendConfig.ready && (
-              <div className="rounded-lg border border-red-800/50 bg-red-900/10 p-4 text-sm text-red-100">
+              <div className="rounded-lg border border-tone-red/25 bg-tone-red-soft p-4 text-sm text-tone-red">
                 O backend ainda nao esta pronto para o WhatsApp. Revise as variaveis de ambiente
                 e o webhook da Meta antes de conectar usuarios.
               </div>
             )}
 
             {whatsAppStatus?.binding && (
-              <div className="rounded-lg border border-gray-700 bg-[#161a20] p-4 text-sm text-gray-300">
-                <div className="flex items-center gap-2 text-white">
+              <div className="rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
+                <div className="flex items-center gap-2 text-text">
                   <Building2 size={16} />
                   Empresa ativa: {whatsAppStatus.binding.activeCompanyName}
                 </div>
@@ -495,7 +495,7 @@ export default function ProfilePage() {
             )}
 
             <div className="rounded-xl border border-accent/40 bg-accent/5 p-4">
-              <div className="flex items-center gap-2 text-white">
+              <div className="flex items-center gap-2 text-text">
                 <QrCode size={16} />
                 <span className="font-medium">
                   {whatsAppStatus?.pendingChallenge ? 'QR Code pronto' : 'Previa do QR Code'}
@@ -504,24 +504,24 @@ export default function ProfilePage() {
 
               {whatsAppStatus?.pendingChallenge ? (
                 <>
-                  <div className="mt-2 text-sm text-gray-300">
+                  <div className="mt-2 text-sm text-text-muted">
                     Empresa prevista para o vinculo:{' '}
                     {whatsAppStatus.pendingChallenge.preferredCompanyName}
                   </div>
-                  <div className="mt-1 text-sm text-gray-300">
+                  <div className="mt-1 text-sm text-text-muted">
                     Expira em: {formatDateTime(whatsAppStatus.pendingChallenge.expiresAt)}
                   </div>
                   <div className="mt-4 flex justify-center">
                     <WhatsAppQrCode value={whatsAppStatus.pendingChallenge.qrPayload} />
                   </div>
-                  <div className="mt-4 rounded-lg border border-gray-700 bg-[#111827] p-3 text-xs text-gray-300">
-                    <div className="font-semibold text-white">Mensagem pre-preenchida</div>
+                  <div className="mt-4 rounded-lg border border-border bg-elevated p-3 text-xs text-text-muted">
+                    <div className="font-semibold text-text">Mensagem pre-preenchida</div>
                     <div className="mt-2 break-all">{whatsAppStatus.pendingChallenge.text}</div>
                   </div>
                   <div className="mt-4 flex flex-wrap gap-3">
                     {whatsAppStatus.pendingChallenge.deepLinkUrl && (
                       <a
-                        className="inline-flex items-center gap-2 rounded font-semibold transition-all duration-200 bg-accent px-3 py-1.5 text-white hover:bg-accent-hover"
+                        className="inline-flex items-center gap-2 rounded font-semibold transition-all duration-200 bg-accent px-3 py-1.5 text-on-accent hover:bg-accent-hover"
                         href={whatsAppStatus.pendingChallenge.deepLinkUrl}
                         rel="noreferrer"
                         target="_blank"
@@ -544,14 +544,14 @@ export default function ProfilePage() {
                 </>
               ) : (
                 <div className="mt-4">
-                  <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-gray-700 bg-[#111827] px-6 text-center">
+                  <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-elevated px-6 text-center">
                     <div className="rounded-full bg-white/5 p-4">
-                      <QrCode className="text-gray-400" size={32} />
+                      <QrCode className="text-text-muted" size={32} />
                     </div>
-                    <div className="mt-4 text-sm font-medium text-white">
+                    <div className="mt-4 text-sm font-medium text-text">
                       A previa do QR aparece aqui
                     </div>
-                    <div className="mt-2 max-w-xs text-sm text-gray-400">
+                    <div className="mt-2 max-w-xs text-sm text-text-muted">
                       Escolha a empresa e clique em {whatsAppStatus?.binding ? '"Reconectar Numero"' : '"Gerar QR Code"'} para montar a mensagem pre-preenchida do WhatsApp.
                     </div>
                   </div>
@@ -588,8 +588,8 @@ export default function ProfilePage() {
               </Button>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#161a20] p-4 text-sm text-gray-300">
-              <div className="flex items-center gap-2 text-white">
+            <div className="rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
+              <div className="flex items-center gap-2 text-text">
                 <ShieldCheck size={16} />
                 Backend e seguranca
               </div>

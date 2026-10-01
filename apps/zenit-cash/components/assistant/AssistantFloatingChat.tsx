@@ -295,14 +295,14 @@ export function AssistantFloatingChat() {
 
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
         {isOpen ? (
-          <div className="flex h-[min(78vh,720px)] w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[28px] border border-gray-700 bg-surface shadow-2xl">
-            <div className="flex items-start justify-between gap-4 border-b border-gray-700 px-5 py-4">
+          <div className="flex h-[min(78vh,720px)] w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-[28px] border border-border bg-surface shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
               <div className="min-w-0">
-                <div className="flex items-center gap-2 text-white">
+                <div className="flex items-center gap-2 text-text">
                   <Bot size={18} className="text-accent" />
                   <h3 className="text-lg font-semibold">Operador</h3>
                 </div>
-                <p className="mt-1 text-sm text-gray-400">
+                <p className="mt-1 text-sm text-text-muted">
                   Lance despesas, receitas e transferencias em linguagem natural.
                 </p>
               </div>
@@ -312,7 +312,7 @@ export function AssistantFloatingChat() {
                   type="button"
                   onClick={() => void handleNewConversation()}
                   disabled={isStreaming || isBootstrapping}
-                  className="rounded-xl border border-gray-700 px-3 py-2 text-xs font-semibold text-gray-300 transition hover:border-accent hover:text-accent disabled:opacity-50"
+                  className="rounded-xl border border-border px-3 py-2 text-xs font-semibold text-text-muted transition hover:border-accent hover:text-accent disabled:opacity-50"
                 >
                   <span className="inline-flex items-center gap-2">
                     <Plus size={14} />
@@ -322,7 +322,7 @@ export function AssistantFloatingChat() {
                 <button
                   type="button"
                   onClick={() => setIsOpen(false)}
-                  className="rounded-xl border border-gray-700 p-2 text-gray-300 transition hover:border-accent hover:text-accent"
+                  className="rounded-xl border border-border p-2 text-text-muted transition hover:border-accent hover:text-accent"
                   aria-label="Fechar assistente"
                 >
                   <X size={16} />
@@ -332,14 +332,14 @@ export function AssistantFloatingChat() {
 
             <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto bg-background/80 px-4 py-4">
               {!historyLoaded && isBootstrapping ? (
-                <div className="rounded-3xl border border-gray-700 bg-surface px-4 py-3 text-sm text-gray-400">
+                <div className="rounded-3xl border border-border bg-surface px-4 py-3 text-sm text-text-muted">
                   Carregando conversa...
                 </div>
               ) : null}
 
               {historyLoaded && messages.length === 0 ? (
-                <div className="rounded-3xl border border-dashed border-gray-700 bg-surface/70 px-4 py-5 text-sm text-gray-400">
-                  Descreva um lancamento como <span className="text-white">gastei 42 no Uber hoje no Nubank</span>.
+                <div className="rounded-3xl border border-dashed border-border bg-surface/70 px-4 py-5 text-sm text-text-muted">
+                  Descreva um lancamento como <span className="text-text">gastei 42 no Uber hoje no Nubank</span>.
                 </div>
               ) : null}
 
@@ -348,8 +348,8 @@ export function AssistantFloatingChat() {
                   key={message.id}
                   className={
                     message.role === 'USER'
-                      ? 'ml-auto max-w-[88%] rounded-[24px] bg-[#102130] px-4 py-3 text-sm text-[#f7f8fa]'
-                      : 'max-w-[96%] rounded-[24px] bg-white px-4 py-3 text-sm text-[#1d232c]'
+                      ? 'ml-auto max-w-[88%] rounded-2xl bg-accent-soft px-4 py-3 text-sm text-text'
+                      : 'max-w-[96%] rounded-2xl bg-surface px-4 py-3 text-sm text-text'
                   }
                 >
                   <div className="whitespace-pre-wrap leading-6">
@@ -368,8 +368,8 @@ export function AssistantFloatingChat() {
               ))}
             </div>
 
-            <div className="border-t border-gray-700 bg-surface px-4 py-4">
-              <div className="rounded-[24px] border border-gray-700 bg-white p-3">
+            <div className="border-t border-border bg-surface px-4 py-4">
+              <div className="rounded-2xl border border-border bg-surface p-3">
                 <textarea
                   value={composerText}
                   onChange={(event) => setComposerText(event.target.value)}
@@ -380,11 +380,11 @@ export function AssistantFloatingChat() {
                     }
                   }}
                   placeholder="Ex.: gastei 42 no Uber hoje no Nubank"
-                  className="min-h-[76px] w-full resize-none border-0 bg-transparent text-sm text-[#1d232c] outline-none placeholder:text-[#8490a1]"
+                  className="min-h-[76px] w-full resize-none border-0 bg-transparent text-sm text-text outline-none placeholder:text-text-subtle"
                 />
 
                 <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-text-subtle">
                     {isStreaming ? 'Processando mensagem...' : 'Enter envia · Shift+Enter quebra linha'}
                   </div>
 
@@ -406,7 +406,7 @@ export function AssistantFloatingChat() {
         <button
           type="button"
           onClick={() => setIsOpen((current) => !current)}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-[var(--color-primary-shadow)] transition hover:scale-[1.03] hover:bg-accent-hover"
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-on-accent shadow-[var(--color-primary-shadow)] transition hover:scale-[1.03] hover:bg-accent-hover"
           aria-label={isOpen ? 'Fechar assistente' : 'Abrir assistente'}
         >
           <MessageCircle size={22} />

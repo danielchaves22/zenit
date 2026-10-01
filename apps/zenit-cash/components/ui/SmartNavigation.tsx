@@ -306,36 +306,34 @@ export function SmartNavigation({
   const renderNavigationItem = (item: NavigationItem, index: number) => {
     const active = isActive(item.href);
     
-    const baseClasses = "group relative block p-4 rounded-lg border transition-all duration-200 hover:shadow-lg";
+    const baseClasses = "group relative block rounded-lg border transition-colors duration-200";
     const layoutClasses = {
-      grid: "h-full",
-      list: "flex items-center gap-4",
-      compact: "flex items-center gap-2 p-2"
+      grid: "h-full p-4",
+      list: "flex items-center gap-4 p-4",
+      compact: "flex items-center gap-3 p-3 min-h-14"
     };
     
     const stateClasses = active
-      ? "bg-accent text-white border-accent shadow-lg"
-      : "bg-surface border-gray-700 hover:border-accent hover:bg-elevated";
+      ? "bg-accent-soft text-accent border-accent/30"
+      : "bg-surface border-border hover:border-accent hover:bg-elevated";
 
     return (
       <Link key={index} href={item.href} className={`${baseClasses} ${layoutClasses[layout]} ${stateClasses}`}>
-        <div className={layout === 'list' ? 'flex-shrink-0' : 'mb-3'}>
-          <div className={`${active ? 'text-white' : 'text-accent'} ${layout === 'compact' ? '' : 'mb-2'}`}>
+        <div className={layout === 'grid' ? 'mb-3' : 'flex-shrink-0'}>
+          <div className={`text-accent ${layout === 'compact' ? '' : 'mb-2'}`}>
             {item.icon}
           </div>
         </div>
         
         <div className={layout === 'list' ? 'flex-1 min-w-0' : ''}>
-          <h3 className={`font-medium ${active ? 'text-white' : 'text-white'} ${
+          <h3 className={`font-medium text-text ${
             layout === 'compact' ? 'text-sm' : 'text-base'
-          } group-hover:text-white transition-colors`}>
+          } group-hover:text-text transition-colors`}>
             {item.label}
           </h3>
           
           {showDescriptions && item.description && layout !== 'compact' && (
-            <p className={`text-sm mt-1 ${
-              active ? 'text-white/80' : 'text-gray-400'
-            } group-hover:text-white/80 transition-colors`}>
+            <p className="text-sm mt-1 text-text-muted transition-colors">
               {item.description}
             </p>
           )}
@@ -343,7 +341,7 @@ export function SmartNavigation({
         
         {/* Indicador de ativo */}
         {active && (
-          <div className="absolute top-2 right-2 w-2 h-2 bg-white rounded-full opacity-80" />
+          <div className="absolute top-2 right-2 w-2 h-2 bg-accent rounded-full opacity-80" />
         )}
       </Link>
     );
@@ -352,8 +350,8 @@ export function SmartNavigation({
   if (allowedItems.length === 0) {
     return (
       <div className={`text-center py-8 ${className}`}>
-        <p className="text-gray-400">Nenhuma opção de navegação disponível para seu perfil.</p>
-        <p className="text-sm text-gray-500 mt-2">
+        <p className="text-text-muted">Nenhuma opção de navegação disponível para seu perfil.</p>
+        <p className="text-sm text-text-subtle mt-2">
           Perfil atual: <span className="font-medium">{currentRole}</span>
         </p>
       </div>
@@ -367,13 +365,13 @@ export function SmartNavigation({
         <div className="space-y-8">
           {Object.entries(itemsByCategory).map(([categoryName, items]) => (
             <div key={categoryName}>
-              <h2 className="text-lg font-semibold text-white mb-4 capitalize">
+              <h2 className="text-lg font-semibold text-text mb-4 capitalize">
                 {categoryName}
               </h2>
               <div className={
                 layout === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' :
                 layout === 'list' ? 'space-y-2' :
-                'grid grid-cols-1 md:grid-cols-2 gap-2'
+                'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2'
               }>
                 {items.map((item, index) => renderNavigationItem(item, index))}
               </div>
@@ -385,7 +383,7 @@ export function SmartNavigation({
         <div className={
           layout === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' :
           layout === 'list' ? 'space-y-2' :
-          'grid grid-cols-1 md:grid-cols-2 gap-2'
+          'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2'
         }>
           {allowedItems.map((item, index) => renderNavigationItem(item, index))}
         </div>
@@ -404,7 +402,7 @@ export function QuickNavigation({ category }: { category?: string }) {
       showCategories={false}
       showDescriptions={false}
       maxItems={6}
-      className="grid grid-cols-2 md:grid-cols-3 gap-2"
+      className="w-full"
     />
   );
 }

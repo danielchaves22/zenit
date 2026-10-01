@@ -76,11 +76,11 @@ function BudgetDetailPageInner() {
 
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-text">
             {budget ? `Orçamento ${budget.code}` : 'Detalhe do orçamento'}
           </h1>
           {payload && (
-            <p className="mt-1 text-sm text-gray-400">
+            <p className="mt-1 text-sm text-text-muted">
               Data de negócio: {formatBusinessDate(payload.businessDate, payload.timeZone)}
             </p>
           )}
@@ -102,9 +102,9 @@ function BudgetDetailPageInner() {
       ) : !budget || !payload ? (
         <Card>
           <div className="py-12 text-center">
-            <PiggyBank size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="mb-2 text-gray-300">Orçamento não encontrado</p>
-            <p className="mb-4 text-sm text-gray-500">
+            <PiggyBank size={42} className="mx-auto mb-3 text-text-subtle" />
+            <p className="mb-2 text-text-muted">Orçamento não encontrado</p>
+            <p className="mb-4 text-sm text-text-subtle">
               O orçamento pode ter sido removido, trocado de empresa ou ainda não sincronizado.
             </p>
             <Link href="/financial/budgets?view=availability">
@@ -157,7 +157,7 @@ function BudgetDetailPageInner() {
 
             <Card headerTitle="Entradas e saídas" headerSubtitle="Timeline do domínio de orçamento">
               {budget.entries.length === 0 ? (
-                <div className="py-10 text-center text-gray-400">
+                <div className="py-10 text-center text-text-muted">
                   Nenhuma movimentação sincronizada neste orçamento
                 </div>
               ) : (
@@ -178,17 +178,17 @@ function BudgetDetailPageInner() {
 function MetricCard({ label, value }: { label: string; value: string }) {
   return (
     <Card>
-      <p className="text-sm text-gray-400">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+      <p className="text-sm text-text-muted">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-text">{value}</p>
     </Card>
   );
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-gray-800 pb-3 last:border-b-0 last:pb-0">
-      <span className="text-gray-400">{label}</span>
-      <span className="text-right font-medium text-white">{value}</span>
+    <div className="flex items-start justify-between gap-4 border-b border-border pb-3 last:border-b-0 last:pb-0">
+      <span className="text-text-muted">{label}</span>
+      <span className="text-right font-medium text-text">{value}</span>
     </div>
   );
 }
@@ -198,12 +198,12 @@ function EntryRow({ entry, timeZone }: { entry: BudgetEntry; timeZone: string })
   const allocationLabel = getAllocationModeLabel(entry.allocationMode);
 
   return (
-    <div className="rounded-xl border border-gray-700 bg-[#11161d] p-4">
+    <div className="rounded-xl border border-border bg-elevated p-4">
       <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="flex items-start gap-3">
           <div
             className={`mt-1 rounded-full p-2 ${
-              isIncome ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'
+              isIncome ? 'bg-tone-green-soft text-tone-green' : 'bg-tone-red-soft text-tone-red'
             }`}
           >
             {isIncome ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
@@ -211,34 +211,34 @@ function EntryRow({ entry, timeZone }: { entry: BudgetEntry; timeZone: string })
 
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-white">{getEntryTypeLabel(entry.entryType)}</span>
+              <span className="font-medium text-text">{getEntryTypeLabel(entry.entryType)}</span>
               {allocationLabel && (
-                <span className="rounded-full border border-gray-600 px-2 py-0.5 text-xs text-gray-300">
+                <span className="rounded-full border border-border-strong px-2 py-0.5 text-xs text-text-muted">
                   {allocationLabel}
                 </span>
               )}
               {!entry.affectsBudgetBalance && (
-                <span className="rounded-full border border-amber-700 bg-amber-900/40 px-2 py-0.5 text-xs text-amber-300">
+                <span className="rounded-full border border-tone-amber/25 bg-tone-amber-soft px-2 py-0.5 text-xs text-tone-amber">
                   Sem impacto direto
                 </span>
               )}
             </div>
 
-            <p className="mt-1 text-sm text-gray-400">{entry.description || 'Sem descrição'}</p>
+            <p className="mt-1 text-sm text-text-muted">{entry.description || 'Sem descrição'}</p>
           </div>
         </div>
 
         <div className="text-left md:text-right">
-          <p className={`text-lg font-semibold ${isIncome ? 'text-green-300' : 'text-red-300'}`}>
+          <p className={`text-lg font-semibold ${isIncome ? 'text-tone-green' : 'text-tone-red'}`}>
             {formatCurrencyFromCents(entry.amountCents)}
           </p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-subtle">
             Impacto principal: {formatCurrencyFromCents(entry.principalImpactAmountCents)}
           </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 text-xs text-gray-500">
+      <div className="flex flex-wrap gap-4 text-xs text-text-subtle">
         <span className="inline-flex items-center gap-1">
           <CalendarDays size={13} />
           {formatBusinessDate(entry.occurredAt, timeZone)}

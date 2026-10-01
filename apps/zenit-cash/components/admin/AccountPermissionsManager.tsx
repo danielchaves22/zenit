@@ -152,20 +152,20 @@ export default function AccountPermissionsManager({
 
   return (
     <div className="space-y-2">
-      <div className="p-3 bg-elevated border border-gray-700 rounded-lg">
+      <div className="p-3 bg-elevated border border-border rounded-lg">
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={grantAllAccess}
             onChange={handleGrantAllToggle}
             disabled={disabled || totalActiveCount === 0}
-            className="w-4 h-4 text-accent bg-background border-gray-700 rounded focus:ring-accent"
+            className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
           />
           <div className="flex-1">
-            <div className="text-sm font-medium text-white">
+            <div className="text-sm font-medium text-text">
               Conceder acesso a todas as contas financeiras
             </div>
-            <div className="text-xs text-gray-400">
+            <div className="text-xs text-text-muted">
               Usuário terá acesso total às funcionalidades financeiras
             </div>
           </div>
@@ -182,9 +182,9 @@ export default function AccountPermissionsManager({
               ))}
             </div>
           ) : activeAccounts.length === 0 ? (
-            <div className="p-4 text-center border border-gray-700 rounded-lg">
-              <CreditCard size={24} className="mx-auto text-gray-400 mb-2" />
-              <p className="text-sm text-gray-400">Nenhuma conta ativa encontrada</p>
+            <div className="p-4 text-center border border-border rounded-lg">
+              <CreditCard size={24} className="mx-auto text-text-muted mb-2" />
+              <p className="text-sm text-text-muted">Nenhuma conta ativa encontrada</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
@@ -197,7 +197,7 @@ export default function AccountPermissionsManager({
                     className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-accent/10 border-accent'
-                        : 'bg-elevated border-gray-700 hover:bg-elevated'
+                        : 'bg-elevated border-border hover:bg-elevated'
                     } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <input
@@ -205,13 +205,13 @@ export default function AccountPermissionsManager({
                       checked={isSelected}
                       onChange={() => handleAccountToggle(account.id)}
                       disabled={disabled}
-                      className="w-4 h-4 text-accent bg-background border-gray-700 rounded focus:ring-accent"
+                      className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
                     />
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <CreditCard size={14} className="text-blue-400 flex-shrink-0" />
-                        <span className="text-sm font-medium text-white truncate">
+                        <CreditCard size={14} className="text-tone-blue flex-shrink-0" />
+                        <span className="text-sm font-medium text-text truncate">
                           {formatAccountDisplayName(account)}
                         </span>
                         {isSelected && (

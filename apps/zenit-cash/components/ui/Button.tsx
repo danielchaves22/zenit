@@ -14,13 +14,13 @@ export function Button({
   className = '',
   ...props
 }: ButtonProps) {
-  const base = 'px-3 py-1.5 rounded font-semibold transition-all duration-200';
+  const base = 'inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
   const variants: Record<ButtonVariant, string> = {
-    primary: `${base} bg-blue-600 text-white hover:bg-blue-700`,
+    primary: `${base} bg-accent text-on-accent hover:bg-accent-hover`,
     // ✅ USANDO CSS VARIABLES DINÂMICAS
-    accent: `${base} bg-accent text-white hover:bg-accent-hover transform hover:scale-[1.02] active:scale-[0.98]`,
-    outline: `${base} border border-gray-600 text-gray-300 hover:bg-elevated hover:border-accent hover:text-accent`,
-    danger: `${base} bg-red-600 text-white hover:bg-red-700`,
+    accent: `${base} bg-accent text-on-accent hover:bg-accent-hover`,
+    outline: `${base} border border-border-strong text-text-muted hover:bg-elevated hover:border-accent hover:text-accent`,
+    danger: `${base} bg-red-600 text-on-solid hover:bg-red-700`,
   };
 
   return (

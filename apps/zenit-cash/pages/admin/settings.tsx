@@ -194,53 +194,53 @@ export default function SettingsPage() {
 
       <AccessGuard requiredRole="SUPERUSER">
         <div className="mb-6 flex justify-between items-center">
-          <h1 className="text-2xl font-semibold text-white">Configuracoes do Sistema</h1>
+          <h1 className="text-2xl font-semibold text-text">Configuracoes do Sistema</h1>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-accent rounded-lg">
-                <Palette size={20} className="text-white" />
+                <Palette size={20} className="text-on-accent" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white">Personalizacao Visual</h2>
-                <p className="text-sm text-gray-400">Customize a aparencia da interface</p>
+                <h2 className="text-lg font-semibold text-text">Personalizacao Visual</h2>
+                <p className="text-sm text-text-muted">Customize a aparencia da interface</p>
               </div>
             </div>
 
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium mb-3 text-gray-300">
+                <label className="block text-sm font-medium mb-3 text-text-muted">
                   Tema de Cores Atual
                 </label>
-                <div className="flex items-center gap-4 p-4 bg-[#1e2126] rounded-lg border border-gray-700">
+                <div className="flex items-center gap-4 p-4 bg-background rounded-lg border border-border">
                   <div
                     className="w-8 h-8 rounded-full border-2 border-white shadow-lg"
                     style={{ backgroundColor: currentThemeInfo?.colors.primary }}
                   />
                   <div className="flex-1">
-                    <div className="font-medium text-white">{currentThemeInfo?.label}</div>
-                    <div className="text-sm text-gray-400">{currentThemeInfo?.colors.primary}</div>
+                    <div className="font-medium text-text">{currentThemeInfo?.label}</div>
+                    <div className="text-sm text-text-muted">{currentThemeInfo?.colors.primary}</div>
                   </div>
                   <ThemeSelector showLabel size="md" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-3 text-gray-300">
+                <label className="block text-sm font-medium mb-3 text-text-muted">
                   Preview das Cores
                 </label>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 bg-[#1e2126] rounded-lg border border-gray-700">
-                    <div className="text-xs text-gray-400 mb-2">Cor Principal</div>
+                  <div className="p-3 bg-background rounded-lg border border-border">
+                    <div className="text-xs text-text-muted mb-2">Cor Principal</div>
                     <div
                       className="w-full h-8 rounded border-2 border-white"
                       style={{ backgroundColor: currentThemeInfo?.colors.primary }}
                     />
                   </div>
-                  <div className="p-3 bg-[#1e2126] rounded-lg border border-gray-700">
-                    <div className="text-xs text-gray-400 mb-2">Hover</div>
+                  <div className="p-3 bg-background rounded-lg border border-border">
+                    <div className="text-xs text-text-muted mb-2">Hover</div>
                     <div
                       className="w-full h-8 rounded border-2 border-white"
                       style={{ backgroundColor: currentThemeInfo?.colors.primaryHover }}
@@ -250,7 +250,7 @@ export default function SettingsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-3 text-gray-300">
+                <label className="block text-sm font-medium mb-3 text-text-muted">
                   Exemplos de Elementos
                 </label>
                 <div className="space-y-3">
@@ -260,9 +260,9 @@ export default function SettingsPage() {
                   <Button variant="outline" className="w-full">
                     Botao Secundario
                   </Button>
-                  <div className="p-3 bg-[#1e2126] rounded-lg border border-accent">
+                  <div className="p-3 bg-background rounded-lg border border-accent">
                     <div className="text-accent font-medium">Card com Destaque</div>
-                    <div className="text-gray-400 text-sm">
+                    <div className="text-text-muted text-sm">
                       Exemplo de card destacado com a cor do tema
                     </div>
                   </div>
@@ -274,80 +274,80 @@ export default function SettingsPage() {
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2 bg-blue-600 rounded-lg">
-                <Settings size={20} className="text-white" />
+                <Settings size={20} className="text-on-solid" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white">Configuracoes Gerais</h2>
-                <p className="text-sm text-gray-400">Configuracoes do sistema e preferencias</p>
+                <h2 className="text-lg font-semibold text-text">Configuracoes Gerais</h2>
+                <p className="text-sm text-text-muted">Configuracoes do sistema e preferencias</p>
               </div>
             </div>
 
             <div className="space-y-6">
               <div>
-                <h3 className="text-sm font-medium mb-3 text-gray-300">Interface</h3>
+                <h3 className="text-sm font-medium mb-3 text-text-muted">Interface</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-[#1e2126] rounded-lg">
+                  <div className="flex items-center justify-between p-3 bg-background rounded-lg">
                     <div>
-                      <div className="text-white font-medium">Sidebar Colapsada</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-text font-medium">Sidebar Colapsada</div>
+                      <div className="text-sm text-text-muted">
                         Iniciar com menu lateral recolhido
                       </div>
                     </div>
                     <input
                       type="checkbox"
-                      className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                      className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-3 bg-[#1e2126] rounded-lg">
+                  <div className="flex items-center justify-between p-3 bg-background rounded-lg">
                     <div>
-                      <div className="text-white font-medium">Animacoes</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-text font-medium">Animacoes</div>
+                      <div className="text-sm text-text-muted">
                         Habilitar animacoes da interface
                       </div>
                     </div>
                     <input
                       type="checkbox"
                       defaultChecked
-                      className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                      className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
                     />
                   </div>
                 </div>
               </div>
 
               <div>
-                <h3 className="text-sm font-medium mb-3 text-gray-300">Notificacoes</h3>
+                <h3 className="text-sm font-medium mb-3 text-text-muted">Notificacoes</h3>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 bg-[#1e2126] rounded-lg">
+                  <div className="flex items-center justify-between p-3 bg-background rounded-lg">
                     <div>
-                      <div className="text-white font-medium">Notificacoes Push</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-text font-medium">Notificacoes Push</div>
+                      <div className="text-sm text-text-muted">
                         Receber notificacoes do sistema
                       </div>
                     </div>
                     <input
                       type="checkbox"
                       defaultChecked
-                      className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                      className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
                     />
                   </div>
 
-                  <div className="flex items-center justify-between p-3 bg-[#1e2126] rounded-lg">
+                  <div className="flex items-center justify-between p-3 bg-background rounded-lg">
                     <div>
-                      <div className="text-white font-medium">Email de Resumo</div>
-                      <div className="text-sm text-gray-400">
+                      <div className="text-text font-medium">Email de Resumo</div>
+                      <div className="text-sm text-text-muted">
                         Receber resumo semanal por email
                       </div>
                     </div>
                     <input
                       type="checkbox"
-                      className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                      className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-gray-700">
+              <div className="pt-4 border-t border-border">
                 <Button variant="accent" className="w-full flex items-center gap-2">
                   <Save size={16} />
                   Salvar Configuracoes
@@ -360,11 +360,11 @@ export default function SettingsPage() {
         <Card className="p-6 mt-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-green-600 rounded-lg">
-              <MessageCircle size={20} className="text-white" />
+              <MessageCircle size={20} className="text-on-solid" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">Canal do WhatsApp</h2>
-              <p className="text-sm text-gray-400">
+              <h2 className="text-lg font-semibold text-text">Canal do WhatsApp</h2>
+              <p className="text-sm text-text-muted">
                 Habilite o canal para a empresa atual e permita que usuarios com grant
                 conversem com o operador pelo WhatsApp.
               </p>
@@ -372,16 +372,16 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-5">
-            <div className="flex items-center justify-between rounded-lg border border-gray-700 bg-[#1e2126] p-4">
+            <div className="flex items-center justify-between rounded-lg border border-border bg-background p-4">
               <div>
-                <div className="text-white font-medium">WhatsApp da empresa</div>
-                <div className="text-sm text-gray-400">
+                <div className="text-text font-medium">WhatsApp da empresa</div>
+                <div className="text-sm text-text-muted">
                   O grant individual continua sendo controlado no cadastro de usuarios.
                 </div>
               </div>
               <input
                 checked={whatsappEnabled}
-                className="w-4 h-4 text-accent bg-[#1e2126] border-gray-700 rounded focus:ring-accent"
+                className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
                 disabled={whatsappLoading || whatsappSaving}
                 onChange={(event) => setWhatsAppEnabled(event.target.checked)}
                 type="checkbox"
@@ -389,30 +389,30 @@ export default function SettingsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+              <div className="rounded-lg border border-border bg-background p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted mb-1">
                   Cloud API
                 </div>
                 <div
                   className={
                     whatsappBackendConfig?.cloudApiConfigured
-                      ? 'text-sm text-green-300'
-                      : 'text-sm text-red-300'
+                      ? 'text-sm text-tone-green'
+                      : 'text-sm text-tone-red'
                   }
                 >
                   {whatsappBackendConfig?.cloudApiConfigured ? 'Configurada' : 'Pendente'}
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+              <div className="rounded-lg border border-border bg-background p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted mb-1">
                   Verificacao
                 </div>
                 <div
                   className={
                     whatsappBackendConfig?.webhookVerificationConfigured
-                      ? 'text-sm text-green-300'
-                      : 'text-sm text-red-300'
+                      ? 'text-sm text-tone-green'
+                      : 'text-sm text-tone-red'
                   }
                 >
                   {whatsappBackendConfig?.webhookVerificationConfigured
@@ -421,15 +421,15 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+              <div className="rounded-lg border border-border bg-background p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted mb-1">
                   Assinatura
                 </div>
                 <div
                   className={
                     whatsappBackendConfig?.signatureValidationConfigured
-                      ? 'text-sm text-green-300'
-                      : 'text-sm text-red-300'
+                      ? 'text-sm text-tone-green'
+                      : 'text-sm text-tone-red'
                   }
                 >
                   {whatsappBackendConfig?.signatureValidationConfigured
@@ -438,15 +438,15 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+              <div className="rounded-lg border border-border bg-background p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted mb-1">
                   QR / Deep Link
                 </div>
                 <div
                   className={
                     whatsappBackendConfig?.deepLinkConfigured
-                      ? 'text-sm text-green-300'
-                      : 'text-sm text-red-300'
+                      ? 'text-sm text-tone-green'
+                      : 'text-sm text-tone-red'
                   }
                 >
                   {whatsappBackendConfig?.deepLinkConfigured
@@ -457,7 +457,7 @@ export default function SettingsPage() {
             </div>
 
             {!whatsappBackendConfig?.ready && (
-              <div className="rounded-lg border border-yellow-700/50 bg-yellow-900/10 p-4 text-sm text-yellow-100">
+              <div className="rounded-lg border border-tone-yellow/25 bg-tone-yellow-soft p-4 text-sm text-tone-yellow">
                 O backend ainda nao tem todas as variaveis necessarias para o canal.
                 Ajuste os arquivos `.env` e o webhook da Meta antes de liberar o uso.
               </div>
@@ -480,13 +480,13 @@ export default function SettingsPage() {
         <Card className="p-6 mt-6">
           <div className="flex items-center gap-3 mb-4">
             <Monitor size={20} className="text-accent" />
-            <h3 className="text-lg font-medium text-white">Sobre os Temas</h3>
+            <h3 className="text-lg font-medium text-text">Sobre os Temas</h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <h4 className="font-medium text-white mb-2">Recursos Disponiveis</h4>
-              <ul className="text-sm text-gray-400 space-y-1">
+              <h4 className="font-medium text-text mb-2">Recursos Disponiveis</h4>
+              <ul className="text-sm text-text-muted space-y-1">
                 <li>- {availableThemes.length} temas de cores diferentes</li>
                 <li>- Mudanca em tempo real</li>
                 <li>- Preferencia salva automaticamente</li>
@@ -496,8 +496,8 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <h4 className="font-medium text-white mb-2">Acessibilidade</h4>
-              <ul className="text-sm text-gray-400 space-y-1">
+              <h4 className="font-medium text-text mb-2">Acessibilidade</h4>
+              <ul className="text-sm text-text-muted space-y-1">
                 <li>- Contraste otimizado para leitura</li>
                 <li>- Suporte a leitores de tela</li>
                 <li>- Navegacao por teclado</li>
@@ -508,14 +508,14 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        <Card className="p-6 mt-6 border border-red-800/60">
+        <Card className="p-6 mt-6 border border-tone-red/25">
           <div className="flex items-start gap-3 mb-4">
-            <div className="p-2 rounded-lg bg-red-900/30 border border-red-700/60">
-              <ShieldAlert size={20} className="text-red-300" />
+            <div className="p-2 rounded-lg bg-tone-red-soft border border-tone-red/25">
+              <ShieldAlert size={20} className="text-tone-red" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">Reset do Historico Financeiro</h3>
-              <p className="text-sm text-gray-400">
+              <h3 className="text-lg font-semibold text-text">Reset do Historico Financeiro</h3>
+              <p className="text-sm text-text-muted">
                 Mantem contas, categorias, cartoes e templates de fixas, mas apaga o
                 historico financeiro da empresa atual e zera os saldos.
               </p>
@@ -523,18 +523,18 @@ export default function SettingsPage() {
           </div>
 
           {!canResetFinancialHistory() ? (
-            <div className="rounded-lg border border-yellow-700/50 bg-yellow-900/10 p-4 text-sm text-yellow-100">
+            <div className="rounded-lg border border-tone-yellow/25 bg-tone-yellow-soft p-4 text-sm text-tone-yellow">
               Somente o company owner da empresa atual pode gerar a previa e executar este
               reset.
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="rounded-lg border border-red-700/40 bg-red-900/10 p-4 text-sm text-red-100">
+              <div className="rounded-lg border border-tone-red/25 bg-tone-red-soft p-4 text-sm text-tone-red">
                 <div className="flex items-start gap-3">
-                  <AlertTriangle size={18} className="mt-0.5 text-red-300" />
+                  <AlertTriangle size={18} className="mt-0.5 text-tone-red" />
                   <div>
                     <div className="font-medium">Acao irreversivel pelo sistema</div>
-                    <div className="text-red-100/80">
+                    <div className="text-tone-red">
                       O reset remove lancamentos comuns, compras no cartao, pagamentos de
                       fatura e ocorrencias materializadas de contas fixas. Orcamentos nao sao
                       alterados.
@@ -558,11 +558,11 @@ export default function SettingsPage() {
               {resetPreview && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                      <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <div className="text-xs uppercase tracking-wide text-text-muted mb-1">
                         Estrutura Preservada
                       </div>
-                      <div className="space-y-1 text-sm text-white">
+                      <div className="space-y-1 text-sm text-text">
                         <div>{resetPreview.preserved.accounts} contas</div>
                         <div>{resetPreview.preserved.creditCards} cartoes</div>
                         <div>{resetPreview.preserved.categories} categorias</div>
@@ -570,11 +570,11 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                      <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <div className="text-xs uppercase tracking-wide text-text-muted mb-1">
                         Historico Removido
                       </div>
-                      <div className="space-y-1 text-sm text-white">
+                      <div className="space-y-1 text-sm text-text">
                         <div>{resetPreview.deleted.transactions} transacoes</div>
                         <div>{resetPreview.deleted.creditCardPurchases} compras no cartao</div>
                         <div>{resetPreview.deleted.creditCardInvoices} faturas</div>
@@ -583,26 +583,26 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                      <div className="text-xs uppercase tracking-wide text-gray-400 mb-1">
+                    <div className="rounded-lg border border-border bg-background p-4">
+                      <div className="text-xs uppercase tracking-wide text-text-muted mb-1">
                         Saldos
                       </div>
-                      <div className="space-y-1 text-sm text-white">
+                      <div className="space-y-1 text-sm text-text">
                         <div>{resetPreview.balances.accountsToZero} contas/cartoes zerados</div>
-                        <div className="text-gray-400">Sem transacao de ajuste</div>
-                        <div className="text-gray-400">Orcamentos preservados</div>
+                        <div className="text-text-muted">Sem transacao de ajuste</div>
+                        <div className="text-text-muted">Orcamentos preservados</div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-gray-700 bg-[#161a20] p-4">
-                    <label className="flex items-start gap-3 text-sm text-gray-200">
+                  <div className="rounded-lg border border-border bg-elevated p-4">
+                    <label className="flex items-start gap-3 text-sm text-text">
                       <input
                         type="checkbox"
                         checked={resetAcknowledged}
                         onChange={(event) => setResetAcknowledged(event.target.checked)}
                         disabled={resetExecuting}
-                        className="mt-0.5 h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-red-500 focus:ring-red-500"
+                        className="mt-0.5 h-4 w-4 rounded border-border bg-background text-tone-red focus:ring-red-500"
                       />
                       <span>
                         Entendo que esta acao apaga o historico financeiro da empresa atual e

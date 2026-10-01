@@ -302,27 +302,27 @@ const stateStyles: Record<
   { border: string; badge: string; title: string; icon: typeof CheckCircle2 }
 > = {
   HEALTHY: {
-    border: 'border-emerald-800/70',
-    badge: 'border-emerald-800/70 bg-emerald-950/40 text-emerald-200',
-    title: 'text-emerald-300',
+    border: 'border-tone-emerald/25',
+    badge: 'border-tone-emerald/25 bg-tone-emerald-soft text-tone-emerald',
+    title: 'text-tone-emerald',
     icon: CheckCircle2
   },
   ATTENTION: {
-    border: 'border-amber-800/70',
-    badge: 'border-amber-800/70 bg-amber-950/40 text-amber-200',
-    title: 'text-amber-300',
+    border: 'border-tone-amber/25',
+    badge: 'border-tone-amber/25 bg-tone-amber-soft text-tone-amber',
+    title: 'text-tone-amber',
     icon: AlertTriangle
   },
   CRITICAL: {
-    border: 'border-red-800/70',
-    badge: 'border-red-800/70 bg-red-950/40 text-red-200',
-    title: 'text-red-300',
+    border: 'border-tone-red/25',
+    badge: 'border-tone-red/25 bg-tone-red-soft text-tone-red',
+    title: 'text-tone-red',
     icon: TrendingUp
   },
   INCOMPLETE: {
-    border: 'border-blue-800/70',
-    badge: 'border-blue-800/70 bg-blue-950/40 text-blue-200',
-    title: 'text-blue-300',
+    border: 'border-tone-blue/25',
+    badge: 'border-tone-blue/25 bg-tone-blue-soft text-tone-blue',
+    title: 'text-tone-blue',
     icon: AlertTriangle
   }
 };
@@ -431,21 +431,21 @@ export function BudgetOverview({ month }: { month: string }) {
               <StateIcon size={15} />
               {assessment.label}
             </span>
-            <h2 id="monthly-decision-title" className="mt-4 text-2xl font-semibold text-white">
+            <h2 id="monthly-decision-title" className="mt-4 text-2xl font-semibold text-text">
               {assessment.title}
             </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-400">
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">
               {assessment.description}
             </p>
             <div className="mt-6">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <p className="text-xs font-semibold uppercase tracking-wider text-text-subtle">
                 Saldo final projetado
               </p>
               <p className={`mt-1 text-4xl font-semibold ${stateStyle.title}`}>
                 {dashboard ? formatMoney(dashboard.projectedEndingBalance) : 'Indisponível'}
               </p>
               {dashboard && Number(dashboard.monthlyTotals.provisionContributionTotal) > 0 && (
-                <p className="mt-2 text-xs text-gray-500">
+                <p className="mt-2 text-xs text-text-subtle">
                   Não desconta os aportes lógicos para provisões.
                 </p>
               )}
@@ -514,10 +514,10 @@ export function BudgetOverview({ month }: { month: string }) {
       {assessment.attentions.length > 0 && (
         <Card>
           <div className="flex items-center gap-2">
-            <AlertTriangle size={19} className="text-amber-300" />
-            <h2 className="text-lg font-semibold text-white">O que merece atenção</h2>
+            <AlertTriangle size={19} className="text-tone-amber" />
+            <h2 className="text-lg font-semibold text-text">O que merece atenção</h2>
           </div>
-          <div className="mt-4 divide-y divide-gray-800">
+          <div className="mt-4 divide-y divide-border">
             {assessment.attentions.map((attention) => (
               <div
                 key={attention.key}
@@ -533,8 +533,8 @@ export function BudgetOverview({ month }: { month: string }) {
                   }`}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-white">{attention.title}</p>
-                  <p className="mt-0.5 text-sm text-gray-400">{attention.detail}</p>
+                  <p className="text-sm font-medium text-text">{attention.title}</p>
+                  <p className="mt-0.5 text-sm text-text-muted">{attention.detail}</p>
                 </div>
                 <Link
                   href={attention.href}
@@ -550,13 +550,13 @@ export function BudgetOverview({ month }: { month: string }) {
       )}
 
       <section aria-labelledby="budget-controls-title">
-        <h2 id="budget-controls-title" className="mb-3 text-lg font-semibold text-white">
+        <h2 id="budget-controls-title" className="mb-3 text-lg font-semibold text-text">
           Controles do orçamento
         </h2>
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <ControlCard
             title="Plano de disponibilidade"
-            icon={<PiggyBank className="text-blue-300" size={23} />}
+            icon={<PiggyBank className="text-tone-blue" size={23} />}
             value={
               failedSections.includes('availability')
                 ? 'Indisponível'
@@ -579,7 +579,7 @@ export function BudgetOverview({ month }: { month: string }) {
 
           <ControlCard
             title="Planejamento mensal"
-            icon={<Target className="text-emerald-300" size={23} />}
+            icon={<Target className="text-tone-emerald" size={23} />}
             value={
               failedSections.includes('monthly')
                 ? 'Indisponível'
@@ -605,7 +605,7 @@ export function BudgetOverview({ month }: { month: string }) {
 
           <ControlCard
             title="Provisões"
-            icon={<CalendarClock className="text-violet-300" size={23} />}
+            icon={<CalendarClock className="text-tone-violet" size={23} />}
             value={
               failedSections.includes('provisions')
                 ? 'Indisponível'
@@ -650,13 +650,13 @@ function OverviewMetric({
   tone?: 'neutral' | 'success' | 'danger';
 }) {
   const valueClass =
-    tone === 'success' ? 'text-emerald-300' : tone === 'danger' ? 'text-red-300' : 'text-white';
+    tone === 'success' ? 'text-tone-emerald' : tone === 'danger' ? 'text-tone-red' : 'text-text';
 
   return (
-    <div className={`rounded-xl border border-gray-700 bg-[#11161d] p-4 ${className}`}>
-      <p className="text-xs text-gray-500">{label}</p>
+    <div className={`rounded-xl border border-border bg-elevated p-4 ${className}`}>
+      <p className="text-xs text-text-subtle">{label}</p>
       <p className={`mt-1 truncate text-lg font-semibold ${valueClass}`}>{value}</p>
-      {detail && <p className="mt-1 text-xs text-gray-500">{detail}</p>}
+      {detail && <p className="mt-1 text-xs text-text-subtle">{detail}</p>}
     </div>
   );
 }
@@ -683,20 +683,20 @@ function ControlCard({
   return (
     <Card className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="font-semibold text-white">{title}</h3>
+        <h3 className="font-semibold text-text">{title}</h3>
         {icon}
       </div>
       <div className="mt-5">
-        <p className="text-xs uppercase tracking-wide text-gray-500">{valueLabel}</p>
+        <p className="text-xs uppercase tracking-wide text-text-subtle">{valueLabel}</p>
         <p
           className={`mt-1 truncate text-2xl font-semibold ${
-            tone === 'danger' ? 'text-red-300' : 'text-white'
+            tone === 'danger' ? 'text-tone-red' : 'text-text'
           }`}
         >
           {value}
         </p>
         {details.length > 0 && (
-          <div className="mt-3 space-y-1 text-sm text-gray-400">
+          <div className="mt-3 space-y-1 text-sm text-text-muted">
             {details.map((detail) => (
               <p key={detail}>{detail}</p>
             ))}

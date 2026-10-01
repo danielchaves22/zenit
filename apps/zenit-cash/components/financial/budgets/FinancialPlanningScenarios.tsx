@@ -123,7 +123,7 @@ export function FinancialPlanningScenarios({
     <Card>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h3 className="font-semibold text-white">
+          <h3 className="font-semibold text-text">
             Cenários para alcançar a meta
           </h3>
           <InfoModalButton
@@ -141,7 +141,7 @@ export function FinancialPlanningScenarios({
             </p>
           </InfoModalButton>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-400">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs text-text-muted">
           <Target size={13} />
           {formatMoney(snapshot.targetMonthlySavings)}/mês
         </span>
@@ -166,11 +166,11 @@ export function FinancialPlanningScenarios({
 
       {result?.status === "TARGET_ALREADY_MET" && (
         <>
-          <div className="mt-4 flex items-start gap-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-4 text-emerald-200">
+          <div className="mt-4 flex items-start gap-3 rounded-lg border border-tone-emerald/25 bg-tone-emerald-soft p-4 text-tone-emerald">
             <CheckCircle2 size={20} className="mt-0.5 shrink-0" />
             <div>
               <p className="font-medium">A meta já cabe no retrato confirmado</p>
-              <p className="mt-1 text-sm text-emerald-200/80">
+              <p className="mt-1 text-sm text-tone-emerald">
                 A disponibilidade mensal atual é de{" "}
                 {formatMoney(result.currentMonthlyAvailableBeforeGoal)}. Nenhum
                 corte foi sugerido.
@@ -186,7 +186,7 @@ export function FinancialPlanningScenarios({
 
       {result?.status === "ADJUSTMENT_REQUIRED" && (
         <div className="mt-4 space-y-4">
-          <div className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-3 text-sm text-amber-200">
+          <div className="rounded-lg border border-tone-amber/25 bg-tone-amber-soft p-3 text-sm text-tone-amber">
             Faltam {formatMoney(result.requiredReduction)} por mês para a meta
             no retrato atual.
           </div>
@@ -207,7 +207,7 @@ export function FinancialPlanningScenarios({
               />
             ))}
           </div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-text-subtle">
             Metodologia de recomendação v
             {result.recommendationMethodologyVersion} · simulação sem alterações
             automáticas
@@ -228,33 +228,33 @@ function ScenarioCard({
   const feasible = scenario.feasibility === "FEASIBLE";
   const StatusIcon = feasible ? CheckCircle2 : AlertTriangle;
   return (
-    <section className="rounded-xl border border-gray-700 bg-[#11161d] p-4">
+    <section className="rounded-xl border border-border bg-elevated p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h4 className="font-semibold text-white">{scenario.label}</h4>
-          <p className="mt-1 text-sm text-gray-400">{scenario.description}</p>
+          <h4 className="font-semibold text-text">{scenario.label}</h4>
+          <p className="mt-1 text-sm text-text-muted">{scenario.description}</p>
         </div>
         <StatusIcon
           size={19}
-          className={`mt-0.5 shrink-0 ${feasible ? "text-emerald-300" : "text-amber-300"}`}
+          className={`mt-0.5 shrink-0 ${feasible ? "text-tone-emerald" : "text-tone-amber"}`}
         />
       </div>
       <p
-        className={`mt-3 text-xs font-medium ${feasible ? "text-emerald-300" : "text-amber-300"}`}
+        className={`mt-3 text-xs font-medium ${feasible ? "text-tone-emerald" : "text-tone-amber"}`}
       >
         {feasibilityLabel(scenario.feasibility)}
       </p>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
-          <dt className="text-xs text-gray-500">Redução proposta</dt>
-          <dd className="mt-1 font-semibold text-white">
+          <dt className="text-xs text-text-subtle">Redução proposta</dt>
+          <dd className="mt-1 font-semibold text-text">
             {formatMoney(scenario.proposedReduction)}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-gray-500">Diferença restante</dt>
+          <dt className="text-xs text-text-subtle">Diferença restante</dt>
           <dd
-            className={`mt-1 font-semibold ${feasible ? "text-emerald-300" : "text-amber-300"}`}
+            className={`mt-1 font-semibold ${feasible ? "text-tone-emerald" : "text-tone-amber"}`}
           >
             {formatMoney(scenario.remainingGap)}
           </dd>
@@ -262,8 +262,8 @@ function ScenarioCard({
       </dl>
 
       {scenario.adjustments.length > 0 && (
-        <div className="mt-4 overflow-hidden rounded-lg border border-gray-700">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 bg-gray-800/60 px-3 py-2 text-xs text-gray-500">
+        <div className="mt-4 overflow-hidden rounded-lg border border-border">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 bg-elevated/60 px-3 py-2 text-xs text-text-subtle">
             <span>Categoria</span>
             <span>Atual</span>
             <span>Sugerido</span>
@@ -271,21 +271,21 @@ function ScenarioCard({
           {scenario.adjustments.map((adjustment) => (
             <div
               key={adjustment.sourceKey}
-              className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-t border-gray-700 px-3 py-2.5 text-sm"
+              className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-t border-border px-3 py-2.5 text-sm"
             >
               <div className="min-w-0">
-                <p className="truncate text-gray-200">
+                <p className="truncate text-text">
                   {adjustment.categoryName}
                 </p>
-                <p className="mt-0.5 text-xs text-gray-500">
+                <p className="mt-0.5 text-xs text-text-subtle">
                   -{formatMoney(adjustment.proposedReduction)} · mínimo{" "}
                   {formatMoney(adjustment.minimumMonthlyAmount)}
                 </p>
               </div>
-              <span className="text-gray-400">
+              <span className="text-text-muted">
                 {formatMoney(adjustment.currentAmount)}
               </span>
-              <span className="font-semibold text-white">
+              <span className="font-semibold text-text">
                 {formatMoney(adjustment.suggestedMonthlyLimit)}
               </span>
             </div>
@@ -296,15 +296,15 @@ function ScenarioCard({
       {scenario.warnings.map((warning) => (
         <div
           key={warning}
-          className="mt-3 flex items-start gap-2 rounded-lg border border-amber-900/50 bg-amber-950/20 p-2.5 text-xs text-amber-200"
+          className="mt-3 flex items-start gap-2 rounded-lg border border-tone-amber/25 bg-tone-amber-soft p-2.5 text-xs text-tone-amber"
         >
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           {warning}
         </div>
       ))}
 
-      <details className="mt-4 text-xs text-gray-500">
-        <summary className="cursor-pointer text-gray-400">
+      <details className="mt-4 text-xs text-text-subtle">
+        <summary className="cursor-pointer text-text-muted">
           Premissas deste cenário
         </summary>
         <ul className="mt-2 list-disc space-y-1 pl-4">

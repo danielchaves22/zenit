@@ -12,14 +12,14 @@ export default function FinancialAnalysis() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Análise financeira</h1>
-        <p className="mt-1 text-sm text-gray-400">
+        <h1 className="text-2xl font-semibold text-text">Análise financeira</h1>
+        <p className="mt-1 text-sm text-text-muted">
           Entenda a previsão dos próximos meses e acompanhe seu histórico.
         </p>
       </div>
       <nav
         aria-label="Áreas da análise financeira"
-        className="flex gap-2 border-b border-gray-800 pb-3"
+        className="flex gap-2 border-b border-border pb-3"
       >
         {(['monthly', 'history'] as const).map((view) => (
           <button
@@ -33,7 +33,7 @@ export default function FinancialAnalysis() {
                 { shallow: true }
               )
             }
-            className={`rounded-lg px-4 py-2 text-sm ${history === (view === 'history') ? 'bg-gray-700 text-white' : 'text-gray-400 hover:bg-gray-800 hover:text-white'}`}
+            className={`rounded-lg px-4 py-2 text-sm ${history === (view === 'history') ? 'bg-elevated text-text' : 'text-text-muted hover:bg-elevated hover:text-text'}`}
           >
             {view === 'monthly' ? 'Previsão' : 'Histórico'}
           </button>

@@ -28,8 +28,8 @@ export function PendingActionCard({
             : null
 
   return (
-    <div className="mt-3 rounded-3xl border border-[#efcf9d] bg-[#fdf6e9] p-4 text-sm text-[#4e4a43]">
-      <div className="mb-2 text-base font-semibold text-[#171717]">Rascunho do Operador</div>
+    <div className="mt-3 rounded-2xl border border-tone-amber/25 bg-tone-amber-soft p-4 text-sm text-text">
+      <div className="mb-2 text-base font-semibold text-text">Rascunho do Operador</div>
       <div>{summary.description}</div>
       <div className="mt-1">
         R$ {summary.amount.toFixed(2)} · {summary.type} · {summary.date}
@@ -53,13 +53,13 @@ export function PendingActionCard({
             variant="outline"
             disabled={loading}
             onClick={() => void onCancel(pendingAction.id)}
-            className="rounded-2xl border-[#d6d0c7] bg-white px-4 py-2 text-[#26282b] hover:border-[#d6d0c7] hover:bg-[#f7f3ed] hover:text-[#26282b]"
+            className="rounded-lg border-border bg-surface px-4 py-2 text-text hover:bg-elevated"
           >
             Cancelar
           </Button>
         </div>
       ) : statusLabel ? (
-        <div className="mt-4 font-semibold text-[#204b35]">{statusLabel}</div>
+        <div className="mt-4 font-semibold text-tone-green">{statusLabel}</div>
       ) : null}
     </div>
   )

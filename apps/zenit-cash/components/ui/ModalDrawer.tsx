@@ -75,15 +75,15 @@ export function ModalDrawer({
           ref={drawerRef}
           className={`w-screen ${sizeClasses[size]} transform transition-transform duration-300 ease-in-out`}
         >
-          <div className="flex h-full flex-col bg-surface shadow-2xl border-l border-gray-700">
+          <div className="flex h-full flex-col bg-surface shadow-2xl border-l border-border">
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div className="flex-1 min-w-0">
-                <h2 className="text-xl font-semibold text-white truncate">
+                <h2 className="text-xl font-semibold text-text truncate">
                   {title}
                 </h2>
                 {subtitle && (
-                  <p className="text-sm text-gray-400 mt-1 truncate">
+                  <p className="text-sm text-text-muted mt-1 truncate">
                     {subtitle}
                   </p>
                 )}
@@ -109,7 +109,7 @@ export function ModalDrawer({
 
             {/* Footer */}
             {footer && (
-              <div className="border-t border-gray-700 px-6 py-4 bg-elevated">
+              <div className="border-t border-border px-6 py-4 bg-elevated">
                 {footer}
               </div>
             )}

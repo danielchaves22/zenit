@@ -26,7 +26,7 @@ function IconOptionRow({
 }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-gray-700 bg-[#11161d]">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-elevated">
         <CategoryIcon icon={option.value} size={15} color={color} />
       </div>
       <span className="min-w-0 flex-1 truncate">{option.label}</span>
@@ -116,21 +116,21 @@ export default function CategoryIconPicker({
 
   return (
     <div ref={containerRef}>
-      <label className="mb-1 block text-sm font-medium text-gray-300">Icone</label>
+      <label className="mb-1 block text-sm font-medium text-text-muted">Icone</label>
 
       <button
         ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setIsOpen((previous) => !previous)}
-        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded border border-gray-700 bg-background px-2 py-1.5 text-left text-sm text-white transition-colors focus:border-accent focus:outline-none focus:ring ${
-          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-gray-600'
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded border border-border bg-background px-2 py-1.5 text-left text-sm text-text transition-colors focus:border-accent focus:outline-none focus:ring ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-border-strong'
         }`}
       >
         <IconOptionRow option={selectedOption} color={color} />
         <ChevronDown
           size={16}
-          className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -139,7 +139,7 @@ export default function CategoryIconPicker({
         ReactDOM.createPortal(
           <div
             ref={portalRef}
-            className="z-[9999] max-h-72 overflow-auto rounded border border-gray-700 bg-[#1e2126] shadow-lg"
+            className="z-[9999] max-h-72 overflow-auto rounded border border-border bg-background shadow-lg"
             style={{
               position: 'fixed',
               top: position.top,
@@ -159,7 +159,7 @@ export default function CategoryIconPicker({
                     setIsOpen(false);
                   }}
                   className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
-                    isSelected ? 'bg-accent/10 text-accent' : 'text-white hover:bg-[#262b36]'
+                    isSelected ? 'bg-accent/10 text-accent' : 'text-text hover:bg-elevated'
                   }`}
                 >
                   <IconOptionRow option={option} color={color} showCheck={isSelected} />

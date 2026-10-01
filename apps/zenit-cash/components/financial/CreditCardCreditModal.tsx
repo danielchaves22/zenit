@@ -238,8 +238,8 @@ export function CreditCardCreditModal({
     >
       <div className="space-y-4">
         <div>
-          <div className="mb-1 text-sm font-medium text-gray-300">Natureza</div>
-          <div className="grid grid-cols-3 gap-1 rounded border border-gray-700 bg-background p-1">
+          <div className="mb-1 text-sm font-medium text-text-muted">Natureza</div>
+          <div className="grid grid-cols-3 gap-1 rounded border border-border bg-background p-1">
             {KIND_OPTIONS.map((option) => {
               const Icon = option.icon;
               const selected = creditKind === option.value;
@@ -251,8 +251,8 @@ export function CreditCardCreditModal({
                   disabled={submitting}
                   className={`flex min-h-10 items-center justify-center gap-1.5 rounded px-2 text-sm font-medium transition-colors ${
                     selected
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-300 hover:bg-elevated hover:text-white'
+                      ? 'bg-blue-600 text-on-solid'
+                      : 'text-text-muted hover:bg-elevated hover:text-text'
                   }`}
                 >
                   <Icon size={15} />
@@ -274,14 +274,14 @@ export function CreditCardCreditModal({
               className="mb-0"
             />
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-300">
+              <label className="mb-1 block text-sm font-medium text-text-muted">
                 Compra original
               </label>
               <select
                 value={refundOfTransactionId}
                 onChange={(event) => selectPurchase(event.target.value)}
                 disabled={submitting || loadingOptions}
-                className="min-h-10 w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none focus:ring"
+                className="min-h-10 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-text focus:border-accent focus:outline-none focus:ring"
               >
                 <option value="">
                   {loadingOptions ? 'Carregando compras...' : 'Selecione a compra'}
@@ -293,7 +293,7 @@ export function CreditCardCreditModal({
                 ))}
               </select>
               {selectedPurchase && (
-                <p className="mt-1 text-xs text-gray-400">
+                <p className="mt-1 text-xs text-text-muted">
                   Compra {formatCurrency(selectedPurchase.amount)} · já estornado {formatCurrency(selectedPurchase.refundedAmount)}
                 </p>
               )}
@@ -340,7 +340,7 @@ export function CreditCardCreditModal({
         />
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-300">Observações</label>
+          <label className="mb-1 block text-sm font-medium text-text-muted">Observações</label>
           <textarea
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
@@ -348,12 +348,12 @@ export function CreditCardCreditModal({
             maxLength={1000}
             placeholder="Opcional"
             disabled={submitting}
-            className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+            className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
           />
         </div>
 
         {error && (
-          <div role="alert" className="rounded border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+          <div role="alert" className="rounded border border-red-500/40 bg-tone-red-soft px-3 py-2 text-sm text-tone-red">
             {error}
           </div>
         )}

@@ -1690,15 +1690,15 @@ export default function TransactionForm({
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">{getHeaderLabel()}</h1>
+          <h1 className="text-2xl font-semibold text-text">{getHeaderLabel()}</h1>
           <div className="flex flex-wrap items-center gap-2 xl:ml-4">
             <button
               type="button"
               onClick={() => handleFormModeChange('simple')}
               className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
                 isSimpleMode
-                  ? 'border-accent bg-accent text-white'
-                  : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
+                  ? 'border-accent bg-accent text-on-accent'
+                  : 'border-border bg-transparent text-text-muted hover:border-accent hover:text-accent'
               }`}
               disabled={saving}
               aria-pressed={isSimpleMode}
@@ -1710,8 +1710,8 @@ export default function TransactionForm({
               onClick={() => handleFormModeChange('detailed')}
               className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
                 !isSimpleMode
-                  ? 'border-accent bg-accent text-white'
-                  : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent'
+                  ? 'border-accent bg-accent text-on-accent'
+                  : 'border-border bg-transparent text-text-muted hover:border-accent hover:text-accent'
               }`}
               disabled={saving}
               aria-pressed={!isSimpleMode}
@@ -1803,7 +1803,7 @@ export default function TransactionForm({
               </div>
 
               <div className="w-48">
-                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="date">
+                <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="date">
                   Data da Compra *
                 </label>
                 <input
@@ -1813,7 +1813,7 @@ export default function TransactionForm({
                   value={formData.date}
                   onChange={handleChange}
                   disabled={transactionDateDisabled}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                 />
               </div>
 
@@ -1857,7 +1857,7 @@ export default function TransactionForm({
                 transaction?.totalInstallments !== null &&
                 transaction.totalInstallments > 1 && (
                   <div className="flex flex-col pt-8">
-                    <span className="rounded-md border border-blue-500 bg-blue-900/70 px-4 py-2 font-semibold uppercase tracking-wide text-blue-100">
+                    <span className="rounded-md border border-blue-500 bg-tone-blue-soft px-4 py-2 font-semibold uppercase tracking-wide text-tone-blue">
                       {`Parcela ${transaction.installmentNumber ?? 1} de ${transaction.totalInstallments}`}
                     </span>
                   </div>
@@ -1866,7 +1866,7 @@ export default function TransactionForm({
               {mode === 'create' && formData.type === 'EXPENSE' ? (
                 <>
                   <div className="flex items-center pt-8">
-                    <span className="mr-2 text-sm text-gray-300">Compra parcelada</span>
+                    <span className="mr-2 text-sm text-text-muted">Compra parcelada</span>
                     <label htmlFor="isInstallmentPurchase" className="relative inline-flex cursor-pointer items-center">
                       <input
                         id="isInstallmentPurchase"
@@ -1875,7 +1875,7 @@ export default function TransactionForm({
                         onChange={(event) => handleInstallmentPurchaseChange(event.target.checked)}
                         className="peer sr-only"
                       />
-                      <div className="h-5 w-10 rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="h-5 w-10 rounded-full bg-elevated transition-colors peer-checked:bg-success" />
                       <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
                     </label>
                   </div>
@@ -1898,7 +1898,7 @@ export default function TransactionForm({
               ) : mode === 'create' ? (
                 <>
                   <div className="flex items-center pt-8">
-                    <span className="mr-2 text-sm text-gray-300">Recorrente</span>
+                    <span className="mr-2 text-sm text-text-muted">Recorrente</span>
                     <label htmlFor="isRecurring" className="relative inline-flex cursor-pointer items-center">
                       <input
                         id="isRecurring"
@@ -1907,7 +1907,7 @@ export default function TransactionForm({
                         onChange={(event) => handleRecurringChange(event.target.checked)}
                         className="peer sr-only"
                       />
-                      <div className="h-5 w-10 rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="h-5 w-10 rounded-full bg-elevated transition-colors peer-checked:bg-success" />
                       <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
                     </label>
                   </div>
@@ -1931,26 +1931,26 @@ export default function TransactionForm({
           )}
 
           {isNonCardInstallmentCreation && nonCardInstallmentPreview.length > 0 && (
-            <div className="rounded-lg border border-violet-700/60 bg-violet-950/20 p-4">
+            <div className="rounded-lg border border-tone-violet/25 bg-tone-violet-soft p-4">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="text-sm font-medium text-white">Previsão do parcelamento</div>
-                  <div className="mt-1 text-sm text-gray-300">
+                  <div className="text-sm font-medium text-text">Previsão do parcelamento</div>
+                  <div className="mt-1 text-sm text-text-muted">
                     {installmentCountValue} parcelas · total {formatCurrency(amountValue)}
                   </div>
                 </div>
-                <div className="text-sm text-gray-300 sm:text-right">
+                <div className="text-sm text-text-muted sm:text-right">
                   <div>
                     {formatCurrency(nonCardInstallmentPreview[0].amount)} por parcela
                     {nonCardInstallmentPreview.at(-1)?.amount !== nonCardInstallmentPreview[0].amount
                       ? ` · última ${formatCurrency(nonCardInstallmentPreview.at(-1)?.amount || 0)}`
                       : ''}
                   </div>
-                  <div className="mt-1 text-xs text-gray-400">
+                  <div className="mt-1 text-xs text-text-muted">
                     De {formatCalendarDate(nonCardInstallmentPreview[0].dueDate)} até{' '}
                     {formatCalendarDate(nonCardInstallmentPreview.at(-1)?.dueDate)}
                   </div>
-                  <div className="mt-1 text-xs text-gray-400">
+                  <div className="mt-1 text-xs text-text-muted">
                     {formData.status === 'COMPLETED'
                       ? 'A primeira parcela será criada como paga; as demais ficarão pendentes.'
                       : 'Todas as parcelas serão criadas como pendentes.'}
@@ -1962,10 +1962,10 @@ export default function TransactionForm({
 
           <div>
             <div className="mb-2 flex items-center gap-3">
-              <label className="block text-sm font-medium text-gray-300" htmlFor="description">
+              <label className="block text-sm font-medium text-text-muted" htmlFor="description">
                 Descrição *
               </label>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-text-muted">
                 Digite pelo menos 3 caracteres para ver sugestões baseadas no seu histórico
               </span>
             </div>
@@ -1985,7 +1985,7 @@ export default function TransactionForm({
           </div>
 
           {mode === 'create' && isCreditCardPurchaseFlow && availableFromAccounts.length === 0 && (
-            <div className="rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-3 text-sm text-yellow-200">
+            <div className="rounded-lg border border-tone-yellow/25 bg-tone-yellow-soft p-3 text-sm text-tone-yellow">
               Nenhum cartão ativo disponível. Cadastre um cartão em Cartões e Faturas antes de registrar a compra.
             </div>
           )}
@@ -1993,7 +1993,7 @@ export default function TransactionForm({
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
             {(formData.type === 'EXPENSE' || formData.type === 'TRANSFER') && (
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="fromAccountId">
+                <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="fromAccountId">
                   {isCreditCardPurchaseFlow ? 'Cartão *' : 'Conta de Origem *'}
                 </label>
                 <select
@@ -2001,7 +2001,7 @@ export default function TransactionForm({
                   name="fromAccountId"
                   value={formData.fromAccountId}
                   onChange={handleChange}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   required={requiresFromAccount}
                   disabled={accountFieldsDisabled}
                 >
@@ -2016,7 +2016,7 @@ export default function TransactionForm({
                   ))}
                 </select>
                 {!requiresFromAccount && !isCreditCardPurchaseFlow && (
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-text-muted">
                     Opcional enquanto estiver pendente. A conta pode ser definida na liquidação.
                   </p>
                 )}
@@ -2025,7 +2025,7 @@ export default function TransactionForm({
 
             {(formData.type === 'INCOME' || formData.type === 'TRANSFER') && (
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="toAccountId">
+                <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="toAccountId">
                   {`Conta de Destino${requiresToAccount ? ' *' : ''}`}
                 </label>
                 <select
@@ -2033,7 +2033,7 @@ export default function TransactionForm({
                   name="toAccountId"
                   value={formData.toAccountId}
                   onChange={handleChange}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   required={requiresToAccount}
                   disabled={accountFieldsDisabled}
                 >
@@ -2046,7 +2046,7 @@ export default function TransactionForm({
                   ))}
                 </select>
                 {!requiresToAccount && (
-                  <p className="mt-1 text-xs text-gray-400">
+                  <p className="mt-1 text-xs text-text-muted">
                     Opcional enquanto estiver pendente. A conta pode ser definida na liquidação.
                   </p>
                 )}
@@ -2071,11 +2071,11 @@ export default function TransactionForm({
           </div>
 
           {isGroupedCreditCardPurchase && (
-            <div className="rounded-xl border border-blue-700/50 bg-blue-950/20 p-5">
+            <div className="rounded-xl border border-tone-blue/25 bg-tone-blue-soft p-5">
               <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <div className="font-medium text-white">Escopo da alteração</div>
-                  <div className="mt-1 text-sm text-gray-300">{scopeMessage}</div>
+                  <div className="font-medium text-text">Escopo da alteração</div>
+                  <div className="mt-1 text-sm text-text-muted">{scopeMessage}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -2084,8 +2084,8 @@ export default function TransactionForm({
                     disabled={saving || !canEditPurchaseScope}
                     className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
                       formData.purchaseScope === 'PURCHASE'
-                        ? 'border-accent bg-accent text-white'
-                        : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
+                        ? 'border-accent bg-accent text-on-accent'
+                        : 'border-border bg-transparent text-text-muted hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
                     }`}
                   >
                     Compra inteira
@@ -2096,8 +2096,8 @@ export default function TransactionForm({
                     disabled={saving || !canEditFutureScope}
                     className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
                       formData.purchaseScope === 'FUTURE'
-                        ? 'border-accent bg-accent text-white'
-                        : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
+                        ? 'border-accent bg-accent text-on-accent'
+                        : 'border-border bg-transparent text-text-muted hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
                     }`}
                   >
                     Esta e futuras
@@ -2108,8 +2108,8 @@ export default function TransactionForm({
                     disabled={saving || !canEditSingleScope}
                     className={`rounded border px-3 py-1.5 text-sm font-semibold transition-colors ${
                       formData.purchaseScope === 'SINGLE'
-                        ? 'border-accent bg-accent text-white'
-                        : 'border-gray-700 bg-transparent text-gray-300 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
+                        ? 'border-accent bg-accent text-on-accent'
+                        : 'border-border bg-transparent text-text-muted hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50'
                     }`}
                   >
                     Parcela atual
@@ -2118,15 +2118,15 @@ export default function TransactionForm({
               </div>
 
               {currentScopeBlocked && (
-                <div className="mb-4 flex items-start gap-2 rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-3 text-sm text-yellow-200">
+                <div className="mb-4 flex items-start gap-2 rounded-lg border border-tone-yellow/25 bg-tone-yellow-soft p-3 text-sm text-tone-yellow">
                   <AlertTriangle size={16} className="mt-0.5" />
                   <span>{scopeMessage}</span>
                 </div>
               )}
 
-              <div className="overflow-hidden rounded-lg border border-gray-700">
+              <div className="overflow-hidden rounded-lg border border-border">
                 <table className="w-full">
-                  <thead className="bg-[#0f1419] text-left text-xs uppercase text-gray-400">
+                  <thead className="bg-elevated text-left text-xs uppercase text-text-muted">
                     <tr>
                       <th className="px-3 py-2">Parcela</th>
                       <th className="px-3 py-2">Valor</th>
@@ -2142,7 +2142,7 @@ export default function TransactionForm({
                         : 'OPEN';
 
                       return (
-                        <tr key={item.id} className={`border-t border-gray-700 text-sm text-gray-300 ${item.id === transaction?.id ? 'bg-blue-900/20' : ''}`}>
+                        <tr key={item.id} className={`border-t border-border text-sm text-text-muted ${item.id === transaction?.id ? 'bg-tone-blue-soft' : ''}`}>
                           <td className="px-3 py-2">
                             {item.installmentNumber ?? 1}
                             {item.totalInstallments ? ` / ${item.totalInstallments}` : ''}
@@ -2171,7 +2171,7 @@ export default function TransactionForm({
           {!isCreditCardPurchaseFlow && (false ? (isSimpleMode ? (
             <div className={`grid grid-cols-1 gap-6 ${isCreditCardPurchaseFlow ? 'md:grid-cols-1' : 'md:grid-cols-3'}`}>
               <div>
-                <label className="mb-2 block text-sm font-medium text-gray-300" htmlFor="date">
+                <label className="mb-2 block text-sm font-medium text-text-muted" htmlFor="date">
                   {isCreditCardContext ? 'Data da Compra' : 'Data da Competência'}
                 </label>
                 <input
@@ -2181,14 +2181,14 @@ export default function TransactionForm({
                   value={formData.date}
                   onChange={handleChange}
                   disabled={transactionDateDisabled}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                 />
               </div>
               {!isCreditCardPurchaseFlow && (
                 <>
                   <div>
                     <div className="mb-2 flex items-center gap-3">
-                      <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                      <label className="block text-sm font-medium text-text-muted" htmlFor="dueDate">
                         {dueDateLabel}
                       </label>
                     </div>
@@ -2199,11 +2199,11 @@ export default function TransactionForm({
                       value={formData.dueDate}
                       onChange={handleChange}
                       disabled={dueDateDisabled}
-                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                      className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                     />
                   </div>
                   <div className="flex flex-col justify-center gap-2">
-                    <span className="text-sm font-medium text-gray-300">Transação concluída</span>
+                    <span className="text-sm font-medium text-text-muted">Transação concluída</span>
                     <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
                       <input
                         type="checkbox"
@@ -2212,10 +2212,10 @@ export default function TransactionForm({
                         className="peer sr-only"
                         disabled={statusDisabled}
                       />
-                      <div className="h-full w-full rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="h-full w-full rounded-full bg-elevated transition-colors peer-checked:bg-success" />
                       <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-6" />
                     </label>
-                    <span className="text-xs text-gray-400">{completionHint}</span>
+                    <span className="text-xs text-text-muted">{completionHint}</span>
                   </div>
                 </>
               )}
@@ -2223,7 +2223,7 @@ export default function TransactionForm({
           ) : (
             <div className={`grid grid-cols-1 gap-6 ${isCreditCardPurchaseFlow ? 'md:grid-cols-1' : 'md:grid-cols-4'}`}>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="date">
+                <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="date">
                   {isCreditCardContext ? 'Data da Compra *' : 'Data da Competência *'}
                 </label>
                 <input
@@ -2233,13 +2233,13 @@ export default function TransactionForm({
                   value={formData.date}
                   onChange={handleChange}
                   disabled={transactionDateDisabled}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                 />
               </div>
               {!isCreditCardPurchaseFlow && (
                 <>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="status">
+                    <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="status">
                       Status *
                     </label>
                     <select
@@ -2247,7 +2247,7 @@ export default function TransactionForm({
                       name="status"
                       value={formData.status}
                       onChange={handleChange}
-                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                      className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                       required
                       disabled={statusDisabled}
                     >
@@ -2257,7 +2257,7 @@ export default function TransactionForm({
                     </select>
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                    <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="dueDate">
                       {dueDateLabel}
                     </label>
                     <input
@@ -2267,11 +2267,11 @@ export default function TransactionForm({
                       value={formData.dueDate}
                       onChange={handleChange}
                       disabled={dueDateDisabled}
-                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                      className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="liquidationDate">
+                    <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="liquidationDate">
                       Data de Liquidação
                     </label>
                     <input
@@ -2281,7 +2281,7 @@ export default function TransactionForm({
                       value={formData.liquidationDate}
                       onChange={handleChange}
                       disabled={liquidationDateDisabled}
-                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                      className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                     />
                   </div>
                 </>
@@ -2291,7 +2291,7 @@ export default function TransactionForm({
             isSimpleMode ? (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-gray-300" htmlFor="date">
+                  <label className="mb-2 block text-sm font-medium text-text-muted" htmlFor="date">
                     {primaryDateLabel}
                   </label>
                   <input
@@ -2301,13 +2301,13 @@ export default function TransactionForm({
                     value={formData.date}
                     onChange={handleChange}
                     disabled={transactionDateDisabled}
-                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   />
                 </div>
 
                 <div>
                   <div className="mb-2 flex items-center gap-3">
-                    <label className="block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                    <label className="block text-sm font-medium text-text-muted" htmlFor="dueDate">
                       {dueDateLabel}
                     </label>
                   </div>
@@ -2318,13 +2318,13 @@ export default function TransactionForm({
                     value={formData.dueDate}
                     onChange={handleChange}
                     disabled={dueDateDisabled}
-                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   />
                 </div>
 
                 {showInlineSettlementControls ? (
                   <div className="flex flex-col justify-center gap-2">
-                    <span className="text-sm font-medium text-gray-300">{settlementToggleLabel}</span>
+                    <span className="text-sm font-medium text-text-muted">{settlementToggleLabel}</span>
                     <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
                       <input
                         type="checkbox"
@@ -2333,15 +2333,15 @@ export default function TransactionForm({
                         className="peer sr-only"
                         disabled={statusDisabled}
                       />
-                      <div className="h-full w-full rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="h-full w-full rounded-full bg-elevated transition-colors peer-checked:bg-success" />
                       <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-6" />
                     </label>
-                    <span className="text-xs text-gray-400">{completionHint}</span>
+                    <span className="text-xs text-text-muted">{completionHint}</span>
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-sky-800/60 bg-sky-950/20 p-4">
-                    <div className="text-sm font-medium text-white">Transação pendente</div>
-                    <p className="mt-1 text-xs text-sky-100/80">
+                  <div className="rounded-lg border border-tone-sky/25 bg-tone-sky-soft p-4">
+                    <div className="text-sm font-medium text-text">Transação pendente</div>
+                    <p className="mt-1 text-xs text-tone-sky">
                       Use o botão "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
                     </p>
                   </div>
@@ -2350,7 +2350,7 @@ export default function TransactionForm({
             ) : (
               <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="date">
+                  <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="date">
                     {`${primaryDateLabel} *`}
                   </label>
                   <input
@@ -2360,12 +2360,12 @@ export default function TransactionForm({
                     value={formData.date}
                     onChange={handleChange}
                     disabled={transactionDateDisabled}
-                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   />
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="dueDate">
+                  <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="dueDate">
                     {dueDateLabel}
                   </label>
                   <input
@@ -2375,13 +2375,13 @@ export default function TransactionForm({
                     value={formData.dueDate}
                     onChange={handleChange}
                     disabled={dueDateDisabled}
-                    className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                    className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   />
                 </div>
 
                 {showInlineSettlementControls ? (
                   <div className="flex flex-col justify-center gap-2">
-                    <span className="text-sm font-medium text-gray-300">{settlementToggleLabel}</span>
+                    <span className="text-sm font-medium text-text-muted">{settlementToggleLabel}</span>
                     <label className="relative inline-flex h-6 w-12 cursor-pointer items-center">
                       <input
                         type="checkbox"
@@ -2390,15 +2390,15 @@ export default function TransactionForm({
                         className="peer sr-only"
                         disabled={statusDisabled}
                       />
-                      <div className="h-full w-full rounded-full bg-gray-700 transition-colors peer-checked:bg-success" />
+                      <div className="h-full w-full rounded-full bg-elevated transition-colors peer-checked:bg-success" />
                       <div className="absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform peer-checked:translate-x-6" />
                     </label>
-                    <span className="text-xs text-gray-400">{completionHint}</span>
+                    <span className="text-xs text-text-muted">{completionHint}</span>
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-sky-800/60 bg-sky-950/20 p-4 md:col-span-2">
-                    <div className="text-sm font-medium text-white">Transação pendente</div>
-                    <p className="mt-1 text-sm text-sky-100/80">
+                  <div className="rounded-lg border border-tone-sky/25 bg-tone-sky-soft p-4 md:col-span-2">
+                    <div className="text-sm font-medium text-text">Transação pendente</div>
+                    <p className="mt-1 text-sm text-tone-sky">
                       Esta transação ainda não impactou o saldo. Use o botão "{settlementActionLabel}" para informar conta e {settlementDateLabel.toLowerCase()}.
                     </p>
                   </div>
@@ -2406,7 +2406,7 @@ export default function TransactionForm({
 
                 {showInlineSettlementControls && isCompleted && (
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="liquidationDate">
+                    <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="liquidationDate">
                       {settlementDateLabel}
                     </label>
                     <input
@@ -2416,7 +2416,7 @@ export default function TransactionForm({
                       value={formData.liquidationDate}
                       onChange={handleChange}
                       disabled={liquidationDateDisabled}
-                      className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                      className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                     />
                   </div>
                 )}
@@ -2425,7 +2425,7 @@ export default function TransactionForm({
           ))}
 
           {isCreditCardContext && (
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-gray-300">
+            <div className="rounded-lg border border-border bg-elevated p-3 text-sm text-text-muted">
               {isCreditCardPurchaseFlow
                 ? 'A compra no cartão entra com status e data de liquidação preenchidos automaticamente. Expanda o painel final para conferir limite e previsão das faturas.'
                 : 'A data da compra controla a competência da despesa. O vencimento e a liquidação da fatura são calculados automaticamente pelo cartão.'}
@@ -2450,7 +2450,7 @@ export default function TransactionForm({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300" htmlFor="notes">
+                <label className="mb-1 block text-sm font-medium text-text-muted" htmlFor="notes">
                   Observações
                 </label>
                 <textarea
@@ -2459,7 +2459,7 @@ export default function TransactionForm({
                   value={formData.notes}
                   onChange={handleChange}
                   rows={4}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   placeholder="Informações adicionais sobre a transação..."
                   disabled={saving || isReadOnly}
                 />
@@ -2468,69 +2468,69 @@ export default function TransactionForm({
           )}
 
           {showCreditCardPurchasePreview && (
-            <div className="rounded-xl border border-purple-700/50 bg-purple-950/20">
+            <div className="rounded-xl border border-tone-purple/25 bg-tone-purple-soft">
               <button
                 type="button"
                 onClick={() => setIsInvoicePreviewExpanded((prev) => !prev)}
                 className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
               >
                 <div className="flex items-start gap-3">
-                  <CreditCard size={18} className="mt-0.5 text-purple-300" />
+                  <CreditCard size={18} className="mt-0.5 text-tone-purple" />
                   <div>
-                    <div className="font-medium text-white">Detalhes do cartão e previsão de faturas</div>
-                    <div className="mt-1 text-sm text-gray-300">{previewSummaryLabel}</div>
+                    <div className="font-medium text-text">Detalhes do cartão e previsão de faturas</div>
+                    <div className="mt-1 text-sm text-text-muted">{previewSummaryLabel}</div>
                   </div>
                 </div>
-                <span className="mt-0.5 text-purple-200">
+                <span className="mt-0.5 text-tone-purple">
                   {isInvoicePreviewExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                 </span>
               </button>
 
               {isInvoicePreviewExpanded && (
-                <div className="space-y-4 border-t border-purple-700/40 px-5 pb-5 pt-4">
+                <div className="space-y-4 border-t border-tone-purple/25 px-5 pb-5 pt-4">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
-                      <div className="text-xs uppercase tracking-wide text-gray-400">Limite atual</div>
-                      <div className="mt-1 text-lg font-semibold text-white">
+                    <div className="rounded-lg border border-border bg-elevated p-3">
+                      <div className="text-xs uppercase tracking-wide text-text-muted">Limite atual</div>
+                      <div className="mt-1 text-lg font-semibold text-text">
                         {availableLimit === null ? 'Não configurado' : formatCurrency(availableLimit)}
                       </div>
                     </div>
-                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
-                      <div className="text-xs uppercase tracking-wide text-gray-400">Compra total</div>
-                      <div className="mt-1 text-lg font-semibold text-white">{formatCurrency(totalCommittedAmount)}</div>
+                    <div className="rounded-lg border border-border bg-elevated p-3">
+                      <div className="text-xs uppercase tracking-wide text-text-muted">Compra total</div>
+                      <div className="mt-1 text-lg font-semibold text-text">{formatCurrency(totalCommittedAmount)}</div>
                       {installmentCountValue > 1 && (
-                        <div className="mt-1 text-xs text-gray-400">
+                        <div className="mt-1 text-xs text-text-muted">
                           {formatCurrency(amountValue)} por parcela
                         </div>
                       )}
                     </div>
-                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
-                      <div className="text-xs uppercase tracking-wide text-gray-400">Impacto atual no limite</div>
-                      <div className="mt-1 text-lg font-semibold text-white">{formatCurrency(currentLimitImpactAmount)}</div>
-                      <div className="mt-1 text-xs text-gray-400">
+                    <div className="rounded-lg border border-border bg-elevated p-3">
+                      <div className="text-xs uppercase tracking-wide text-text-muted">Impacto atual no limite</div>
+                      <div className="mt-1 text-lg font-semibold text-text">{formatCurrency(currentLimitImpactAmount)}</div>
+                      <div className="mt-1 text-xs text-text-muted">
                         {currentLimitImpactInstallmentCount} parcela{currentLimitImpactInstallmentCount === 1 ? '' : 's'} impactando o saldo atual
                       </div>
                     </div>
-                    <div className="rounded-lg border border-gray-700 bg-[#12161d] p-3">
-                      <div className="text-xs uppercase tracking-wide text-gray-400">Limite após compra</div>
-                      <div className={`mt-1 text-lg font-semibold ${projectedAvailableLimit !== null && projectedAvailableLimit < 0 ? 'text-orange-300' : 'text-white'}`}>
+                    <div className="rounded-lg border border-border bg-elevated p-3">
+                      <div className="text-xs uppercase tracking-wide text-text-muted">Limite após compra</div>
+                      <div className={`mt-1 text-lg font-semibold ${projectedAvailableLimit !== null && projectedAvailableLimit < 0 ? 'text-tone-orange' : 'text-text'}`}>
                         {projectedAvailableLimit === null ? 'Não configurado' : formatCurrency(projectedAvailableLimit)}
                       </div>
-                      <div className="mt-1 text-xs text-gray-400">
+                      <div className="mt-1 text-xs text-text-muted">
                         Usado após compra: {formatCurrency(projectedUsedLimit)}
                       </div>
                     </div>
                   </div>
 
                   {projectedAvailableLimit !== null && projectedAvailableLimit < 0 && (
-                    <div className="rounded-lg border border-orange-700/60 bg-orange-900/20 p-3 text-sm text-orange-200">
+                    <div className="rounded-lg border border-tone-orange/25 bg-tone-orange-soft p-3 text-sm text-tone-orange">
                       O limite disponível ficará negativo após esta compra. O lançamento ainda pode ser salvo.
                     </div>
                   )}
 
-                  <div className="overflow-hidden rounded-lg border border-gray-700">
+                  <div className="overflow-hidden rounded-lg border border-border">
                     <table className="w-full">
-                      <thead className="bg-[#0f1419] text-left text-xs uppercase text-gray-400">
+                      <thead className="bg-elevated text-left text-xs uppercase text-text-muted">
                         <tr>
                           <th className="px-3 py-2">Parcela</th>
                           <th className="px-3 py-2">Fatura</th>
@@ -2542,13 +2542,13 @@ export default function TransactionForm({
                       <tbody>
                         {resolvedInvoicePreview.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="px-3 py-4 text-sm text-gray-400">
+                            <td colSpan={5} className="px-3 py-4 text-sm text-text-muted">
                               Selecione um cartão com fechamento e vencimento configurados para visualizar a previsão.
                             </td>
                           </tr>
                         ) : (
                           resolvedInvoicePreview.map((item) => (
-                            <tr key={`${item.referenceYear}-${item.referenceMonth}-${item.installmentNumber}`} className="border-t border-gray-700 text-sm text-gray-300">
+                            <tr key={`${item.referenceYear}-${item.referenceMonth}-${item.installmentNumber}`} className="border-t border-border text-sm text-text-muted">
                               <td className="px-3 py-2">{item.installmentNumber}</td>
                               <td className="px-3 py-2">{getInvoiceReferenceLabel(item.referenceYear, item.referenceMonth)}</td>
                               <td className="px-3 py-2">{formatInvoiceDate(new Date(item.closingDate))}</td>
@@ -2556,8 +2556,8 @@ export default function TransactionForm({
                               <td className="px-3 py-2">
                                 <span className={`rounded-full px-2 py-1 text-xs font-medium ${
                                   item.shouldSettleExternally
-                                    ? 'border border-amber-700 bg-amber-900/20 text-amber-200'
-                                    : 'border border-blue-700 bg-blue-900/20 text-blue-200'
+                                    ? 'border border-tone-amber/25 bg-tone-amber-soft text-tone-amber'
+                                    : 'border border-tone-blue/25 bg-tone-blue-soft text-tone-blue'
                                 }`}>
                                   {item.destinationLabel}
                                 </span>
@@ -2574,7 +2574,7 @@ export default function TransactionForm({
           )}
 
           {showActions && (
-            <div className="flex flex-wrap justify-end gap-4 border-t border-gray-700 pt-6">
+            <div className="flex flex-wrap justify-end gap-4 border-t border-border pt-6">
               <Button
                 type="button"
                 variant="outline"

@@ -306,13 +306,13 @@ export function CurrencyInput({
   return (
     <div className={`mb-4 ${className}`}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor={id}>
+        <label className="block text-sm font-medium mb-1 text-text-muted" htmlFor={id}>
           {label}
-          {required && <span className="text-red-400 ml-1">*</span>}
+          {required && <span className="text-tone-red ml-1">*</span>}
         </label>
       )}
       <div className="relative">
-        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-text-muted text-sm pointer-events-none">
           R$
         </span>
         <input
@@ -328,14 +328,14 @@ export function CurrencyInput({
           required={required}
           disabled={disabled}
           autoFocus={autoFocus}
-          className={`w-full pl-10 pr-3 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb] text-right font-mono ${
+          className={`w-full pl-10 pr-3 py-1.5 bg-background border border-border text-text rounded focus:outline-none focus:ring focus:border-accent text-right font-mono ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
           } ${error ? 'border-red-500' : ''} ${inputClassName}`}
           autoComplete="off"
         />
       </div>
       {error && (
-        <p className="mt-1 text-sm text-red-400">
+        <p className="mt-1 text-sm text-tone-red">
           {error}
         </p>
       )}

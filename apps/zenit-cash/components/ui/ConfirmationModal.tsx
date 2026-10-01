@@ -55,9 +55,9 @@ export function ConfirmationModal({
   if (!isOpen) return null;
 
   const iconColors = {
-    danger: 'text-red-400',
-    warning: 'text-yellow-400',
-    info: 'text-blue-400'
+    danger: 'text-tone-red',
+    warning: 'text-tone-yellow',
+    info: 'text-tone-blue'
   };
 
   const confirmVariants = {
@@ -77,15 +77,15 @@ export function ConfirmationModal({
       {/* Modal */}
       <div className="absolute inset-0 flex items-center justify-center p-4">
         <div className="w-full max-w-md transform transition-all duration-300 ease-out">
-          <div className="bg-surface rounded-2xl shadow-2xl border border-gray-700 overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-2xl border border-border overflow-hidden">
             {/* Header */}
             <div className="px-6 pt-6 pb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-full bg-gray-800 ${iconColors[type]}`}>
+                  <div className={`p-2 rounded-full bg-elevated ${iconColors[type]}`}>
                     <AlertTriangle size={20} />
                   </div>
-                  <h3 className="text-lg font-semibold text-white">
+                  <h3 className="text-lg font-semibold text-text">
                     {title}
                   </h3>
                 </div>
@@ -93,7 +93,7 @@ export function ConfirmationModal({
                 <button
                   onClick={onClose}
                   disabled={loading}
-                  className="p-1 text-gray-400 hover:text-white transition-colors rounded-full hover:bg-gray-800"
+                  className="p-1 text-text-muted hover:text-text transition-colors rounded-full hover:bg-elevated"
                   aria-label="Fechar"
                 >
                   <X size={18} />
@@ -103,13 +103,13 @@ export function ConfirmationModal({
 
             {/* Content */}
             <div className="px-6 pb-6">
-              <p className="text-gray-300 leading-relaxed">
+              <p className="text-text-muted leading-relaxed">
                 {message}
               </p>
             </div>
 
             {/* Actions */}
-            <div className="px-6 py-4 bg-elevated border-t border-gray-700">
+            <div className="px-6 py-4 bg-elevated border-t border-border">
               <div className="flex gap-3 justify-end">
                 <Button
                   variant="outline"

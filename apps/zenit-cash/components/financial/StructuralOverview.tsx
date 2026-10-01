@@ -23,31 +23,31 @@ function CompactMetric({
   const styles =
     tone === 'income'
       ? {
-          label: 'text-emerald-200/70',
-          value: 'text-emerald-300'
+          label: 'text-tone-emerald',
+          value: 'text-tone-emerald'
         }
       : tone === 'expense'
         ? {
-            label: 'text-red-200/70',
-            value: 'text-red-300'
+            label: 'text-tone-red',
+            value: 'text-tone-red'
           }
         : tone === 'balance'
           ? Number(value || 0) >= 0
             ? {
-                label: 'text-sky-200/70',
-                value: 'text-sky-300'
+                label: 'text-tone-sky',
+                value: 'text-tone-sky'
               }
             : {
-                label: 'text-red-200/70',
-                value: 'text-red-300'
+                label: 'text-tone-red',
+                value: 'text-tone-red'
               }
           : {
-              label: 'text-slate-300/70',
-              value: 'text-slate-100'
+              label: 'text-text-muted/70',
+              value: 'text-text'
             };
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-[#0b1117] px-3 py-2">
+    <div className="rounded-xl border border-border bg-elevated px-3 py-2">
       <div className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${styles.label}`}>
         {label}
       </div>
@@ -77,7 +77,7 @@ function CompactSection({
 
   return (
     <div className="space-y-2">
-      <div className="relative flex items-center gap-2 text-sm font-medium text-white">
+      <div className="relative flex items-center gap-2 text-sm font-medium text-text">
         <span className="text-accent">{icon}</span>
         <span>{title}</span>
         {helpText ? (
@@ -85,14 +85,14 @@ function CompactSection({
             <button
               type="button"
               onClick={() => setIsHelpOpen((current) => !current)}
-              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-gray-700 text-gray-400 transition hover:border-accent hover:text-accent"
+              className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-border text-text-muted transition hover:border-accent hover:text-accent"
               aria-label={`Explicar ${title}`}
               aria-expanded={isHelpOpen}
             >
               <CircleHelp size={12} />
             </button>
             {isHelpOpen ? (
-              <div className="absolute left-0 top-full z-20 mt-2 w-[300px] max-w-[calc(100vw-3rem)] rounded-lg border border-gray-700 bg-[#0f1419] px-3 py-2 text-xs font-normal leading-relaxed text-gray-300 shadow-[0_18px_40px_rgba(2,6,23,0.45)]">
+              <div className="absolute left-0 top-full z-20 mt-2 w-[300px] max-w-[calc(100vw-3rem)] rounded-lg border border-border bg-elevated px-3 py-2 text-xs font-normal leading-relaxed text-text-muted shadow-[0_18px_40px_rgba(2,6,23,0.45)]">
                 {helpText}
               </div>
             ) : null}
@@ -125,7 +125,7 @@ export default function StructuralOverview({
   return (
     <Card className="px-4 py-3">
       {error ? (
-        <div className="mb-3 rounded-lg border border-red-900/60 bg-red-950/20 px-3 py-2 text-sm text-red-200">
+        <div className="mb-3 rounded-lg border border-tone-red/25 bg-tone-red-soft px-3 py-2 text-sm text-tone-red">
           {error}
         </div>
       ) : null}
@@ -183,7 +183,7 @@ export default function StructuralOverview({
           />
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-gray-700 px-4 py-4 text-sm text-gray-400">
+        <div className="rounded-xl border border-dashed border-border px-4 py-4 text-sm text-text-muted">
           Nenhuma informacao estrutural disponivel no momento.
         </div>
       )}

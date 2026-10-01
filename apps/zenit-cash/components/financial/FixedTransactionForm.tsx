@@ -374,7 +374,7 @@ export default function FixedTransactionForm({
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-text">
             {mode === 'create' ? 'Nova Transação Fixa' : 'Editar Transação Fixa'}
           </h1>
         </div>
@@ -430,13 +430,13 @@ export default function FixedTransactionForm({
               />
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Tipo</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Tipo</label>
                 <select
                   value={form.type}
                   onChange={(event) =>
                     handleTypeChange(event.target.value as 'INCOME' | 'EXPENSE')
                   }
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text"
                   disabled={saving}
                 >
                   <option value="EXPENSE">Despesa Fixa</option>
@@ -447,8 +447,8 @@ export default function FixedTransactionForm({
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               {isCreditCardFixedExpense ? (
-                <div className="rounded-lg border border-blue-700/60 bg-blue-900/20 px-3 py-2.5 text-sm text-blue-200">
-                  <div className="font-medium text-white">Competência da fixa</div>
+                <div className="rounded-lg border border-tone-blue/25 bg-tone-blue-soft px-3 py-2.5 text-sm text-tone-blue">
+                  <div className="font-medium text-text">Competência da fixa</div>
                   <div className="mt-1">
                     Usa o fechamento atual do cartão
                     {selectedAccount?.statementClosingDay
@@ -472,7 +472,7 @@ export default function FixedTransactionForm({
               )}
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">
+                <label className="mb-1 block text-sm font-medium text-text-muted">
                   Tipo de Conta
                 </label>
                 <select
@@ -482,7 +482,7 @@ export default function FixedTransactionForm({
                       event.target.value as AccountAssignmentType
                     )
                   }
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text"
                   disabled={saving}
                 >
                   {accountAssignmentOptions.map((option) => (
@@ -494,7 +494,7 @@ export default function FixedTransactionForm({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">
+                <label className="mb-1 block text-sm font-medium text-text-muted">
                   {form.type === 'EXPENSE' && accountAssignmentType === 'CREDIT_CARD'
                     ? 'Cartão'
                     : form.type === 'EXPENSE'
@@ -504,7 +504,7 @@ export default function FixedTransactionForm({
                 <select
                   value={currentAccountId}
                   onChange={(event) => updateCurrentAccountId(event.target.value)}
-                  className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text"
                   disabled={saving || accountAssignmentType === 'NONE'}
                 >
                   <option value="">
@@ -534,28 +534,28 @@ export default function FixedTransactionForm({
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-300">Observações</label>
+              <label className="mb-1 block text-sm font-medium text-text-muted">Observações</label>
               <textarea
                 value={form.notes}
                 onChange={(event) =>
                   setForm((prev) => ({ ...prev, notes: event.target.value }))
                 }
                 rows={4}
-                className="w-full rounded border border-gray-700 bg-[#1e2126] px-2 py-1.5 text-white"
+                className="w-full rounded border border-border bg-background px-2 py-1.5 text-text"
                 placeholder="Detalhes opcionais"
                 disabled={saving}
               />
             </div>
 
             {isCreditCardFixedExpense && (
-              <div className="rounded-lg border border-blue-700/60 bg-blue-900/20 p-4 text-sm text-blue-200">
+              <div className="rounded-lg border border-tone-blue/25 bg-tone-blue-soft p-4 text-sm text-tone-blue">
                 Despesas fixas em cartão serão materializadas como compras recorrentes e
                 vinculadas automaticamente à fatura do cartão.
               </div>
             )}
 
             {hasUnsupportedCreditCardIncome && (
-              <div className="rounded-lg border border-amber-700/60 bg-amber-900/20 p-4 text-sm text-amber-200">
+              <div className="rounded-lg border border-tone-amber/25 bg-tone-amber-soft p-4 text-sm text-tone-amber">
                 Receita fixa em cartão de crédito não é suportada. Selecione outra conta
                 ou deixe a fixa sem conta vinculada.
               </div>
@@ -566,44 +566,44 @@ export default function FixedTransactionForm({
         <Card>
           <div className="space-y-4">
             <div>
-              <div className="text-sm font-medium text-white">Resumo</div>
-              <div className="mt-1 text-sm text-gray-400">
+              <div className="text-sm font-medium text-text">Resumo</div>
+              <div className="mt-1 text-sm text-text-muted">
                 Transações fixas geram projeções mensais automaticamente no período consultado.
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Valor mensal</div>
-              <div className="mt-2 text-xl font-semibold text-white">
+            <div className="rounded-lg border border-border bg-elevated p-4">
+              <div className="text-xs uppercase tracking-wide text-text-muted">Valor mensal</div>
+              <div className="mt-2 text-xl font-semibold text-text">
                 {formatCurrency(form.amount)}
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Competência</div>
-              <div className="mt-2 text-sm text-gray-300">
+            <div className="rounded-lg border border-border bg-elevated p-4">
+              <div className="text-xs uppercase tracking-wide text-text-muted">Competência</div>
+              <div className="mt-2 text-sm text-text-muted">
                 {isCreditCardFixedExpense
                   ? `Fechamento do cartão${selectedAccount?.statementClosingDay ? ` (dia ${selectedAccount.statementClosingDay})` : ''}`
                   : `Todo dia ${form.dayOfMonth || '-'}`}
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Tipo de Conta</div>
-              <div className="mt-2 text-sm text-gray-300">
+            <div className="rounded-lg border border-border bg-elevated p-4">
+              <div className="text-xs uppercase tracking-wide text-text-muted">Tipo de Conta</div>
+              <div className="mt-2 text-sm text-text-muted">
                 {getAccountAssignmentLabel(accountAssignmentType)}
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Conta</div>
-              <div className="mt-2 text-sm text-gray-300">
+            <div className="rounded-lg border border-border bg-elevated p-4">
+              <div className="text-xs uppercase tracking-wide text-text-muted">Conta</div>
+              <div className="mt-2 text-sm text-text-muted">
                 {selectedAccount ? formatAccountOptionLabel(selectedAccount) : 'Sem conta vinculada'}
               </div>
             </div>
 
             {mode === 'edit' && (
-              <div className="rounded-lg border border-blue-700/60 bg-blue-900/20 p-4 text-sm text-blue-200">
+              <div className="rounded-lg border border-tone-blue/25 bg-tone-blue-soft p-4 text-sm text-tone-blue">
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={16} className="mt-0.5" />
                   <span>

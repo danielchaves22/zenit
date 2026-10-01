@@ -137,33 +137,33 @@ function statePresentation(state: FinancialProvisionState) {
   > = {
     PLANNED: {
       label: 'Planejada',
-      className: 'border-blue-800 bg-blue-950/40 text-blue-300',
+      className: 'border-tone-blue/25 bg-tone-blue-soft text-tone-blue',
       bar: 'bg-blue-500'
     },
     IN_PROGRESS: {
       label: 'Em formação',
-      className: 'border-amber-800 bg-amber-950/40 text-amber-300',
+      className: 'border-tone-amber/25 bg-tone-amber-soft text-tone-amber',
       bar: 'bg-amber-500'
     },
     FUNDED: {
       label: 'Provisionada',
-      className: 'border-emerald-800 bg-emerald-950/40 text-emerald-300',
+      className: 'border-tone-emerald/25 bg-tone-emerald-soft text-tone-emerald',
       bar: 'bg-emerald-500'
     },
     OVERDUE: {
       label: 'Atrasada',
-      className: 'border-red-800 bg-red-950/40 text-red-300',
+      className: 'border-tone-red/25 bg-tone-red-soft text-tone-red',
       bar: 'bg-red-500'
     },
     COMPLETED: {
       label: 'Concluída',
-      className: 'border-gray-600 bg-gray-800/60 text-gray-300',
-      bar: 'bg-gray-500'
+      className: 'border-border-strong bg-elevated/60 text-text-muted',
+      bar: 'bg-elevated'
     },
     CANCELED: {
       label: 'Cancelada',
-      className: 'border-gray-700 bg-gray-900/60 text-gray-500',
-      bar: 'bg-gray-700'
+      className: 'border-border bg-elevated/60 text-text-subtle',
+      bar: 'bg-elevated'
     }
   };
   return presentations[state];
@@ -392,15 +392,15 @@ export function FinancialProvisions() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-white">Provisões</h2>
+          <h2 className="text-xl font-semibold text-text">Provisões</h2>
           <InfoModalButton modalTitle="Sobre Provisões" buttonLabel="Ajuda sobre Provisões">
             <p>
               Provisões reservam, no planejamento, dinheiro para despesas futuras previsíveis, como
               IPVA, seguro, manutenção ou uma compra programada.
             </p>
             <p>
-              <strong className="text-white">Única:</strong> termina quando o valor é utilizado.
-              <strong className="ml-2 text-white">Anual:</strong> abre automaticamente o próximo ciclo
+              <strong className="text-text">Única:</strong> termina quando o valor é utilizado.
+              <strong className="ml-2 text-text">Anual:</strong> abre automaticamente o próximo ciclo
               após a utilização.
             </p>
             <p>
@@ -418,7 +418,7 @@ export function FinancialProvisions() {
       </div>
 
       {!canManage && (
-        <div className="rounded-lg border border-blue-900/70 bg-blue-950/20 px-4 py-3 text-sm text-blue-200">
+        <div className="rounded-lg border border-tone-blue/25 bg-tone-blue-soft px-4 py-3 text-sm text-tone-blue">
           Você pode consultar as provisões. Somente gestores do workspace podem alterá-las.
         </div>
       )}
@@ -449,7 +449,7 @@ export function FinancialProvisions() {
         />
       </div>
 
-      <div className="rounded-lg border border-blue-900/70 bg-blue-950/20 px-4 py-3 text-sm text-blue-200">
+      <div className="rounded-lg border border-tone-blue/25 bg-tone-blue-soft px-4 py-3 text-sm text-tone-blue">
         O valor reservado é declaratório: ele reduz sua disponibilidade para decisões, mas não altera o
         saldo de nenhuma conta.
       </div>
@@ -482,7 +482,7 @@ export function FinancialProvisions() {
             className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
               filter === value
                 ? 'border-accent bg-accent/15 text-accent'
-                : 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white'
+                : 'border-border text-text-muted hover:border-border-strong hover:text-text'
             }`}
           >
             {label}
@@ -493,11 +493,11 @@ export function FinancialProvisions() {
       {visibleItems.length === 0 ? (
         <Card>
           <div className="py-8 text-center">
-            <CalendarClock className="mx-auto text-gray-600" size={36} />
-            <p className="mt-3 font-medium text-white">
+            <CalendarClock className="mx-auto text-text-subtle" size={36} />
+            <p className="mt-3 font-medium text-text">
               {filter === 'ACTIVE' ? 'Nenhuma provisão ativa' : 'Nenhuma provisão neste filtro'}
             </p>
-            <p className="mt-1 text-sm text-gray-400">
+            <p className="mt-1 text-sm text-text-muted">
               Antecipe despesas previsíveis para não tratá-las como surpresas no orçamento.
             </p>
           </div>
@@ -553,24 +553,24 @@ function ProvisionEditor({
     <Card className="border-accent/60">
       <form onSubmit={onSubmit}>
         <div className="mb-5 flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold text-white">
+          <h3 className="text-lg font-semibold text-text">
             {editing ? 'Alterar provisão' : 'Nova provisão'}
           </h3>
-          <button type="button" onClick={onClose} className="text-gray-400 hover:text-white" aria-label="Fechar">
+          <button type="button" onClick={onClose} className="text-text-muted hover:text-text" aria-label="Fechar">
             <X size={20} />
           </button>
         </div>
 
         <div className="grid grid-cols-1 gap-x-4 md:grid-cols-2 xl:grid-cols-3">
-          <label className="mb-4 block text-sm font-medium text-gray-300">
-            Nome <span className="text-red-400">*</span>
+          <label className="mb-4 block text-sm font-medium text-text-muted">
+            Nome <span className="text-tone-red">*</span>
             <input
               value={draft.name}
               onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
               maxLength={100}
               required
               placeholder="Ex.: IPVA, seguro, manutenção"
-              className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+              className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
             />
           </label>
           <CategorySelect
@@ -581,7 +581,7 @@ function ProvisionEditor({
             placeholder="Selecione uma despesa"
             className="mb-4"
           />
-          <label className="mb-4 block text-sm font-medium text-gray-300">
+          <label className="mb-4 block text-sm font-medium text-text-muted">
             Frequência
             <select
               value={draft.kind}
@@ -591,7 +591,7 @@ function ProvisionEditor({
                   kind: event.target.value as FinancialProvisionKind
                 }))
               }
-              className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+              className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
             >
               <option value="ONE_TIME">Única</option>
               <option value="ANNUAL">Anual</option>
@@ -612,7 +612,7 @@ function ProvisionEditor({
               }
             />
           )}
-          <label className="mb-4 block text-sm font-medium text-gray-300">
+          <label className="mb-4 block text-sm font-medium text-text-muted">
             Iniciar aportes em
             <input
               type="month"
@@ -621,10 +621,10 @@ function ProvisionEditor({
               max={maximumDateKey().slice(0, 7)}
               onChange={(event) => setDraft((current) => ({ ...current, startMonth: event.target.value }))}
               required
-              className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+              className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
             />
           </label>
-          <label className="mb-4 block text-sm font-medium text-gray-300">
+          <label className="mb-4 block text-sm font-medium text-text-muted">
             Data prevista
             <input
               type="date"
@@ -633,17 +633,17 @@ function ProvisionEditor({
               max={maximumDateKey()}
               onChange={(event) => setDraft((current) => ({ ...current, targetDate: event.target.value }))}
               required
-              className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+              className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
             />
           </label>
-          <label className="mb-4 block text-sm font-medium text-gray-300 md:col-span-2 xl:col-span-3">
+          <label className="mb-4 block text-sm font-medium text-text-muted md:col-span-2 xl:col-span-3">
             Observações
             <textarea
               value={draft.notes}
               onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
               maxLength={500}
               rows={2}
-              className="mt-1 w-full resize-y rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+              className="mt-1 w-full resize-y rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
             />
           </label>
         </div>
@@ -691,36 +691,36 @@ function ProvisionCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-lg font-semibold text-white">{provision.name}</h3>
+            <h3 className="truncate text-lg font-semibold text-text">{provision.name}</h3>
             <span className={`rounded-full border px-2 py-0.5 text-xs ${presentation.className}`}>
               {presentation.label}
             </span>
             {provision.kind === 'ANNUAL' && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-violet-800 bg-violet-950/30 px-2 py-0.5 text-xs text-violet-300">
+              <span className="inline-flex items-center gap-1 rounded-full border border-tone-violet/25 bg-tone-violet-soft px-2 py-0.5 text-xs text-tone-violet">
                 <RefreshCw size={11} /> Anual
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm text-gray-400">
+          <p className="mt-1 text-sm text-text-muted">
             {provision.category.name} · prevista para {formatDate(provision.targetDate)}
           </p>
         </div>
         {provision.state === 'FUNDED' ? (
-          <CheckCircle2 className="shrink-0 text-emerald-400" size={24} />
+          <CheckCircle2 className="shrink-0 text-tone-emerald" size={24} />
         ) : provision.state === 'OVERDUE' ? (
-          <AlertTriangle className="shrink-0 text-red-400" size={24} />
+          <AlertTriangle className="shrink-0 text-tone-red" size={24} />
         ) : (
           <CalendarClock className="shrink-0 text-accent" size={24} />
         )}
       </div>
 
-      <div className="mt-5 h-2 overflow-hidden rounded-full bg-gray-800">
+      <div className="mt-5 h-2 overflow-hidden rounded-full bg-elevated">
         <div
           className={`h-full rounded-full transition-all ${presentation.bar}`}
           style={{ width: `${Math.min(provision.progressPercent, 100)}%` }}
         />
       </div>
-      <div className="mt-2 flex justify-between text-xs text-gray-500">
+      <div className="mt-2 flex justify-between text-xs text-text-subtle">
         <span>{formatMoney(provision.reservedAmount)} reservados</span>
         <span>{provision.progressPercent.toLocaleString('pt-BR')}%</span>
       </div>
@@ -739,7 +739,7 @@ function ProvisionCard({
         />
       </div>
 
-      {provision.notes && <p className="mt-4 text-sm text-gray-400">{provision.notes}</p>}
+      {provision.notes && <p className="mt-4 text-sm text-text-muted">{provision.notes}</p>}
 
       {isActive && canManage && (
         <div className="mt-5 flex flex-wrap gap-2">
@@ -752,26 +752,26 @@ function ProvisionCard({
           <Button variant="outline" onClick={() => onOpenActivity('USE')}>
             Utilizar
           </Button>
-          <button type="button" onClick={onEdit} className="inline-flex items-center gap-1 px-2 text-sm text-gray-400 hover:text-white">
+          <button type="button" onClick={onEdit} className="inline-flex items-center gap-1 px-2 text-sm text-text-muted hover:text-text">
             <Pencil size={14} /> Editar
           </button>
-          <button type="button" onClick={onCancel} className="inline-flex items-center gap-1 px-2 text-sm text-red-400 hover:text-red-300">
+          <button type="button" onClick={onCancel} className="inline-flex items-center gap-1 px-2 text-sm text-tone-red hover:text-tone-red">
             <X size={14} /> Cancelar
           </button>
         </div>
       )}
 
       {canManage && activity && (
-        <form onSubmit={onSubmitActivity} className="mt-5 rounded-lg border border-gray-700 bg-[#11161d] p-4">
+        <form onSubmit={onSubmitActivity} className="mt-5 rounded-lg border border-border bg-elevated p-4">
           <div className="mb-3 flex items-center justify-between">
-            <h4 className="font-medium text-white">
+            <h4 className="font-medium text-text">
               {activity.kind === 'CONTRIBUTION'
                 ? 'Registrar aporte'
                 : activity.kind === 'WITHDRAWAL'
                   ? 'Registrar retirada'
                   : 'Registrar utilização'}
             </h4>
-            <button type="button" onClick={() => setActivity(null)} className="text-gray-500 hover:text-white" aria-label="Fechar movimentação">
+            <button type="button" onClick={() => setActivity(null)} className="text-text-subtle hover:text-text" aria-label="Fechar movimentação">
               <X size={18} />
             </button>
           </div>
@@ -782,7 +782,7 @@ function ProvisionCard({
               onChange={(amount) => setActivity((current) => (current ? { ...current, amount } : current))}
               required
             />
-            <label className="mb-4 block text-sm font-medium text-gray-300">
+            <label className="mb-4 block text-sm font-medium text-text-muted">
               Data
               <input
                 type="date"
@@ -794,11 +794,11 @@ function ProvisionCard({
                   )
                 }
                 required
-                className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+                className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
               />
             </label>
           </div>
-          <label className="mb-4 block text-sm font-medium text-gray-300">
+          <label className="mb-4 block text-sm font-medium text-text-muted">
             Observação
             <input
               value={activity.notes}
@@ -808,7 +808,7 @@ function ProvisionCard({
                 )
               }
               maxLength={300}
-              className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring"
+              className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring"
             />
           </label>
           <div className="flex justify-end">
@@ -820,20 +820,20 @@ function ProvisionCard({
       )}
 
       {provision.entries.length > 0 && (
-        <details className="mt-5 border-t border-gray-800 pt-4">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-gray-400 hover:text-white">
+        <details className="mt-5 border-t border-border pt-4">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-text-muted hover:text-text">
             <History size={15} /> Histórico ({provision.entries.length})
           </summary>
           <div className="mt-3 space-y-2">
             {provision.entries.map((entry) => (
               <div key={entry.id} className="flex items-start justify-between gap-3 text-sm">
                 <div>
-                  <span className="text-gray-300">{entryLabel(entry.type)}</span>
-                  <span className="ml-2 text-xs text-gray-600">{formatDate(entry.occurredAt)}</span>
-                  {entry.notes && <p className="text-xs text-gray-500">{entry.notes}</p>}
+                  <span className="text-text-muted">{entryLabel(entry.type)}</span>
+                  <span className="ml-2 text-xs text-text-subtle">{formatDate(entry.occurredAt)}</span>
+                  {entry.notes && <p className="text-xs text-text-subtle">{entry.notes}</p>}
                   {entry.type === 'USE' &&
                     Math.abs(Number(entry.reservedAmountChange)) !== Number(entry.amount) && (
-                      <p className="text-xs text-gray-500">
+                      <p className="text-xs text-text-subtle">
                         Reserva liberada: {formatMoney(Math.abs(Number(entry.reservedAmountChange)))}
                       </p>
                     )}
@@ -841,8 +841,8 @@ function ProvisionCard({
                 <span
                   className={
                     entry.type === 'WITHDRAWAL' || entry.type === 'USE'
-                      ? 'text-red-300'
-                      : 'text-emerald-300'
+                      ? 'text-tone-red'
+                      : 'text-tone-emerald'
                   }
                 >
                   {entry.type === 'INITIAL_BALANCE' || entry.type === 'CONTRIBUTION' ? '+' : '−'}
@@ -870,16 +870,16 @@ function SummaryMetric({
   icon: React.ReactNode;
   tone?: 'neutral' | 'accent' | 'danger';
 }) {
-  const toneClass = tone === 'danger' ? 'text-red-300' : tone === 'accent' ? 'text-accent' : 'text-white';
+  const toneClass = tone === 'danger' ? 'text-tone-red' : tone === 'accent' ? 'text-accent' : 'text-text';
   return (
     <Card className="p-0">
       <div className="p-4">
-        <div className="flex items-center justify-between gap-2 text-gray-500">
+        <div className="flex items-center justify-between gap-2 text-text-subtle">
           <p className="text-xs">{label}</p>
           <span className={toneClass}>{icon}</span>
         </div>
         <p className={`mt-2 text-lg font-semibold ${toneClass}`}>{value}</p>
-        {detail && <p className="mt-1 text-xs text-gray-500">{detail}</p>}
+        {detail && <p className="mt-1 text-xs text-text-subtle">{detail}</p>}
       </div>
     </Card>
   );
@@ -887,9 +887,9 @@ function SummaryMetric({
 
 function Metric({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div className="rounded-lg border border-gray-800 bg-[#11161d] p-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className={`mt-1 font-semibold ${highlight ? 'text-accent' : 'text-white'}`}>{value}</p>
+    <div className="rounded-lg border border-border bg-elevated p-3">
+      <p className="text-xs text-text-subtle">{label}</p>
+      <p className={`mt-1 font-semibold ${highlight ? 'text-accent' : 'text-text'}`}>{value}</p>
     </div>
   );
 }

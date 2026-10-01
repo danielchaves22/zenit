@@ -118,22 +118,22 @@ function formatDate(value: string | null): string {
 const statePresentation = {
   NOT_CONFIGURED: {
     label: 'Não configurado',
-    className: 'border-gray-700 bg-gray-900 text-gray-300',
+    className: 'border-border bg-elevated text-text-muted',
     icon: UserRoundCog
   },
   INCOMPLETE: {
     label: 'Incompleto',
-    className: 'border-amber-800 bg-amber-950/40 text-amber-300',
+    className: 'border-tone-amber/25 bg-tone-amber-soft text-tone-amber',
     icon: AlertTriangle
   },
   READY: {
     label: 'Pronto',
-    className: 'border-emerald-800 bg-emerald-950/40 text-emerald-300',
+    className: 'border-tone-emerald/25 bg-tone-emerald-soft text-tone-emerald',
     icon: CheckCircle2
   },
   OUTDATED: {
     label: 'Precisa de revisão',
-    className: 'border-orange-800 bg-orange-950/40 text-orange-300',
+    className: 'border-tone-orange/25 bg-tone-orange-soft text-tone-orange',
     icon: Clock3
   }
 };
@@ -382,8 +382,8 @@ export default function PersonalFinancialProfilePage() {
     return (
       <DashboardLayout title="Perfil de Planejamento Financeiro">
         <Card className="mx-auto max-w-xl text-center">
-          <AlertTriangle className="mx-auto text-amber-300" size={32} />
-          <p className="mt-3 text-white">Não foi possível carregar o perfil financeiro.</p>
+          <AlertTriangle className="mx-auto text-tone-amber" size={32} />
+          <p className="mt-3 text-text">Não foi possível carregar o perfil financeiro.</p>
           <Button className="mt-4" variant="outline" onClick={() => void router.reload()}>
             Tentar novamente
           </Button>
@@ -409,7 +409,7 @@ export default function PersonalFinancialProfilePage() {
       <form onSubmit={handleSubmit} className="mx-auto max-w-5xl space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-white">Perfil de planejamento financeiro</h1>
+            <h1 className="text-2xl font-semibold text-text">Perfil de planejamento financeiro</h1>
             <InfoModalButton
               modalTitle="Sobre o Perfil de Planejamento Financeiro"
               buttonLabel="Ajuda sobre o Perfil de Planejamento Financeiro"
@@ -433,32 +433,32 @@ export default function PersonalFinancialProfilePage() {
         <Card>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-sm text-gray-400">Completude do perfil</p>
-              <p className="mt-1 text-xl font-semibold text-white">
+              <p className="text-sm text-text-muted">Completude do perfil</p>
+              <p className="mt-1 text-xl font-semibold text-text">
                 {response.completionPercentage}%
               </p>
             </div>
             <div className="min-w-[220px] flex-1 sm:max-w-md">
-              <div className="h-2 overflow-hidden rounded-full bg-gray-800">
+              <div className="h-2 overflow-hidden rounded-full bg-elevated">
                 <div
                   className="h-full rounded-full bg-accent transition-all"
                   style={{ width: `${response.completionPercentage}%` }}
                 />
               </div>
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="mt-2 text-xs text-text-subtle">
                 Última revisão: {formatDate(response.profile?.lastReviewedAt || null)} · versão{' '}
                 {response.profile?.version || 0}
               </p>
             </div>
-            <div className="text-right text-sm text-gray-400">
+            <div className="text-right text-sm text-text-muted">
               <p>Fonte dos dados</p>
-              <p className="font-medium text-white">{response.workspace.name}</p>
+              <p className="font-medium text-text">{response.workspace.name}</p>
             </div>
           </div>
         </Card>
 
         {!canManage && (
-          <div className="rounded-lg border border-blue-900/70 bg-blue-950/20 px-4 py-3 text-sm text-blue-200">
+          <div className="rounded-lg border border-tone-blue/25 bg-tone-blue-soft px-4 py-3 text-sm text-tone-blue">
             Você pode consultar este perfil. Somente gestores do workspace podem alterá-lo.
           </div>
         )}
@@ -566,7 +566,7 @@ export default function PersonalFinancialProfilePage() {
         </Card>
 
         <Card headerTitle="Prioridades por categoria">
-          <div className="mb-4 flex items-center gap-1.5 text-sm font-medium text-gray-300">
+          <div className="mb-4 flex items-center gap-1.5 text-sm font-medium text-text-muted">
             <span>Como o Zenit pode ajustar cada categoria?</span>
             <FieldHelp label="Prioridades por categoria">
               {profileFieldHelp.categoryPriorities}
@@ -582,21 +582,21 @@ export default function PersonalFinancialProfilePage() {
               return (
                 <div
                   key={category.id}
-                  className="grid grid-cols-1 gap-3 rounded-lg border border-gray-700 bg-[#11161d] p-3 lg:grid-cols-[minmax(180px,1fr)_minmax(300px,auto)_180px] lg:items-center"
+                  className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-elevated p-3 lg:grid-cols-[minmax(180px,1fr)_minmax(300px,auto)_180px] lg:items-center"
                 >
                   <div className="flex min-w-0 items-center gap-3" style={{ paddingLeft: `${Math.min(level, 3) * 12}px` }}>
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-gray-700 bg-background">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-border bg-background">
                       <CategoryIcon icon={category.icon} color={category.color} size={17} />
                     </div>
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-white">{category.name}</p>
+                      <p className="truncate font-medium text-text">{category.name}</p>
                       {lineage.length > 0 && (
-                        <p className="truncate text-xs text-gray-500">{lineage.join(' / ')}</p>
+                        <p className="truncate text-xs text-text-subtle">{lineage.join(' / ')}</p>
                       )}
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1 rounded-lg border border-gray-700 bg-background p-1">
+                  <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-background p-1">
                     {(
                       [
                         ['PROTECTED', 'Protegida'],
@@ -611,8 +611,8 @@ export default function PersonalFinancialProfilePage() {
                         onClick={() => updatePreference(category.id, { flexibility: value })}
                         className={`rounded px-2 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                           preference.flexibility === value
-                            ? 'bg-accent text-white'
-                            : 'text-gray-400 hover:bg-elevated hover:text-white'
+                            ? 'bg-accent text-on-accent'
+                            : 'text-text-muted hover:bg-elevated hover:text-text'
                         }`}
                         aria-pressed={preference.flexibility === value}
                         aria-label={`${label}: ${category.name}`}
@@ -636,7 +636,7 @@ export default function PersonalFinancialProfilePage() {
             })}
           </div>
 
-          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-gray-700 p-4">
+          <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4">
             <input
               type="checkbox"
               disabled={!canManage}
@@ -647,20 +647,20 @@ export default function PersonalFinancialProfilePage() {
                   categoryPrioritiesReviewed: event.target.checked
                 }))
               }
-              className="mt-1 h-4 w-4 rounded border-gray-600 bg-background text-accent focus:ring-accent"
+              className="mt-1 h-4 w-4 rounded border-border-strong bg-background text-accent focus:ring-accent"
             />
             <span>
-              <span className="block font-medium text-white">Revisei as prioridades das categorias</span>
-              <span className="mt-1 block text-sm text-gray-400">
+              <span className="block font-medium text-text">Revisei as prioridades das categorias</span>
+              <span className="mt-1 block text-sm text-text-muted">
                 Novas categorias adicionadas futuramente farão o perfil pedir uma nova revisão.
               </span>
             </span>
           </label>
         </Card>
 
-        <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-700 bg-surface/95 p-4 shadow-xl backdrop-blur">
-          <div className="flex items-center gap-2 text-sm text-gray-400">
-            <ShieldCheck size={17} className="text-emerald-300" />
+        <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface/95 p-4 shadow-xl backdrop-blur">
+          <div className="flex items-center gap-2 text-sm text-text-muted">
+            <ShieldCheck size={17} className="text-tone-emerald" />
             Perfil compartilhado no workspace {response.workspace.name}
           </div>
           {canManage && (
@@ -712,7 +712,7 @@ function ChoiceGroup({
   return (
     <fieldset>
       <legend className="sr-only">{label}</legend>
-      <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-gray-300">
+      <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-text-muted">
         <span aria-hidden="true">{label}</span>
         <FieldHelp label={label}>{help}</FieldHelp>
       </div>
@@ -726,8 +726,8 @@ function ChoiceGroup({
             aria-pressed={value === option.value}
             className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
               value === option.value
-                ? 'border-accent bg-accent/15 text-white'
-                : 'border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white'
+                ? 'border-accent bg-accent/15 text-text'
+                : 'border-border text-text-muted hover:border-border-strong hover:text-text'
             }`}
           >
             {option.label}
@@ -759,7 +759,7 @@ function NumberField({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
+      <div className="flex items-center gap-1.5 text-sm font-medium text-text-muted">
         <label htmlFor={inputId}>{label}</label>
         <FieldHelp label={label}>{help}</FieldHelp>
       </div>
@@ -771,7 +771,7 @@ function NumberField({
         disabled={disabled}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring disabled:cursor-not-allowed disabled:opacity-60"
       />
     </div>
   );
@@ -796,7 +796,7 @@ function SelectField({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-sm font-medium text-gray-300">
+      <div className="flex items-center gap-1.5 text-sm font-medium text-text-muted">
         <label htmlFor={selectId}>{label}</label>
         <FieldHelp label={label}>{help}</FieldHelp>
       </div>
@@ -805,7 +805,7 @@ function SelectField({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded border border-gray-700 bg-background px-3 py-2 text-white outline-none focus:border-accent focus:ring disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-1 w-full rounded border border-border bg-background px-3 py-2 text-text outline-none focus:border-accent focus:ring disabled:cursor-not-allowed disabled:opacity-60"
       >
         <option value="">Selecione...</option>
         {options.map((option) => (

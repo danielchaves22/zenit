@@ -60,33 +60,33 @@ export function AccessGuard({
       <Card className="max-w-md w-full text-center">
         <div className="p-8">
           <div className="mb-6">
-            <div className="bg-red-900/20 border border-red-600 rounded-full p-4 w-16 h-16 mx-auto flex items-center justify-center">
-              <Shield size={32} className="text-red-400" />
+            <div className="bg-tone-red-soft border border-red-600 rounded-full p-4 w-16 h-16 mx-auto flex items-center justify-center">
+              <Shield size={32} className="text-tone-red" />
             </div>
           </div>
           
-          <h2 className="text-xl font-semibold text-white mb-3">
+          <h2 className="text-xl font-semibold text-text mb-3">
             Acesso Negado
           </h2>
           
           <div className="space-y-3 mb-6">
-            <p className="text-gray-400">
+            <p className="text-text-muted">
               Você não possui permissões suficientes para acessar esta funcionalidade.
             </p>
             
-            <div className="bg-background border border-gray-700 rounded-lg p-4">
+            <div className="bg-background border border-border rounded-lg p-4">
               <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle size={16} className="text-yellow-400" />
-                <span className="text-sm font-medium text-yellow-400">Informações de Acesso</span>
+                <AlertTriangle size={16} className="text-tone-yellow" />
+                <span className="text-sm font-medium text-tone-yellow">Informações de Acesso</span>
               </div>
-              <div className="space-y-1 text-sm text-gray-300">
+              <div className="space-y-1 text-sm text-text-muted">
                 <p>
-                  <span className="text-gray-400">Seu perfil atual:</span>{' '}
-                  <span className="font-medium text-white">{getRoleLabel()}</span>
+                  <span className="text-text-muted">Seu perfil atual:</span>{' '}
+                  <span className="font-medium text-text">{getRoleLabel()}</span>
                 </p>
                 {requiredRole && (
                   <p>
-                    <span className="text-gray-400">Perfil mínimo necessário:</span>{' '}
+                    <span className="text-text-muted">Perfil mínimo necessário:</span>{' '}
                     <span className="font-medium text-accent">
                       {requiredRole === 'ADMIN' ? 'Administrador' : 
                        requiredRole === 'SUPERUSER' ? 'Superusuário' : 'Usuário'}
@@ -95,7 +95,7 @@ export function AccessGuard({
                 )}
                 {allowedRoles && allowedRoles.length > 0 && (
                   <p>
-                    <span className="text-gray-400">Perfis permitidos:</span>{' '}
+                    <span className="text-text-muted">Perfis permitidos:</span>{' '}
                     <span className="font-medium text-accent">
                       {allowedRoles.map(role => 
                         role === 'ADMIN' ? 'Administrador' : 
@@ -127,14 +127,14 @@ export function AccessGuard({
             </Button>
           </div>
           
-          <div className="mt-6 p-4 bg-blue-900/20 border border-blue-600 rounded-lg">
+          <div className="mt-6 p-4 bg-tone-blue-soft border border-blue-600 rounded-lg">
             <div className="flex items-start gap-3">
-              <div className="text-blue-400 mt-0.5">
+              <div className="text-tone-blue mt-0.5">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
                 </svg>
               </div>
-              <div className="text-sm text-blue-200">
+              <div className="text-sm text-tone-blue">
                 <p className="font-medium mb-1">Precisa de mais acesso?</p>
                 <p>Entre em contato com o administrador do sistema para solicitar as permissões necessárias.</p>
               </div>

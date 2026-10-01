@@ -29,9 +29,9 @@ const iconSizes = {
 } as const;
 
 const surfaceClasses = {
-  transparent: 'border-transparent bg-transparent text-white/90 shadow-none',
+  transparent: 'border-transparent bg-transparent text-inherit shadow-none',
   solid: 'border border-white/15 bg-white/90 text-slate-700 shadow-sm',
-  glass: 'border border-white/18 bg-white/20 text-slate-700 shadow-sm backdrop-blur-[2px]'
+  glass: 'border border-white/18 bg-white/20 text-inherit shadow-sm backdrop-blur-[2px]'
 } as const;
 
 export default function BankLogo({

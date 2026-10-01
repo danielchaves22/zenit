@@ -1,211 +1,106 @@
-// frontend/components/layout/DashboardLayout.tsx - COM CORES DINÂMICAS
-import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/router';
-import Image from 'next/image';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { ChevronDown, CircleUserRound, LogOut, Menu, Moon, Repeat, Sun, UserRound } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Sidebar } from './Sidebar';
 import { AssistantFloatingChat } from '@/components/assistant/AssistantFloatingChat';
 import { ThemeSelector } from '@/components/ui/ThemeSelector';
-import { User, Repeat } from 'lucide-react';
-import { RoleBasedItem } from '@/components/navigation/RoleBasedNavigation';
 import { CompanySwitcherModal } from '@/components/ui/CompanySwitcherModal';
-import { 
-  Building2, 
-  Users, 
-  DollarSign, 
-  BarChart3, 
-  Settings,
-  Home
-} from 'lucide-react';
 
-interface DashboardLayoutProps {
-  children: React.ReactNode;
-  title?: string;
-}
+interface DashboardLayoutProps { children: React.ReactNode; title?: string; }
 
-export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayoutProps) {
-  const { logout, userName, companyName, userRole, user, hasCurrentAppAccess } = useAuth();
+export function DashboardLayout({ children, title = 'Início' }: DashboardLayoutProps) {
+  const { logout, userName, companyName, user, hasCurrentAppAccess } = useAuth();
+  const { colorMode, changeColorMode } = useTheme();
   const router = useRouter();
-  
-  // Estado para controlar a visibilidade do menu do usuário
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
   const [companyModalOpen, setCompanyModalOpen] = useState(false);
-  const canSwitchCompany = user?.companies && user.companies.length > 1;
-  
-  // Obtém o estado salvo no localStorage ou usa o padrão
-  const getSavedCollapsedState = () => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : false;
-    }
-    return false;
-  };
-  
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(getSavedCollapsedState);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const userTriggerRef = useRef<HTMLButtonElement>(null);
+  const canSwitchCompany = Boolean(user?.companies && user.companies.length > 1);
+  const closeMobileNavigation = useCallback(() => setMobileOpen(false), []);
 
   useEffect(() => {
-    const narrowScreen = window.matchMedia('(max-width: 767px)');
-    const updateNavigation = () => {
-      setSidebarCollapsed(narrowScreen.matches ? true : getSavedCollapsedState());
-    };
-    updateNavigation();
-    narrowScreen.addEventListener('change', updateNavigation);
-    return () => narrowScreen.removeEventListener('change', updateNavigation);
+    try { setSidebarCollapsed(localStorage.getItem('sidebarCollapsed') === 'true'); } catch { /* Use the expanded default when storage is unavailable. */ }
+    const query = window.matchMedia('(max-width: 767px)');
+    const updateScreen = () => { setIsMobile(query.matches); setMobileOpen(false); };
+    updateScreen();
+    query.addEventListener('change', updateScreen);
+    return () => query.removeEventListener('change', updateScreen);
   }, []);
 
-  // Esta função será passada para o Sidebar para atualizar o estado aqui
-  const handleSidebarToggle = (collapsed: boolean) => {
-    setSidebarCollapsed(collapsed);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
-    }
-  };
+  useEffect(() => { setMobileOpen(false); setUserMenuOpen(false); }, [router.asPath]);
 
-  // Efeito para detectar cliques fora do menu do usuário
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setUserMenuOpen(false);
-      }
+    if (!userMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!userMenuRef.current?.contains(event.target as Node)) setUserMenuOpen(false);
     };
-
-    // Adiciona o listener quando o menu está aberto
-    if (userMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    // Cleanup
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setUserMenuOpen(false); userTriggerRef.current?.focus(); }
     };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => { document.removeEventListener('pointerdown', closeOutside); document.removeEventListener('keydown', closeOnEscape); };
   }, [userMenuOpen]);
 
-  // Função para alternar o menu do usuário
-  const toggleUserMenu = () => {
-    setUserMenuOpen(!userMenuOpen);
-  };
-
-  // Função para fechar o menu e executar ação
-  const handleMenuAction = (action: () => void) => {
-    setUserMenuOpen(false);
-    action();
-  };
-
-  if (user && !hasCurrentAppAccess) {
-    return (
-      <div className="min-h-screen bg-background text-white flex items-center justify-center p-6">
-        <div className="max-w-lg w-full bg-surface border border-gray-700 rounded-lg p-6 text-center">
-          <h2 className="text-xl font-semibold mb-3">Acesso ao aplicativo negado</h2>
-          <p className="text-gray-300 mb-4">
-            Seu usuario nao possui grant para este aplicativo na empresa selecionada.
-          </p>
-          <button onClick={logout} className="px-4 py-2 rounded bg-accent text-white">
-            Sair
-          </button>
-        </div>
-      </div>
-    );
+  function toggleSidebar(collapsed: boolean) {
+    setSidebarCollapsed(collapsed);
+    try { localStorage.setItem('sidebarCollapsed', String(collapsed)); } catch { /* The current session still keeps the chosen layout. */ }
   }
 
-  return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* Top Navigation com uma borda sutil */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-3 sm:px-6 flex justify-between gap-3 items-center h-[60px] border-b border-gray-700">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <Link href="/" className="flex shrink-0 items-center hover:opacity-90">
-            <Image
-              src="/assets/images/logo_principal.png"
-              alt="ZENIT"
-              width={2000}
-              height={1000}
-              priority
-              className="h-8 sm:h-10 w-auto"
-            />
-          </Link>
-          <span className="truncate text-white text-sm sm:text-lg font-bold font-heading">
-            {companyName}
-          </span>
-          {canSwitchCompany && (
-            <button
-              onClick={() => setCompanyModalOpen(true)}
-              className="text-gray-300 hover:text-accent p-1 rounded"
-              title="Alterar empresa"
-              aria-label="Alterar empresa"
-            >
-              <Repeat size={16} />
-            </button>
-          )}
-        </div>
+  if (user && !hasCurrentAppAccess) return <div className="min-h-screen bg-background text-text flex items-center justify-center p-6">
+    <div className="max-w-lg w-full bg-surface border border-border rounded-xl p-6 text-center">
+      <h2 className="text-xl font-semibold mb-3">Acesso ao aplicativo negado</h2>
+      <p className="text-text-muted mb-4">Seu usuário não possui acesso a este aplicativo no espaço selecionado.</p>
+      <button onClick={logout} className="px-4 py-2 rounded-lg bg-accent text-on-accent">Sair</button>
+    </div>
+  </div>;
 
-        <div className="flex shrink-0 items-center space-x-3">
-          {/* ✅ SELETOR DE TEMAS (oculto) */}
-          <div className="hidden sm:block">
-            <ThemeSelector showLabel={false} size="sm" />
-          </div>
-          <span className="hidden md:block text-sm text-gray-300">{userName}</span>
-          
-          <div className="relative" ref={userMenuRef}>
-            <button 
-              onClick={toggleUserMenu}
-              className="flex items-center space-x-1 focus:outline-none"
-            >
-              {/* ✅ AVATAR COM COR DINÂMICA */}
-              <div className="bg-accent rounded-full p-1 transition-colors duration-200">
-                <User size={18} className="text-white" />
-              </div>
+  return <div className={`cash-shell${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
+    <a className="cash-skip-link" href="#cash-main-content">Ir para o conteúdo</a>
+    <Sidebar isCollapsed={sidebarCollapsed} onToggle={toggleSidebar} isMobile={isMobile} mobileOpen={mobileOpen} onMobileClose={closeMobileNavigation} />
+    <div className="cash-workspace">
+      <header className="cash-header">
+        <button type="button" className="cash-icon-button cash-mobile-menu" aria-label="Abrir navegação" aria-expanded={mobileOpen}
+          aria-controls="cash-sidebar" onClick={() => setMobileOpen(true)}><Menu size={22} /></button>
+        <div className="cash-space-context">
+          <CircleUserRound size={21} aria-hidden="true" />
+          {canSwitchCompany ? <button type="button" className="cash-space-switcher" onClick={() => setCompanyModalOpen(true)} aria-label={`Alterar espaço: ${companyName}`}>
+            <span>{companyName}</span><ChevronDown size={15} aria-hidden="true" />
+          </button> : <span className="cash-space-name">{companyName || 'Meu espaço'}</span>}
+          <span className="cash-header-location">{title}</span>
+        </div>
+        <div className="cash-header-tools">
+          <button type="button" className="cash-icon-button" onClick={() => changeColorMode(colorMode === 'light' ? 'dark' : 'light')}
+            aria-label={colorMode === 'light' ? 'Ativar tema escuro' : 'Ativar tema claro'} title={colorMode === 'light' ? 'Tema escuro' : 'Tema claro'}>
+            {colorMode === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          </button>
+          <div className="cash-profile" ref={userMenuRef}>
+            <button ref={userTriggerRef} type="button" className="cash-profile-trigger" aria-label="Abrir menu do usuário" aria-expanded={userMenuOpen}
+              aria-controls="cash-profile-menu" onClick={() => setUserMenuOpen(!userMenuOpen)}>
+              <span className="cash-avatar">{userName?.trim().slice(0, 1).toUpperCase() || <UserRound size={18} />}</span>
+              <span className="cash-user-name">{userName?.split(' ')[0]}</span><ChevronDown size={14} aria-hidden="true" />
             </button>
-            
-            {userMenuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-surface shadow-lg rounded-md z-10 border border-gray-700 animate-fadeIn">
-                <div className="p-3 border-b border-gray-700">
-                  <p className="font-medium text-white">{userName}</p>
-                  <p className="text-sm text-gray-400">{companyName}</p>
-                  {/* ✅ ROLE BADGE COM COR DINÂMICA */}
-                  <p className="text-xs text-accent">{userRole}</p>
-                </div>
-                <div className="p-2">
-                  <button 
-                    onClick={() => handleMenuAction(() => router.push('/profile'))}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-elevated rounded text-gray-300"
-                  >
-                    Meu Perfil
-                  </button>
-                  <button 
-                    onClick={() => handleMenuAction(logout)}
-                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-elevated rounded"
-                  >
-                    Sair
-                  </button>
-                </div>
-              </div>
-            )}
+            {userMenuOpen && <div id="cash-profile-menu" className="cash-profile-menu">
+              <div className="cash-profile-summary"><strong>{userName}</strong><span>{companyName}</span></div>
+              <Link href="/profile" className="cash-profile-link" onClick={() => setUserMenuOpen(false)}><UserRound size={17} />Meu perfil</Link>
+              <Link href="/profile/financial" className="cash-profile-link" onClick={() => setUserMenuOpen(false)}>Perfil financeiro</Link>
+              {canSwitchCompany && <button type="button" className="cash-profile-link" onClick={() => { setUserMenuOpen(false); setCompanyModalOpen(true); }}><Repeat size={17} />Trocar espaço</button>}
+              <div className="cash-profile-appearance"><span>Cor de destaque</span><ThemeSelector showLabel={false} size="sm" showCategories={false} /></div>
+              <button type="button" className="cash-profile-link cash-signout" onClick={logout}><LogOut size={17} />Sair</button>
+            </div>}
           </div>
         </div>
       </header>
-
-      {/* Main Content with Sidebar - Abaixo da barra de navegação fixa */}
-      <div className="flex h-full pt-[60px]"> {/* Padding top para compensar a altura da navbar fixa */}
-        <Sidebar onToggle={handleSidebarToggle} isCollapsed={sidebarCollapsed} />
-        
-        {/* Conteúdo principal com margem esquerda para não ficar escondido pelo sidebar */}
-        <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
-          sidebarCollapsed ? 'ml-16' : 'ml-52'
-        }`}>
-          {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-background text-gray-300">
-            {children}
-          </main>
-        </div>
-      </div>
-      {canSwitchCompany && (
-        <CompanySwitcherModal
-          isOpen={companyModalOpen}
-          onClose={() => setCompanyModalOpen(false)}
-        />
-      )}
-      <AssistantFloatingChat />
+      <main id="cash-main-content" className="cash-main" tabIndex={-1}>{children}</main>
     </div>
-  );
+    {canSwitchCompany && <CompanySwitcherModal isOpen={companyModalOpen} onClose={() => setCompanyModalOpen(false)} />}
+    <AssistantFloatingChat />
+  </div>;
 }

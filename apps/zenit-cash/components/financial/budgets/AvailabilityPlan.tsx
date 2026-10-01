@@ -21,19 +21,19 @@ import {
 
 function kindBadgeClass(kind: BudgetKind): string {
   return kind === 'SPENDING'
-    ? 'border border-blue-700 bg-blue-900/50 text-blue-200'
-    : 'border border-emerald-700 bg-emerald-900/50 text-emerald-200';
+    ? 'border border-tone-blue/25 bg-tone-blue-soft text-tone-blue'
+    : 'border border-tone-emerald/25 bg-tone-emerald-soft text-tone-emerald';
 }
 
 function statusBadgeClass(status: BudgetStatus): string {
   const map: Record<BudgetStatus, string> = {
-    ACTIVE: 'bg-green-900 text-green-300',
-    ARCHIVED: 'bg-slate-700 text-slate-200',
-    EXPIRED: 'bg-amber-900 text-amber-300',
-    DELETED: 'bg-red-900 text-red-300'
+    ACTIVE: 'bg-tone-green-soft text-tone-green',
+    ARCHIVED: 'bg-elevated text-text',
+    EXPIRED: 'bg-tone-amber-soft text-tone-amber',
+    DELETED: 'bg-tone-red-soft text-tone-red'
   };
 
-  return map[status] || 'bg-slate-700 text-slate-200';
+  return map[status] || 'bg-elevated text-text';
 }
 
 export function AvailabilityPlan() {
@@ -83,7 +83,7 @@ export function AvailabilityPlan() {
     <>
       <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-xl font-semibold text-white">Plano de disponibilidade</h2>
+          <h2 className="text-xl font-semibold text-text">Plano de disponibilidade</h2>
           <InfoModalButton
             modalTitle="Sobre o Plano de Disponibilidade"
             buttonLabel="Ajuda sobre o Plano de Disponibilidade"
@@ -94,7 +94,7 @@ export function AvailabilityPlan() {
             </p>
           </InfoModalButton>
           {payload && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-subtle">
               Data de negócio: {formatBusinessDate(businessDate, timeZone)}
             </span>
           )}
@@ -108,8 +108,8 @@ export function AvailabilityPlan() {
         <Card>
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-400">Planos cadastrados</p>
-              <p className="mt-2 text-3xl font-bold text-white">{budgets.length}</p>
+              <p className="text-sm text-text-muted">Planos cadastrados</p>
+              <p className="mt-2 text-3xl font-bold text-text">{budgets.length}</p>
             </div>
             <Wallet className="text-accent" size={22} />
           </div>
@@ -117,8 +117,8 @@ export function AvailabilityPlan() {
         <Card>
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-400">Planos ativos</p>
-              <p className="mt-2 text-3xl font-bold text-white">{activeBudgets.length}</p>
+              <p className="text-sm text-text-muted">Planos ativos</p>
+              <p className="mt-2 text-3xl font-bold text-text">{activeBudgets.length}</p>
             </div>
             <CalendarDays className="text-accent" size={22} />
           </div>
@@ -126,15 +126,15 @@ export function AvailabilityPlan() {
         <Card>
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-400">Disponibilidade principal hoje</p>
-              <p className="mt-2 text-lg font-semibold text-white">
+              <p className="text-sm text-text-muted">Disponibilidade principal hoje</p>
+              <p className="mt-2 text-lg font-semibold text-text">
                 {primaryBudget
                   ? formatCurrencyFromCents(primaryBudget.dailyBudgetCurrentCents)
                   : 'Nenhum plano principal'}
               </p>
-              {primaryBudget && <p className="mt-1 text-sm text-gray-400">{primaryBudget.code}</p>}
+              {primaryBudget && <p className="mt-1 text-sm text-text-muted">{primaryBudget.code}</p>}
             </div>
-            <Star className="text-yellow-400" size={22} />
+            <Star className="text-tone-yellow" size={22} />
           </div>
         </Card>
       </div>
@@ -142,11 +142,11 @@ export function AvailabilityPlan() {
       <Card className="mb-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Tipo</label>
+            <label className="mb-1 block text-sm font-medium text-text-muted">Tipo</label>
             <select
               value={kindFilter}
               onChange={(event) => setKindFilter(event.target.value as 'ALL' | BudgetKind)}
-              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring"
+              className="w-full rounded border border-border bg-background px-3 py-2 text-text focus:border-accent focus:outline-none focus:ring"
             >
               <option value="ALL">Todos</option>
               <option value="SPENDING">Gasto</option>
@@ -154,11 +154,11 @@ export function AvailabilityPlan() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Status</label>
+            <label className="mb-1 block text-sm font-medium text-text-muted">Status</label>
             <select
               value={statusFilter}
               onChange={(event) => setStatusFilter(event.target.value as 'ALL' | BudgetStatus)}
-              className="w-full rounded border border-gray-700 bg-[#1e2126] px-3 py-2 text-white focus:border-blue-500 focus:outline-none focus:ring"
+              className="w-full rounded border border-border bg-background px-3 py-2 text-text focus:border-accent focus:outline-none focus:ring"
             >
               <option value="ALL">Todos</option>
               <option value="ACTIVE">Ativos</option>
@@ -168,12 +168,12 @@ export function AvailabilityPlan() {
             </select>
           </div>
           <div className="flex items-end">
-            <label className="flex items-center gap-2 rounded border border-gray-700 px-3 py-2 text-sm text-gray-300">
+            <label className="flex items-center gap-2 rounded border border-border px-3 py-2 text-sm text-text-muted">
               <input
                 type="checkbox"
                 checked={onlyPrimary}
                 onChange={(event) => setOnlyPrimary(event.target.checked)}
-                className="rounded border-gray-600 bg-[#1e2126]"
+                className="rounded border-border-strong bg-background"
               />
               Apenas principal
             </label>
@@ -203,16 +203,16 @@ export function AvailabilityPlan() {
           </div>
         ) : budgets.length === 0 ? (
           <div className="py-12 text-center">
-            <PiggyBank size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="mb-2 text-gray-300">Nenhum plano de disponibilidade nesta empresa</p>
-            <p className="text-sm text-gray-500">
+            <PiggyBank size={42} className="mx-auto mb-3 text-text-subtle" />
+            <p className="mb-2 text-text-muted">Nenhum plano de disponibilidade nesta empresa</p>
+            <p className="text-sm text-text-subtle">
               Os planos aparecem aqui quando o aplicativo móvel sincroniza com o Cash.
             </p>
           </div>
         ) : filteredBudgets.length === 0 ? (
           <div className="py-12 text-center">
-            <PiggyBank size={42} className="mx-auto mb-3 text-gray-500" />
-            <p className="text-gray-400">Nenhum plano encontrado para os filtros aplicados</p>
+            <PiggyBank size={42} className="mx-auto mb-3 text-text-subtle" />
+            <p className="text-text-muted">Nenhum plano encontrado para os filtros aplicados</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -241,18 +241,18 @@ function AvailabilityPlanCard({
   businessDate: string;
 }) {
   return (
-    <div className="rounded-xl border border-gray-700 bg-[#11161d] p-5">
+    <div className="rounded-xl border border-border bg-elevated p-5">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-semibold text-white">{budget.code}</h3>
+            <h3 className="text-lg font-semibold text-text">{budget.code}</h3>
             {budget.isPrimary && (
-              <span className="rounded-full bg-yellow-900 px-2 py-1 text-xs font-medium text-yellow-300">
+              <span className="rounded-full bg-tone-yellow-soft px-2 py-1 text-xs font-medium text-tone-yellow">
                 Principal
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm text-gray-400">
+          <p className="mt-1 text-sm text-text-muted">
             Período {formatBusinessDate(budget.startDate, timeZone)} até{' '}
             {formatBusinessDate(budget.endDate, timeZone)}
           </p>
@@ -273,7 +273,7 @@ function AvailabilityPlanCard({
         <PlanMetric label="Saldo extra" value={formatCurrencyFromCents(budget.dayExtraBalanceCents)} />
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-4 text-sm text-gray-400">
+      <div className="mb-4 flex flex-wrap items-center gap-4 text-sm text-text-muted">
         <span>Lançamentos: {budget.entries.length}</span>
         <span>Meta final: {formatCurrencyFromCents(budget.targetEndingBalanceCents)}</span>
         <span>Data de negócio: {formatBusinessDate(businessDate, timeZone)}</span>
@@ -291,9 +291,9 @@ function AvailabilityPlanCard({
 
 function PlanMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-gray-700 bg-[#151b23] p-3">
-      <p className="text-xs uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+    <div className="rounded-lg border border-border bg-elevated p-3">
+      <p className="text-xs uppercase tracking-wide text-text-subtle">{label}</p>
+      <p className="mt-2 text-lg font-semibold text-text">{value}</p>
     </div>
   );
 }

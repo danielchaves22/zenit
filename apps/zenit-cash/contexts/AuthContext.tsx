@@ -116,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(userData)
 
       if (response.data.preferences?.colorScheme) {
-        changeTheme(response.data.preferences.colorScheme)
+        changeTheme(response.data.preferences.colorScheme, { restore: true })
         storeThemePreference(response.data.preferences.colorScheme)
       }
 
@@ -169,7 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(userData)
 
     if (preferences?.colorScheme) {
-      changeTheme(preferences.colorScheme)
+      changeTheme(preferences.colorScheme, { restore: true })
       storeThemePreference(preferences.colorScheme)
     }
 

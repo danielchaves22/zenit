@@ -565,20 +565,20 @@ export default function TransactionsListPage() {
     [summary]
   );
   const projectedSavingsCardClass = projectedSavings > 0
-    ? 'border-emerald-900/60 bg-emerald-950/25'
+    ? 'border-tone-emerald/25 bg-tone-emerald-soft'
     : projectedSavings < 0
-      ? 'border-red-900/60 bg-red-950/25'
-      : 'border-slate-700 bg-slate-900/40';
+      ? 'border-tone-red/25 bg-tone-red-soft'
+      : 'border-border bg-elevated/40';
   const projectedSavingsTextClass = projectedSavings > 0
-    ? 'text-emerald-300'
+    ? 'text-tone-emerald'
     : projectedSavings < 0
-      ? 'text-red-300'
-      : 'text-slate-200';
+      ? 'text-tone-red'
+      : 'text-text';
   const projectedSavingsLabelClass = projectedSavings > 0
-    ? 'text-emerald-200/80'
+    ? 'text-tone-emerald'
     : projectedSavings < 0
-      ? 'text-red-200/80'
-      : 'text-slate-300/80';
+      ? 'text-tone-red'
+      : 'text-text-muted/80';
   const settlementAccounts = useMemo(() => {
     return accounts.filter((account) => {
       const isSelected = account.id.toString() === settlementAccountId;
@@ -1238,26 +1238,26 @@ export default function TransactionsListPage() {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'INCOME':
-        return <TrendingUp size={16} className="text-green-400" />;
+        return <TrendingUp size={16} className="text-tone-green" />;
       case 'EXPENSE':
-        return <TrendingDown size={16} className="text-red-400" />;
+        return <TrendingDown size={16} className="text-tone-red" />;
       case 'TRANSFER':
-        return <ArrowUpDown size={16} className="text-blue-400" />;
+        return <ArrowUpDown size={16} className="text-tone-blue" />;
       default:
-        return <Receipt size={16} className="text-gray-400" />;
+        return <Receipt size={16} className="text-text-muted" />;
     }
   };
 
   const getAmountColor = (type: string) => {
     switch (type) {
       case 'INCOME':
-        return 'text-green-400';
+        return 'text-tone-green';
       case 'EXPENSE':
-        return 'text-red-400';
+        return 'text-tone-red';
       case 'TRANSFER':
-        return 'text-blue-400';
+        return 'text-tone-blue';
       default:
-        return 'text-gray-300';
+        return 'text-text-muted';
     }
   };
 
@@ -1265,16 +1265,16 @@ export default function TransactionsListPage() {
     switch (status) {
       case 'SETTLED':
       case 'PAID':
-        return <CheckCircle size={12} className="text-green-400" />;
+        return <CheckCircle size={12} className="text-tone-green" />;
       case 'OVERDUE':
-        return <AlertTriangle size={12} className="text-red-400" />;
+        return <AlertTriangle size={12} className="text-tone-red" />;
       case 'CANCELED':
-        return <X size={12} className="text-gray-300" />;
+        return <X size={12} className="text-text-muted" />;
       case 'ARCHIVED':
-        return <Archive size={12} className="text-amber-300" />;
+        return <Archive size={12} className="text-tone-amber" />;
       case 'PROJECTED':
       case 'OPEN':
-        return <Clock size={12} className="text-sky-300" />;
+        return <Clock size={12} className="text-tone-sky" />;
       default:
         return null;
     }
@@ -1304,9 +1304,9 @@ export default function TransactionsListPage() {
 
     return sorted;
   }, [transactions, sortConfig]);
-  const filterLabelClassName = 'mb-1 block text-sm font-medium text-gray-300';
+  const filterLabelClassName = 'mb-1 block text-sm font-medium text-text-muted';
   const filterControlClassName =
-    'h-10 min-w-0 w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-sm text-white focus:border-accent focus:outline-none focus:ring';
+    'h-10 min-w-0 w-full rounded border border-border bg-background px-2 py-1.5 text-sm text-text focus:border-accent focus:outline-none focus:ring';
   const compactCreateButtonClass =
     'flex h-9 items-center gap-1.5 whitespace-nowrap px-3 text-sm';
   const filterHeaderGridClass = isCustomPeriod
@@ -1404,24 +1404,24 @@ export default function TransactionsListPage() {
       />
 
       <div className="mb-6 space-y-4">
-        <h1 className="text-2xl font-semibold text-white">Transações Financeiras</h1>
+        <h1 className="text-2xl font-semibold text-text">Transações Financeiras</h1>
 
         <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
           <div className="flex flex-wrap gap-3 xl:justify-start">
-          <div className="min-w-[150px] rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-red-200/80">
+          <div className="min-w-[150px] rounded-lg border border-tone-red/25 bg-tone-red-soft px-3 py-2">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-tone-red">
               Despesas
             </div>
-            <div className="mt-1 text-lg font-semibold text-red-300">
+            <div className="mt-1 text-lg font-semibold text-tone-red">
               {formatCurrency(summary.expenseTotal)}
             </div>
           </div>
 
-          <div className="min-w-[150px] rounded-lg border border-green-900/60 bg-green-950/25 px-3 py-2">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-green-200/80">
+          <div className="min-w-[150px] rounded-lg border border-tone-green/25 bg-tone-green-soft px-3 py-2">
+            <div className="text-[11px] font-medium uppercase tracking-wide text-tone-green">
               Receitas
             </div>
-            <div className="mt-1 text-lg font-semibold text-green-300">
+            <div className="mt-1 text-lg font-semibold text-tone-green">
               {formatCurrency(summary.incomeTotal)}
             </div>
           </div>
@@ -1440,7 +1440,7 @@ export default function TransactionsListPage() {
           <Link href="/financial/transactions/new-credit-card-purchase">
             <Button
               variant="outline"
-              className={`${compactCreateButtonClass} border-purple-600 text-purple-300 hover:border-purple-500 hover:bg-purple-950/40 hover:text-purple-200`}
+              className={`${compactCreateButtonClass} border-purple-600 text-tone-purple hover:border-purple-500 hover:bg-tone-purple-soft hover:text-tone-purple`}
             >
               <CreditCard size={15} />
               Nova Compra no Cartão
@@ -1450,7 +1450,7 @@ export default function TransactionsListPage() {
           <Link href="/financial/transactions/new?type=EXPENSE&locked=true">
             <Button
               variant="outline"
-              className={`${compactCreateButtonClass} border-red-600 text-red-300 hover:border-red-500 hover:bg-red-950/40 hover:text-red-200`}
+              className={`${compactCreateButtonClass} border-red-600 text-tone-red hover:border-red-500 hover:bg-tone-red-soft hover:text-tone-red`}
             >
               <TrendingDown size={15} />
               Nova Despesa
@@ -1460,7 +1460,7 @@ export default function TransactionsListPage() {
           <Link href="/financial/transactions/new?type=INCOME&locked=true">
             <Button
               variant="outline"
-              className={`${compactCreateButtonClass} border-green-600 text-green-300 hover:border-green-500 hover:bg-green-950/40 hover:text-green-200`}
+              className={`${compactCreateButtonClass} border-green-600 text-tone-green hover:border-green-500 hover:bg-tone-green-soft hover:text-tone-green`}
             >
               <TrendingUp size={15} />
               Nova Receita
@@ -1633,20 +1633,20 @@ export default function TransactionsListPage() {
         </div>
 
         {isCustomPeriod && customPeriodError && (
-          <p className="mt-2 text-xs text-red-400">{customPeriodError}</p>
+          <p className="mt-2 text-xs text-tone-red">{customPeriodError}</p>
         )}
 
         {activeMoreFilterBadges.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-medium uppercase tracking-wide text-gray-500">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-text-subtle">
               Filtros ativos
             </span>
             {activeMoreFilterBadges.map((badge) => (
               <span
                 key={badge.key}
-                className="inline-flex max-w-full items-center gap-1 rounded-full border border-slate-700 bg-slate-900/80 px-2.5 py-1 text-xs text-slate-200"
+                className="inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-elevated/80 px-2.5 py-1 text-xs text-text"
               >
-                <span className="text-slate-400">{badge.label}:</span>
+                <span className="text-text-muted">{badge.label}:</span>
                 <span className="max-w-[220px] truncate sm:max-w-[320px]">{badge.value}</span>
               </span>
             ))}
@@ -1654,7 +1654,7 @@ export default function TransactionsListPage() {
         )}
 
         {showMoreFilters && (
-          <div className="mt-4 border-t border-gray-700 pt-4">
+          <div className="mt-4 border-t border-border pt-4">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
               <Input
                 label="Buscar"
@@ -1679,7 +1679,7 @@ export default function TransactionsListPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Exibicao</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Exibicao</label>
                 <Button
                   variant={showOnlyMaterialized ? 'accent' : 'outline'}
                   onClick={() => {
@@ -1693,11 +1693,11 @@ export default function TransactionsListPage() {
               </div>
 
               <div className="hidden">
-                <label className="mb-1 block text-sm font-medium text-gray-300">Status</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Status</label>
                 <select
                   value={filters.status}
                   onChange={(event) => updateFilters({ status: event.target.value })}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:outline-none focus:ring focus:border-accent"
                 >
                   <option value="">Todos</option>
                   <option value="PENDING">Em aberto / vencida</option>
@@ -1707,11 +1707,11 @@ export default function TransactionsListPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Conta</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Conta</label>
                 <select
                   value={filters.accountId}
                   onChange={(event) => updateFilters({ accountId: event.target.value })}
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:outline-none focus:ring focus:border-accent"
                 >
                   <option value="">Todas</option>
                   {accounts.map((account) => (
@@ -1735,13 +1735,13 @@ export default function TransactionsListPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Ignorados</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Ignorados</label>
                 <select
                   value={filters.ignoredState}
                   onChange={(event) =>
                     updateFilters({ ignoredState: event.target.value as IgnoredTransactionState })
                   }
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:outline-none focus:ring focus:border-accent"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:outline-none focus:ring focus:border-accent"
                 >
                   <option value="ACTIVE">Apenas ativas</option>
                   <option value="IGNORED">Apenas ignoradas</option>
@@ -1750,7 +1750,7 @@ export default function TransactionsListPage() {
               </div>
 
               <div className="xl:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-gray-300">Presets</label>
+                <label className="mb-1 block text-sm font-medium text-text-muted">Presets</label>
                 <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] gap-2">
                   <select
                     value={selectedPresetId}
@@ -1792,7 +1792,7 @@ export default function TransactionsListPage() {
                     variant="outline"
                     onClick={() => void handleDeleteSelectedPreset()}
                     disabled={!selectedPreset || presetActionLoading !== null}
-                    className="flex h-10 items-center justify-center px-3 text-red-300 hover:border-red-500 hover:text-red-200"
+                    className="flex h-10 items-center justify-center px-3 text-tone-red hover:border-red-500 hover:text-tone-red"
                     title="Excluir preset selecionado"
                   >
                     <Trash2 size={15} />
@@ -1813,8 +1813,8 @@ export default function TransactionsListPage() {
       <Card>
         {sortedTransactions.length === 0 ? (
           <div className="py-10 text-center">
-            <Receipt size={48} className="mx-auto mb-4 text-gray-400" />
-            <p className="mb-4 text-gray-400">
+            <Receipt size={48} className="mx-auto mb-4 text-text-muted" />
+            <p className="mb-4 text-text-muted">
               Nenhuma transação encontrada para o período selecionado
             </p>
             <div className="flex justify-center gap-3">
@@ -1836,7 +1836,7 @@ export default function TransactionsListPage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1380px]">
-                <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+                <thead className="bg-elevated text-xs uppercase text-text-muted">
                   <tr>
                     <th className="w-24 px-4 py-3 text-center">Ações</th>
                     <th
@@ -1871,7 +1871,7 @@ export default function TransactionsListPage() {
                       className="w-[112px] cursor-pointer px-2 py-3 text-center whitespace-nowrap text-[0px]"
                       onClick={() => handleSort('effectiveDate')}
                     >
-                      <span className="text-xs uppercase text-gray-400">Liquidacao</span>
+                      <span className="text-xs uppercase text-text-muted">Liquidacao</span>
                       Data de Liquidação
                       {sortConfig.key === 'effectiveDate' && (
                         sortConfig.direction === 'asc'
@@ -1905,7 +1905,7 @@ export default function TransactionsListPage() {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="invoice-summary"
-	                          className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200"
+	                          className="rounded-full bg-tone-blue-soft px-2 py-0.5 text-[10px] uppercase text-tone-blue"
 	                        >
 	                          Fatura
 	                        </span>
@@ -1916,7 +1916,7 @@ export default function TransactionsListPage() {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="fixed"
-	                          className="rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200"
+	                          className="rounded-full bg-tone-indigo-soft px-2 py-0.5 text-[10px] uppercase text-tone-indigo"
 	                        >
 	                          Fixa
 	                        </span>
@@ -1927,7 +1927,7 @@ export default function TransactionsListPage() {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="installment"
-	                          className="rounded-full bg-violet-900 px-2 py-0.5 text-[10px] uppercase text-violet-200"
+	                          className="rounded-full bg-tone-violet-soft px-2 py-0.5 text-[10px] uppercase text-tone-violet"
 	                        >
 	                          Parcelada
 	                        </span>
@@ -1938,7 +1938,7 @@ export default function TransactionsListPage() {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="archived"
-	                          className="rounded-full bg-amber-900 px-2 py-0.5 text-[10px] uppercase text-amber-200"
+	                          className="rounded-full bg-tone-amber-soft px-2 py-0.5 text-[10px] uppercase text-tone-amber"
 	                        >
 	                          Ignorada
 	                        </span>
@@ -1949,7 +1949,7 @@ export default function TransactionsListPage() {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="conciliation"
-	                          className="rounded-full bg-amber-900 px-2 py-0.5 text-[10px] uppercase text-amber-200"
+	                          className="rounded-full bg-tone-amber-soft px-2 py-0.5 text-[10px] uppercase text-tone-amber"
 	                        >
 	                          Conciliação
 	                        </span>
@@ -1965,7 +1965,7 @@ export default function TransactionsListPage() {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="card"
-	                          className="rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200"
+	                          className="rounded-full bg-tone-purple-soft px-2 py-0.5 text-[10px] uppercase text-tone-purple"
 	                        >
 	                          Cartao
 	                        </span>
@@ -1976,7 +1976,7 @@ export default function TransactionsListPage() {
 	                      characteristicBadges.push(
 	                        <span
 	                          key="fixed-projection"
-	                          className="rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200"
+	                          className="rounded-full bg-tone-sky-soft px-2 py-0.5 text-[10px] uppercase text-tone-sky"
 	                        >
 	                          Com fixas
 	                        </span>
@@ -1993,7 +1993,7 @@ export default function TransactionsListPage() {
 	                        <Link
 	                          key="invoice-link"
 	                          href={invoiceHref}
-	                          className="rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
+	                          className="rounded-full bg-tone-blue-soft px-2 py-0.5 text-[10px] uppercase text-tone-blue hover:bg-tone-blue/15"
 	                        >
 	                          {`Fatura ${getInvoiceReferenceLabel(
 	                            transaction.creditCardInvoice.referenceYear,
@@ -2006,11 +2006,11 @@ export default function TransactionsListPage() {
 	                    return (
 	                      <tr
 	                        key={rowKey}
-	                        className={`border-b border-gray-700 hover:bg-[#1a1f2b] ${
+	                        className={`border-b border-border hover:bg-elevated ${
                             transaction.archivedAt
-                              ? 'bg-amber-950/15'
+                              ? 'bg-tone-amber-soft'
                               : isProjectedLike
-                                ? 'bg-sky-950/20'
+                                ? 'bg-tone-sky-soft'
                                 : ''
                           }`}
 	                      >
@@ -2019,7 +2019,7 @@ export default function TransactionsListPage() {
 	                            {invoiceActionHref ? (
 	                              <Link href={invoiceActionHref}>
 	                                <button
-	                                  className="p-1 text-gray-300 transition-colors hover:text-accent"
+	                                  className="p-1 text-text-muted transition-colors hover:text-accent"
 	                                  title="Abrir fatura"
 	                                >
 	                                  <CreditCard size={14} />
@@ -2030,7 +2030,7 @@ export default function TransactionsListPage() {
                                 {canSettleTransaction(transaction) && (
                                   <button
                                     onClick={() => handleOpenSettlement(transaction)}
-                                    className="p-1 text-gray-300 transition-colors hover:text-green-400"
+                                    className="p-1 text-text-muted transition-colors hover:text-tone-green"
                                     title={transaction.type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita'}
                                     disabled={materializingVirtualKey !== null || settlementLoading}
                                   >
@@ -2043,7 +2043,7 @@ export default function TransactionsListPage() {
                                 )}
 	                                <button
 	                                  onClick={() => handleMaterialize(transaction, 'edit')}
-	                                  className="p-1 text-gray-300 transition-colors hover:text-accent"
+	                                  className="p-1 text-text-muted transition-colors hover:text-accent"
                                   title="Materializar e editar"
                                   disabled={materializingVirtualKey !== null || settlementLoading}
                                 >
@@ -2056,7 +2056,7 @@ export default function TransactionsListPage() {
                                 {canArchiveTransaction(transaction) && (
                                   <button
                                     onClick={() => void handleArchive(transaction)}
-                                    className="p-1 text-gray-300 transition-colors hover:text-amber-300"
+                                    className="p-1 text-text-muted transition-colors hover:text-tone-amber"
                                     title="Ignorar projeção"
                                     disabled={materializingVirtualKey !== null || settlementLoading}
                                   >
@@ -2069,7 +2069,7 @@ export default function TransactionsListPage() {
 	                                {canUnarchiveTransaction(transaction) ? (
                                   <button
                                     onClick={() => void handleUnarchive(transaction)}
-                                    className="p-1 text-gray-300 transition-colors hover:text-emerald-300"
+                                    className="p-1 text-text-muted transition-colors hover:text-tone-emerald"
                                     title="Restaurar"
                                   >
                                     <ArchiveRestore size={14} />
@@ -2077,7 +2077,7 @@ export default function TransactionsListPage() {
                                 ) : canSettleTransaction(transaction) && (
 	                                  <button
 	                                    onClick={() => handleOpenSettlement(transaction)}
-	                                    className="p-1 text-gray-300 transition-colors hover:text-green-400"
+	                                    className="p-1 text-text-muted transition-colors hover:text-tone-green"
                                     title={transaction.type === 'EXPENSE' ? 'Liquidar despesa' : 'Liquidar receita'}
                                     disabled={materializingVirtualKey !== null || settlementLoading}
                                   >
@@ -2087,7 +2087,7 @@ export default function TransactionsListPage() {
 	                                {transaction.id && !transaction.archivedAt && !transaction.isCreditCardInvoicePayment && (
 	                                  <Link href={getTransactionEditHref(transaction.id)}>
 	                                    <button
-	                                      className="p-1 text-gray-300 transition-colors hover:text-accent"
+	                                      className="p-1 text-text-muted transition-colors hover:text-accent"
                                       title="Editar"
                                     >
                                       <Edit2 size={14} />
@@ -2097,7 +2097,7 @@ export default function TransactionsListPage() {
                                   {canArchiveTransaction(transaction) && (
                                     <button
                                       onClick={() => void handleArchive(transaction)}
-                                      className="p-1 text-gray-300 transition-colors hover:text-amber-300"
+                                      className="p-1 text-text-muted transition-colors hover:text-tone-amber"
                                       title="Ignorar"
                                     >
                                       <Archive size={14} />
@@ -2108,7 +2108,7 @@ export default function TransactionsListPage() {
                                     (transaction.status !== 'COMPLETED' || transaction.purchaseGroupId) && (
 	                                  <button
 	                                    onClick={() => handleDelete(transaction)}
-	                                    className="p-1 text-gray-300 transition-colors hover:text-red-400"
+	                                    className="p-1 text-text-muted transition-colors hover:text-tone-red"
                                     title="Excluir"
                                   >
                                     <Trash2 size={14} />
@@ -2119,14 +2119,14 @@ export default function TransactionsListPage() {
                           </div>
                         </td>
 
-                        <td className="px-2 py-3 text-gray-300 whitespace-nowrap">
+                        <td className="px-2 py-3 text-text-muted whitespace-nowrap">
                           {formatDate(transaction.dueDate)}
                         </td>
 
                         <td className="px-2 py-3">
                           <div className="flex items-center gap-2">
                             {getTypeIcon(transaction.type)}
-                            <span className="text-sm text-gray-300">
+                            <span className="text-sm text-text-muted">
                               {transaction.type === 'INCOME'
                                 ? 'Receita'
                                 : transaction.type === 'EXPENSE'
@@ -2138,29 +2138,29 @@ export default function TransactionsListPage() {
 
                         <td className="px-4 py-3">
                           <div>
-                            <div className="flex items-center gap-2 font-medium text-white">
+                            <div className="flex items-center gap-2 font-medium text-text">
 	                              {formatTransactionDescription(
 	                                transaction.description,
 	                                transaction.installmentNumber,
 	                                transaction.totalInstallments
 	                              )}
 	                              {transaction.isCreditCardInvoiceSummary && (
-	                                <span className="hidden rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200">
+	                                <span className="hidden rounded-full bg-tone-blue-soft px-2 py-0.5 text-[10px] uppercase text-tone-blue">
 	                                  Fatura
 	                                </span>
 	                              )}
 	                              {transaction.isFixed && (
-                                <span className="hidden rounded-full bg-indigo-900 px-2 py-0.5 text-[10px] uppercase text-indigo-200">
+                                <span className="hidden rounded-full bg-tone-indigo-soft px-2 py-0.5 text-[10px] uppercase text-tone-indigo">
                                   Fixa
                                 </span>
                               )}
 	                              {(transaction.purchaseGroupId || transaction.creditCardInvoice || transaction.isCreditCardInvoiceSummary || transaction.isCreditCardInvoicePayment) && (
-                                <span className="hidden rounded-full bg-purple-900 px-2 py-0.5 text-[10px] uppercase text-purple-200">
+                                <span className="hidden rounded-full bg-tone-purple-soft px-2 py-0.5 text-[10px] uppercase text-tone-purple">
                                   Cartão
                                 </span>
 	                              )}
 	                              {transaction.hasProjectedTransactions && !transaction.isProjected && (
-	                                <span className="hidden rounded-full bg-sky-900 px-2 py-0.5 text-[10px] uppercase text-sky-200">
+	                                <span className="hidden rounded-full bg-tone-sky-soft px-2 py-0.5 text-[10px] uppercase text-tone-sky">
 	                                  Com fixas
 	                                </span>
 	                              )}
@@ -2168,7 +2168,7 @@ export default function TransactionsListPage() {
 	                                invoiceHref ? (
 	                                  <Link
 	                                    href={invoiceHref}
-	                                    className="hidden rounded-full bg-blue-900 px-2 py-0.5 text-[10px] uppercase text-blue-200 hover:bg-blue-800"
+	                                    className="hidden rounded-full bg-tone-blue-soft px-2 py-0.5 text-[10px] uppercase text-tone-blue hover:bg-tone-blue/15"
 	                                  >
                                     {`Fatura ${getInvoiceReferenceLabel(
                                       transaction.creditCardInvoice.referenceYear,
@@ -2189,7 +2189,7 @@ export default function TransactionsListPage() {
                               </div>
                             )}
                             {transaction.notes && (
-                              <div className="mt-1 text-xs text-gray-400">{transaction.notes}</div>
+                              <div className="mt-1 text-xs text-text-muted">{transaction.notes}</div>
                             )}
                           </div>
                         </td>
@@ -2200,7 +2200,7 @@ export default function TransactionsListPage() {
                               {characteristicBadges}
                             </div>
                           ) : (
-                            <span className="text-xs text-gray-500">-</span>
+                            <span className="text-xs text-text-subtle">-</span>
                           )}
                         </td>
 
@@ -2219,7 +2219,7 @@ export default function TransactionsListPage() {
                           </div>
                         </td>
 
-                        <td className="px-4 py-3 text-gray-300">
+                        <td className="px-4 py-3 text-text-muted">
                           {getTransactionAccountDisplay(transaction)}
                         </td>
 
@@ -2231,30 +2231,30 @@ export default function TransactionsListPage() {
                                 style={{ backgroundColor: transaction.category.color }}
                               />
                               <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-300">
+                                <span className="text-sm text-text-muted">
                                   {transaction.category.name}
                                 </span>
                                 {isBalanceAdjustmentTransaction(transaction) && (
-                                  <span className="rounded-full bg-amber-900/70 px-2 py-0.5 text-[10px] uppercase tracking-wide text-amber-200">
+                                  <span className="rounded-full bg-tone-amber-soft px-2 py-0.5 text-[10px] uppercase tracking-wide text-tone-amber">
                                     Conciliação
                                   </span>
                                 )}
                               </div>
                             </div>
                           ) : (
-                            <span className="text-gray-500">-</span>
+                            <span className="text-text-subtle">-</span>
                           )}
                         </td>
 
                         <td className="px-2 py-3 text-center">
                           <div className="space-y-1 text-xs">
                             {transaction.effectiveDate && (
-                              <div className="flex items-center justify-center gap-1 text-green-400">
+                              <div className="flex items-center justify-center gap-1 text-tone-green">
                                 <CheckCircle size={10} />
                                 <span>{formatDateShort(transaction.effectiveDate)}</span>
                               </div>
                             )}
-                            {!transaction.effectiveDate && <span className="text-gray-500">-</span>}
+                            {!transaction.effectiveDate && <span className="text-text-subtle">-</span>}
                           </div>
                         </td>
                       </tr>
@@ -2265,8 +2265,8 @@ export default function TransactionsListPage() {
             </div>
 
             {totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between border-t border-gray-700 pt-6">
-                <div className="text-sm text-gray-400">
+              <div className="mt-6 flex items-center justify-between border-t border-border pt-6">
+                <div className="text-sm text-text-muted">
                   Página {currentPage} de {totalPages}
                 </div>
                 <div className="flex gap-2">

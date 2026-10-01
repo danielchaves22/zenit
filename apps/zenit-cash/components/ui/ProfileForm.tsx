@@ -121,7 +121,7 @@ export default function ProfileForm({ user }: Props) {
 
       {canEditRole && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Acesso</label>
+          <label className="block text-sm font-medium text-text-subtle mb-1">Tipo de Acesso</label>
           <select
             name="newRole"
             value={formData.newRole}
@@ -143,7 +143,7 @@ export default function ProfileForm({ user }: Props) {
 
       {canEditCompany && user.companies.length > 1 && (
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
+          <label className="block text-sm font-medium text-text-subtle mb-1">Empresa</label>
           <select
             name="companyId"
             value={formData.companyId}

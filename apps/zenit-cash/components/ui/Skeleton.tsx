@@ -6,5 +6,5 @@ interface SkeletonProps {
 }
 
 export function Skeleton({ className = '' }: SkeletonProps) {
-  return <div className={`bg-neutral animate-pulse ${className}`} />;
+  return <div className={`bg-elevated animate-pulse ${className}`} />;
 }

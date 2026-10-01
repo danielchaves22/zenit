@@ -21,28 +21,28 @@ function findingPresentation(severity: FinancialGuidanceFinding['severity']) {
   if (severity === 'POSITIVE') {
     return {
       Icon: CheckCircle2,
-      className: 'border-emerald-900/60 bg-emerald-950/20',
-      iconClassName: 'text-emerald-300'
+      className: 'border-tone-emerald/25 bg-tone-emerald-soft',
+      iconClassName: 'text-tone-emerald'
     };
   }
   if (severity === 'CRITICAL') {
     return {
       Icon: CircleAlert,
-      className: 'border-red-900/60 bg-red-950/20',
-      iconClassName: 'text-red-300'
+      className: 'border-tone-red/25 bg-tone-red-soft',
+      iconClassName: 'text-tone-red'
     };
   }
   if (severity === 'ATTENTION') {
     return {
       Icon: AlertTriangle,
-      className: 'border-amber-900/60 bg-amber-950/20',
-      iconClassName: 'text-amber-300'
+      className: 'border-tone-amber/25 bg-tone-amber-soft',
+      iconClassName: 'text-tone-amber'
     };
   }
   return {
     Icon: Info,
-    className: 'border-blue-900/60 bg-blue-950/20',
-    iconClassName: 'text-blue-300'
+    className: 'border-tone-blue/25 bg-tone-blue-soft',
+    iconClassName: 'text-tone-blue'
   };
 }
 
@@ -52,9 +52,9 @@ export function FinancialGuidanceEvidencePanel({
   evidence: FinancialGuidanceEvidence;
 }) {
   return (
-    <section className="mt-4 rounded-xl border border-gray-700 bg-[#11161d] p-4">
+    <section className="mt-4 rounded-xl border border-border bg-elevated p-4">
       <div className="flex items-center gap-2">
-        <h4 className="font-semibold text-white">Leitura dos dados confirmados</h4>
+        <h4 className="font-semibold text-text">Leitura dos dados confirmados</h4>
         <InfoModalButton
           modalTitle="Como esta leitura será usada"
           buttonLabel="Ajuda sobre a leitura financeira"
@@ -85,15 +85,15 @@ export function FinancialGuidanceEvidencePanel({
                   className={`mt-0.5 shrink-0 ${presentation.iconClassName}`}
                 />
                 <div className="min-w-0">
-                  <h5 className="text-sm font-medium text-white">{finding.title}</h5>
-                  <p className="mt-1 text-xs leading-5 text-gray-300">{finding.summary}</p>
+                  <h5 className="text-sm font-medium text-text">{finding.title}</h5>
+                  <p className="mt-1 text-xs leading-5 text-text-muted">{finding.summary}</p>
                 </div>
               </div>
               <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 {finding.evidence.map((metric) => (
                   <div key={metric.key} className="min-w-0">
-                    <dt className="truncate text-[11px] text-gray-500">{metric.label}</dt>
-                    <dd className="mt-0.5 truncate text-xs font-semibold text-gray-100">
+                    <dt className="truncate text-[11px] text-text-subtle">{metric.label}</dt>
+                    <dd className="mt-0.5 truncate text-xs font-semibold text-text">
                       {formatMetric(metric.value, metric.format)}
                     </dd>
                   </div>
@@ -104,14 +104,14 @@ export function FinancialGuidanceEvidencePanel({
         })}
       </div>
 
-      <details className="mt-4 text-xs text-gray-400">
-        <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-gray-300">
+      <details className="mt-4 text-xs text-text-muted">
+        <summary className="flex cursor-pointer list-none items-center gap-2 font-medium text-text-muted">
           <BookOpen size={14} />
           Metodologia, limites e referências
         </summary>
         <div className="mt-3 grid gap-4 lg:grid-cols-2">
           <div>
-            <p className="font-medium text-gray-300">Limites desta leitura</p>
+            <p className="font-medium text-text-muted">Limites desta leitura</p>
             <ul className="mt-2 list-disc space-y-1 pl-4">
               {evidence.limitations.map((limitation) => (
                 <li key={limitation}>{limitation}</li>
@@ -119,7 +119,7 @@ export function FinancialGuidanceEvidencePanel({
             </ul>
           </div>
           <div>
-            <p className="font-medium text-gray-300">Referências institucionais</p>
+            <p className="font-medium text-text-muted">Referências institucionais</p>
             <ul className="mt-2 space-y-2">
               {evidence.references.map((reference) => (
                 <li key={reference.id}>
@@ -127,17 +127,17 @@ export function FinancialGuidanceEvidencePanel({
                     href={reference.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-blue-300 underline decoration-blue-700 underline-offset-2 hover:text-blue-200"
+                    className="text-tone-blue underline decoration-blue-700 underline-offset-2 hover:text-tone-blue"
                   >
                     {reference.organization} · {reference.title}
                   </a>
-                  <p className="mt-0.5 text-gray-500">{reference.purpose}</p>
+                  <p className="mt-0.5 text-text-subtle">{reference.purpose}</p>
                 </li>
               ))}
             </ul>
           </div>
         </div>
-        <p className="mt-3 text-gray-600">
+        <p className="mt-3 text-text-subtle">
           Metodologia de evidências v{evidence.methodologyVersion}
         </p>
       </details>

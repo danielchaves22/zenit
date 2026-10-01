@@ -353,7 +353,7 @@ export default function CreditCardForm({
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-2xl font-semibold text-text">
             {mode === 'create' ? 'Novo Cartao' : 'Editar Cartao'}
           </h1>
         </div>
@@ -384,19 +384,19 @@ export default function CreditCardForm({
 
       {loading ? (
         <Card>
-          <div className="h-80 animate-pulse rounded bg-[#1b212c]" />
+          <div className="h-80 animate-pulse rounded bg-elevated" />
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.7fr)_360px]">
           <div className="space-y-6">
             <Card>
               <form id="credit-card-form" onSubmit={handleSubmit} className="space-y-6">
-                <div className="rounded-xl border border-purple-700/50 bg-purple-950/20 p-4">
+                <div className="rounded-xl border border-tone-purple/25 bg-tone-purple-soft p-4">
                   <div className="flex items-start gap-3">
-                    <CreditCard size={18} className="mt-0.5 text-purple-300" />
+                    <CreditCard size={18} className="mt-0.5 text-tone-purple" />
                     <div>
-                      <div className="font-medium text-white">Configuracao do cartao</div>
-                      <div className="mt-1 text-sm text-gray-300">
+                      <div className="font-medium text-text">Configuracao do cartao</div>
+                      <div className="mt-1 text-sm text-text-muted">
                         O cartao usa limite, fechamento e vencimento para gerar as faturas.
                         O pagamento da fatura continua sendo feito na area de Cartoes e Faturas.
                       </div>
@@ -427,7 +427,7 @@ export default function CreditCardForm({
                 </div>
 
                 {legacyBankHint && !selectedBank && (
-                  <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-4 py-3 text-sm text-amber-100">
+                  <div className="rounded-lg border border-amber-500/40 bg-tone-amber-soft px-4 py-3 text-sm text-tone-amber">
                     O cartao estava vinculado ao banco legado "{legacyBankHint}". Selecione um banco
                     do catalogo para atualizar esse vinculo.
                   </div>
@@ -476,7 +476,7 @@ export default function CreditCardForm({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-300">Cor do cartao</label>
+                  <label className="mb-1 block text-sm font-medium text-text-muted">Cor do cartao</label>
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
@@ -487,7 +487,7 @@ export default function CreditCardForm({
                           cardColor: normalizeHexColor(event.target.value)
                         })
                       }
-                      className="h-10 w-12 cursor-pointer rounded border border-gray-700"
+                      className="h-10 w-12 cursor-pointer rounded border border-border"
                       disabled={actionDisabled}
                     />
                     <Input
@@ -513,10 +513,10 @@ export default function CreditCardForm({
                     onChange={(event) =>
                       setFormData({ ...formData, isActive: event.target.checked })
                     }
-                    className="h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-accent focus:ring-accent"
+                    className="h-4 w-4 rounded border-border bg-background text-accent focus:ring-accent"
                     disabled={actionDisabled}
                   />
-                  <label htmlFor="credit-card-is-active" className="text-sm text-gray-300">
+                  <label htmlFor="credit-card-is-active" className="text-sm text-text-muted">
                     Cartao ativo
                   </label>
                 </div>
@@ -524,29 +524,29 @@ export default function CreditCardForm({
             </Card>
 
             {resetEnabled && (
-              <Card className="border border-red-800/60">
+              <Card className="border border-tone-red/25">
                 <div className="space-y-5 p-6">
                   <div className="flex items-start gap-3">
-                    <div className="rounded-lg border border-red-700/60 bg-red-900/25 p-2">
-                      <ShieldAlert size={20} className="text-red-300" />
+                    <div className="rounded-lg border border-tone-red/25 bg-tone-red-soft p-2">
+                      <ShieldAlert size={20} className="text-tone-red" />
                     </div>
                     <div>
-                      <div className="text-lg font-semibold text-white">
+                      <div className="text-lg font-semibold text-text">
                         Resetar historico deste cartao
                       </div>
-                      <div className="mt-1 text-sm text-gray-400">
+                      <div className="mt-1 text-sm text-text-muted">
                         Mantem apenas os dados do cartao. Compras, faturas, pagamentos,
                         fixas vinculadas e ocorrencias materializadas deste cartao serao removidos.
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-red-700/40 bg-red-900/10 p-4 text-sm text-red-100">
+                  <div className="rounded-lg border border-tone-red/25 bg-tone-red-soft p-4 text-sm text-tone-red">
                     <div className="flex items-start gap-3">
-                      <AlertTriangle size={18} className="mt-0.5 text-red-300" />
+                      <AlertTriangle size={18} className="mt-0.5 text-tone-red" />
                       <div>
                         <div className="font-medium">Acao irreversivel pelo sistema</div>
-                        <div className="text-red-100/80">
+                        <div className="text-tone-red">
                           O saldo do cartao volta para zero sem gerar transacao de ajuste. As contas
                           usadas para pagar faturas deste cartao terao o impacto revertido.
                         </div>
@@ -569,11 +569,11 @@ export default function CreditCardForm({
                   {resetPreview && (
                     <>
                       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                        <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                          <div className="text-xs uppercase tracking-wide text-gray-400">
+                        <div className="rounded-lg border border-border bg-background p-4">
+                          <div className="text-xs uppercase tracking-wide text-text-muted">
                             Cartao
                           </div>
-                          <div className="mt-2 space-y-1 text-sm text-white">
+                          <div className="mt-2 space-y-1 text-sm text-text">
                             <div>{resetPreview.card.name}</div>
                             <div>Saldo atual: {formatCurrency(resetPreview.card.currentBalance)}</div>
                             <div>
@@ -585,11 +585,11 @@ export default function CreditCardForm({
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                          <div className="text-xs uppercase tracking-wide text-gray-400">
+                        <div className="rounded-lg border border-border bg-background p-4">
+                          <div className="text-xs uppercase tracking-wide text-text-muted">
                             Historico Removido
                           </div>
-                          <div className="mt-2 space-y-1 text-sm text-white">
+                          <div className="mt-2 space-y-1 text-sm text-text">
                             <div>{resetPreview.deleted.transactions} transacoes</div>
                             <div>{resetPreview.deleted.creditCardPurchases} compras</div>
                             <div>{resetPreview.deleted.creditCardInvoices} faturas</div>
@@ -597,11 +597,11 @@ export default function CreditCardForm({
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4">
-                          <div className="text-xs uppercase tracking-wide text-gray-400">
+                        <div className="rounded-lg border border-border bg-background p-4">
+                          <div className="text-xs uppercase tracking-wide text-text-muted">
                             Fixas e Saldos
                           </div>
-                          <div className="mt-2 space-y-1 text-sm text-white">
+                          <div className="mt-2 space-y-1 text-sm text-text">
                             <div>{resetPreview.deleted.fixedTemplates} fixas vinculadas</div>
                             <div>{resetPreview.deleted.fixedOccurrences} ocorrencias</div>
                             <div>{resetPreview.balances.affectedAccounts} contas ajustadas</div>
@@ -610,14 +610,14 @@ export default function CreditCardForm({
                         </div>
                       </div>
 
-                      <div className="rounded-lg border border-gray-700 bg-[#161a20] p-4">
-                        <label className="flex items-start gap-3 text-sm text-gray-200">
+                      <div className="rounded-lg border border-border bg-elevated p-4">
+                        <label className="flex items-start gap-3 text-sm text-text">
                           <input
                             type="checkbox"
                             checked={resetAcknowledged}
                             onChange={(event) => setResetAcknowledged(event.target.checked)}
                             disabled={resetExecuting}
-                            className="mt-0.5 h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-red-500 focus:ring-red-500"
+                            className="mt-0.5 h-4 w-4 rounded border-border bg-background text-tone-red focus:ring-red-500"
                           />
                           <span>
                             Entendo que este reset afeta apenas o cartao atual e nao pode ser
@@ -656,8 +656,8 @@ export default function CreditCardForm({
           <Card>
             <div className="space-y-4">
               <div>
-                <div className="text-sm font-medium text-white">Resumo do cartao</div>
-                <div className="mt-1 text-sm text-gray-400">
+                <div className="text-sm font-medium text-text">Resumo do cartao</div>
+                <div className="mt-1 text-sm text-text-muted">
                   {mode === 'create'
                     ? 'O cartao sera criado pronto para compras e acompanhamento de faturas.'
                     : 'Resumo do limite e do saldo atual do cartao.'}
@@ -713,37 +713,37 @@ export default function CreditCardForm({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400">Limite configurado</div>
-                <div className="mt-2 text-xl font-semibold text-white">
+              <div className="rounded-lg border border-border bg-elevated p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted">Limite configurado</div>
+                <div className="mt-2 text-xl font-semibold text-text">
                   {formData.creditLimit ? formatCurrency(formData.creditLimit) : 'Nao informado'}
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400">Ciclo</div>
-                <div className="mt-2 text-xl font-semibold text-white">
+              <div className="rounded-lg border border-border bg-elevated p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted">Ciclo</div>
+                <div className="mt-2 text-xl font-semibold text-text">
                   {formData.statementClosingDay || '-'} / {formData.statementDueDay || '-'}
                 </div>
-                <div className="mt-1 text-xs text-gray-400">Fechamento / vencimento</div>
+                <div className="mt-1 text-xs text-text-muted">Fechamento / vencimento</div>
               </div>
 
               {existingCard && (
                 <>
-                  <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-                    <div className="text-xs uppercase tracking-wide text-gray-400">Limite usado</div>
-                    <div className="mt-2 text-xl font-semibold text-white">
+                  <div className="rounded-lg border border-border bg-elevated p-4">
+                    <div className="text-xs uppercase tracking-wide text-text-muted">Limite usado</div>
+                    <div className="mt-2 text-xl font-semibold text-text">
                       {formatCurrency(usedLimit)}
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-                    <div className="text-xs uppercase tracking-wide text-gray-400">Limite disponivel</div>
+                  <div className="rounded-lg border border-border bg-elevated p-4">
+                    <div className="text-xs uppercase tracking-wide text-text-muted">Limite disponivel</div>
                     <div
                       className={`mt-2 text-xl font-semibold ${
                         availableLimit !== null && availableLimit < 0
-                          ? 'text-orange-300'
-                          : 'text-white'
+                          ? 'text-tone-orange'
+                          : 'text-text'
                       }`}
                     >
                       {availableLimit === null ? 'Nao configurado' : formatCurrency(availableLimit)}

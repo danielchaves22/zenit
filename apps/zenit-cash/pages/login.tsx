@@ -38,18 +38,19 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#1e2126]">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <div className="flex justify-center mb-6">
           <div className="text-center">
             <Image
-              src="/assets/images/logo.png"
+              src="/assets/images/logo_principal_light.png"
               alt="ZENIT"
               width={2000}
               height={1000}
               priority
-              className="w-auto"
+              className="h-auto w-48 theme-logo-light"
             />
+            <Image src="/assets/images/logo_principal.png" alt="ZENIT" width={2000} height={1000} className="h-auto w-48 theme-logo-dark" />
           </div>
         </div>
 
@@ -82,7 +83,7 @@ export default function LoginPage() {
           </Button>
 
           {error && (
-            <p className="mt-4 text-center text-red-400">{error}</p>
+            <p className="mt-4 text-center text-tone-red">{error}</p>
           )}
         </form>
       </Card>

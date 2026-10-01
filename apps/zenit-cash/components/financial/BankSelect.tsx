@@ -146,25 +146,25 @@ export default function BankSelect({
 
   return (
     <div className={className} ref={containerRef}>
-      {label && <label className="mb-1 block text-sm font-medium text-gray-300">{label}</label>}
+      {label && <label className="mb-1 block text-sm font-medium text-text-muted">{label}</label>}
 
       <button
         ref={triggerRef}
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setIsOpen((previous) => !previous)}
-        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded border border-gray-700 bg-background px-2 py-1.5 text-left text-sm text-white transition-colors focus:border-accent focus:outline-none focus:ring ${
-          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-gray-600'
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded border border-border bg-background px-2 py-1.5 text-left text-sm text-text transition-colors focus:border-accent focus:outline-none focus:ring ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-border-strong'
         } ${triggerClassName}`}
       >
         {selectedBank ? (
           <BankOptionRow bank={selectedBank} label={selectedBank.name} compact />
         ) : (
-          <span className="truncate text-gray-400">{placeholder}</span>
+          <span className="truncate text-text-muted">{placeholder}</span>
         )}
         <ChevronDown
           size={16}
-          className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -173,7 +173,7 @@ export default function BankSelect({
         ReactDOM.createPortal(
           <div
             ref={portalRef}
-            className="z-[9999] max-h-72 overflow-auto rounded border border-gray-700 bg-[#1e2126] shadow-lg"
+            className="z-[9999] max-h-72 overflow-auto rounded border border-border bg-background shadow-lg"
             style={{
               position: 'fixed',
               top: position.top,
@@ -181,14 +181,14 @@ export default function BankSelect({
               width: position.width
             }}
           >
-            <div className="border-b border-gray-700 px-3 py-2">
+            <div className="border-b border-border px-3 py-2">
               <input
                 ref={searchInputRef}
                 type="text"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Buscar banco..."
-                className="w-full rounded border border-gray-600 bg-[#11161d] px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:border-accent focus:outline-none focus:ring"
+                className="w-full rounded border border-border-strong bg-elevated px-3 py-2 text-sm text-text placeholder:text-text-subtle focus:border-accent focus:outline-none focus:ring"
               />
             </div>
 
@@ -196,7 +196,7 @@ export default function BankSelect({
               type="button"
               onClick={() => handleSelect('')}
               className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
-                value === '' ? 'bg-accent/10 text-accent' : 'text-gray-300 hover:bg-[#262b36]'
+                value === '' ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-elevated'
               }`}
             >
               <span>{emptyLabel}</span>
@@ -212,7 +212,7 @@ export default function BankSelect({
                   type="button"
                   onClick={() => handleSelect(bankValue)}
                   className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
-                    isSelected ? 'bg-accent/10 text-accent' : 'text-white hover:bg-[#262b36]'
+                    isSelected ? 'bg-accent/10 text-accent' : 'text-text hover:bg-elevated'
                   }`}
                 >
                   <BankOptionRow bank={bank} label={bank.name} showCheck={isSelected} />
@@ -221,7 +221,7 @@ export default function BankSelect({
             })}
 
             {filteredBanks.length === 0 && (
-              <div className="px-3 py-3 text-sm text-gray-400">
+              <div className="px-3 py-3 text-sm text-text-muted">
                 Nenhum banco encontrado para "{searchTerm}".
               </div>
             )}

@@ -148,14 +148,14 @@ export function getInvoiceDisplayStatusLabel(status: string) {
 export function getInvoiceDisplayStatusClasses(status: string) {
   switch (status) {
     case 'PAID':
-      return 'bg-green-900/30 text-green-300 border border-green-700';
+      return 'bg-tone-green-soft text-tone-green border border-tone-green/25';
     case 'OVERDUE':
-      return 'bg-red-900/30 text-red-300 border border-red-700';
+      return 'bg-tone-red-soft text-tone-red border border-tone-red/25';
     case 'CLOSED':
-      return 'bg-yellow-900/30 text-yellow-300 border border-yellow-700';
+      return 'bg-tone-yellow-soft text-tone-yellow border border-tone-yellow/25';
     case 'OPEN':
     default:
-      return 'bg-blue-900/30 text-blue-300 border border-blue-700';
+      return 'bg-tone-blue-soft text-tone-blue border border-tone-blue/25';
   }
 }
 

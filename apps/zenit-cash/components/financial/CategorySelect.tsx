@@ -136,10 +136,10 @@ function CategoryRow({
       style={indentStyle}
     >
       {!compact && isNestedCategory && (
-        <CornerDownRight size={14} className="shrink-0 text-gray-500" />
+        <CornerDownRight size={14} className="shrink-0 text-text-subtle" />
       )}
       <div
-        className={`flex shrink-0 items-center justify-center rounded border border-gray-700 bg-[#11161d] ${
+        className={`flex shrink-0 items-center justify-center rounded border border-border bg-elevated ${
           compact ? 'h-6 w-6' : 'h-8 w-8'
         }`}
       >
@@ -154,7 +154,7 @@ function CategoryRow({
           <span className="truncate">{compact ? triggerLabel : category.category.name}</span>
           {category.category.isDefault && (
             <span
-              className={`inline-flex items-center rounded-full bg-yellow-700/20 uppercase tracking-wide text-yellow-300 ${
+              className={`inline-flex items-center rounded-full bg-tone-yellow-soft uppercase tracking-wide text-tone-yellow ${
                 compact ? 'gap-1 px-1.5 py-0 text-[9px]' : 'gap-1 px-2 py-0.5 text-[10px]'
               }`}
             >
@@ -164,7 +164,7 @@ function CategoryRow({
           )}
         </div>
         {!compact && parentTrail && (
-          <div className="mt-0.5 truncate text-xs text-gray-500">{parentTrail}</div>
+          <div className="mt-0.5 truncate text-xs text-text-subtle">{parentTrail}</div>
         )}
       </div>
       {showCheck && <Check size={16} className="shrink-0 text-accent" />}
@@ -316,7 +316,7 @@ export default function CategorySelect({
 
   return (
     <div className={className} ref={containerRef}>
-      {label && <label className="mb-1 block text-sm font-medium text-gray-300">{label}</label>}
+      {label && <label className="mb-1 block text-sm font-medium text-text-muted">{label}</label>}
 
       <button
         ref={triggerRef}
@@ -324,18 +324,18 @@ export default function CategorySelect({
         disabled={disabled}
         onClick={() => !disabled && setIsOpen((previous) => !previous)}
         onKeyDown={handleTriggerKeyDown}
-        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded border border-gray-700 bg-background px-2 py-1.5 text-left text-sm text-white transition-colors focus:border-accent focus:outline-none focus:ring ${
-          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-gray-600'
+        className={`flex min-h-10 w-full items-center justify-between gap-2 rounded border border-border bg-background px-2 py-1.5 text-left text-sm text-text transition-colors focus:border-accent focus:outline-none focus:ring ${
+          disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-border-strong'
         } ${triggerClassName}`}
       >
         {selectedCategory ? (
           <CategoryRow category={selectedCategory} compact />
         ) : (
-          <span className="truncate text-gray-400">{placeholder}</span>
+          <span className="truncate text-text-muted">{placeholder}</span>
         )}
         <ChevronDown
           size={16}
-          className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+          className={`shrink-0 text-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -344,7 +344,7 @@ export default function CategorySelect({
         ReactDOM.createPortal(
           <div
             ref={portalRef}
-            className="z-[9999] max-h-72 overflow-auto rounded border border-gray-700 bg-[#1e2126] shadow-lg"
+            className="z-[9999] max-h-72 overflow-auto rounded border border-border bg-background shadow-lg"
             style={{
               position: 'fixed',
               top: position.top,
@@ -352,7 +352,7 @@ export default function CategorySelect({
               width: position.width
             }}
           >
-            <div className="sticky top-0 z-10 border-b border-gray-700 bg-[#1e2126] p-2">
+            <div className="sticky top-0 z-10 border-b border-border bg-background p-2">
               <input
                 ref={searchInputRef}
                 type="text"
@@ -360,7 +360,7 @@ export default function CategorySelect({
                 onChange={(event) => setSearchTerm(event.target.value)}
                 placeholder="Filtrar categorias..."
                 aria-label="Filtrar categorias"
-                className="h-9 w-full rounded border border-gray-700 bg-background px-3 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-accent focus:ring"
+                className="h-9 w-full rounded border border-border bg-background px-3 text-sm text-text outline-none transition-colors placeholder:text-text-subtle focus:border-accent focus:ring"
               />
             </div>
 
@@ -368,14 +368,14 @@ export default function CategorySelect({
               type="button"
               onClick={() => handleSelect('')}
               className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
-                value === '' ? 'bg-accent/10 text-accent' : 'text-gray-300 hover:bg-[#262b36]'
+                value === '' ? 'bg-accent/10 text-accent' : 'text-text-muted hover:bg-elevated'
               }`}
             >
               <span>{emptyLabel || placeholder}</span>
             </button>
 
             {filteredCategories.length === 0 ? (
-              <div className="px-3 py-3 text-sm text-gray-400">
+              <div className="px-3 py-3 text-sm text-text-muted">
                 {orderedCategories.length === 0
                   ? 'Nenhuma categoria disponivel'
                   : 'Nenhuma categoria encontrada'}
@@ -392,7 +392,7 @@ export default function CategorySelect({
                     className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
                       isSelected
                         ? 'bg-accent/10 text-accent'
-                        : 'text-white hover:bg-[#262b36]'
+                        : 'text-text hover:bg-elevated'
                     }`}
                   >
                     <CategoryRow category={category} showCheck={isSelected} />

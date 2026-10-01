@@ -462,12 +462,12 @@ function getValueComparisonStatusLabel(status: ReconciliationValueComparisonStat
 
 function getValueComparisonStatusClasses(status: ReconciliationValueComparisonStatus) {
   if (status === 'MATCHED') {
-    return 'border-green-500/40 bg-green-500/10 text-green-200';
+    return 'border-green-500/40 bg-tone-green-soft text-tone-green';
   }
   if (status === 'EXPLAINED') {
-    return 'border-amber-500/40 bg-amber-500/10 text-amber-200';
+    return 'border-amber-500/40 bg-tone-amber-soft text-tone-amber';
   }
-  return 'border-red-500/40 bg-red-500/10 text-red-200';
+  return 'border-red-500/40 bg-tone-red-soft text-tone-red';
 }
 
 function getValueDifferenceLabel(comparison: ReconciliationValueComparison) {
@@ -495,18 +495,18 @@ function getItemStatusLabel(item: ReconciliationPreviewItem) {
 
 function getStatusClasses(status: ReconciliationItemStatus) {
   if (status === 'OK') {
-    return 'border-green-500/40 bg-green-500/10 text-green-200';
+    return 'border-green-500/40 bg-tone-green-soft text-tone-green';
   }
 
   if (status === 'SIMILAR') {
-    return 'border-amber-500/40 bg-amber-500/10 text-amber-200';
+    return 'border-amber-500/40 bg-tone-amber-soft text-tone-amber';
   }
 
   if (status === 'PENDING') {
-    return 'border-blue-500/40 bg-blue-500/10 text-blue-200';
+    return 'border-blue-500/40 bg-tone-blue-soft text-tone-blue';
   }
 
-  return 'border-gray-600 bg-gray-800 text-gray-300';
+  return 'border-border-strong bg-elevated text-text-muted';
 }
 
 function getResolutionLabel(
@@ -1258,7 +1258,7 @@ function CreditCardReconciliationValueSummary({
   if (!comparison) {
     return (
       <Card>
-        <div className="text-sm text-gray-400">
+        <div className="text-sm text-text-muted">
           O resumo de valores não está disponível para esta prévia. Recarregue a conciliação.
         </div>
       </Card>
@@ -1279,8 +1279,8 @@ function CreditCardReconciliationValueSummary({
     <Card>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-white">Conferência dos valores</h2>
-          <p className="mt-1 text-sm text-gray-400">
+          <h2 className="text-lg font-semibold text-text">Conferência dos valores</h2>
+          <p className="mt-1 text-sm text-text-muted">
             Comparação calculada entre o arquivo e os lançamentos da fatura escolhida.
           </p>
         </div>
@@ -1294,116 +1294,116 @@ function CreditCardReconciliationValueSummary({
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3">
-          <div className="text-xs uppercase tracking-[0.12em] text-gray-400">
+        <div className="rounded-xl border border-border bg-elevated px-4 py-3">
+          <div className="text-xs uppercase tracking-[0.12em] text-text-muted">
             Total comparável do arquivo
           </div>
-          <div className="mt-1 text-xl font-semibold text-white">
+          <div className="mt-1 text-xl font-semibold text-text">
             {formatCurrency(comparison.file.comparableAmount)}
           </div>
-          <div className="mt-1 text-xs text-gray-400">
+          <div className="mt-1 text-xs text-text-muted">
             {comparison.file.comparableItemCount} item(ns) comparável(is)
           </div>
         </div>
-        <div className="rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3">
-          <div className="text-xs uppercase tracking-[0.12em] text-gray-400">Fatura no Zenit</div>
-          <div className="mt-1 text-xl font-semibold text-white">
+        <div className="rounded-xl border border-border bg-elevated px-4 py-3">
+          <div className="text-xs uppercase tracking-[0.12em] text-text-muted">Fatura no Zenit</div>
+          <div className="mt-1 text-xl font-semibold text-text">
             {formatCurrency(comparison.zenit.totalAmount)}
           </div>
-          <div className="mt-1 text-xs text-gray-400">
+          <div className="mt-1 text-xs text-text-muted">
             {comparison.zenit.itemCount} lançamento(s)
           </div>
         </div>
-        <div className="rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3">
-          <div className="text-xs uppercase tracking-[0.12em] text-gray-400">Diferença</div>
-          <div className="mt-1 text-xl font-semibold text-white">
+        <div className="rounded-xl border border-border bg-elevated px-4 py-3">
+          <div className="text-xs uppercase tracking-[0.12em] text-text-muted">Diferença</div>
+          <div className="mt-1 text-xl font-semibold text-text">
             {formatCurrency(comparison.absoluteDifferenceAmount)}
           </div>
-          <div className="mt-1 text-xs text-gray-400">{getValueDifferenceLabel(comparison)}</div>
+          <div className="mt-1 text-xs text-text-muted">{getValueDifferenceLabel(comparison)}</div>
         </div>
       </div>
 
       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
         {comparison.file.reportedTotalAmount !== null && (
           <div>
-            <div className="text-gray-400">Total informado pelo emissor</div>
-            <div className="mt-1 font-semibold text-white">
+            <div className="text-text-muted">Total informado pelo emissor</div>
+            <div className="mt-1 font-semibold text-text">
               {formatCurrency(comparison.file.reportedTotalAmount)}
             </div>
           </div>
         )}
         <div>
-          <div className="text-gray-400">Líquido das linhas</div>
-          <div className="mt-1 font-semibold text-white">
+          <div className="text-text-muted">Líquido das linhas</div>
+          <div className="mt-1 font-semibold text-text">
             {formatCurrency(comparison.file.netAmount)}
           </div>
         </div>
         <div>
-          <div className="text-gray-400">Créditos e ajustes</div>
-          <div className="mt-1 font-semibold text-white">
+          <div className="text-text-muted">Créditos e ajustes</div>
+          <div className="mt-1 font-semibold text-text">
             {formatCurrency(comparison.file.creditAmount)}
           </div>
         </div>
         <div>
-          <div className="text-gray-400">Pagamentos separados</div>
-          <div className="mt-1 font-semibold text-white">
+          <div className="text-text-muted">Pagamentos separados</div>
+          <div className="mt-1 font-semibold text-text">
             {formatCurrency(comparison.file.paymentAmount)}
           </div>
         </div>
         {Number(comparison.file.balanceAmount || 0) !== 0 && (
           <div>
-            <div className="text-gray-400">Saldo anterior separado</div>
-            <div className="mt-1 font-semibold text-white">
+            <div className="text-text-muted">Saldo anterior separado</div>
+            <div className="mt-1 font-semibold text-text">
               {formatCurrency(comparison.file.balanceAmount)}
             </div>
           </div>
         )}
       </div>
 
-      <div className="mt-5 border-t border-gray-700 pt-4">
-        <h3 className="font-semibold text-white">Composição da conferência</h3>
+      <div className="mt-5 border-t border-border pt-4">
+        <h3 className="font-semibold text-text">Composição da conferência</h3>
         <div className="mt-3 flex flex-wrap gap-2 text-sm">
-          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+          <span className="rounded-full border border-border bg-elevated px-3 py-1.5 text-text-muted">
             {comparison.exactAmountCount} valor(es) exato(s)
           </span>
-          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+          <span className="rounded-full border border-border bg-elevated px-3 py-1.5 text-text-muted">
             {comparison.amountDivergenceCount} valor(es) divergente(s)
           </span>
-          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+          <span className="rounded-full border border-border bg-elevated px-3 py-1.5 text-text-muted">
             {comparison.missingCount} ausente(s) no Zenit
           </span>
-          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+          <span className="rounded-full border border-border bg-elevated px-3 py-1.5 text-text-muted">
             {comparison.extraCount} excedente(s) no Zenit
           </span>
-          <span className="rounded-full border border-gray-700 bg-[#11161d] px-3 py-1.5 text-gray-300">
+          <span className="rounded-full border border-border bg-elevated px-3 py-1.5 text-text-muted">
             {comparison.ambiguousCount} ambíguo(s)
           </span>
         </div>
         <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <div className="rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2">
-            <div className="text-gray-400">Diferença identificada pela composição</div>
-            <div className="mt-1 font-semibold text-white">
+          <div className="rounded-lg border border-border bg-elevated px-3 py-2">
+            <div className="text-text-muted">Diferença identificada pela composição</div>
+            <div className="mt-1 font-semibold text-text">
               {formatSignedCurrency(comparison.explainedDifferenceAmount)}
             </div>
           </div>
-          <div className="rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2">
-            <div className="text-gray-400">Saldo ainda não explicado</div>
-            <div className="mt-1 font-semibold text-white">
+          <div className="rounded-lg border border-border bg-elevated px-3 py-2">
+            <div className="text-text-muted">Saldo ainda não explicado</div>
+            <div className="mt-1 font-semibold text-text">
               {formatSignedCurrency(comparison.unexplainedDifferenceAmount)}
             </div>
           </div>
         </div>
-        <p className="mt-2 text-xs text-gray-500">
+        <p className="mt-2 text-xs text-text-subtle">
           Os sinais representam o total do Zenit menos o total comparável do arquivo.
         </p>
       </div>
 
       {comparison.amountDivergences.length > 0 && (
         <div className="mt-5">
-          <h3 className="font-semibold text-white">Valores divergentes</h3>
-          <div className="mt-2 overflow-x-auto rounded-xl border border-gray-700">
-            <table className="min-w-full divide-y divide-gray-700 text-sm">
-              <thead className="bg-[#11161d] text-left text-gray-400">
+          <h3 className="font-semibold text-text">Valores divergentes</h3>
+          <div className="mt-2 overflow-x-auto rounded-xl border border-border">
+            <table className="min-w-full divide-y divide-border text-sm">
+              <thead className="bg-elevated text-left text-text-muted">
                 <tr>
                   <th className="px-3 py-2 font-medium">Lançamento</th>
                   <th className="px-3 py-2 text-right font-medium">Arquivo</th>
@@ -1411,22 +1411,22 @@ function CreditCardReconciliationValueSummary({
                   <th className="px-3 py-2 text-right font-medium">Diferença</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-800">
+              <tbody className="divide-y divide-border">
                 {comparison.amountDivergences.map((item) => (
                   <tr key={`${item.itemId}:${item.matchKey}`}>
-                    <td className="px-3 py-2 text-white">
+                    <td className="px-3 py-2 text-text">
                       <div>{item.sourceDescription}</div>
                       {item.transactionDescription !== item.sourceDescription && (
-                        <div className="mt-0.5 text-xs text-gray-400">Zenit: {item.transactionDescription}</div>
+                        <div className="mt-0.5 text-xs text-text-muted">Zenit: {item.transactionDescription}</div>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right text-gray-300">
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-text-muted">
                       {formatCurrency(item.fileAmount)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right text-gray-300">
+                    <td className="whitespace-nowrap px-3 py-2 text-right text-text-muted">
                       {formatCurrency(item.zenitAmount)}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-amber-200">
+                    <td className="whitespace-nowrap px-3 py-2 text-right font-semibold text-tone-amber">
                       {formatSignedCurrency(item.differenceAmount)}
                     </td>
                   </tr>
@@ -1439,21 +1439,21 @@ function CreditCardReconciliationValueSummary({
 
       {comparison.missingItems.length > 0 && (
         <div className="mt-5">
-          <h3 className="font-semibold text-white">Itens do arquivo ausentes no Zenit</h3>
+          <h3 className="font-semibold text-text">Itens do arquivo ausentes no Zenit</h3>
           <div className="mt-2 space-y-2">
             {comparison.missingItems.map((item) => {
               const resolution = missingItemResolution(item.itemId);
               return (
                 <div
                   key={item.itemId}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2 text-sm"
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-elevated px-3 py-2 text-sm"
                 >
-                  <span className="text-white">{item.description}</span>
+                  <span className="text-text">{item.description}</span>
                   <span className="flex items-center gap-3">
-                    <span className="text-gray-400">
+                    <span className="text-text-muted">
                       {resolution === 'IGNORED' ? 'Ignorado' : 'Pendente'}
                     </span>
-                    <span className="font-semibold text-white">{formatCurrency(item.amount)}</span>
+                    <span className="font-semibold text-text">{formatCurrency(item.amount)}</span>
                   </span>
                 </div>
               );
@@ -1464,15 +1464,15 @@ function CreditCardReconciliationValueSummary({
 
       {comparison.extraItems.length > 0 && (
         <div className="mt-5">
-          <h3 className="font-semibold text-white">Itens excedentes no Zenit</h3>
+          <h3 className="font-semibold text-text">Itens excedentes no Zenit</h3>
           <div className="mt-2 space-y-2">
             {comparison.extraItems.map((item) => (
               <div
                 key={item.matchKey}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-700 bg-[#11161d] px-3 py-2 text-sm"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-elevated px-3 py-2 text-sm"
               >
-                <span className="text-white">{item.description}</span>
-                <span className="font-semibold text-white">{formatCurrency(item.amount)}</span>
+                <span className="text-text">{item.description}</span>
+                <span className="font-semibold text-text">{formatCurrency(item.amount)}</span>
               </div>
             ))}
           </div>
@@ -1480,9 +1480,9 @@ function CreditCardReconciliationValueSummary({
       )}
 
       {comparison.ambiguousItems.length > 0 && (
-        <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
-          <h3 className="font-semibold text-red-100">Correspondências ambíguas</h3>
-          <div className="mt-2 space-y-1 text-sm text-red-100">
+        <div className="mt-5 rounded-xl border border-red-500/30 bg-tone-red-soft px-4 py-3">
+          <h3 className="font-semibold text-tone-red">Correspondências ambíguas</h3>
+          <div className="mt-2 space-y-1 text-sm text-tone-red">
             {comparison.ambiguousItems.map((item) => (
               <div key={item.itemId} className="flex justify-between gap-3">
                 <span>{item.description}</span>
@@ -1493,14 +1493,14 @@ function CreditCardReconciliationValueSummary({
         </div>
       )}
 
-      <div className="mt-5 rounded-xl border border-gray-700 bg-[#11161d] px-4 py-4">
+      <div className="mt-5 rounded-xl border border-border bg-elevated px-4 py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="flex items-center gap-2 font-semibold text-white">
+            <h3 className="flex items-center gap-2 font-semibold text-text">
               <Sparkles size={16} className="text-accent" />
               Parecer da IA
             </h3>
-            <p className="mt-1 text-sm text-gray-400">
+            <p className="mt-1 text-sm text-text-muted">
               {analysis
                 ? `Parecer solicitado em ${generatedAt}.`
                 : 'A IA não foi consultada. Os cálculos acima independem dela.'}
@@ -1526,17 +1526,17 @@ function CreditCardReconciliationValueSummary({
         </div>
 
         {analysisError && (
-          <div role="alert" className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+          <div role="alert" className="mt-3 rounded-lg border border-red-500/40 bg-tone-red-soft px-3 py-2 text-sm text-tone-red">
             {analysisError}
           </div>
         )}
 
         {analysis && (
           <div className="mt-4 border-l-2 border-accent pl-4">
-            <div className="font-semibold text-white">{analysis.analysis.headline}</div>
-            <p className="mt-2 text-sm leading-6 text-gray-300">{analysis.analysis.summary}</p>
+            <div className="font-semibold text-text">{analysis.analysis.headline}</div>
+            <p className="mt-2 text-sm leading-6 text-text-muted">{analysis.analysis.summary}</p>
             {analysis.analysis.findings.length > 0 && (
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-gray-300">
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-text-muted">
                 {analysis.analysis.findings.map((finding, index) => (
                   <li key={`${index}:${finding}`}>{finding}</li>
                 ))}
@@ -1670,7 +1670,7 @@ function CreditCardReconciliationSideBySide({
       <div
         role="group"
         aria-label="Painel da comparação"
-        className="grid grid-cols-2 rounded-xl border border-gray-700 bg-[#11161d] p-1 lg:hidden"
+        className="grid grid-cols-2 rounded-xl border border-border bg-elevated p-1 lg:hidden"
       >
         <button
           type="button"
@@ -1678,8 +1678,8 @@ function CreditCardReconciliationSideBySide({
           onClick={() => onMobilePanelChange('FILE')}
           className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             mobilePanel === 'FILE'
-              ? 'bg-accent text-white'
-              : 'text-gray-300 hover:bg-white/5 hover:text-white'
+              ? 'bg-accent text-on-accent'
+              : 'text-text-muted hover:bg-elevated hover:text-text'
           }`}
         >
           Fatura
@@ -1690,8 +1690,8 @@ function CreditCardReconciliationSideBySide({
           onClick={() => onMobilePanelChange('ZENIT')}
           className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             mobilePanel === 'ZENIT'
-              ? 'bg-accent text-white'
-              : 'text-gray-300 hover:bg-white/5 hover:text-white'
+              ? 'bg-accent text-on-accent'
+              : 'text-text-muted hover:bg-elevated hover:text-text'
           }`}
         >
           Zenit
@@ -1700,17 +1700,17 @@ function CreditCardReconciliationSideBySide({
 
       <div className="grid h-[clamp(32rem,68vh,46rem)] min-h-0 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <section
-          className={`${mobilePanel === 'FILE' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-gray-700 bg-surface shadow-md lg:flex`}
+          className={`${mobilePanel === 'FILE' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-md lg:flex`}
         >
-          <div className="shrink-0 border-b border-gray-700 bg-surface px-4 py-4">
+          <div className="shrink-0 border-b border-border bg-surface px-4 py-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="font-semibold text-white">Itens do arquivo da fatura</h2>
-                <p className="mt-1 text-sm text-gray-400">
+                <h2 className="font-semibold text-text">Itens do arquivo da fatura</h2>
+                <p className="mt-1 text-sm text-text-muted">
                   Selecione um item para localizar sua possível correspondência no Zenit.
                 </p>
               </div>
-              <span className="shrink-0 rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+              <span className="shrink-0 rounded-full border border-border px-2.5 py-1 text-xs text-text-muted">
                 {items.length}
               </span>
             </div>
@@ -1743,7 +1743,7 @@ function CreditCardReconciliationSideBySide({
                       className={`rounded-lg border px-4 py-3 transition-colors focus-within:border-accent ${
                         isSelected
                           ? 'border-accent bg-accent/10 ring-1 ring-accent/30'
-                          : 'border-gray-700 bg-[#11161d]'
+                          : 'border-border bg-elevated'
                       }`}
                     >
                       <div className="flex items-start gap-3">
@@ -1759,7 +1759,7 @@ function CreditCardReconciliationSideBySide({
                           onChange={(event) =>
                             onToggleImportSelection(item.id, event.target.checked)
                           }
-                          className="mt-1 h-4 w-4 shrink-0 rounded border-gray-600 bg-background text-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-border-strong bg-background text-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
                         />
                         <button
                           ref={(node) => {
@@ -1773,7 +1773,7 @@ function CreditCardReconciliationSideBySide({
                           <span className="flex items-start justify-between gap-3">
                             <span className="min-w-0">
                               <span className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs uppercase tracking-[0.16em] text-gray-500">
+                                <span className="text-xs uppercase tracking-[0.16em] text-text-subtle">
                                   Item {item.sequence}
                                 </span>
                                 <span
@@ -1781,11 +1781,11 @@ function CreditCardReconciliationSideBySide({
                                 >
                                   {getItemStatusLabel(item)}
                                 </span>
-                                <span className="rounded-full border border-gray-700 px-2 py-0.5 text-[11px] text-gray-300">
+                                <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-text-muted">
                                   {getSectionLabel(item.sourceSection)}
                                 </span>
                                 {getItemResolution(item) !== 'PENDING' && (
-                                  <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-200">
+                                  <span className="rounded-full border border-violet-500/40 bg-tone-violet-soft px-2 py-0.5 text-[11px] text-tone-violet">
                                     {getResolutionLabel(
                                       getItemResolution(item),
                                       item.progress?.resolutionData
@@ -1793,15 +1793,15 @@ function CreditCardReconciliationSideBySide({
                                   </span>
                                 )}
                                 {isOutsideFilter && (
-                                  <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200">
+                                  <span className="rounded-full border border-amber-500/40 bg-tone-amber-soft px-2 py-0.5 text-[11px] text-tone-amber">
                                     Fora do filtro atual
                                   </span>
                                 )}
                               </span>
-                              <span className="mt-2 block font-medium text-white">
+                              <span className="mt-2 block font-medium text-text">
                                 {item.sourceDescription}
                               </span>
-                              <span className="mt-1 block text-sm text-gray-400">
+                              <span className="mt-1 block text-sm text-text-muted">
                                 {bankDateLabel} • parcela{' '}
                                 {formatInstallmentLabel(
                                   item.installmentNumber,
@@ -1810,12 +1810,12 @@ function CreditCardReconciliationSideBySide({
                                 {item.cardSuffix ? ` • cartão final ${item.cardSuffix}` : ''}
                               </span>
                               {getItemResolution(item) !== 'CONFIRMED_EXISTING' && (
-                                <span className="mt-2 block text-sm text-gray-400">
+                                <span className="mt-2 block text-sm text-text-muted">
                                   {getReasonLabel(item)}
                                 </span>
                               )}
                               {item.nonImportableReason && (
-                                <span className="mt-1 block text-sm text-amber-300">
+                                <span className="mt-1 block text-sm text-tone-amber">
                                   {item.nonImportableReason}
                                 </span>
                               )}
@@ -1832,11 +1832,11 @@ function CreditCardReconciliationSideBySide({
                                 )}
                             </span>
                             <span className="shrink-0 text-right">
-                              <span className="block font-semibold text-white">
+                              <span className="block font-semibold text-text">
                                 {formatCurrency(item.amount)}
                               </span>
                               {itemCommitLoading && (
-                                <span className="mt-1 flex items-center justify-end gap-1 text-xs text-gray-400">
+                                <span className="mt-1 flex items-center justify-end gap-1 text-xs text-text-muted">
                                   <RefreshCw size={12} className="animate-spin" />
                                   Processando
                                 </span>
@@ -1850,7 +1850,7 @@ function CreditCardReconciliationSideBySide({
                 })}
               </ul>
             ) : (
-              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-8 text-center text-sm text-gray-400">
+              <div className="rounded-lg border border-dashed border-border bg-elevated px-4 py-8 text-center text-sm text-text-muted">
                 Nenhum item encontrado para o filtro atual.
               </div>
             )}
@@ -1858,13 +1858,13 @@ function CreditCardReconciliationSideBySide({
         </section>
 
         <section
-          className={`${mobilePanel === 'ZENIT' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-gray-700 bg-surface shadow-md lg:flex`}
+          className={`${mobilePanel === 'ZENIT' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-md lg:flex`}
         >
-          <div className="shrink-0 border-b border-gray-700 bg-surface px-4 py-4">
+          <div className="shrink-0 border-b border-border bg-surface px-4 py-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="font-semibold text-white">Lançamentos da fatura no Zenit</h2>
-                <p className="mt-1 text-sm text-gray-400">
+                <h2 className="font-semibold text-text">Lançamentos da fatura no Zenit</h2>
+                <p className="mt-1 text-sm text-text-muted">
                   {selectedTargetInvoice
                     ? `Fatura ${formatReference(
                         selectedTargetInvoice.referenceMonth,
@@ -1873,7 +1873,7 @@ function CreditCardReconciliationSideBySide({
                     : 'Selecione a fatura-alvo.'}
                 </p>
               </div>
-              <span className="shrink-0 rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+              <span className="shrink-0 rounded-full border border-border px-2.5 py-1 text-xs text-text-muted">
                 {rows.length}
               </span>
             </div>
@@ -1885,22 +1885,22 @@ function CreditCardReconciliationSideBySide({
               tabIndex={-1}
               className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
                 focusedItem === null || targetInvoiceDetailLoading
-                  ? 'border-gray-700 bg-[#11161d] text-gray-400'
+                  ? 'border-border bg-elevated text-text-muted'
                   : targetInvoiceDetailError
-                    ? 'border-red-500/40 bg-red-500/10 text-red-200'
+                    ? 'border-red-500/40 bg-tone-red-soft text-tone-red'
                     : !targetInvoiceDetailAvailable
-                      ? 'border-gray-700 bg-[#11161d] text-gray-400'
+                      ? 'border-border bg-elevated text-text-muted'
                       : focusedMatchHasIdentityCollision
-                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                        ? 'border-amber-500/40 bg-tone-amber-soft text-tone-amber'
                         : focusedResolution === 'CONFIRMED_EXISTING'
-                          ? 'border-green-500/40 bg-green-500/10 text-green-200'
+                          ? 'border-green-500/40 bg-tone-green-soft text-tone-green'
                         : highlightedRows.length === 0
-                          ? 'border-gray-700 bg-[#11161d] text-gray-300'
+                          ? 'border-border bg-elevated text-text-muted'
                           : highlightedRows.length > 1
-                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                            ? 'border-amber-500/40 bg-tone-amber-soft text-tone-amber'
                             : getDisplayedItemStatus(focusedItem) === 'OK'
-                              ? 'border-green-500/40 bg-green-500/10 text-green-200'
-                              : 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+                              ? 'border-green-500/40 bg-tone-green-soft text-tone-green'
+                              : 'border-amber-500/40 bg-tone-amber-soft text-tone-amber'
               }`}
             >
               {focusedMatchStatusMessage}
@@ -1980,7 +1980,7 @@ function CreditCardReconciliationSideBySide({
                         ? 'Removendo vínculo...'
                         : 'Remover vínculo'}
                     </Button>
-                    <span className="basis-full text-xs text-gray-400">
+                    <span className="basis-full text-xs text-text-muted">
                       Remove apenas a confirmação desta conciliação; o lançamento financeiro não
                       será alterado.
                     </span>
@@ -1997,7 +1997,7 @@ function CreditCardReconciliationSideBySide({
                         ? 'Removendo vínculo...'
                         : 'Remover vínculo'}
                     </Button>
-                    <span className="basis-full text-xs text-gray-400">
+                    <span className="basis-full text-xs text-text-muted">
                       Remove o vínculo somente desta conciliação; a regra recorrente será mantida
                       para os próximos meses.
                     </span>
@@ -2016,19 +2016,19 @@ function CreditCardReconciliationSideBySide({
             {targetInvoiceDetailLoading ? (
               <div className="space-y-2" aria-label="Carregando lançamentos do Zenit">
                 {[0, 1, 2, 3].map((index) => (
-                  <div key={index} className="h-24 animate-pulse rounded-lg bg-[#1b212c]" />
+                  <div key={index} className="h-24 animate-pulse rounded-lg bg-elevated" />
                 ))}
               </div>
             ) : targetInvoiceDetailError ? (
               <div
                 role="alert"
-                className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-5 text-sm text-red-200"
+                className="rounded-lg border border-red-500/40 bg-tone-red-soft px-4 py-5 text-sm text-tone-red"
               >
                 <div>{targetInvoiceDetailError}</div>
                 <button
                   type="button"
                   onClick={onRetryTargetInvoiceDetail}
-                  className="mt-3 rounded-lg border border-red-400/50 px-3 py-1.5 font-medium text-red-100 transition-colors hover:bg-red-500/10"
+                  className="mt-3 rounded-lg border border-red-400/50 px-3 py-1.5 font-medium text-tone-red transition-colors hover:bg-tone-red-soft"
                 >
                   Tentar novamente
                 </button>
@@ -2061,9 +2061,9 @@ function CreditCardReconciliationSideBySide({
                         isHighlighted
                           ? isAmbiguousHighlight ||
                             (focusedItem && getDisplayedItemStatus(focusedItem) !== 'OK')
-                            ? 'border-amber-400/70 bg-amber-500/10 ring-1 ring-amber-400/30'
-                            : 'border-green-400/70 bg-green-500/10 ring-1 ring-green-400/30'
-                          : 'border-gray-700 bg-[#11161d]'
+                            ? 'border-amber-400/70 bg-tone-amber-soft ring-1 ring-amber-400/30'
+                            : 'border-green-400/70 bg-tone-green-soft ring-1 ring-green-400/30'
+                          : 'border-border bg-elevated'
                       }`}
                     >
                       <button
@@ -2084,8 +2084,8 @@ function CreditCardReconciliationSideBySide({
                         className="flex w-full items-start justify-between gap-3 text-left disabled:cursor-default"
                       >
                         <div className="min-w-0">
-                          <div className="font-medium text-white">{transaction.description}</div>
-                          <div className="mt-1 text-sm text-gray-400">
+                          <div className="font-medium text-text">{transaction.description}</div>
+                          <div className="mt-1 text-sm text-text-muted">
                             {getSystemTransactionDateLabel(transaction)} • parcela{' '}
                             {formatInstallmentLabel(
                               transaction.installmentNumber ?? null,
@@ -2094,28 +2094,28 @@ function CreditCardReconciliationSideBySide({
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             {transaction.isFixedProjection && (
-                              <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
+                              <span className="rounded-full border border-sky-500/40 bg-tone-sky-soft px-2 py-0.5 text-[11px] font-medium text-tone-sky">
                                 Fixa projetada
                               </span>
                             )}
                             {isExternalSettlement && (
-                              <span className="rounded-full border border-gray-600 bg-gray-500/10 px-2 py-0.5 text-[11px] font-medium text-gray-300">
+                              <span className="rounded-full border border-border-strong bg-elevated/10 px-2 py-0.5 text-[11px] font-medium text-text-muted">
                                 Liquidada fora do sistema
                               </span>
                             )}
                             {isAlreadyClaimed && (
-                              <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-200">
+                              <span className="rounded-full border border-violet-500/40 bg-tone-violet-soft px-2 py-0.5 text-[11px] font-medium text-tone-violet">
                                 Ja utilizado nesta conciliacao
                               </span>
                             )}
                             {hasIdentityCollision && (
-                              <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-200">
+                              <span className="rounded-full border border-amber-500/40 bg-tone-amber-soft px-2 py-0.5 text-[11px] font-medium text-tone-amber">
                                 Identidade duplicada
                               </span>
                             )}
                             {transaction.category && (
                               <span
-                                className="rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
+                                className="rounded-full px-2 py-0.5 text-[11px] font-medium text-text"
                                 style={{ backgroundColor: transaction.category.color }}
                               >
                                 {transaction.category.name}
@@ -2128,7 +2128,7 @@ function CreditCardReconciliationSideBySide({
                             </span>
                           )}
                         </div>
-                        <div className="shrink-0 text-sm font-semibold text-white">
+                        <div className="shrink-0 text-sm font-semibold text-text">
                           {formatCurrency(transaction.amount)}
                         </div>
                       </button>
@@ -2137,7 +2137,7 @@ function CreditCardReconciliationSideBySide({
                 })}
               </ul>
             ) : (
-              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-8 text-center text-sm text-gray-400">
+              <div className="rounded-lg border border-dashed border-border bg-elevated px-4 py-8 text-center text-sm text-text-muted">
                 {targetInvoiceDetailAvailable
                   ? 'A fatura selecionada não possui lançamentos no Zenit.'
                   : 'Os lançamentos da fatura selecionada não estão disponíveis para comparação.'}
@@ -3776,8 +3776,8 @@ function CreditCardReconciliationPageInner() {
 
       <div className="mb-6 mt-4 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Conciliacao de fatura</h1>
-          <p className="mt-1 text-sm text-gray-400">
+          <h1 className="text-2xl font-semibold text-text">Conciliacao de fatura</h1>
+          <p className="mt-1 text-sm text-text-muted">
             Compare a fatura importada com as compras ja lancadas no cartao e crie os
             pendentes.
           </p>
@@ -3794,22 +3794,22 @@ function CreditCardReconciliationPageInner() {
 
       {loadingCard ? (
         <Card>
-          <div className="h-40 animate-pulse rounded bg-[#1b212c]" />
+          <div className="h-40 animate-pulse rounded bg-elevated" />
         </Card>
       ) : !card ? (
         <Card>
-          <div className="py-12 text-center text-gray-300">
+          <div className="py-12 text-center text-text-muted">
             Nao foi possivel localizar o cartao selecionado.
           </div>
         </Card>
       ) : !reconciliationSourceType || !sourceConfig ? (
         <Card>
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <AlertTriangle className="text-amber-300" size={40} />
-            <div className="text-lg font-semibold text-white">
+            <AlertTriangle className="text-tone-amber" size={40} />
+            <div className="text-lg font-semibold text-text">
               {sourceConfig?.unsupportedTitle || 'Conciliacao indisponivel para este cartao'}
             </div>
-            <p className="max-w-2xl text-sm text-gray-400">
+            <p className="max-w-2xl text-sm text-text-muted">
               {sourceConfig?.unsupportedDescription ||
                 'No momento a conciliacao aceita apenas formatos homologados por banco.'}
             </p>
@@ -3820,24 +3820,24 @@ function CreditCardReconciliationPageInner() {
           {!preview && (
             <Card className={sessionLoading ? 'hidden' : ''}>
               <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-              <div className="rounded-xl border border-gray-700 bg-[#11161d] p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-gray-400">
+              <div className="rounded-xl border border-border bg-elevated p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-text-muted">
                   Arquivo da fatura
                 </div>
-                <div className="mt-3 rounded-xl border border-dashed border-gray-600 bg-[#0f141b] px-4 py-3">
+                <div className="mt-3 rounded-xl border border-dashed border-border-strong bg-elevated px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="rounded-lg border border-accent/30 bg-accent/10 p-2 text-accent">
                       <Upload size={16} />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-sm font-medium text-white">
+                      <div className="text-sm font-medium text-text">
                         {sourceConfig.selectLabel}
                       </div>
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <label
-                      className={`inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors ${
+                      className={`inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition-colors ${
                         fileSelectionDisabled
                           ? 'cursor-not-allowed opacity-60'
                           : 'cursor-pointer hover:bg-accent-hover'
@@ -3854,27 +3854,27 @@ function CreditCardReconciliationPageInner() {
                         className="hidden"
                       />
                     </label>
-                    <span className="min-w-0 flex-1 truncate text-sm text-gray-300">
+                    <span className="min-w-0 flex-1 truncate text-sm text-text-muted">
                       {fileName || 'Nenhum arquivo escolhido'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-xl border border-gray-700 bg-[#11161d] p-4">
+              <div className="rounded-xl border border-border bg-elevated p-4">
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                  <span className="text-xs uppercase tracking-[0.18em] text-gray-400">
+                  <span className="text-xs uppercase tracking-[0.18em] text-text-muted">
                     Cartao selecionado
                   </span>
-                  <span className="text-lg font-semibold text-white">{card.name}</span>
-                  <span className="text-sm text-gray-400">
+                  <span className="text-lg font-semibold text-text">{card.name}</span>
+                  <span className="text-sm text-text-muted">
                     {card.bank?.name || card.bankName || 'Banco nao informado'}
                   </span>
                 </div>
 
                 <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-center">
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1 text-xs uppercase tracking-[0.18em] text-gray-400">
+                    <div className="mb-1 text-xs uppercase tracking-[0.18em] text-text-muted">
                       Fatura-alvo da conciliacao
                     </div>
                     <select
@@ -3890,7 +3890,7 @@ function CreditCardReconciliationPageInner() {
                         sessionActionLoading !== null ||
                         targetInvoiceOptions.length === 0
                       }
-                      className="w-full rounded border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-50"
+                      className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text focus:border-accent focus:outline-none focus:ring disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {targetInvoiceOptions.length === 0 ? (
                         <option value="">
@@ -3940,9 +3940,9 @@ function CreditCardReconciliationPageInner() {
                 </div>
 
                 {selectedTargetInvoice && (
-                  <div className="mt-3 text-xs text-gray-400">
+                  <div className="mt-3 text-xs text-text-muted">
                     Referencia escolhida:{' '}
-                    <span className="text-gray-200">
+                    <span className="text-text">
                       {formatReference(
                         selectedTargetInvoice.referenceMonth,
                         selectedTargetInvoice.referenceYear
@@ -3960,7 +3960,7 @@ function CreditCardReconciliationPageInner() {
 
           {sessionLoading && selectedTargetInvoice && (
             <Card>
-              <div className="flex items-center gap-3 text-sm text-gray-300">
+              <div className="flex items-center gap-3 text-sm text-text-muted">
                 <RefreshCw size={16} className="animate-spin text-accent" />
                 Carregando o andamento salvo desta referencia...
               </div>
@@ -3976,10 +3976,10 @@ function CreditCardReconciliationPageInner() {
               >
                 <div className="flex flex-wrap items-center gap-x-8 gap-y-2">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                    <span className="text-xs uppercase tracking-[0.14em] text-text-muted">
                       Mês de referência
                     </span>
-                    <span className="font-semibold text-white">
+                    <span className="font-semibold text-text">
                       {formatReference(
                         preview.statement.referenceMonth,
                         preview.statement.referenceYear
@@ -3989,26 +3989,26 @@ function CreditCardReconciliationPageInner() {
                   {preview.valueComparison ? (
                     <>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                        <span className="text-xs uppercase tracking-[0.14em] text-text-muted">
                           Arquivo
                         </span>
-                        <span className="font-semibold text-white">
+                        <span className="font-semibold text-text">
                           {formatCurrency(preview.valueComparison.file.comparableAmount)}
                         </span>
                       </div>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                        <span className="text-xs uppercase tracking-[0.14em] text-text-muted">
                           Zenit
                         </span>
-                        <span className="font-semibold text-white">
+                        <span className="font-semibold text-text">
                           {formatCurrency(preview.valueComparison.zenit.totalAmount)}
                         </span>
                       </div>
                       <div className="flex items-baseline gap-2">
-                        <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                        <span className="text-xs uppercase tracking-[0.14em] text-text-muted">
                           Diferença
                         </span>
-                        <span className="font-semibold text-white">
+                        <span className="font-semibold text-text">
                           {formatCurrency(preview.valueComparison.absoluteDifferenceAmount)}
                         </span>
                       </div>
@@ -4022,10 +4022,10 @@ function CreditCardReconciliationPageInner() {
                     </>
                   ) : (
                     <div className="flex items-baseline gap-2">
-                      <span className="text-xs uppercase tracking-[0.14em] text-gray-400">
+                      <span className="text-xs uppercase tracking-[0.14em] text-text-muted">
                         Líquido das linhas
                       </span>
-                      <span className="font-semibold text-white">
+                      <span className="font-semibold text-text">
                         {formatCurrency(preview.statement.parsedNetAmount)}
                       </span>
                     </div>
@@ -4037,8 +4037,8 @@ function CreditCardReconciliationPageInner() {
                     <span
                       className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                         session.status === 'COMPLETED'
-                          ? 'border-green-500/40 bg-green-500/10 text-green-200'
-                          : 'border-blue-500/40 bg-blue-500/10 text-blue-200'
+                          ? 'border-green-500/40 bg-tone-green-soft text-tone-green'
+                          : 'border-blue-500/40 bg-tone-blue-soft text-tone-blue'
                       }`}
                     >
                       {session.status === 'COMPLETED' ? 'Concluida' : 'Em andamento'}
@@ -4096,14 +4096,14 @@ function CreditCardReconciliationPageInner() {
             <>
               <Card>
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="text-lg font-semibold text-white">
+                  <div className="text-lg font-semibold text-text">
                     Conferencia da conciliacao
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <div
                       role="group"
                       aria-label="Modo de visualização da conciliação"
-                      className="flex rounded-lg border border-gray-700 bg-[#11161d] p-1"
+                      className="flex rounded-lg border border-border bg-elevated p-1"
                     >
                       <button
                         type="button"
@@ -4112,8 +4112,8 @@ function CreditCardReconciliationPageInner() {
                         onClick={() => changeReconciliationViewMode('DETAILED')}
                         className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           reconciliationViewMode === 'DETAILED'
-                            ? 'bg-accent text-white'
-                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            ? 'bg-accent text-on-accent'
+                            : 'text-text-muted hover:bg-elevated hover:text-text'
                         }`}
                       >
                         <Rows3 size={16} />
@@ -4126,8 +4126,8 @@ function CreditCardReconciliationPageInner() {
                         onClick={() => changeReconciliationViewMode('SIDE_BY_SIDE')}
                         className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           reconciliationViewMode === 'SIDE_BY_SIDE'
-                            ? 'bg-accent text-white'
-                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            ? 'bg-accent text-on-accent'
+                            : 'text-text-muted hover:bg-elevated hover:text-text'
                         }`}
                       >
                         <Columns2 size={16} />
@@ -4140,8 +4140,8 @@ function CreditCardReconciliationPageInner() {
                         onClick={() => changeReconciliationViewMode('SUMMARY')}
                         className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                           reconciliationViewMode === 'SUMMARY'
-                            ? 'bg-accent text-white'
-                            : 'text-gray-300 hover:bg-white/5 hover:text-white'
+                            ? 'bg-accent text-on-accent'
+                            : 'text-text-muted hover:bg-elevated hover:text-text'
                         }`}
                       >
                         <BarChart3 size={16} />
@@ -4207,7 +4207,7 @@ function CreditCardReconciliationPageInner() {
                           className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
                             statusFilter === filter.value
                               ? 'border-accent bg-accent/10 text-accent'
-                              : 'border-gray-700 bg-[#11161d] text-gray-300 hover:border-accent hover:text-accent'
+                              : 'border-border bg-elevated text-text-muted hover:border-accent hover:text-accent'
                           }`}
                         >
                           {filter.label} ({filter.count})
@@ -4215,21 +4215,21 @@ function CreditCardReconciliationPageInner() {
                       ))}
                     </div>
 
-                    <div className="mt-4 rounded-xl border border-gray-700 bg-[#11161d] px-4 py-3 text-sm text-gray-300">
-                      Selecao atual: <span className="font-semibold text-white">{selectedItems.length}</span>{' '}
-                      item(ns) somando <span className="font-semibold text-white">{formatCurrency(selectedAmount)}</span>.
+                    <div className="mt-4 rounded-xl border border-border bg-elevated px-4 py-3 text-sm text-text-muted">
+                      Selecao atual: <span className="font-semibold text-text">{selectedItems.length}</span>{' '}
+                      item(ns) somando <span className="font-semibold text-text">{formatCurrency(selectedAmount)}</span>.
                       {selectedDraftIssues.missingDescriptionCount > 0 && (
-                        <span className="block pt-2 text-amber-300">
+                        <span className="block pt-2 text-tone-amber">
                           Revise {selectedDraftIssues.missingDescriptionCount} descricao(oes) antes de importar.
                         </span>
                       )}
                       {selectedDraftIssues.missingCategoryCount > 0 && (
-                        <span className="block pt-1 text-amber-300">
+                        <span className="block pt-1 text-tone-amber">
                           Selecione categoria para {selectedDraftIssues.missingCategoryCount} item(ns) marcado(s).
                         </span>
                       )}
                       {categoriesLoading && (
-                        <span className="block pt-1 text-gray-400">Carregando categorias...</span>
+                        <span className="block pt-1 text-text-muted">Carregando categorias...</span>
                       )}
                     </div>
                   </>
@@ -4365,9 +4365,9 @@ function CreditCardReconciliationPageInner() {
 
                   return (
                     <Card key={item.id} className="overflow-visible p-0">
-                      <div className="grid divide-y divide-gray-700 xl:grid-cols-2 xl:divide-x xl:divide-y-0">
+                      <div className="grid divide-y divide-border xl:grid-cols-2 xl:divide-x xl:divide-y-0">
                         <div className="px-5 py-4">
-                          <div className="mb-3 text-xs uppercase tracking-[0.22em] text-gray-500">
+                          <div className="mb-3 text-xs uppercase tracking-[0.22em] text-text-subtle">
                             Na fatura do banco
                           </div>
                           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -4385,11 +4385,11 @@ function CreditCardReconciliationPageInner() {
                                 onChange={(event) =>
                                   handleToggleSelection(item.id, event.target.checked)
                                 }
-                                className="mt-1 h-4 w-4 rounded border-gray-600 bg-background text-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
+                                className="mt-1 h-4 w-4 rounded border-border-strong bg-background text-accent focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
                               />
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                  <span className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                     Item {item.sequence}
                                   </span>
                                   <span
@@ -4397,11 +4397,11 @@ function CreditCardReconciliationPageInner() {
                                   >
                                     {getItemStatusLabel(item)}
                                   </span>
-                                  <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+                                  <span className="rounded-full border border-border px-2.5 py-1 text-xs text-text-muted">
                                     {getSectionLabel(item.sourceSection)}
                                   </span>
                                   {resolution !== 'PENDING' && (
-                                    <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2.5 py-1 text-xs text-violet-200">
+                                    <span className="rounded-full border border-violet-500/40 bg-tone-violet-soft px-2.5 py-1 text-xs text-tone-violet">
                                       {getResolutionLabel(
                                         resolution,
                                         item.progress?.resolutionData
@@ -4409,16 +4409,16 @@ function CreditCardReconciliationPageInner() {
                                     </span>
                                   )}
                                 </div>
-                                <div className="mt-2 text-base font-semibold text-white">
+                                <div className="mt-2 text-base font-semibold text-text">
                                   {item.sourceDescription}
                                 </div>
                                 {resolution !== 'CONFIRMED_EXISTING' && (
-                                  <div className="mt-2 text-sm text-gray-400">
+                                  <div className="mt-2 text-sm text-text-muted">
                                     {getReasonLabel(item)}
                                   </div>
                                 )}
                                 {item.nonImportableReason && (
-                                  <div className="mt-2 text-sm text-amber-300">
+                                  <div className="mt-2 text-sm text-tone-amber">
                                     {item.nonImportableReason}
                                   </div>
                                 )}
@@ -4426,7 +4426,7 @@ function CreditCardReconciliationPageInner() {
                             </div>
 
                             <div className="flex flex-col items-start gap-2 lg:items-end">
-                              <div className="text-2xl font-semibold text-white">
+                              <div className="text-2xl font-semibold text-text">
                                 {formatCurrency(item.amount)}
                               </div>
                               <div className="flex flex-wrap gap-2 lg:justify-end">
@@ -4577,13 +4577,13 @@ function CreditCardReconciliationPageInner() {
                                 )}
                               </div>
                               {resolution === 'CONFIRMED_EXISTING' && (
-                                <div className="max-w-md text-xs text-gray-400 lg:text-right">
+                                <div className="max-w-md text-xs text-text-muted lg:text-right">
                                   Remove apenas a confirmação desta conciliação; o lançamento
                                   financeiro não será alterado.
                                 </div>
                               )}
                               {resolution === 'LINKED_FIXED' && (
-                                <div className="max-w-md text-xs text-gray-400 lg:text-right">
+                                <div className="max-w-md text-xs text-text-muted lg:text-right">
                                   Remove o vínculo somente desta conciliação; a regra recorrente
                                   será mantida para os próximos meses.
                                 </div>
@@ -4593,16 +4593,16 @@ function CreditCardReconciliationPageInner() {
 
                           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                             <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                              <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                 Data da compra
                               </div>
-                              <div className="mt-1 text-sm text-white">{bankDateLabel}</div>
+                              <div className="mt-1 text-sm text-text">{bankDateLabel}</div>
                             </div>
                             <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                              <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                 Parcela
                               </div>
-                              <div className="mt-1 text-sm text-white">
+                              <div className="mt-1 text-sm text-text">
                                 {formatInstallmentLabel(
                                   item.installmentNumber,
                                   item.totalInstallments
@@ -4610,28 +4610,28 @@ function CreditCardReconciliationPageInner() {
                               </div>
                             </div>
                             <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                              <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                 Cartao na fatura
                               </div>
-                              <div className="mt-1 text-sm text-white">
+                              <div className="mt-1 text-sm text-text">
                                 {item.cardSuffix ? `Final ${item.cardSuffix}` : '-'}
                               </div>
                             </div>
                             <div>
-                              <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                              <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                 Correspondencias
                               </div>
-                              <div className="mt-1 text-sm text-white">
+                              <div className="mt-1 text-sm text-text">
                                 {item.matchedTransactions.length}
                               </div>
                             </div>
                           </div>
 
                           {selectable && (
-                            <div className="mt-4 border-t border-gray-700 pt-4">
+                            <div className="mt-4 border-t border-border pt-4">
                               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
                                 <div>
-                                  <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                  <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                     Descricao a lancar
                                   </div>
                                   <AutocompleteInput
@@ -4648,14 +4648,14 @@ function CreditCardReconciliationPageInner() {
                                     className="mt-2"
                                   />
                                   {missingDescription && (
-                                    <div className="mt-2 text-sm text-amber-300">
+                                    <div className="mt-2 text-sm text-tone-amber">
                                       Informe a descricao que deve ser salva no lancamento.
                                     </div>
                                   )}
                                 </div>
 
                                 <div>
-                                  <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                                  <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                     Categoria do lancamento
                                   </div>
                                   <div className="mt-2">
@@ -4676,17 +4676,17 @@ function CreditCardReconciliationPageInner() {
                                     />
                                   </div>
                                   {suggestionSourceLabel && (
-                                    <div className="mt-2 text-sm text-gray-400">
+                                    <div className="mt-2 text-sm text-text-muted">
                                       Sugestao inicial por {suggestionSourceLabel.toLowerCase()}.
                                     </div>
                                   )}
                                   {item.categorySuggestion.reason && (
-                                    <div className="mt-1 text-sm text-gray-500">
+                                    <div className="mt-1 text-sm text-text-subtle">
                                       {item.categorySuggestion.reason}
                                     </div>
                                   )}
                                   {missingCategory && (
-                                    <div className="mt-2 text-sm text-amber-300">
+                                    <div className="mt-2 text-sm text-tone-amber">
                                       Escolha a categoria antes de importar este item.
                                     </div>
                                   )}
@@ -4696,13 +4696,13 @@ function CreditCardReconciliationPageInner() {
                           )}
                         </div>
 
-                        <div className="bg-[#0f141b] px-5 py-4">
+                        <div className="bg-elevated px-5 py-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <div className="text-xs uppercase tracking-[0.22em] text-gray-500">
+                              <div className="text-xs uppercase tracking-[0.22em] text-text-subtle">
                                 No Zenit
                               </div>
-                              <div className="mt-2 text-sm text-gray-400">
+                              <div className="mt-2 text-sm text-text-muted">
                                 {selectedTargetInvoice
                                   ? `Fatura ${formatReference(
                                       selectedTargetInvoice.referenceMonth,
@@ -4711,7 +4711,7 @@ function CreditCardReconciliationPageInner() {
                                   : 'Selecione a fatura-alvo'}
                               </div>
                             </div>
-                            <span className="rounded-full border border-gray-700 px-2.5 py-1 text-xs text-gray-300">
+                            <span className="rounded-full border border-border px-2.5 py-1 text-xs text-text-muted">
                               {getMatchSummaryLabel(item)}
                             </span>
                           </div>
@@ -4721,21 +4721,21 @@ function CreditCardReconciliationPageInner() {
                               item.matchedTransactions.map((transaction) => (
                                 <div
                                   key={`${item.id}-${transaction.matchKey}`}
-                                  className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3"
+                                  className="rounded-lg border border-border bg-elevated px-4 py-3"
                                 >
                                   <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                                     <div>
                                       <div className="flex flex-wrap items-center gap-2">
-                                        <div className="font-medium text-white">
+                                        <div className="font-medium text-text">
                                           {transaction.description}
                                         </div>
                                         {transaction.matchSource === 'PROJECTED_FIXED' && (
-                                          <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
+                                          <span className="rounded-full border border-sky-500/40 bg-tone-sky-soft px-2 py-0.5 text-[11px] font-medium text-tone-sky">
                                             Fixa projetada
                                           </span>
                                         )}
                                       </div>
-                                      <div className="mt-1 text-sm text-gray-400">
+                                      <div className="mt-1 text-sm text-text-muted">
                                         {transaction.matchSource === 'PROJECTED_FIXED'
                                           ? `Fechamento em ${formatCalendarDate(transaction.date)}`
                                           : `Compra em ${formatCalendarDate(transaction.date)}`}{' '}
@@ -4750,7 +4750,7 @@ function CreditCardReconciliationPageInner() {
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-3">
-                                      <div className="text-sm font-semibold text-white">
+                                      <div className="text-sm font-semibold text-text">
                                         {formatCurrency(transaction.amount)}
                                       </div>
                                       {transaction.matchSource === 'TRANSACTION' &&
@@ -4776,25 +4776,25 @@ function CreditCardReconciliationPageInner() {
                                 </div>
                               ))
                             ) : targetInvoiceDetailLoading ? (
-                              <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-6 text-sm text-gray-400">
+                              <div className="rounded-lg border border-border bg-elevated px-4 py-6 text-sm text-text-muted">
                                 Carregando itens da fatura do Zenit...
                               </div>
                             ) : selectedSystemTransaction ? (
-                              <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
+                              <div className="rounded-lg border border-border bg-elevated px-4 py-3">
                                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                   <div>
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <div className="font-medium text-white">
+                                      <div className="font-medium text-text">
                                         {selectedSystemTransaction.description}
                                       </div>
                                       {selectedSystemTransaction.isFixedProjection && (
-                                        <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-200">
+                                        <span className="rounded-full border border-sky-500/40 bg-tone-sky-soft px-2 py-0.5 text-[11px] font-medium text-tone-sky">
                                           Fixa projetada
                                         </span>
                                       )}
                                       {selectedSystemTransaction.category && (
                                         <span
-                                          className="rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
+                                          className="rounded-full px-2 py-0.5 text-[11px] font-medium text-text"
                                           style={{
                                             backgroundColor:
                                               selectedSystemTransaction.category.color
@@ -4804,7 +4804,7 @@ function CreditCardReconciliationPageInner() {
                                         </span>
                                       )}
                                     </div>
-                                    <div className="mt-1 text-sm text-gray-400">
+                                    <div className="mt-1 text-sm text-text-muted">
                                       {getSystemTransactionDateLabel(selectedSystemTransaction)} •
                                       parcela{' '}
                                       {formatInstallmentLabel(
@@ -4814,7 +4814,7 @@ function CreditCardReconciliationPageInner() {
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-3">
-                                    <div className="text-sm font-semibold text-white">
+                                    <div className="text-sm font-semibold text-text">
                                       {formatCurrency(selectedSystemTransaction.amount)}
                                     </div>
                                     {selectedSystemTransaction.id !== null && (
@@ -4838,11 +4838,11 @@ function CreditCardReconciliationPageInner() {
                                 </div>
                               </div>
                             ) : targetInvoiceDetail ? (
-                              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-6 text-sm text-gray-400">
+                              <div className="rounded-lg border border-dashed border-border bg-elevated px-4 py-6 text-sm text-text-muted">
                                 Nenhum item relacionado na fatura do Zenit para este lancamento.
                               </div>
                             ) : (
-                              <div className="rounded-lg border border-dashed border-gray-700 bg-[#11161d] px-4 py-6 text-sm text-gray-400">
+                              <div className="rounded-lg border border-dashed border-border bg-elevated px-4 py-6 text-sm text-text-muted">
                                 A referencia selecionada ainda nao expoe itens da fatura do Zenit
                                 para comparacao visual.
                               </div>
@@ -4850,8 +4850,8 @@ function CreditCardReconciliationPageInner() {
 
                             {resolution === 'PENDING' &&
                               item.status !== 'NOT_IMPORTABLE' && (
-                              <div className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3">
-                                <div className="text-xs uppercase tracking-[0.18em] text-gray-500">
+                              <div className="rounded-lg border border-border bg-elevated px-4 py-3">
+                                <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
                                   Selecionar contraparte na fatura do Zenit
                                 </div>
                                 <select
@@ -4865,7 +4865,7 @@ function CreditCardReconciliationPageInner() {
                                     (!selectedSystemTransaction &&
                                       availableSystemTransactions.length === 0)
                                   }
-                                  className="mt-2 w-full rounded-lg border border-gray-700 bg-background px-3 py-2 text-sm text-white focus:border-accent focus:outline-none"
+                                  className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-text focus:border-accent focus:outline-none"
                                 >
                                   <option value="">
                                     {availableSystemTransactions.length > 0
@@ -4919,7 +4919,7 @@ function CreditCardReconciliationPageInner() {
                                       : 'Confirmar correspondencia existente'}
                                   </Button>
                                 )}
-                                <div className="mt-2 text-sm text-gray-400">
+                                <div className="mt-2 text-sm text-text-muted">
                                   Selecione a contraparte correta e confirme para gravar este
                                   checkpoint no andamento da conciliacao.
                                 </div>
@@ -4934,7 +4934,7 @@ function CreditCardReconciliationPageInner() {
 
                 {filteredItems.length === 0 && (
                   <Card>
-                    <div className="py-10 text-center text-gray-400">
+                    <div className="py-10 text-center text-text-muted">
                       Nenhum item encontrado para o filtro atual.
                     </div>
                   </Card>
@@ -4948,7 +4948,7 @@ function CreditCardReconciliationPageInner() {
                     role="region"
                     aria-label="Resultado do ultimo processamento"
                   >
-                    <div className="flex items-center gap-2 text-lg font-semibold text-white">
+                    <div className="flex items-center gap-2 text-lg font-semibold text-text">
                       <CheckCircle2 size={18} className="text-accent" />
                       Resultado do ultimo processamento
                     </div>
@@ -4963,12 +4963,12 @@ function CreditCardReconciliationPageInner() {
                       ].map(([label, value]) => (
                         <div
                           key={String(label)}
-                          className="rounded-lg border border-gray-700 bg-[#11161d] px-4 py-3"
+                          className="rounded-lg border border-border bg-elevated px-4 py-3"
                         >
-                          <div className="text-xs uppercase tracking-[0.14em] text-gray-500">
+                          <div className="text-xs uppercase tracking-[0.14em] text-text-subtle">
                             {label}
                           </div>
-                          <div className="mt-1 text-lg font-semibold text-white">{value}</div>
+                          <div className="mt-1 text-lg font-semibold text-text">{value}</div>
                         </div>
                       ))}
                     </div>
@@ -4981,8 +4981,8 @@ function CreditCardReconciliationPageInner() {
                             key={`${result.itemId}-${result.status}`}
                             className={`rounded-lg border px-4 py-3 text-sm ${
                               successful
-                                ? 'border-green-500/30 bg-green-500/10 text-green-100'
-                                : 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+                                ? 'border-green-500/30 bg-tone-green-soft text-tone-green'
+                                : 'border-amber-500/40 bg-tone-amber-soft text-tone-amber'
                             }`}
                           >
                             <div className="flex flex-wrap items-center gap-2">

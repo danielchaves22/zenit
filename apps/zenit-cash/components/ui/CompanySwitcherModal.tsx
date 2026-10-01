@@ -46,7 +46,7 @@ export function CompanySwitcherModal({ isOpen, onClose }: CompanySwitcherModalPr
               onChange={() => setSelected(comp.id)}
               className="form-radio text-accent"
             />
-            <span className="text-gray-300">{comp.name}</span>
+            <span className="text-text-muted">{comp.name}</span>
           </label>
         ))}
       </div>

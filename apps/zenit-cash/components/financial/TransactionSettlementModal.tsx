@@ -96,13 +96,13 @@ export default function TransactionSettlementModal({
         />
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-gray-300">
+          <label className="mb-1 block text-sm font-medium text-text-muted">
             {getAccountLabel(kind)}
           </label>
           <select
             value={accountId}
             onChange={(event) => onAccountIdChange(event.target.value)}
-            className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+            className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
             disabled={loading}
           >
             <option value="">Selecione uma conta</option>
@@ -124,12 +124,12 @@ export default function TransactionSettlementModal({
         />
 
         <div>
-          <div className="mb-1 text-sm font-medium text-gray-300">Observações</div>
+          <div className="mb-1 text-sm font-medium text-text-muted">Observações</div>
           <textarea
             value={notes}
             onChange={(event) => onNotesChange(event.target.value)}
             rows={4}
-            className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-blue-500 focus:outline-none focus:ring"
+            className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
             placeholder="Opcional"
             disabled={loading}
           />

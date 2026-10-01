@@ -37,7 +37,7 @@ export default function FirstAccessPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#1e2126]">
+    <div className="min-h-screen flex items-center justify-center bg-background">
       <Card className="w-full max-w-md" headerTitle="Defina sua nova senha">
         <form onSubmit={handleSubmit}>
           <Input
@@ -56,7 +56,7 @@ export default function FirstAccessPage() {
             onChange={e => setConfirm(e.target.value)}
             required
           />
-          {error && <p className="text-red-400 text-sm mb-2">{error}</p>}
+          {error && <p className="text-tone-red text-sm mb-2">{error}</p>}
           <Button type="submit" variant="accent" className="w-full" disabled={loading}>
             {loading ? 'Salvando...' : 'Salvar'}
           </Button>

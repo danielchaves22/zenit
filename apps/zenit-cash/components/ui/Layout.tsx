@@ -16,7 +16,7 @@ export function Layout({ children }: LayoutProps) {
   const isHome = router.pathname === '/';
 
   return (
-    <div className="min-h-screen bg-neutral text-gray-800 font-sans">
+    <div className="min-h-screen bg-neutral text-text-subtle font-sans">
       {/* Navbar */}
       <header className="bg-white shadow-md py-4 px-6 flex justify-between items-center sticky top-0 z-10">
         <div className="flex items-center space-x-4">
@@ -34,7 +34,7 @@ export function Layout({ children }: LayoutProps) {
         <div className="flex items-center space-x-4">
           <div className="text-right hidden sm:block">
             <div className="text-sm font-medium">{userName}</div>
-            <div className="text-xs text-gray-500">{companyName}</div>
+            <div className="text-xs text-text-subtle">{companyName}</div>
             <div className="text-xs text-primary">{userRole}</div>
           </div>
           <Button variant="danger" onClick={logout}>

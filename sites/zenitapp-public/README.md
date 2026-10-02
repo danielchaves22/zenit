@@ -8,6 +8,7 @@ Conteudo institucional, paginas de aplicacoes e materiais de compliance para o d
 - `/docs` portal de documentacao gerado a partir dos Markdown do monorepo
 - `/zenitcalc` pagina dedicada ao ZenitCalc
 - `/cash` pagina dedicada ao Cash
+- `/hub` apresentacao do Zenit Hub, conexao com Calendar e uso de dados
 - `/orcamento-mobile` pagina dedicada ao Orcamento Mobile
 - `/privacy` politica de privacidade
 - `/terms` termos de servico

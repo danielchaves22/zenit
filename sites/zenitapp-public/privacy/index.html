@@ -18,7 +18,7 @@
         </a>
         <p class="eyebrow">Documento institucional</p>
         <h1 class="title">Politica de Privacidade</h1>
-        <p class="small">Ultima atualizacao: 9 de junho de 2026</p>
+        <p class="small">Ultima atualizacao: 2 de outubro de 2026</p>
       </header>
 
       <h2>1. Quem somos</h2>
@@ -35,6 +35,7 @@
         <li>dados financeiros, como contas, categorias, lancamentos, faturas, orcamentos e projecoes, quando aplicavel;</li>
         <li>conteudo e metadados de conversas com assistentes, chats e canais conversacionais habilitados;</li>
         <li>metadados e conteudo de email quando a integracao Gmail estiver habilitada;</li>
+        <li>identificacao da conta Google, lista de agendas e dados de eventos quando o Google Calendar estiver conectado ao Zenit Hub;</li>
         <li>metadados tecnicos de auditoria e seguranca.</li>
       </ul>
 
@@ -52,6 +53,40 @@
       </p>
 
       <h2>5. Google APIs</h2>
+      <h3>Google Calendar no Zenit Hub</h3>
+      <p>
+        O Zenit Hub e um assistente pessoal acessado pelo WhatsApp. A conexao com o Google Calendar e opcional
+        e depende da autorizacao do titular no Google e da confirmacao da conta na mesma conversa do WhatsApp.
+        O Hub solicita a identificacao e o email da conta, a leitura da lista de agendas e acesso para consultar,
+        criar, alterar e excluir eventos nas agendas em que a conta possui essas permissoes. Essa conexao nao
+        concede acesso ao Gmail nem permite administrar ou compartilhar agendas.
+      </p>
+      <p>
+        Os dados de agenda sao usados para responder perguntas, preparar alteracoes solicitadas e compor resumos
+        que o usuario escolher receber. Criacoes, alteracoes e exclusoes de eventos exigem uma previa e a
+        confirmacao pelo botao no WhatsApp antes da execucao.
+      </p>
+      <p>
+        Mensagens e dados de eventos necessarios a resposta podem ser processados pela API da OpenAI para
+        interpretar pedidos e redigir respostas. As respostas enviadas pelo WhatsApp sao processadas pela Meta;
+        a infraestrutura do Hub e hospedada no Render. As credenciais de acesso ao Google nao sao enviadas ao
+        modelo de IA. O Hub nao utiliza dados do Google para publicidade nem para treinar modelos de IA de uso geral.
+      </p>
+      <p>
+        O Hub armazena a identificacao da conexao e tokens de autorizacao criptografados, alem de contexto recente
+        de conversa, rascunhos e registros de entrega e operacao. Nao mantem uma replica permanente de todas as
+        agendas; trechos de eventos podem fazer parte das respostas e desses registros operacionais.
+        Os tokens permitem renovar o acesso enquanto a autorizacao permanecer valida.
+      </p>
+      <p>
+        Para interromper o acesso, envie <strong>desconectar Calendar</strong> na conversa do WhatsApp.
+        Voce tambem pode revogar a permissao na pagina de
+        <a href="https://myaccount.google.com/connections" target="_blank" rel="noreferrer">conexoes da sua Conta Google</a>.
+        A desconexao remove a conexao e seus tokens do Hub; nao apaga os eventos da agenda nem as mensagens ja
+        entregues no WhatsApp. Para solicitar a exclusao dos demais registros associados a sua conta,
+        entre em contato pelo email suporte@equinoxtecnologia.com.
+      </p>
+      <h3>Compromisso de uso limitado</h3>
       <p>
         O uso e a transferencia para qualquer outro aplicativo de informacoes recebidas das Google APIs seguirao a
         <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer">

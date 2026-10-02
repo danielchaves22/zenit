@@ -58,4 +58,17 @@ describe('Cash first-party Hub bridge', () => {
     }
     expect(Service.dispatchForHub).toHaveBeenCalledTimes(1);
   });
+
+  it('allows realized expense reads only with a current Cash binding', async () => {
+    const body = { operation: 'query', sender: '5544999990000', tool: 'get_realized_expenses',
+      args: { startDate: '2026-10-02', endDate: '2026-10-02', category: null, mode: 'SUMMARY' } };
+    jest.mocked(Service.getHubBinding).mockResolvedValue(null);
+    expect((await signed(body).send()).status).toBe(403);
+    expect(Service.queryForHub).not.toHaveBeenCalled();
+    jest.mocked(Service.getHubBinding).mockResolvedValue({ binding: { userId: 7 } } as any);
+    jest.mocked(Service.queryForHub).mockResolvedValue({ data: { ok: true, total: '10.00' } });
+    expect((await signed(body).send()).body).toEqual({ data: { ok: true, total: '10.00' } });
+    expect(Service.queryForHub).toHaveBeenCalledWith(body.sender, body.tool, body.args);
+    expect((await signed({ ...body, tool: 'confirm_pending_action' }).send()).status).toBe(400);
+  });
 });

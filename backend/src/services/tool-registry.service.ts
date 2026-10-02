@@ -19,6 +19,19 @@ function strictObject(properties: Record<string, unknown>) {
 
 const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
   {
+    type: 'function', name: 'get_realized_expenses', strict: true,
+    description: 'Consulta gastos realizados por data da compra/competência, incluindo compras no cartão com fatura aberta, sem duplicar pagamento de fatura. Retorna totais fora do cartão, no cartão e consolidado, créditos separados e média MENSAL calculada no Cash. Use para quanto gastei, listar despesas e médias. SUMMARY para totais/médias, LIST para lançamentos paginados. Totais abrangem todo o período. Não use saldos, pendências ou amostras recentes para calcular gastos.',
+    parameters: strictObject({
+      startDate: { type: 'string', description: 'Data inicial inclusiva YYYY-MM-DD. Hoje usa a data local do usuário.' },
+      endDate: { type: 'string', description: 'Data final inclusiva YYYY-MM-DD, até 60 meses. Para hoje, igual ao início.' },
+      category: { type: ['string', 'null'], description: 'Nome de categoria ou caminho Pai / Filha; null para todas. Inclui subcategorias. Se ambígua/inexistente, pergunte; nunca retire o filtro para responder.' },
+      groupByCategory: { type: 'boolean', description: 'true quando pedir separado por categorias.' },
+      mode: { type: 'string', enum: ['SUMMARY', 'LIST'] },
+      page: { type: 'integer', minimum: 1, maximum: 10000 },
+      limit: { type: 'integer', minimum: 1, maximum: 20 }
+    })
+  },
+  {
     type: 'function',
     name: 'create_transaction_draft',
     description:

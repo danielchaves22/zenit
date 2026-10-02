@@ -12,6 +12,7 @@ import { z } from 'zod';
 import CreditCardInvoiceService from './credit-card-invoice.service';
 import FinancialAccountService from './financial-account.service';
 import FinancialTransactionService from './financial-transaction.service';
+import RealizedExpensesService from './realized-expenses.service';
 import PendingActionService, { DraftTransactionPayload } from './pending-action.service';
 import UserService from './user.service';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
@@ -1041,6 +1042,14 @@ export default class ToolExecutorService {
         return this.getCreditCardOverview(argumentsJson, context);
       case 'get_due_obligations':
         return this.getDueObligations(argumentsJson, context);
+      case 'get_realized_expenses': {
+        const [accessibleAccountIds, accessFilter] = await Promise.all([
+          getAccessibleAccountIds(context), getAccessibleTransactionFilter(context)
+        ]);
+        return { data: await RealizedExpensesService.query(argumentsJson, {
+          companyId: context.companyId, accessibleAccountIds, accessFilter
+        }) };
+      }
       case 'cancel_pending_action':
         return this.cancelPendingAction(argumentsJson, context);
       case 'get_recent_transactions':

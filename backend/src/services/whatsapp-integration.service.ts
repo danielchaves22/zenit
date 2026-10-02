@@ -26,7 +26,7 @@ import { logger } from '../utils/logger';
 
 export type HubCashReply = { text: string; buttons?: WhatsAppReplyButton[] };
 const hubReplies = new AsyncLocalStorage<HubCashReply[]>();
-const HUB_READ_TOOLS = new Set(['get_financial_overview', 'get_due_obligations', 'get_credit_card_overview', 'get_recent_transactions']);
+const HUB_READ_TOOLS = new Set(['get_financial_overview', 'get_due_obligations', 'get_credit_card_overview', 'get_recent_transactions', 'get_realized_expenses']);
 
 
 type CompanyChannelAccess = {

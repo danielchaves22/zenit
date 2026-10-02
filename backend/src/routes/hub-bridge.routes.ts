@@ -12,7 +12,7 @@ const bodySchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('message'), sender, messageId: z.string().min(1).max(256),
     text: z.string().max(8000), buttonId: z.string().max(256).optional(),
     audio: z.object({ mediaId: z.string().regex(/^\d{1,128}$/) }).strict().optional() }).strict(),
-  z.object({ operation: z.literal('query'), sender, tool: z.enum(['get_financial_overview', 'get_due_obligations', 'get_credit_card_overview', 'get_recent_transactions']),
+  z.object({ operation: z.literal('query'), sender, tool: z.enum(['get_financial_overview', 'get_due_obligations', 'get_credit_card_overview', 'get_recent_transactions', 'get_realized_expenses']),
     args: z.record(z.unknown()) }).strict()
 ]).refine(input => input.operation !== 'message' || !input.audio || (!input.text.trim() && input.buttonId === undefined));
 

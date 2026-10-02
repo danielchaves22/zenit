@@ -12,6 +12,7 @@ export const realizedExpensesArgs = z.object({
   startDate: dateKey,
   endDate: dateKey,
   category: z.string().trim().min(1).max(160).nullable().optional(),
+  fixedExpenses: z.enum(['ALL', 'ONLY_FIXED', 'EXCLUDE_FIXED']).default('ALL'),
   groupByCategory: z.boolean().default(false),
   mode: z.enum(['SUMMARY', 'LIST']).default('SUMMARY'),
   page: z.number().int().min(1).max(10000).default(1),
@@ -34,6 +35,11 @@ const cardWhere: Prisma.FinancialTransactionWhereInput = { OR: [
   { creditCardInvoiceId: { not: null } },
   { fromAccount: { is: { type: 'CREDIT_CARD' } } },
   { toAccount: { is: { type: 'CREDIT_CARD' } } }
+] };
+// Refunds inherit the purchase's origin, as in FinancialHistoryService.
+const fixedWhere: Prisma.FinancialTransactionWhereInput = { OR: [
+  { recurringTransactionId: { not: null } },
+  { refundOfTransaction: { is: { recurringTransactionId: { not: null } } } }
 ] };
 
 /** Historical consumption, never a forecast or an invoice cash-flow report. */
@@ -93,7 +99,8 @@ export default class RealizedExpensesService {
         ...(access.accessibleAccountIds !== undefined ? [{ OR: [
           { fromAccountId: { in: access.accessibleAccountIds } }, { toAccountId: { in: access.accessibleAccountIds } }
         ] }] : []),
-        ...(categoryIds ? [{ categoryId: { in: categoryIds } }] : [])
+        ...(categoryIds ? [{ categoryId: { in: categoryIds } }] : []),
+        ...(args.fixedExpenses === 'ALL' ? [] : [args.fixedExpenses === 'ONLY_FIXED' ? fixedWhere : { NOT: fixedWhere }])
       ] };
       const channels = { outsideCreditCard: empty(), creditCard: empty() };
       const categoryTotals = new Map<number | null, typeof channels>();
@@ -120,13 +127,14 @@ export default class RealizedExpensesService {
         where, orderBy: [{ date: 'desc' }, { id: 'desc' }], skip: (args.page - 1) * args.limit, take: args.limit,
         select: { id: true, description: true, amount: true, date: true, effectiveDate: true, categoryId: true,
           creditCardInvoiceId: true, creditCardCreditKind: true, installmentNumber: true, totalInstallments: true,
+          recurringTransactionId: true, refundOfTransaction: { select: { recurringTransactionId: true } },
           fromAccount: { select: { name: true, type: true } }, toAccount: { select: { name: true, type: true } } }
       }) : [];
       const grouped = args.groupByCategory ? [...categoryTotals].map(([id, value]) => ({
         categoryId: id, category: id === null ? 'Sem categoria' : path(id), ...pack(value)
       })).sort((a, b) => new Prisma.Decimal(b.total.netExpenses).comparedTo(a.total.netExpenses)) : [];
       return {
-        ok: true as const, startDate: args.startDate, endDate: args.endDate, category: selectedCategory,
+        ok: true as const, startDate: args.startDate, endDate: args.endDate, category: selectedCategory, fixedExpenses: args.fixedExpenses,
         basis: 'Gastos realizados por data da compra/competência. Inclui compras no cartão com fatura aberta e parcelas registradas na data da compra. Exclui pendências, transferências, ajustes de saldo, ignorados e pagamentos de fatura. Créditos de cartão são apresentados separadamente e abatidos no total líquido.',
         average: { unit: 'MONTH', monthCount: months, partialMonths,
           method: 'Total líquido do período dividido pelos meses de calendário abrangidos, incluindo meses sem gastos. Meses parciais usam apenas os dias consultados, sem projeção.' },
@@ -137,7 +145,9 @@ export default class RealizedExpensesService {
           category: item.categoryId === null ? 'Sem categoria' : path(item.categoryId),
           channel: item.creditCardInvoiceId !== null || item.fromAccount?.type === 'CREDIT_CARD' || item.toAccount?.type === 'CREDIT_CARD' ? 'CREDIT_CARD' : 'OUTSIDE_CREDIT_CARD',
           account: item.fromAccount?.name ?? item.toAccount?.name ?? null, creditKind: item.creditCardCreditKind,
-          installmentNumber: item.installmentNumber, totalInstallments: item.totalInstallments })),
+          installmentNumber: item.installmentNumber, totalInstallments: item.totalInstallments,
+          isFixed: item.recurringTransactionId !== null || item.refundOfTransaction?.recurringTransactionId != null,
+          fixedTemplateId: item.recurringTransactionId ?? item.refundOfTransaction?.recurringTransactionId ?? null })),
         pagination: { page: args.mode === 'LIST' ? args.page : null, limit: args.limit, totalItems: summary.total.transactionCount,
           totalPages: Math.ceil(summary.total.transactionCount / args.limit),
           hasMore: args.mode === 'LIST' && args.page * args.limit < summary.total.transactionCount },

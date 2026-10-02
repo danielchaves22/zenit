@@ -26,6 +26,7 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
       endDate: { type: 'string', description: 'Data final inclusiva YYYY-MM-DD, até 60 meses. Para hoje, igual ao início.' },
       category: { type: ['string', 'null'], description: 'Nome de categoria ou caminho Pai / Filha; null para todas. Inclui subcategorias. Se ambígua/inexistente, pergunte; nunca retire o filtro para responder.' },
       groupByCategory: { type: 'boolean', description: 'true quando pedir separado por categorias.' },
+      fixedExpenses: { type: 'string', enum: ['ALL', 'ONLY_FIXED', 'EXCLUDE_FIXED'], description: 'ALL por padrão, inclui fixas e não fixas; ONLY_FIXED para somente fixas; EXCLUDE_FIXED para sem fixas. Origem registrada no Cash, inclusive estornos da compra fixa. Parcelamento sozinho não indica despesa fixa.' },
       mode: { type: 'string', enum: ['SUMMARY', 'LIST'] },
       page: { type: 'integer', minimum: 1, maximum: 10000 },
       limit: { type: 'integer', minimum: 1, maximum: 20 }

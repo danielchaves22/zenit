@@ -7,6 +7,7 @@ O assistente do Cash e o Zenit Hub consultam `get_realized_expenses`. O Cash res
 - `startDate` / `endDate`: datas inclusivas `YYYY-MM-DD`, até 60 meses de calendário.
 - `category`: nome ou caminho `Pai / Filha`, ou `null` para todas. A seleção inclui descendentes. Nomes sem correspondência ou ambíguos retornam erro e candidatos, sem retirar o filtro silenciosamente.
 - `groupByCategory`: inclui composição por categoria (até 20 grupos, com indicação explícita de corte).
+- `fixedExpenses`: `ALL` (padrão, inclusive quando omitido), `ONLY_FIXED` (somente fixas) ou `EXCLUDE_FIXED` (sem fixas). Aplica-se aos totais, médias, categorias e paginação. O retorno informa o filtro aplicado; cada item traz `isFixed` e `fixedTemplateId` (ou `null`).
 - `mode`: `SUMMARY` para totais/médias; `LIST` inclui lançamentos.
 - `page` / `limit`: página a partir de 1, até 20 lançamentos por página. Totais e médias sempre consideram o período completo, não apenas a página.
 
@@ -18,7 +19,11 @@ O relatório usa a perspectiva econômica: lançamentos `COMPLETED` pela data pr
 
 Compras no cartão contam mesmo com a fatura em aberto. Parcelas já registradas na mesma data de compra compõem o gasto nessa data; não representam o desembolso de cada mês. Há subtotais fora do cartão, no cartão e consolidado. Créditos explícitos de cartão (estorno, cashback, ajuste) aparecem separados do gasto bruto e reduzem o total líquido. Receitas comuns não são usadas para reduzir gastos.
 
-A média mensal divide o total líquido pelo número de meses de calendário abrangidos, incluindo meses sem gastos. Meses parciais usam só os dias consultados e são identificados em `average.partialMonths`, sem projeção para um mês completo. Essa consulta inclui gastos fixos e parcelas; não usa a média de gastos variáveis da previsão financeira.
+A média mensal divide o total líquido pelo número de meses de calendário abrangidos, incluindo meses sem gastos. Meses parciais usam só os dias consultados e são identificados em `average.partialMonths`, sem projeção para um mês completo. Por padrão a consulta inclui gastos fixos e parcelas; não usa a média de gastos variáveis da previsão financeira.
+
+A origem fixa é o vínculo `recurringTransactionId`, preservado após a efetivação e mesmo se o modelo fixo estiver inativo. Estornos herdam a origem da compra vinculada em `refundOfTransaction`, seguindo o histórico financeiro existente. Não se deduz origem por descrição, categoria ou parcelamento. Créditos sem vínculo fixo ficam no grupo não fixo. O filtro não materializa projeções nem inclui pendências.
+
+Exemplos: “Quanto gastei este mês sem as fixas?”, “Liste apenas as despesas fixas de setembro”, “Qual minha média mensal com alimentação, excluindo fixas, de abril a setembro?”. Ao continuar a conversa ou a paginação, preserve o filtro até o usuário alterá-lo.
 
 ## Consistência e acesso
 

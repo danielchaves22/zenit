@@ -18,6 +18,8 @@ related:
 
 # Gmail OAuth setup
 
+> Referência da integração Gmail do backend. Ela não configura o Google Calendar do Hub. Não habilite agendamento ou processamento Gmail para conectar agendas; o Calendar usa o cliente e os escopos descritos nos [conectores do Hub](https://github.com/danielchaves22/zenit-hub/blob/master/docs/CONECTORES.md). A existência deste guia não indica que o job de Gmail esteja ativo.
+
 ## Objetivo
 
 Registrar o passo a passo para configurar a integracao Gmail no ecossistema Zenit usando a conta Google correta, o dominio verificado e os redirects esperados pelo backend.

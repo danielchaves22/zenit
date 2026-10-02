@@ -1,5 +1,5 @@
 ---
-title: Como usar transacoes fixas
+title: Despesas e receitas fixas
 slug: /docs/help/zenit-cash/fixed-transactions
 type: operations-guide
 product: zenit-cash
@@ -7,53 +7,31 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-06-04
-summary: Como cadastrar e manter despesas e receitas fixas no Zenit Cash.
-tags:
-  - help
-  - fixed-transactions
-related:
-  - /docs/help/zenit-cash/transactions
+last_reviewed: 2026-10-02
+summary: Configure recorrências e entenda a diferença entre o modelo fixo, a previsão e a ocorrência do mês.
 ---
 
-# Como usar transacoes fixas
+# Despesas e receitas fixas
 
-## Quando usar
+## Criar uma recorrência
 
-Use transacoes fixas para despesas e receitas que se repetem todos os meses, como aluguel, folha, internet ou outros compromissos recorrentes de rotina.
+Use **Fixas** para compromissos que se repetem, como aluguel, internet ou recebimentos recorrentes.
 
-## Pre-requisitos
+1. Abra **Fixas** e escolha **Nova Transação Fixa**.
+2. Informe descrição, tipo, valor, conta e categoria.
+3. Confira a vigência e as opções de recorrência disponíveis.
+4. Salve e verifique a próxima competência indicada.
 
-- permissao para acessar `Fixas`;
-- contas e categorias ja disponiveis para vincular a transacao fixa.
+## Modelo, previsão e lançamento
 
-## Passos
+O modelo fixo define a recorrência. As ocorrências representam cada período dessa regra. Uma previsão ainda não materializada pode aparecer no planejamento sem ser um lançamento efetivamente pago.
 
-1. abra `Fixas` no menu lateral;
-2. clique em `Nova Transacao Fixa`;
-3. informe descricao e valor;
-4. selecione se a fixa e uma `Despesa` ou `Receita`;
-5. vincule a conta e a categoria adequadas;
-6. revise o inicio da vigencia e mantenha a fixa ativa;
-7. salve o template da transacao fixa.
+Na listagem de transações, a ação de quitação de uma ocorrência prevista cria o registro necessário e abre a revisão do pagamento. Confira os valores e confirme a quitação. Abrir essa revisão não equivale a concluir o pagamento.
 
-![Lista de transacoes fixas](../assets/fixed-transactions.png)
+## Alterar ou encerrar
 
-## Riscos
+Edite o modelo para ajustar as ocorrências futuras conforme as opções apresentadas. Alterações do modelo não corrigem automaticamente transações já materializadas. Para encerrar a recorrência, use a ação de cancelamento ou inativação disponível e confira o efeito sobre os próximos períodos.
 
-- usar conta ou categoria incorreta faz com que as materializacoes mensais saiam erradas;
-- uma fixa inativa nao continuara gerando movimentos futuros;
-- editar uma fixa altera o template daqui para frente, mas nao corrige automaticamente o que ja foi materializado.
+## Consultar gastos fixos realizados
 
-## Rollback
-
-Se a configuracao estiver errada, edite a transacao fixa ou cancele o template. Quando a necessidade for encerrar a recorrencia, prefira cancelar em vez de simplesmente ignorar o registro.
-
-## Verificacao final
-
-Confirme que:
-
-- a fixa aparece na listagem;
-- o tipo, o valor e a conta estao corretos;
-- a fixa esta ativa quando deve continuar gerando movimentos;
-- a proxima competencia exibida corresponde ao comportamento esperado.
+Uma despesa pode continuar identificada como originada de uma fixa mesmo depois de concluída. Na consulta de [gastos realizados](realized-expenses-guide.md), você pode pedir todos os gastos, apenas fixas ou excluir fixas. Essa classificação vem do vínculo com a recorrência, não de palavras na descrição.

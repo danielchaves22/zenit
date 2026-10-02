@@ -5,7 +5,7 @@ type: overview
 product: zenit-cash-mobile
 audience: user
 visibility: public
-status: active
+status: archived
 owner: product
 last_reviewed: 2026-06-04
 summary: Visao de produto do Zenit Cash Mobile como app de insight e acao financeira.
@@ -13,10 +13,12 @@ tags:
   - mobile
   - cash
 related:
-  - /docs/architecture/mobile/zenit-cash-mobile-technical-spec
+  - /docs/help/zenit-cash/overview
 ---
 
 # Zenit Cash Mobile
+
+> Visão original do projeto mobile, preservada como referência histórica. Este texto não indica disponibilidade de instalação nem o escopo atual do Cash. Para uso hoje, consulte os [guias do Cash](/docs/help/zenit-cash/overview) e do [Hub](/docs/help/zenit-hub/getting-started).
 
 ## Objetivo
 
@@ -41,4 +43,4 @@ O app mobile nao replica o fluxo operacional completo do web. O objetivo do mobi
 
 ## Links relacionados
 
-- [Zenit documentation overview](../../README.md)
+- [Ajuda do Zenit Cash](/docs/help/zenit-cash/overview)

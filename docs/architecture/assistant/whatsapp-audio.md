@@ -1,10 +1,27 @@
-# Mensagens de voz no WhatsApp
+---
+title: Áudio e confirmação no canal financeiro
+slug: /docs/architecture/assistant/whatsapp-audio
+type: technical-spec
+product: zenit-cash
+audience: dev
+visibility: internal
+status: active
+owner: engineering
+last_reviewed: 2026-10-02
+summary: Transcrição no caminho direto do Cash e relação com o ingresso pelo Hub.
+---
+
+# Áudio e confirmação no canal financeiro
 
 O usuário pode enviar uma mensagem de voz ou texto para iniciar um pedido e para corrigir um rascunho antes da confirmação. O agente responde por texto, com o resumo e os botões Confirmar/Cancelar. **Somente o botão Confirmar grava o lançamento no WhatsApp.** Dizer ou escrever "confirmar" apresenta novamente o botão; a tool de confirmação não fica disponível ao modelo neste canal e o executor também bloqueia sua execução.
 
 Uma correção mantém a mesma sessão e o mesmo rascunho. Campos nulos da tool de atualização significam "preservar". A revisão muda após cada atualização, invalidando os botões do resumo anterior. Uma correção que não puder ser resolvida pede esclarecimento, sem apresentar o resumo antigo como se tivesse sido corrigido. A edição de lançamentos já confirmados não faz parte deste fluxo.
 
-## Processamento
+## Escopo deste documento
+
+O ingresso atual pelo WhatsApp é o Hub: ele transcreve uma vez, escolhe o domínio e encaminha pedidos financeiros ao Cash como texto. O processamento abaixo descreve o endpoint direto do Cash e o envelope de áudio mantido por compatibilidade na ponte. Não ocorre uma segunda transcrição quando o Hub envia texto. Consulte a [ponte Cash–Hub](zenit-hub-extraction.md). As regras de rascunho e confirmação por botão valem em ambos os caminhos.
+
+## Processamento no caminho direto do Cash
 
 1. Validar assinatura, identificar remetente, vínculo, empresa e acesso ao canal.
 2. Registrar o ID único da mensagem antes do processamento; reentregas não transcrevem nem executam novamente.

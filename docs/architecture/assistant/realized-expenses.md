@@ -1,4 +1,17 @@
-# Consulta de gastos realizados
+---
+title: Consultas de gastos realizados
+slug: /docs/architecture/assistant/realized-expenses
+type: technical-spec
+product: zenit-cash
+audience: dev
+visibility: internal
+status: active
+owner: engineering
+last_reviewed: 2026-10-02
+summary: Filtros, competência, cartões, fixas, paginação e média mensal das despesas.
+---
+
+# Consultas de gastos realizados
 
 O assistente do Cash e o Zenit Hub consultam `get_realized_expenses`. O Cash resolve a conta/empresa autorizada e calcula valores com Decimal; a IA interpreta o pedido e apresenta os resultados. O Hub usa a ferramenta `cash_expenses`, pela ponte autenticada já existente.
 

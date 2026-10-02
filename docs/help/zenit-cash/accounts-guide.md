@@ -1,5 +1,5 @@
 ---
-title: Como gerenciar contas financeiras
+title: Contas financeiras
 slug: /docs/help/zenit-cash/accounts
 type: operations-guide
 product: zenit-cash
@@ -7,52 +7,31 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-06-04
-summary: Como consultar, criar e manter contas financeiras no Zenit Cash.
-tags:
-  - help
-  - accounts
-related:
-  - /docs/help/zenit-cash/transactions
+last_reviewed: 2026-10-02
+summary: Cadastre contas, confira saldos e entenda as permissões de movimentação.
 ---
 
-# Como gerenciar contas financeiras
+# Contas financeiras
 
-## Quando usar
+## Cadastrar uma conta
 
-Use este fluxo para cadastrar uma nova conta, revisar contas existentes, definir conta padrao ou ajustar o saldo operacional de uma conta.
+1. Abra **Contas** e escolha **Nova Conta**.
+2. Informe o nome e o tipo de conta.
+3. Confira o saldo inicial e as opções disponíveis para esse tipo.
+4. Salve e confira a conta na listagem.
 
-## Pre-requisitos
+O saldo inicial deve representar o ponto de partida dos registros que você vai manter no Cash. Evite registrar novamente como receita um valor que já foi incluído nesse saldo.
 
-- permissao para acessar a area `Contas`;
-- perfil com acesso as contas financeiras que voce precisa consultar ou editar.
+## Conferir e manter os dados
 
-## Passos
+O saldo da conta depende das movimentações registradas. Ao encontrar uma diferença, confira conta, datas e situação dos lançamentos antes de fazer um ajuste.
 
-1. no menu lateral, abra `Contas`;
-2. consulte a lista de contas disponiveis;
-3. use os filtros quando quiser restringir por tipo de conta;
-4. clique em `Nova Conta` para cadastrar uma conta nova;
-5. preencha campos como `Nome da Conta`, `Tipo de Conta` e `Saldo Inicial`;
-6. salve a conta para concluir o cadastro.
+Contas sem permissão de saldo negativo podem bloquear operações quando não houver saldo suficiente. As ações de criação, edição e movimentação dependem das suas permissões.
 
-![Lista de contas financeiras](../assets/accounts-list.png)
+Para contas com extrato disponível, use a [conciliação](reconciliation-guide.md) para comparar movimentos.
 
-## Riscos
+## Corrigir um cadastro
 
-- alterar uma conta existente pode impactar lancamentos vinculados a ela;
-- uma conta sem permissao para saldo negativo pode bloquear determinadas operacoes quando nao houver saldo disponivel;
-- a disponibilidade de acoes pode variar conforme seu perfil de acesso.
+Abra a conta e revise o campo incorreto. Contas com movimentações podem ter restrições de alteração ou exclusão. Não apague lançamentos corretos apenas para corrigir um nome ou uma configuração.
 
-## Rollback
-
-Se uma conta foi criada com informacoes incorretas, abra a propria conta para editar os dados ou, quando permitido, exclua o registro e refaca o cadastro.
-
-## Verificacao final
-
-Confirme que:
-
-- a conta aparece na listagem;
-- o tipo da conta esta correto;
-- o saldo inicial ou saldo ajustado reflete o valor esperado;
-- a conta pode ser usada nos lancamentos futuros.
+Depois de salvar, confira se a conta certa está selecionada nos [novos lançamentos](transactions-guide.md).

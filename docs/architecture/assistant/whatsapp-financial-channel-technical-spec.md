@@ -5,7 +5,7 @@ type: technical-spec
 product: zenit-cash
 audience: dev
 visibility: internal
-status: active
+status: archived
 owner: engineering
 last_reviewed: 2026-09-29
 summary: Desenho tecnico e nota de implementacao do canal de WhatsApp do Zenit Cash, com onboarding QR-first, binding por usuario e webhook da Meta.
@@ -22,6 +22,8 @@ related:
 ---
 
 # WhatsApp financial channel technical spec
+
+> Referência histórica do desenho original do canal direto no Cash. A entrada atual pertence ao Hub, e as notificações são descritas na [documentação do Hub](https://github.com/danielchaves22/zenit-hub/blob/master/docs/NOTIFICACOES.md). Para manutenção, use o [contrato da ponte](zenit-hub-extraction.md) e as [regras atuais de áudio e confirmação](whatsapp-audio.md). As propostas abaixo não são uma lista de capacidades atuais.
 
 ## Contexto
 
@@ -50,7 +52,7 @@ Implementado nesta fase:
 - uma `assistantSession` por empresa dentro do binding;
 - indicador nativo de digitacao durante o processamento, renovado a cada 20 segundos e encerrado antes da resposta;
 - resumo estruturado de rascunho com botoes nativos `Confirmar` e `Cancelar`;
-- confirmacao e cancelamento por linguagem natural continuam disponiveis.
+- a proposta original de confirmação por linguagem natural foi substituída: no WhatsApp, somente o botão Confirmar da revisão atual pode gravar o lançamento.
 
 Futuro:
 
@@ -477,16 +479,16 @@ Contrato esperado para `POST /api/integrations/whatsapp/binding-challenges`:
 
 ```ts
 type WhatsAppInboundNormalizedMessage = {
-  channel: 'WHATSAPP';
+  channel: "WHATSAPP";
   waId: string;
   phoneNumber: string;
   profileName: string | null;
   metaMessageId: string;
   timestamp: string;
-  messageKind: 'text' | 'button_reply' | 'list_reply' | 'unsupported';
+  messageKind: "text" | "button_reply" | "list_reply" | "unsupported";
   text: string | null;
   interactiveReply?: {
-    kind: 'button' | 'list';
+    kind: "button" | "list";
     id: string;
     title: string;
   };
@@ -499,11 +501,11 @@ type WhatsAppInboundNormalizedMessage = {
 ```ts
 type WhatsAppOutboundCommand =
   | {
-      kind: 'text';
+      kind: "text";
       body: string;
     }
   | {
-      kind: 'pending_action_summary';
+      kind: "pending_action_summary";
       body: string;
       pendingActionId: number;
       buttons: Array<{
@@ -512,7 +514,7 @@ type WhatsAppOutboundCommand =
       }>;
     }
   | {
-      kind: 'list_selection';
+      kind: "list_selection";
       body: string;
       buttonLabel: string;
       sections: Array<{

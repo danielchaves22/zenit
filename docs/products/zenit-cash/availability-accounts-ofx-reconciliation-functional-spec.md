@@ -5,7 +5,7 @@ type: functional-spec
 product: zenit-cash
 audience: product
 visibility: internal
-status: implemented
+status: active
 owner: product
 last_reviewed: 2026-09-07
 summary: Conciliacao mensal de contas Nubank e Bradesco com OFX/CSV, confirmacao humana e historico persistente.
@@ -177,12 +177,12 @@ atual da conta, que pode conter movimentações posteriores ao mês conciliado.
 
 A classificação apresenta critérios, sem percentuais de acerto:
 
-| Nível | Evidência |
-| --- | --- |
-| Alta | Valor exato, mesma data, descrições equivalentes após normalização ou correspondência conhecida do histórico confirmado |
-| Média alta | Valor exato, mesma data, descrições diferentes e sem equivalência confirmada |
+| Nível       | Evidência                                                                                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Alta        | Valor exato, mesma data, descrições equivalentes após normalização ou correspondência conhecida do histórico confirmado                                   |
+| Média alta  | Valor exato, mesma data, descrições diferentes e sem equivalência confirmada                                                                              |
 | Média baixa | Valor exato com data próxima diferente, agrupamento, pendência ou ambiguidade; também pode haver descrição ou histórico relevante em datas mais afastadas |
-| Baixa | Evidência fraca ou valor divergente |
+| Baixa       | Evidência fraca ou valor divergente                                                                                                                       |
 
 Alta e Média alta exigem candidato 1:1 liquidado, busca sem truncamento e ausência
 de duplicidade/concorrência em ambos os lados nos três dias anteriores e posteriores,
@@ -252,16 +252,16 @@ valor e testes de contrato não constituem medição da acurácia do modelo.
 
 ## Persistência
 
-| Registro | Finalidade |
-| --- | --- |
-| BankReconciliation | Conta/mês, estado e conclusão |
-| BankStatementImport / ImportItem | Arquivo único, metadados e linhas nele presentes |
-| BankStatementItem | Movimento normalizado, identidade, vínculo ativo ou decisão de ignorar |
-| BankReconciliationGroup / GroupItem | Grupo confirmado e histórico de itens |
-| BankReconciliationTransaction | Referência ao lançamento, snapshot e associação ativa |
-| BankReconciliationEvent | Quem confirmou/desfez e mudanças automáticas |
-| BankMatchDecision | Rejeição ou correção do par revisado e critérios apresentados |
-| BankMatchCache | Sugestões substituíveis com contexto versionado e expiração |
+| Registro                            | Finalidade                                                             |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| BankReconciliation                  | Conta/mês, estado e conclusão                                          |
+| BankStatementImport / ImportItem    | Arquivo único, metadados e linhas nele presentes                       |
+| BankStatementItem                   | Movimento normalizado, identidade, vínculo ativo ou decisão de ignorar |
+| BankReconciliationGroup / GroupItem | Grupo confirmado e histórico de itens                                  |
+| BankReconciliationTransaction       | Referência ao lançamento, snapshot e associação ativa                  |
+| BankReconciliationEvent             | Quem confirmou/desfez e mudanças automáticas                           |
+| BankMatchDecision                   | Rejeição ou correção do par revisado e critérios apresentados          |
+| BankMatchCache                      | Sugestões substituíveis com contexto versionado e expiração            |
 
 As listagens de movimentos e transações são paginadas no servidor em 50 registros;
 o histórico de grupos usa 20. Arquivos binários não são carregados nas listagens.

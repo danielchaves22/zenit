@@ -1,3 +1,16 @@
+---
+title: Ponte do Cash para o Zenit Hub
+slug: /docs/architecture/assistant/zenit-hub-extraction
+type: technical-spec
+product: zenit-cash
+audience: dev
+visibility: internal
+status: active
+owner: engineering
+last_reviewed: 2026-10-02
+summary: Contrato autenticado, responsabilidades e compatibilidade do canal WhatsApp.
+---
+
 # Ponte do Cash para o Zenit Hub
 
 O Hub passa a coordenar o canal WhatsApp e conecta outras aplicações. Esta mudança adiciona uma ponte ao Cash; os endpoints anteriores continuam funcionando durante a migração.
@@ -13,7 +26,9 @@ Operações:
 
 O Hub não informa ID de usuário, empresa ou papel. O Cash resolve tudo pelo vínculo existente, valida acesso ao canal e ao Cash, e conserva verificações de contas financeiras nas operações. A ponte é de primeira parte; o segredo confere confiança para atestar o remetente do canal, por isso deve ser isolado e nunca exposto a clientes ou modelos. HTTPS é obrigatório fora do desenvolvimento local.
 
-Para voz, `message` recebe `text: ""` e `audio: { mediaId: "123..." }`. Não aceita URL de mídia, texto misturado nem `buttonId` no mesmo envelope. O Cash reutiliza seu download e transcrição, com suas credenciais e sua verificação de permissões. Mantenha as credenciais Meta do Cash válidas para o mesmo número após migrar o webhook. O Hub aguarda até 240 segundos por mensagem; o proxy da ponte deve suportar esse tempo.
+No caminho atual, o Hub baixa e transcreve o áudio uma única vez, com contexto neutro, antes de selecionar Cash, Day ou Calendar. O Cash recebe texto transcrito com o mesmo remetente e ID da mensagem. Voz e texto seguem as mesmas autorizações e confirmações. Veja a [arquitetura do Hub](https://github.com/danielchaves22/zenit-hub/blob/master/docs/ARQUITETURA.md).
+
+Para compatibilidade com o caminho anterior, `message` também recebe `text: ""` e `audio: { mediaId: "123..." }`. Não aceita URL de mídia, texto misturado nem `buttonId` no mesmo envelope. Somente nesse envelope legado o Cash reutiliza seu download e transcrição, com suas credenciais e sua verificação de permissões. Mantenha as credenciais Meta do Cash válidas para o mesmo número após migrar o webhook. O Hub aguarda até 240 segundos por mensagem; o proxy da ponte deve suportar esse tempo.
 
 A sessão, o histórico e as revisões do rascunho permanecem no Cash. Pedidos de confirmação por voz/texto apenas reapresentam o botão. A ponte preserva `requireConfirmationButton: true`, não oferece a ferramenta de confirmação ao modelo e rejeita botões antigos ou de outros usuários. A integração com banco de teste cobre áudio inicial, correção de valor/conta, tentativa de confirmação por voz/texto, botão antigo recusado, botão atual e reentrega sem nova transcrição ou lançamento.
 

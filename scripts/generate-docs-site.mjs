@@ -1,39 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-
 import { marked } from "marked";
+import { parse as parseYaml } from "yaml";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "..");
-const docsRoot = path.join(repoRoot, "docs");
-
-const mode = process.argv[2] ?? "public";
-
-const MODE_CONFIG = {
-  public: {
-    outputRoot: path.join(repoRoot, "sites", "zenitapp-public", "docs"),
-    includeVisibilities: new Set(["public"]),
-    label: "Public build",
-    rootPrefix: "/docs",
-  },
-  internal: {
-    outputRoot: path.join(repoRoot, "sites", "zenitapp-internal", "docs"),
-    includeVisibilities: new Set(["public", "internal", "restricted"]),
-    label: "Internal build",
-    rootPrefix: "/docs",
-  },
-};
-
-const config = MODE_CONFIG[mode];
-
-if (!config) {
-  console.error(`Unknown docs build mode: ${mode}`);
-  process.exit(1);
-}
-
-const REQUIRED_FIELDS = [
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..");
+const required = [
   "title",
   "slug",
   "type",
@@ -43,763 +16,442 @@ const REQUIRED_FIELDS = [
   "owner",
   "last_reviewed",
 ];
-
-marked.setOptions({
-  gfm: true,
-  breaks: false,
-});
-
-function walkMarkdownFiles(dirPath) {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  const files = [];
-
-  for (const entry of entries) {
-    const absolutePath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walkMarkdownFiles(absolutePath));
-      continue;
-    }
-
-    if (entry.isFile() && entry.name.endsWith(".md")) {
-      files.push(absolutePath);
-    }
-  }
-
-  return files;
-}
-
-function walkAssetFiles(dirPath) {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  const files = [];
-
-  for (const entry of entries) {
-    const absolutePath = path.join(dirPath, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...walkAssetFiles(absolutePath));
-      continue;
-    }
-
-    if (entry.isFile() && !entry.name.endsWith(".md")) {
-      files.push(absolutePath);
-    }
-  }
-
-  return files;
-}
-
-function parseFrontmatter(fileContent, sourcePath) {
-  if (!fileContent.startsWith("---\n")) {
-    return null;
-  }
-
-  const lines = fileContent.split(/\r?\n/);
-  let index = 1;
-  const frontmatter = {};
-  let currentArrayKey = null;
-
-  while (index < lines.length) {
-    const line = lines[index];
-
-    if (line === "---") {
-      index += 1;
-      break;
-    }
-
-    if (line.startsWith("  - ") && currentArrayKey) {
-      frontmatter[currentArrayKey].push(line.slice(4).trim());
-      index += 1;
-      continue;
-    }
-
-    currentArrayKey = null;
-
-    const separatorIndex = line.indexOf(":");
-    if (separatorIndex === -1) {
-      index += 1;
-      continue;
-    }
-
-    const key = line.slice(0, separatorIndex).trim();
-    const rawValue = line.slice(separatorIndex + 1).trim();
-
-    if (!rawValue) {
-      frontmatter[key] = [];
-      currentArrayKey = key;
-      index += 1;
-      continue;
-    }
-
-    frontmatter[key] = rawValue;
-    index += 1;
-  }
-
-  for (const field of REQUIRED_FIELDS) {
-    if (!frontmatter[field]) {
-      throw new Error(`Missing required frontmatter field "${field}" in ${sourcePath}`);
-    }
-  }
-
-  return {
-    frontmatter,
-    body: lines.slice(index).join("\n").trim(),
-  };
-}
-
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function escapeHtml(value) {
-  return String(value)
+const enums = {
+  visibility: ["public", "internal", "restricted"],
+  status: ["draft", "active", "deprecated", "archived"],
+  audience: ["user", "dev", "ops", "product", "leadership"],
+  owner: ["engineering", "product", "design", "ops"],
+  type: [
+    "overview",
+    "functional-spec",
+    "technical-spec",
+    "architecture-note",
+    "setup-guide",
+    "operations-guide",
+    "testing-guide",
+    "example",
+    "rfc",
+    "decision-record",
+    "release-note",
+    "legacy-note",
+  ],
+};
+const labels = {
+  general: "Comece aqui",
+  "zenit-cash": "Zenit Cash",
+  "zenit-cash-mobile": "Cash Mobile",
+  "zenit-day": "Zenit Day",
+  "zenit-clock": "Zenit Clock",
+  "zenit-hub": "Zenit Hub",
+  "zenit-calc": "Zenit Calc",
+  help: "Guias de uso",
+  products: "Produtos",
+  architecture: "Arquitetura",
+  operations: "Operação",
+  integrations: "Integrações",
+  internal: "Decisões internas",
+  legacy: "Histórico",
+};
+const escape = (value) =>
+  String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+const plain = (value) =>
+  String(value)
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+const inside = (root, file) =>
+  file === root ||
+  (!path.relative(root, file).startsWith("..") &&
+    !path.isAbsolute(path.relative(root, file)));
+const hrefFor = (slug) => `${slug.replace(/\/$/, "")}/`;
+function files(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = path.join(dir, entry.name);
+    if (entry.isSymbolicLink())
+      throw new Error(`Symlinks are not supported in docs: ${file}`);
+    return entry.isDirectory() ? files(file) : [file];
+  });
 }
 
-function slugToOutputPath(slug, outputRoot) {
-  const relativeSlug = slug === "/docs" ? "" : slug.replace(/^\/docs\/?/, "");
-  return path.join(outputRoot, relativeSlug, "index.html");
-}
-
-function normalizeSiteHref(targetSlug) {
-  if (targetSlug === "/") {
-    return "/";
+export function parseDocument(source, sourcePath) {
+  const normalized = source.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  const match = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(normalized);
+  if (!match) throw new Error(`Missing frontmatter: ${sourcePath}`);
+  const metadata = parseYaml(match[1]);
+  for (const key of required) {
+    if (typeof metadata?.[key] !== "string" || !metadata[key].trim())
+      throw new Error(`Missing or invalid ${key}: ${sourcePath}`);
   }
-
-  if (targetSlug.startsWith("http://") || targetSlug.startsWith("https://") || targetSlug.startsWith("mailto:") || targetSlug.startsWith("#")) {
-    return targetSlug;
+  for (const [key, values] of Object.entries(enums)) {
+    if (!values.includes(metadata[key]))
+      throw new Error(`Invalid ${key}: ${sourcePath}`);
   }
-
-  if (targetSlug === "/docs") {
-    return "/docs/";
+  if (!/^\/docs(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(metadata.slug))
+    throw new Error(`Invalid slug: ${sourcePath}`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(metadata.last_reviewed))
+    throw new Error(`Invalid last_reviewed: ${sourcePath}`);
+  for (const key of ["related", "tags"]) {
+    if (
+      metadata[key] !== undefined &&
+      (!Array.isArray(metadata[key]) ||
+        metadata[key].some((v) => typeof v !== "string"))
+    )
+      throw new Error(`Invalid ${key}: ${sourcePath}`);
   }
-
-  if (targetSlug.startsWith("/docs") && !targetSlug.endsWith("/")) {
-    return `${targetSlug}/`;
-  }
-
-  return targetSlug;
-}
-
-function buildSectionMap(documents) {
-  const sections = new Map();
-
-  for (const document of documents) {
-    const relativeSlug = document.slug === "/docs" ? "" : document.slug.replace(/^\/docs\/?/, "");
-    const [section = "root"] = relativeSlug.split("/").filter(Boolean);
-
-    if (!sections.has(section)) {
-      sections.set(section, []);
-    }
-
-    sections.get(section).push(document);
-  }
-
-  for (const docs of sections.values()) {
-    docs.sort((left, right) => left.title.localeCompare(right.title, "pt-BR"));
-  }
-
-  return sections;
-}
-
-function buildTableOfContents(markdownBody) {
-  const lines = markdownBody.split(/\r?\n/);
-  const toc = [];
-
-  for (const line of lines) {
-    const match = /^(##|###)\s+(.+)$/.exec(line);
-    if (!match) {
-      continue;
-    }
-
-    const depth = match[1].length;
-    const text = match[2].trim();
-    const anchor = text
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9\s-]/g, "")
-      .trim()
-      .replace(/\s+/g, "-");
-
-    toc.push({ depth, text, anchor });
-  }
-
-  return toc;
-}
-
-function createRenderer(documentsBySource, currentDocument) {
-  const renderer = new marked.Renderer();
-
-  renderer.link = ({ href, title, text }) => {
-    let resolvedHref = href ?? "#";
-
-    if (href && !href.startsWith("#") && !href.startsWith("http://") && !href.startsWith("https://") && !href.startsWith("mailto:")) {
-      if (href.startsWith("/docs")) {
-        resolvedHref = normalizeSiteHref(href);
-      } else if (href.endsWith(".md") || href.startsWith(".")) {
-        const targetSource = path.normalize(path.resolve(path.dirname(currentDocument.sourcePath), href));
-        const targetDocument = documentsBySource.get(targetSource);
-        if (targetDocument) {
-          resolvedHref = normalizeSiteHref(targetDocument.slug);
-        }
-      }
-    }
-
-    const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
-    return `<a href="${escapeHtml(resolvedHref)}"${titleAttribute}>${text}</a>`;
+  return {
+    ...metadata,
+    sourcePath,
+    body: normalized.slice(match[0].length).trim(),
   };
-
-  return renderer;
 }
 
-function renderLayout({
+function headings(body) {
+  const used = new Set([
+    "conteudo",
+    "docs-sidebar",
+    "docs-search",
+    "search-status",
+    "search-results",
+  ]);
+  const result = [];
+  marked.walkTokens(marked.lexer(body), (token) => {
+    if (token.type !== "heading") return;
+    const text = plain(marked.parseInline(token.text));
+    const base =
+      text
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9\s-]/g, "")
+        .trim()
+        .replace(/\s+/g, "-") || "secao";
+    let id = base;
+    let count = 1;
+    while (used.has(id)) id = `${base}-${++count}`;
+    used.add(id);
+    result.push({
+      depth: token.depth,
+      text,
+      id,
+    });
+  });
+  return result;
+}
+
+function groupsFor(docs, mode) {
+  const groups = new Map();
+  for (const doc of docs.filter((d) => d.slug !== "/docs")) {
+    const group =
+      mode === "public" ? doc.product || "general" : doc.slug.split("/")[2];
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(doc);
+  }
+  const order = [
+    "general",
+    "zenit-cash",
+    "zenit-day",
+    "zenit-clock",
+    "zenit-hub",
+    "zenit-cash-mobile",
+  ];
+  return [...groups]
+    .sort(([a], [b]) =>
+      mode === "public"
+        ? (order.indexOf(a) < 0 ? 99 : order.indexOf(a)) -
+          (order.indexOf(b) < 0 ? 99 : order.indexOf(b))
+        : a.localeCompare(b),
+    )
+    .map(([key, entries]) => [
+      key,
+      entries.sort(
+        (a, b) =>
+          (a.type === "overview" ? 0 : 1) - (b.type === "overview" ? 0 : 1) ||
+          a.title.localeCompare(b.title, "pt-BR"),
+      ),
+    ]);
+}
+
+function layout({
   title,
-  description,
+  summary,
   body,
-  currentSlug,
-  sections,
-  toc,
-  visibilityLabel,
-  currentDocument,
+  mode,
+  groups,
+  current = "/docs",
+  toc = [],
+  doc,
 }) {
-  const cssHref = "/docs/assets/docs.css";
-  const docsHomeHref = "/docs/";
-  const mainSiteHref = "/";
-
-  const sectionNav = [...sections.entries()]
-    .filter(([sectionKey]) => sectionKey !== "root")
-    .map(([sectionKey, docs]) => {
-      const label = sectionKey.charAt(0).toUpperCase() + sectionKey.slice(1);
-      const items = docs
-        .map((doc) => {
-          const href = normalizeSiteHref(doc.slug);
-          const activeClass = doc.slug === currentSlug ? ' class="active"' : "";
-          return `<li${activeClass}><a href="${escapeHtml(href)}">${escapeHtml(doc.title)}</a></li>`;
-        })
-        .join("");
-
-      return `
-        <section class="sidebar-group">
-          <h2>${escapeHtml(label)}</h2>
-          <ul>${items}</ul>
-        </section>
-      `;
-    })
+  const publicMode = mode === "public";
+  const nav = groups
+    .map(
+      ([group, docs]) =>
+        `<section class="nav-group"><h2>${escape(labels[group] || group)}</h2><ul>${docs.map((d) => `<li><a href="${hrefFor(d.slug)}"${d.slug === current ? ' aria-current="page"' : ""}>${escape(d.title)}</a></li>`).join("")}</ul></section>`,
+    )
     .join("");
-
+  const meta = doc
+    ? `<p class="doc-meta">Revisado em ${escape(doc.last_reviewed.split("-").reverse().join("/"))}${doc.status === "active" ? "" : ` · ${escape({ draft: "Rascunho", deprecated: "Descontinuado", archived: "Histórico" }[doc.status])}`}</p>`
+    : "";
   const tocHtml = toc.length
-    ? `
-      <aside class="toc">
-        <h2>Nesta pagina</h2>
-        <ul>
-          ${toc
-            .map((item) => `<li class="toc-depth-${item.depth}"><a href="#${escapeHtml(item.anchor)}">${escapeHtml(item.text)}</a></li>`)
-            .join("")}
-        </ul>
-      </aside>
-    `
+    ? `<aside class="toc" aria-label="Nesta página"><h2>Nesta página</h2><ul>${toc.map((h) => `<li class="depth-${h.depth}"><a href="#${h.id}">${escape(h.text)}</a></li>`).join("")}</ul></aside>`
     : "";
-
-  const relatedHtml = Array.isArray(currentDocument?.related) && currentDocument.related.length
-    ? `
-      <section class="related">
-        <h2>Relacionados</h2>
-        <ul>
-          ${currentDocument.related
-            .map((relatedSlug) => {
-              const href = normalizeSiteHref(relatedSlug);
-              return `<li><a href="${escapeHtml(href)}">${escapeHtml(relatedSlug)}</a></li>`;
-            })
-            .join("")}
-        </ul>
-      </section>
-    `
-    : "";
-
   return `<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(title)} | Zenit Docs</title>
-  <meta name="description" content="${escapeHtml(description)}" />
-  <link rel="stylesheet" href="${escapeHtml(cssHref)}" />
-</head>
-<body>
-  <div class="docs-shell">
-    <header class="docs-header">
-      <div>
-        <a class="docs-brand" href="${escapeHtml(mainSiteHref)}">Zenit</a>
-        <p class="docs-subtitle">Base de conhecimento versionada em Markdown</p>
-      </div>
-      <nav class="docs-top-nav" aria-label="Navegacao global">
-        <a href="${escapeHtml(docsHomeHref)}">Docs</a>
-        <span class="docs-visibility">${escapeHtml(visibilityLabel)}</span>
-      </nav>
-    </header>
-
-    <div class="docs-layout">
-      <aside class="sidebar">
-        <section class="sidebar-group">
-          <h2>Entrada</h2>
-          <ul>
-            <li${currentSlug === "/docs" ? ' class="active"' : ""}><a href="${escapeHtml(docsHomeHref)}">Visao geral</a></li>
-          </ul>
-        </section>
-        ${sectionNav}
-      </aside>
-
-      <main class="content">
-        <article class="doc-article">
-          ${body}
-          ${relatedHtml}
-        </article>
-      </main>
-
-      ${tocHtml}
-    </div>
-  </div>
-</body>
-</html>`;
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escape(title)} | Zenit Docs</title><meta name="description" content="${escape(summary)}"><meta name="theme-color" content="#101e35">${publicMode ? `<link rel="canonical" href="https://zenitapp.net${hrefFor(current)}">` : '<meta name="robots" content="noindex,nofollow">'}<link rel="stylesheet" href="/docs/assets/docs.css"><script src="/docs/assets/docs.js" defer></script></head>
+<body><a class="skip-link" href="#conteudo">Ir para o conteúdo</a><header class="docs-header"><a class="docs-brand" href="${publicMode ? "/" : "/docs/"}">Zenit<span>Documentação${publicMode ? "" : " interna"}</span></a><nav aria-label="Navegação global">${publicMode ? '<a href="/para-voce">Para você</a><a href="/para-negocios">Para negócios</a><a href="/contato">Suporte</a>' : '<a href="/docs/">Início</a>'}</nav></header>
+<div class="docs-shell"><div class="search-area"><label for="docs-search">Pesquisar na documentação</label><input id="docs-search" type="search" placeholder="Ex.: conectar agenda, contas, lembretes" autocomplete="off"><p id="search-status" role="status" aria-live="polite"></p><ul id="search-results" aria-label="Resultados da pesquisa" hidden></ul></div><button class="docs-menu" data-docs-toggle type="button" aria-expanded="false" aria-controls="docs-sidebar">Navegar pelos guias <span aria-hidden="true">☰</span></button>
+<div class="docs-layout${toc.length ? "" : " no-toc"}"><aside class="sidebar" id="docs-sidebar"><nav aria-label="Guias de documentação"><a class="nav-home" href="/docs/"${current === "/docs" ? ' aria-current="page"' : ""}>Visão geral</a>${nav}</nav></aside><main id="conteudo" class="content"><article class="doc-article">${meta}${body}</article><footer class="docs-footer">${publicMode ? 'Precisa de ajuda? <a href="/contato">Fale com a Equinox Tecnologia</a>.<span><a href="/privacy">Privacidade</a> · <a href="/terms">Termos de serviço</a></span>' : "Acervo interno. A publicação deste diretório exige controle de acesso na hospedagem."}</footer></main>${tocHtml}</div></div></body></html>`;
 }
 
-function renderDocsHome(documents, sections, visibilityLabel) {
-  const grouped = [...sections.entries()]
-    .filter(([sectionKey]) => sectionKey !== "root")
-    .map(([sectionKey, docs]) => {
-      const label = sectionKey.charAt(0).toUpperCase() + sectionKey.slice(1);
-      const cards = docs
-        .map((doc) => {
-          const href = normalizeSiteHref(doc.slug);
-          return `
-            <article class="doc-card">
-              <span class="doc-type">${escapeHtml(doc.type)}</span>
-              <h3><a href="${escapeHtml(href)}">${escapeHtml(doc.title)}</a></h3>
-              <p>${escapeHtml(doc.summary || "Documento sem resumo.")}</p>
-            </article>
-          `;
-        })
-        .join("");
-
-      return `
-        <section class="section-block">
-          <div class="section-heading">
-            <p class="eyebrow">${escapeHtml(label)}</p>
-            <h2>${escapeHtml(label)}</h2>
-          </div>
-          <div class="doc-card-grid">
-            ${cards}
-          </div>
-        </section>
-      `;
-    })
-    .join("");
-
-  const body = `
-    <section class="landing-hero">
-      <p class="eyebrow">Zenit Docs</p>
-      <h1>Documentacao organizada por produto, arquitetura e operacao.</h1>
-      <p class="landing-copy">
-        Este portal e gerado a partir dos Markdown em <code>docs/</code>. O build atual publica apenas os documentos
-        compativeis com o modo <strong>${escapeHtml(visibilityLabel)}</strong>.
-      </p>
-    </section>
-    ${grouped || '<section class="section-block"><p>Nenhum documento elegivel para este build.</p></section>'}
-  `;
-
-  return renderLayout({
-    title: "Zenit Docs",
-    description: "Portal de documentacao do ecossistema Zenit.",
-    body,
-    currentSlug: "/docs",
-    sections,
-    toc: [],
-    visibilityLabel,
-    currentDocument: null,
-  });
-}
-
-function writeFile(filePath, contents) {
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, contents);
-}
-
-function writeDocsCss(outputRoot) {
-  const css = `:root {
-  --bg-0: #041024;
-  --bg-1: #0d1b36;
-  --panel: rgba(13, 28, 58, 0.86);
-  --panel-strong: rgba(7, 17, 39, 0.94);
-  --text: #edf3ff;
-  --text-soft: #c7d5ef;
-  --text-muted: #9aaccd;
-  --brand: #1f63ef;
-  --brand-soft: #59b7ff;
-  --border: rgba(89, 131, 209, 0.34);
-  --shadow: 0 18px 40px rgba(2, 8, 20, 0.36);
-}
-
-* { box-sizing: border-box; }
-
-html, body { margin: 0; min-height: 100%; }
-
-body {
-  background:
-    radial-gradient(60rem 30rem at -12% -12%, rgba(30, 99, 239, 0.28), transparent 60%),
-    radial-gradient(40rem 22rem at 110% 0%, rgba(89, 183, 255, 0.18), transparent 55%),
-    linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 100%);
-  color: var(--text);
-  font: 16px/1.65 "Segoe UI", sans-serif;
-}
-
-a { color: inherit; }
-code, pre { font-family: "Cascadia Code", "Consolas", monospace; }
-
-.docs-shell {
-  width: min(1380px, 100%);
-  margin: 0 auto;
-  padding: 24px;
-}
-
-.docs-header {
-  align-items: center;
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.docs-brand {
-  color: var(--text);
-  font-size: 1.4rem;
-  font-weight: 700;
-  text-decoration: none;
-}
-
-.docs-subtitle {
-  color: var(--text-muted);
-  margin: 4px 0 0;
-}
-
-.docs-top-nav {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-}
-
-.docs-top-nav a,
-.docs-visibility {
-  background: rgba(17, 37, 78, 0.7);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-soft);
-  padding: 8px 14px;
-  text-decoration: none;
-}
-
-.docs-layout {
-  display: grid;
-  gap: 20px;
-  grid-template-columns: 280px minmax(0, 1fr) 240px;
-}
-
-.sidebar,
-.doc-article,
-.toc,
-.section-block,
-.landing-hero {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  box-shadow: var(--shadow);
-}
-
-.sidebar {
-  padding: 18px;
-  position: sticky;
-  top: 20px;
-  height: fit-content;
-}
-
-.sidebar-group + .sidebar-group { margin-top: 18px; }
-
-.sidebar h2,
-.toc h2,
-.related h2 {
-  color: var(--text);
-  font-size: 0.92rem;
-  margin: 0 0 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.sidebar ul,
-.toc ul,
-.related ul { list-style: none; margin: 0; padding: 0; }
-
-.sidebar li + li,
-.toc li + li,
-.related li + li { margin-top: 8px; }
-
-.sidebar li a,
-.toc a,
-.related a {
-  color: var(--text-soft);
-  text-decoration: none;
-}
-
-.sidebar li.active a {
-  color: var(--text);
-  font-weight: 700;
-}
-
-.content { min-width: 0; }
-
-.doc-article {
-  padding: 28px;
-}
-
-.doc-article h1,
-.landing-hero h1 {
-  line-height: 1.15;
-  margin-top: 0;
-}
-
-.doc-article h2,
-.doc-article h3 {
-  margin-top: 30px;
-}
-
-.doc-article p,
-.doc-article li,
-.landing-copy {
-  color: var(--text-soft);
-}
-
-.doc-article pre {
-  background: rgba(3, 10, 23, 0.88);
-  border: 1px solid rgba(83, 122, 190, 0.34);
-  border-radius: 14px;
-  overflow: auto;
-  padding: 14px;
-}
-
-.doc-article code {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  padding: 0.12rem 0.35rem;
-}
-
-.doc-article pre code { background: transparent; padding: 0; }
-
-.doc-article img {
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  display: block;
-  margin: 20px 0;
-  max-width: 100%;
-  box-shadow: var(--shadow);
-}
-
-.toc {
-  padding: 18px;
-  position: sticky;
-  top: 20px;
-  height: fit-content;
-}
-
-.toc-depth-3 { margin-left: 12px; }
-
-.related {
-  border-top: 1px solid var(--border);
-  margin-top: 34px;
-  padding-top: 18px;
-}
-
-.landing-hero,
-.section-block {
-  padding: 26px;
-}
-
-.eyebrow {
-  color: var(--brand-soft);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  margin: 0 0 10px;
-  text-transform: uppercase;
-}
-
-.doc-card-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.doc-card {
-  background: rgba(9, 20, 43, 0.8);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 18px;
-}
-
-.doc-card h3 {
-  margin: 8px 0 10px;
-}
-
-.doc-card p {
-  color: var(--text-soft);
-  margin: 0;
-}
-
-.doc-card a {
-  text-decoration: none;
-}
-
-.doc-type {
-  color: var(--brand-soft);
-  font-size: 0.78rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-@media (max-width: 1120px) {
-  .docs-layout {
-    grid-template-columns: 1fr;
+export function buildDocsSite({
+  mode = "public",
+  sourceRoot = path.join(repoRoot, "docs"),
+  siteRoot = path.join(
+    repoRoot,
+    "sites",
+    mode === "public" ? "zenitapp-public" : "zenitapp-internal",
+  ),
+} = {}) {
+  if (!["public", "internal"].includes(mode))
+    throw new Error(`Unknown docs build mode: ${mode}`);
+  sourceRoot = path.resolve(sourceRoot);
+  siteRoot = path.resolve(siteRoot);
+  const outputRoot = path.resolve(siteRoot, "docs");
+  // Only replace the generated docs child, never the source or the site itself.
+  if (
+    outputRoot === siteRoot ||
+    !inside(siteRoot, outputRoot) ||
+    inside(outputRoot, sourceRoot) ||
+    inside(sourceRoot, outputRoot)
+  )
+    throw new Error("Unsafe documentation output directory");
+  const all = files(sourceRoot)
+    .filter((f) => f.endsWith(".md"))
+    .map((sourcePath) =>
+      parseDocument(fs.readFileSync(sourcePath, "utf8"), sourcePath),
+    )
+    .filter(Boolean);
+  const allBySlug = new Map();
+  for (const doc of all) {
+    if (allBySlug.has(doc.slug)) throw new Error(`Duplicate slug: ${doc.slug}`);
+    doc.headings = headings(doc.body);
+    allBySlug.set(doc.slug, doc);
   }
-
-  .sidebar,
-  .toc {
-    position: static;
-  }
-}
-`;
-
-  writeFile(path.join(outputRoot, "assets", "docs.css"), css);
-}
-
-const sourceFiles = walkMarkdownFiles(docsRoot);
-const assetFiles = walkAssetFiles(docsRoot);
-const parsedDocuments = [];
-
-for (const sourcePath of sourceFiles) {
-  const fileContent = fs.readFileSync(sourcePath, "utf8");
-  const parsed = parseFrontmatter(fileContent, sourcePath);
-  if (!parsed) {
-    continue;
-  }
-
-  if (!config.includeVisibilities.has(parsed.frontmatter.visibility)) {
-    continue;
-  }
-
-  parsedDocuments.push({
-    sourcePath: path.normalize(sourcePath),
-    body: parsed.body,
-    ...parsed.frontmatter,
-    tags: Array.isArray(parsed.frontmatter.tags) ? parsed.frontmatter.tags : [],
-    related: Array.isArray(parsed.frontmatter.related) ? parsed.frontmatter.related : [],
-  });
-}
-
-parsedDocuments.sort((left, right) => left.slug.localeCompare(right.slug, "en"));
-
-const documentsBySource = new Map(parsedDocuments.map((document) => [document.sourcePath, document]));
-const sections = buildSectionMap(parsedDocuments);
-
-fs.rmSync(config.outputRoot, { recursive: true, force: true });
-ensureDir(config.outputRoot);
-writeDocsCss(config.outputRoot);
-
-for (const assetPath of assetFiles) {
-  const relativePath = path.relative(docsRoot, assetPath);
-  const outputPath = path.join(config.outputRoot, relativePath);
-  ensureDir(path.dirname(outputPath));
-  fs.copyFileSync(assetPath, outputPath);
-}
-
-for (const document of parsedDocuments) {
-  const renderer = createRenderer(documentsBySource, document);
-  const htmlBody = marked.parse(document.body, { renderer });
-  const toc = buildTableOfContents(document.body);
-  const html = renderLayout({
-    title: document.title,
-    description: document.summary || document.title,
-    body: htmlBody,
-    currentSlug: document.slug,
-    sections,
-    toc,
-    visibilityLabel: config.label,
-    currentDocument: document,
-  });
-
-  writeFile(slugToOutputPath(document.slug, config.outputRoot), html);
-}
-
-const homeHtml = renderDocsHome(parsedDocuments, sections, config.label);
-writeFile(path.join(config.outputRoot, "index.html"), homeHtml);
-
-for (const [sectionKey, docs] of sections.entries()) {
-  if (sectionKey === "root") {
-    continue;
-  }
-
-  const sectionTitle = sectionKey.charAt(0).toUpperCase() + sectionKey.slice(1);
-  const cards = docs
-    .map((doc) => {
-      const href = normalizeSiteHref(doc.slug);
-      return `
-        <article class="doc-card">
-          <span class="doc-type">${escapeHtml(doc.type)}</span>
-          <h3><a href="${escapeHtml(href)}">${escapeHtml(doc.title)}</a></h3>
-          <p>${escapeHtml(doc.summary || "Documento sem resumo.")}</p>
-        </article>
-      `;
-    })
-    .join("");
-
-  const sectionHtml = renderLayout({
-    title: `${sectionTitle} docs`,
-    description: `Documentacao da secao ${sectionTitle}.`,
-    body: `
-      <section class="landing-hero">
-        <p class="eyebrow">${escapeHtml(sectionTitle)}</p>
-        <h1>${escapeHtml(sectionTitle)}</h1>
-        <p class="landing-copy">Documentos publicados nesta secao para o build atual.</p>
-      </section>
-      <section class="section-block">
-        <div class="doc-card-grid">${cards}</div>
-      </section>
-    `,
-    currentSlug: `/docs/${sectionKey}`,
-    sections,
-    toc: [],
-    visibilityLabel: config.label,
-    currentDocument: null,
-  });
-
-  writeFile(path.join(config.outputRoot, sectionKey, "index.html"), sectionHtml);
-}
-
-if (mode === "internal") {
-  const internalSiteRoot = path.join(repoRoot, "sites", "zenitapp-internal");
-  ensureDir(internalSiteRoot);
-  writeFile(
-    path.join(internalSiteRoot, "index.html"),
-    `<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta http-equiv="refresh" content="0; url=/docs/" />
-  <title>Zenit Docs Interno</title>
-</head>
-<body>
-  <p>Redirecionando para <a href="/docs/">/docs/</a>...</p>
-</body>
-</html>`,
+  const documents = all.filter(
+    (d) => mode === "internal" || d.visibility === "public",
   );
+  const selected = new Set(documents);
+  const bySource = new Map(all.map((d) => [d.sourcePath, d]));
+  const assets = new Set();
+  const groups = groupsFor(documents, mode);
+  const sections = new Set(
+    documents.map((d) => d.slug.split("/")[2]).filter(Boolean),
+  );
+  const generatedRoots = new Set([
+    "/docs",
+    ...[...sections].map((s) => `/docs/${s}`),
+  ]);
+  const errors = [];
+  function resolveReference(reference, doc, isImage = false) {
+    if (/^(https?:|mailto:)/i.test(reference)) return reference;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(reference) || reference.startsWith("//"))
+      throw new Error(`Unsupported link protocol in ${doc.sourcePath}`);
+    const match = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(reference);
+    const pathname = decodeURIComponent(match[1]);
+    const query = match[2] || "";
+    const fragment = match[3] || "";
+    const canonical = pathname.replace(/\/$/, "");
+    let target;
+    if (!pathname) target = doc;
+    else if (pathname.startsWith("/docs")) target = allBySlug.get(canonical);
+    else if (!pathname.startsWith("/"))
+      target = bySource.get(
+        path.resolve(path.dirname(doc.sourcePath), pathname),
+      );
+    if (target) {
+      if (!selected.has(target))
+        throw new Error(
+          `Link to excluded document: ${reference} in ${doc.sourcePath}`,
+        );
+      if (
+        fragment &&
+        !target.headings.some(
+          (h) => h.id === decodeURIComponent(fragment.slice(1)),
+        )
+      )
+        throw new Error(`Unknown heading: ${reference} in ${doc.sourcePath}`);
+      return pathname ? `${hrefFor(target.slug)}${query}${fragment}` : fragment;
+    }
+    if (generatedRoots.has(canonical))
+      return hrefFor(canonical) + query + fragment;
+    if (pathname.startsWith("/") && !pathname.startsWith("/docs") && !isImage)
+      return reference;
+    const file = pathname.startsWith("/docs/")
+      ? path.resolve(sourceRoot, pathname.slice(6))
+      : path.resolve(path.dirname(doc.sourcePath), pathname);
+    if (
+      !inside(sourceRoot, file) ||
+      !fs.existsSync(file) ||
+      !fs.statSync(file).isFile() ||
+      file.endsWith(".md")
+    )
+      throw new Error(
+        `Broken local reference: ${reference} in ${doc.sourcePath}`,
+      );
+    // Assets are published only when referenced; public assets must live beside public docs.
+    if (
+      mode === "public" &&
+      !documents.some((d) =>
+        inside(path.join(path.dirname(d.sourcePath), "assets"), file),
+      )
+    )
+      throw new Error(`Asset has no public owner: ${reference}`);
+    assets.add(file);
+    return `/docs/${path.relative(sourceRoot, file).split(path.sep).map(encodeURIComponent).join("/")}${query}${fragment}`;
+  }
+  const pages = new Map();
+  for (const doc of documents) {
+    let headingIndex = 0;
+    const renderer = new marked.Renderer();
+    renderer.heading = function (token) {
+      const heading = doc.headings[headingIndex++];
+      return `<h${token.depth} id="${heading.id}">${this.parser.parseInline(token.tokens)}</h${token.depth}>\n`;
+    };
+    renderer.link = function ({ href, title, tokens, text }) {
+      let resolved;
+      try {
+        resolved = resolveReference(href || "#", doc);
+      } catch (error) {
+        errors.push(error.message);
+        return escape(plain(text));
+      }
+      return `<a href="${escape(resolved)}"${title ? ` title="${escape(title)}"` : ""}>${this.parser.parseInline(tokens || []) || escape(text)}</a>`;
+    };
+    renderer.image = ({ href, title, text }) => {
+      try {
+        return `<img src="${escape(resolveReference(href, doc, true))}" alt="${escape(text)}" loading="lazy"${title ? ` title="${escape(title)}"` : ""}>`;
+      } catch (error) {
+        errors.push(error.message);
+        return "";
+      }
+    };
+    renderer.html = ({ text }) => escape(text); // Raw HTML cannot bypass link/asset visibility checks.
+    renderer.table = function (token) {
+      return `<div class="table-scroll" role="region" aria-label="Tabela" tabindex="0">${marked.Renderer.prototype.table.call(this, token)}</div>`;
+    };
+    const body = marked.parse(doc.body, { renderer, gfm: true });
+    const related = (doc.related || [])
+      .map((slug) => allBySlug.get(slug))
+      .filter((d) => d && selected.has(d) && d.slug !== doc.slug);
+    const relatedHtml = related.length
+      ? `<section class="related"><h2>Continue a leitura</h2><ul>${related.map((d) => `<li><a href="${hrefFor(d.slug)}">${escape(d.title)}</a></li>`).join("")}</ul></section>`
+      : "";
+    pages.set(
+      doc.slug,
+      layout({
+        title: doc.title,
+        summary: doc.summary || doc.title,
+        body: body + relatedHtml,
+        mode,
+        groups,
+        current: doc.slug,
+        toc: doc.headings.filter((h) => h.depth === 2 || h.depth === 3),
+        doc,
+      }),
+    );
+  }
+  if (errors.length) throw new Error(errors.join("\n"));
+  const cards = (docs) =>
+    docs
+      .map(
+        (d) =>
+          `<article class="doc-card"><h3><a href="${hrefFor(d.slug)}">${escape(d.title)}</a></h3><p>${escape(d.summary || "Consulte o guia para conhecer este recurso.")}</p></article>`,
+      )
+      .join("");
+  const home = `<section class="landing-hero"><p class="eyebrow">Zenit Docs</p><h1>${mode === "public" ? "Encontre o próximo passo." : "Referências para desenvolver e operar."}</h1><p>${mode === "public" ? "Guias para começar, organizar sua rotina e conectar os aplicativos. Escolha um produto ou pesquise o que você quer fazer." : "Documentação de produto, arquitetura, integrações e operação. Rascunhos e registros históricos mantêm seu estado identificado."}</p></section>${groups.map(([key, docs]) => `<section class="section-block"><h2>${escape(labels[key] || key)}</h2><div class="doc-card-grid">${cards(docs)}</div></section>`).join("")}`;
+  pages.set(
+    "/docs",
+    layout({
+      title: mode === "public" ? "Guias e ajuda" : "Acervo interno",
+      summary: "Documentação dos aplicativos Zenit.",
+      body: home,
+      mode,
+      groups,
+    }),
+  );
+  for (const section of sections) {
+    const slug = `/docs/${section}`;
+    if (pages.has(slug)) continue;
+    const title = labels[section] || section;
+    pages.set(
+      slug,
+      layout({
+        title,
+        summary: `Documentação: ${title}.`,
+        mode,
+        groups,
+        current: slug,
+        body: `<h1>${escape(title)}</h1><div class="doc-card-grid">${cards(documents.filter((d) => d.slug.startsWith(slug + "/")))}</div>`,
+      }),
+    );
+  }
+  // Resolve and render everything before replacing the previously generated site.
+  fs.rmSync(outputRoot, { recursive: true, force: true });
+  function write(file, contents) {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, contents);
+  }
+  for (const [slug, html] of pages)
+    write(path.join(outputRoot, slug.slice(6), "index.html"), html);
+  for (const file of assets)
+    write(
+      path.join(outputRoot, path.relative(sourceRoot, file)),
+      fs.readFileSync(file),
+    );
+  for (const name of ["docs.css", "docs.js"])
+    write(
+      path.join(outputRoot, "assets", name),
+      fs.readFileSync(path.join(scriptDir, "docs-site", name)),
+    );
+  const search = documents
+    .filter((d) => d.slug !== "/docs")
+    .map((d) => ({
+      title: d.title,
+      summary: d.summary || "",
+      url: hrefFor(d.slug),
+      product: labels[d.product] || "",
+      text: plain(marked.parse(d.body)).replace(/\s+/g, " "),
+    }));
+  write(
+    path.join(outputRoot, "assets", "search-index.json"),
+    JSON.stringify(search),
+  );
+  if (mode === "internal")
+    write(
+      path.join(siteRoot, "index.html"),
+      '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><meta http-equiv="refresh" content="0;url=/docs/"><title>Zenit Docs interno</title></head><body><a href="/docs/">Abrir documentação interna</a></body></html>',
+    );
+  return {
+    documents: documents.length,
+    pages: pages.size,
+    assets: assets.size,
+    outputRoot,
+  };
 }
 
-console.log(`Generated ${parsedDocuments.length} docs for ${config.label} in ${config.outputRoot}`);
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  try {
+    console.log(
+      JSON.stringify(buildDocsSite({ mode: process.argv[2] || "public" })),
+    );
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

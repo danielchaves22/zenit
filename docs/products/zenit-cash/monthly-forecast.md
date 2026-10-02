@@ -1,7 +1,7 @@
 ---
 title: Previsão financeira mensal
 slug: /docs/products/zenit-cash/monthly-forecast
-type: product-guide
+type: functional-spec
 product: zenit-cash
 audience: dev
 visibility: internal

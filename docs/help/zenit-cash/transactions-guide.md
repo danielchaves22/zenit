@@ -1,5 +1,5 @@
 ---
-title: Como lancar uma transacao
+title: Receitas, despesas e transferências
 slug: /docs/help/zenit-cash/transactions
 type: operations-guide
 product: zenit-cash
@@ -7,55 +7,35 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-06-04
-summary: Como registrar despesas, receitas e transferencias no Zenit Cash.
-tags:
-  - help
-  - transactions
-related:
-  - /docs/help/zenit-cash/accounts
-  - /docs/help/zenit-cash/credit-cards-and-invoices
+last_reviewed: 2026-10-02
+summary: Registre movimentações, confira datas e situação e corrija informações antes de concluir.
 ---
 
-# Como lancar uma transacao
+# Receitas, despesas e transferências
 
-## Quando usar
+## Registrar uma movimentação
 
-Use este fluxo sempre que precisar registrar uma despesa, uma receita ou uma transferencia entre contas.
+1. Abra **Transações**.
+2. Escolha **Nova Despesa**, **Nova Receita** ou **Nova Transferência**.
+3. Informe descrição, valor e as contas de origem ou destino necessárias.
+4. Escolha a categoria quando aplicável.
+5. Confira as datas e a situação: **Pendente** ou **Concluída**, conforme o movimento real.
+6. Revise e use **Criar Transação**.
 
-## Pre-requisitos
+Para compras no cartão, use o fluxo próprio de [cartões e faturas](credit-cards-and-invoices-guide.md).
 
-- pelo menos uma conta financeira acessivel;
-- categorias financeiras disponiveis para o tipo de lancamento;
-- permissao para criar transacoes.
+## Pendente não é pago
 
-## Passos
+Uma transação pendente representa um compromisso. Quando o pagamento ou recebimento ocorrer, use a ação de quitação e confira os dados apresentados antes de confirmar. A conclusão influencia os saldos e as consultas de valores realizados.
 
-1. no menu lateral, abra `Transacoes`;
-2. escolha o atalho desejado, como `Nova Despesa`, `Nova Receita` ou `Nova Transferencia`;
-3. preencha `Descricao` e `Valor`;
-4. selecione a conta de origem, destino ou ambas, conforme o tipo do lancamento;
-5. escolha a categoria, quando aplicavel;
-6. revise datas e status, como `Pendente` ou `Concluida`;
-7. clique em `Criar Transacao`.
+Uma transferência movimenta dinheiro entre contas. Confira as duas pontas para não confundir a transferência com uma nova receita ou despesa.
 
-![Formulario de nova despesa](../assets/new-expense.png)
+## Consultar e corrigir
 
-## Riscos
+Use os filtros da listagem para localizar o período e o tipo desejados. Abra a transação para revisar os dados. As ações disponíveis dependem da situação do registro e das suas permissões.
 
-- usar a conta errada afeta o saldo exibido no sistema;
-- marcar um lancamento como concluido antes do momento correto pode alterar relatorios e saldos operacionais;
-- transferencias exigem revisao redobrada das contas de origem e destino.
+Se a transação já apareceu no extrato ou em uma fatura, confira também seus vínculos antes de alterá-la. Na [conciliação](reconciliation-guide.md), prefira associar um lançamento existente quando ele já representar o movimento.
 
-## Rollback
+## Registrar pelo WhatsApp
 
-Se o lancamento foi criado com informacoes incorretas, abra a transacao na listagem e edite os dados. Quando permitido, a transacao tambem pode ser excluida.
-
-## Verificacao final
-
-Depois de salvar, confira:
-
-- se a transacao aparece na lista;
-- se a descricao e o valor estao corretos;
-- se a conta e a categoria conferem com o movimento real;
-- se o status do lancamento corresponde ao momento operacional esperado.
+Com o Cash conectado ao [Hub](/docs/help/zenit-hub/getting-started), envie o pedido por texto ou áudio. Revise o rascunho e corrija os campos na conversa. Somente o botão **Confirmar** do resumo atual grava o lançamento nesse canal.

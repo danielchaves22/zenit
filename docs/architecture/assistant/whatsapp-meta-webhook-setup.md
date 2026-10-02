@@ -21,6 +21,8 @@ related:
 
 # WhatsApp Meta webhook setup
 
+> O procedimento abaixo descreve o webhook direto do Cash, preservado como alternativa de operação/rollback. O ingresso atual é `https://zenit-hub.onrender.com/webhooks/whatsapp`. Verifique também eventuais overrides da conta WhatsApp (WABA) e do número: eles podem prevalecer sobre o callback geral do app. A operação atual está no [guia Render do Hub](https://github.com/danielchaves22/zenit-hub/blob/master/docs/RENDER.md) e no [contrato da ponte](zenit-hub-extraction.md). Não configure os dois serviços para processar a mesma mensagem.
+
 ## Escopo
 
 Este guia cobre a configuracao operacional do canal de WhatsApp ja implementado no Zenit Cash.

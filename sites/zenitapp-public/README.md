@@ -39,7 +39,7 @@ Cabeçalho e rodapé são compartilhados visualmente, mas estão presentes em ca
 
 ## Validação local
 
-1. Executar `npm run build:docs:public` na raiz do monorepo.
+1. Executar `npm run test:docs` e `npm run build:docs:public` na raiz do monorepo.
 2. Servir esta pasta por HTTP para validar caminhos absolutos e subdiretórios.
 3. Verificar navegação, âncoras, menu móvel, teclado, perguntas expansíveis e ausência de rolagem horizontal em 320 px e desktop.
 4. Conferir links, metadados, conteúdo de privacidade e `git diff --check` antes de publicar.
@@ -55,3 +55,5 @@ Cabeçalho e rodapé são compartilhados visualmente, mas estão presentes em ca
 
 O app autenticado do Zenit Calc continua em `calc.zenitapp.net` e o Cash em `zenit-cash.onrender.com`, como serviços separados.
 O portal `/docs` é gerado a partir do acervo em `docs/`, que continua sendo a fonte de verdade. O filtro de visibilidade pública é aplicado pelo gerador.
+
+O portal organiza guias por aplicativo, oferece busca local e gera âncoras para os títulos. CSS e JavaScript próprios ficam em `scripts/docs-site/`. As regras de metadados, links, assets e separação do build interno estão no [guia de publicação](../../docs/operations/site/zenitapp-public-site-setup-guide.md).

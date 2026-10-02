@@ -1,5 +1,5 @@
 ---
-title: Como usar cartoes e faturas
+title: Cartões, compras e faturas
 slug: /docs/help/zenit-cash/credit-cards-and-invoices
 type: operations-guide
 product: zenit-cash
@@ -7,53 +7,33 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-06-04
-summary: Como consultar cartoes, registrar compras e acompanhar faturas no Zenit Cash.
-tags:
-  - help
-  - credit-cards
-  - invoices
-related:
-  - /docs/help/zenit-cash/transactions
+last_reviewed: 2026-10-02
+summary: Organize compras no cartão, parcelas, vencimentos e pagamentos sem duplicar despesas.
 ---
 
-# Como usar cartoes e faturas
+# Cartões, compras e faturas
 
-## Quando usar
+## Configurar o cartão
 
-Use esta area para cadastrar cartoes, registrar compras no cartao, acompanhar faturas e revisar compras agrupadas.
+Em **Cartões**, use **Novo Cartão** e confira o emissor, o limite e as datas de fechamento e vencimento solicitadas. Esses dados influenciam o acompanhamento das compras e faturas.
 
-## Pre-requisitos
+## Registrar uma compra
 
-- permissao para acessar `Cartoes`;
-- conta ou estrutura de cartao ja criada, quando o fluxo for apenas de acompanhamento.
+1. Escolha **Nova Compra no Cartão**.
+2. Selecione o cartão e informe descrição, categoria, valor e data.
+3. Se a compra for parcelada, revise a quantidade de parcelas e a distribuição apresentada.
+4. Salve e confira em **Compras no Cartão** e nas faturas correspondentes.
 
-## Passos
+Não registre a mesma compra também como despesa comum na conta bancária.
 
-1. abra `Cartoes` no menu lateral;
-2. use `Novo Cartao` quando precisar cadastrar um cartao novo;
-3. preencha dados como banco emissor e limite do cartao;
-4. use `Nova Compra no Cartao` para registrar compras diretamente no fluxo de cartao;
-5. abra `Compras no Cartao` para acompanhar as compras ja registradas;
-6. acesse as faturas do cartao quando precisar revisar valores e pagamentos.
+## Acompanhar e pagar a fatura
 
-![Area de cartoes e faturas](../assets/credit-cards.png)
+Abra as faturas do cartão para revisar compras, créditos, vencimentos e pagamentos. Ao registrar um pagamento, confira a conta de origem e os valores apresentados.
 
-## Riscos
+A compra representa o gasto; o pagamento da fatura representa a liquidação do compromisso com o cartão. As [consultas de gastos realizados](realized-expenses-guide.md) evitam somar esse pagamento novamente às compras.
 
-- cadastrar um cartao com configuracao incorreta de limite pode prejudicar a leitura da utilizacao;
-- registrar compras no cartao como despesas comuns distorce o acompanhamento de faturas;
-- alterar cartoes em uso exige revisar o impacto nas compras ja vinculadas.
+## Créditos, estornos e conferência
 
-## Rollback
+Use o fluxo correspondente ao tipo de crédito ou estorno. Quando um estorno se refere a uma compra, mantenha o vínculo correto. Receitas comuns e créditos de cartão têm efeitos diferentes nas consultas.
 
-Se o cadastro do cartao estiver incorreto, edite o cartao antes de continuar usando-o. Para compras registradas de forma errada, ajuste ou exclua o lancamento correspondente.
-
-## Verificacao final
-
-Verifique se:
-
-- o cartao aparece corretamente na lista;
-- o limite configurado esta correto;
-- as compras entram no fluxo de cartao e nao como despesa comum isolada;
-- a consulta de faturas reflete o comportamento esperado para o cartao escolhido.
+Na conciliação de cartão, revise os itens importados e as associações sugeridas. Uma sugestão precisa ser conferida antes da confirmação; não aceite uma associação somente porque os valores coincidem.

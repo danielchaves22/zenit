@@ -1,58 +1,47 @@
 ---
-title: Primeiro acesso e navegacao
+title: Primeiro acesso e navegação
 slug: /docs/help/zenit-cash/getting-started
-type: setup-guide
+type: operations-guide
 product: zenit-cash
 audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-06-04
-summary: Como entrar no Zenit Cash, trocar a senha no primeiro acesso e entender a tela inicial.
-tags:
-  - help
-  - login
-  - navigation
-related:
-  - /docs/help/zenit-cash/overview
+last_reviewed: 2026-10-02
+summary: Como entrar no Cash, localizar os principais recursos e resolver dificuldades de acesso.
 ---
 
-# Primeiro acesso e navegacao
+# Primeiro acesso e navegação
 
-## Objetivo
+## Entrar no Cash
 
-Mostrar como acessar o Zenit Cash pela primeira vez, concluir a troca de senha quando exigida e entender a navegacao principal do sistema.
+Você precisa de um usuário cadastrado e de permissão para usar o aplicativo.
 
-## Pre-requisitos
+1. Abra o [Zenit Cash](https://zenit-cash.onrender.com).
+2. Informe seu e-mail e senha e selecione **Entrar**.
+3. Se houver solicitação de troca de senha, preencha e confirme a nova senha.
+4. Após o login, confira a conta ou o espaço de trabalho em uso antes de registrar informações.
 
-- usuario cadastrado no sistema;
-- email e senha provisoria ou definitiva;
-- permissao para usar o app Zenit Cash.
+Se ainda não tiver acesso, consulte o [suporte](/contato).
 
-## Configuracao
+## Encontrar os recursos
 
-No primeiro acesso, o sistema pode solicitar a definicao de uma nova senha. Nessa etapa, basta informar a nova senha, confirmar e salvar.
+Use o menu lateral para navegar. Ele pode ser recolhido para liberar espaço. Os itens disponíveis variam conforme as permissões e a organização da interface.
 
-## Execucao
+| Recurso      | Para que usar                                                 |
+| ------------ | ------------------------------------------------------------- |
+| Contas       | Cadastrar contas e acompanhar seus saldos                     |
+| Transações   | Registrar e consultar receitas, despesas e transferências     |
+| Fixas        | Configurar compromissos que se repetem                        |
+| Cartões      | Acompanhar compras, parcelas e faturas                        |
+| Categorias   | Organizar os tipos de receita e despesa                       |
+| Planejamento | Acompanhar disponibilidade, limites por categoria e provisões |
+| Meu perfil   | Consultar preferências e configurações pessoais disponíveis   |
 
-1. abra a tela de login do Zenit Cash;
-2. informe seu email e senha;
-3. clique em `Entrar`;
-4. se o sistema solicitar, defina sua nova senha e conclua a troca;
-5. apos o login, voce sera levado para a tela inicial.
+## Se algo não aparecer
 
-![Tela inicial do Zenit Cash](../assets/home-quick-access.png)
+- Confira se entrou com o usuário e no espaço de trabalho corretos.
+- Se um menu ou uma ação estiver indisponível, peça a revisão do seu acesso.
+- Se a senha não funcionar ou a troca falhar, use o suporte; não compartilhe a senha por mensagem.
 
-## Verificacao
-
-Ao entrar, voce deve conseguir:
-
-- ver seu nome no cabecalho da aplicacao;
-- acessar o menu lateral com as secoes disponiveis para o seu perfil;
-- abrir os atalhos da tela inicial para as acoes mais usadas.
-
-## Troubleshooting
-
-- se a senha nao funcionar, confirme se o cadastro foi liberado para o app correto;
-- se a troca de senha falhar, tente novamente preenchendo `Nova Senha` e `Confirme a Senha` com o mesmo valor;
-- se voce nao enxergar certos menus, isso pode indicar falta de permissao no seu perfil.
+Depois de entrar, comece pelas [contas financeiras](accounts-guide.md).

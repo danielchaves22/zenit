@@ -1,44 +1,37 @@
 ---
-title: Portal de documentacao Zenit
+title: Comece pelos guias do Zenit
 slug: /docs/help/zenit-documentation-overview
 type: overview
 audience: user
 visibility: public
 status: active
-owner: engineering
-last_reviewed: 2026-06-04
-summary: Visao geral do portal de documentacao da Zenit.
-tags:
-  - docs
-  - portal
-related:
-  - /docs
+owner: product
+last_reviewed: 2026-10-02
+summary: Escolha um aplicativo e encontre orientações para começar, consultar informações ou conectar serviços.
 ---
 
-# Portal de documentacao Zenit
+# Comece pelos guias do Zenit
 
-## Objetivo
+O Zenit reúne aplicativos com funções diferentes. Você pode começar por um só e conectar outros conforme sua necessidade.
 
-Apresentar a estrutura da documentacao da Zenit e indicar por onde comecar, conforme o perfil de quem esta consultando o portal.
+## Escolha o que você quer fazer
 
-## Escopo
+| Sua necessidade                           | Por onde começar                                                 |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| Organizar contas, cartões e gastos        | [Ajuda do Cash](/docs/help/zenit-cash/overview)                  |
+| Acompanhar assuntos, prazos e prioridades | [Primeiros passos no Day](/docs/help/zenit-day/getting-started)  |
+| Registrar horas de trabalho no Clockify   | [Usar o Clock](/docs/help/zenit-clock/getting-started)           |
+| Consultar serviços pelo WhatsApp          | [Conectar e usar o Hub](/docs/help/zenit-hub/getting-started)    |
+| Receber resumos e lembretes               | [Notificações pelo WhatsApp](/docs/help/zenit-hub/notifications) |
 
-O portal `/docs` reune conteudo sobre produtos, operacao, arquitetura e integracoes do ecossistema Zenit. Parte do acervo e publica. Parte e destinada ao uso interno do time.
+## Entenda onde cada informação fica
 
-## Publico-alvo
+As finanças ficam no Cash; assuntos e lembretes, no Day; eventos, no Google Calendar. O Clock registra horas no Clockify. O Hub oferece consultas e operações autorizadas por conversa, usando as contas que você conectar.
 
-- usuarios que precisam de guias e conceitos de produto;
-- times internos que precisam de especificacoes e runbooks;
-- desenvolvedores que precisam de arquitetura, setup e exemplos.
+As conexões são opcionais e independentes. Conectar um serviço não assina notificações automaticamente. O Clock não é um conector do Hub.
 
-## Conceitos principais
+## Acesso e suporte
 
-- a documentacao e escrita em Markdown e versionada junto com o codigo;
-- os documentos sao classificados por tipo, visibilidade e status;
-- o conteudo publico e renderizado no site;
-- o conteudo interno segue o mesmo modelo, mas vai para um build separado.
+Consulte [Para você](/para-voce) ou [Para negócios](/para-negocios) para conhecer os produtos. O acesso, a instalação e os recursos disponíveis dependem de cada aplicativo.
 
-## Links relacionados
-
-- [Zenit documentation overview](../README.md)
-- [Ajuda do Zenit Cash](zenit-cash/zenit-cash-help-overview.md)
+Se precisar de ajuda, use o [canal de contato](/contato). Informe o aplicativo, o dispositivo e a mensagem de erro, sem enviar senhas ou códigos de acesso.

@@ -1,84 +1,195 @@
 <!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Termos de Servico | Zenit App</title>
-  <meta name="description" content="Termos de Servico do Zenit App." />
-  <meta name="theme-color" content="#07112a" />
-  <link rel="icon" type="image/png" href="/assets/images/logo_principal.png" />
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <main class="container">
-    <section class="panel legal">
-      <header class="legal-header">
-        <a class="brand brand-compact" href="/" aria-label="Voltar para home do Zenit">
-          <img class="brand-logo" src="/assets/images/logo_principal.png" alt="Logo oficial do Zenit App" />
-        </a>
-        <p class="eyebrow">Documento institucional</p>
-        <h1 class="title">Termos de Servico</h1>
-        <p class="small">Ultima atualizacao: 9 de junho de 2026</p>
-      </header>
-
-      <h2>1. Objeto</h2>
-      <p>
-        Estes Termos regulam o uso do Zenit App e de suas aplicacoes, incluindo modulos de calculo trabalhista,
-        controle financeiro, orcamentos, assistentes operacionais por chat e demais recursos habilitados para
-        empresas e usuarios autorizados.
-      </p>
-
-      <h2>2. Conta e acesso</h2>
-      <p>
-        O acesso a aplicacao e restrito a usuarios cadastrados. Cada empresa e responsavel por gerenciar
-        usuarios e permissoes internas.
-      </p>
-
-      <h2>3. Integracoes de terceiros</h2>
-      <p>
-        O Zenit pode integrar servicos de terceiros, incluindo Google/Gmail, canais de mensageria, provedores
-        de IA e outros parceiros tecnicos, quando habilitados pela empresa contratante.
-      </p>
-
-      <h2>4. Uso aceitavel</h2>
-      <ul>
-        <li>nao utilizar a plataforma para atividades ilicitas;</li>
-        <li>nao tentar acesso indevido a dados ou sistemas;</li>
-        <li>nao enviar conteudo malicioso ou sem autorizacao.</li>
-      </ul>
-
-      <h2>5. IA e automacoes</h2>
-      <p>
-        Recursos de IA e automacao tem carater de apoio operacional e contextual. Resumos, classificacoes,
-        alertas, simulacoes, orientacoes financeiras e sugestoes de acao nao constituem consultoria financeira,
-        contabil, de credito, de investimento ou qualquer recomendacao profissional regulada.
-      </p>
-      <p>
-        A qualidade dessas respostas depende da qualidade e da atualidade dos dados registrados ou integrados.
-        A validacao final das informacoes e das decisoes permanece responsabilidade da empresa usuaria e de seus usuarios.
-      </p>
-
-      <h2>6. Privacidade</h2>
-      <p>
-        O tratamento de dados segue a Politica de Privacidade disponivel em
-        <a href="/privacy" target="_blank" rel="noopener noreferrer">/privacy</a>.
-      </p>
-
-      <h2>7. Limitacao de responsabilidade</h2>
-      <p>
-        Na extensao permitida por lei, o Zenit nao responde por indisponibilidades de servicos de terceiros
-        nem por decisoes financeiras, operacionais, contabeis, de credito ou de investimento tomadas exclusivamente
-        com base em respostas automatizadas, sem validacao humana adequada.
-      </p>
-
-      <h2>8. Contato</h2>
-      <p>Duvidas gerais e juridicas: suporte@equinoxtecnologia.com.</p>
-
-      <p class="actions">
-        <a class="btn secondary" href="/">Voltar para home</a>
-        <a class="btn" href="https://calc.zenitapp.net/login">Acessar aplicacao</a>
-      </p>
-    </section>
-  </main>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Termos de Serviço | Zenit</title>
+    <meta
+      name="description"
+      content="Termos de uso dos aplicativos Zenit: conta, acesso, integrações de terceiros, IA, automações e responsabilidades."
+    />
+    <meta name="theme-color" content="#101e35" />
+    <meta property="og:title" content="Termos de Serviço | Zenit" />
+    <meta
+      property="og:description"
+      content="Termos de uso dos aplicativos Zenit: conta, acesso, integrações de terceiros, IA, automações e responsabilidades."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:url" content="https://zenitapp.net/terms" />
+    <link rel="canonical" href="https://zenitapp.net/terms" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="/assets/images/logo_principal.png"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Zenit — início"
+          ><img
+            src="/assets/images/logo_principal.png"
+            alt="Zenit"
+            width="118"
+            height="56"
+        /></a>
+        <button
+          class="menu-toggle"
+          type="button"
+          data-menu-toggle
+          aria-controls="site-navigation"
+          aria-expanded="false"
+          aria-label="Abrir navegação"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <path d="M2 5h16M2 10h16M2 15h16" /></svg
+          >Menu
+        </button>
+        <nav
+          class="site-nav"
+          id="site-navigation"
+          aria-label="Navegação principal"
+        >
+          <a href="/para-voce">Para você</a>
+          <a href="/para-negocios">Para negócios</a>
+          <a href="/sobre">O Zenit</a>
+          <a href="/contato" class="nav-contact">Contato</a>
+        </nav>
+      </div>
+    </header>
+    <main id="conteudo">
+      <section class="article-hero">
+        <div class="wrap">
+          <p class="eyebrow">Informações institucionais</p>
+          <h1>Termos de Serviço</h1>
+          <p>Última atualização: 9 de junho de 2026.</p>
+        </div>
+      </section>
+      <div class="wrap article-layout">
+        <nav class="article-nav" aria-label="Nesta página">
+          <p>Nesta página</p>
+          <a href="#objeto">1. Objeto</a><a href="#conta">2. Conta e acesso</a
+          ><a href="#integracoes">3. Integrações de terceiros</a
+          ><a href="#uso">4. Uso aceitável</a
+          ><a href="#ia">5. IA e automações</a
+          ><a href="#privacidade">6. Privacidade</a
+          ><a href="#responsabilidade">7. Limitação de responsabilidade</a
+          ><a href="#contato">8. Contato</a>
+        </nav>
+        <article class="article-body">
+          <h2 id="objeto">1. Objeto</h2>
+          <p>
+            Estes Termos regulam o uso do Zenit App e de suas aplicações,
+            incluindo módulos de cálculo trabalhista, controle financeiro,
+            orçamentos, assistentes operacionais por chat e demais recursos
+            habilitados para empresas e usuários autorizados.
+          </p>
+          <h2 id="conta">2. Conta e acesso</h2>
+          <p>
+            O acesso à aplicação é restrito a usuários cadastrados. Cada empresa
+            é responsável por gerenciar usuários e permissões internas.
+          </p>
+          <h2 id="integracoes">3. Integrações de terceiros</h2>
+          <p>
+            O Zenit pode integrar serviços de terceiros, incluindo Google/Gmail,
+            canais de mensageria, provedores de IA e outros parceiros técnicos,
+            quando habilitados pela empresa contratante.
+          </p>
+          <h2 id="uso">4. Uso aceitável</h2>
+          <ul>
+            <li>não utilizar a plataforma para atividades ilícitas;</li>
+            <li>não tentar acesso indevido a dados ou sistemas;</li>
+            <li>não enviar conteúdo malicioso ou sem autorização.</li>
+          </ul>
+          <h2 id="ia">5. IA e automações</h2>
+          <p>
+            Recursos de IA e automação têm caráter de apoio operacional e
+            contextual. Resumos, classificações, alertas, simulações,
+            orientações financeiras e sugestões de ação não constituem
+            consultoria financeira, contábil, de crédito, de investimento ou
+            qualquer recomendação profissional regulada.
+          </p>
+          <p>
+            A qualidade dessas respostas depende da qualidade e da atualidade
+            dos dados registrados ou integrados. A validação final das
+            informações e das decisões permanece responsabilidade da empresa
+            usuária e de seus usuários.
+          </p>
+          <h2 id="privacidade">6. Privacidade</h2>
+          <p>
+            O tratamento de dados segue a
+            <a href="/privacy">Política de Privacidade</a>.
+          </p>
+          <h2 id="responsabilidade">7. Limitação de responsabilidade</h2>
+          <p>
+            Na extensão permitida por lei, o Zenit não responde por
+            indisponibilidades de serviços de terceiros nem por decisões
+            financeiras, operacionais, contábeis, de crédito ou de investimento
+            tomadas exclusivamente com base em respostas automatizadas, sem
+            validação humana adequada.
+          </p>
+          <h2 id="contato">8. Contato</h2>
+          <p>
+            Dúvidas gerais e jurídicas:
+            <a href="mailto:suporte@equinoxtecnologia.com"
+              >suporte@equinoxtecnologia.com</a
+            >.
+          </p>
+        </article>
+      </div>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <a href="/" aria-label="Zenit — início"
+              ><img
+                src="/assets/images/logo_principal.png"
+                alt="Zenit"
+                width="118"
+                height="56"
+            /></a>
+            <p>
+              Aplicativos para organizar a vida e acompanhar o trabalho.<br />Desenvolvidos
+              pela Equinox Tecnologia.
+            </p>
+          </div>
+          <div class="footer-column">
+            <h2>Explore</h2>
+            <a href="/para-voce">Para você</a
+            ><a href="/para-negocios">Para negócios</a
+            ><a href="/sobre">O Zenit</a><a href="/contato">Contato</a>
+          </div>
+          <div class="footer-column">
+            <h2>Aplicativos</h2>
+            <a href="/cash">Zenit Cash</a><a href="/day">Zenit Day</a
+            ><a href="/clock">Zenit Clock</a><a href="/hub">Zenit Hub</a
+            ><a href="/zenitcalc">Zenit Calc</a>
+          </div>
+          <div class="footer-column">
+            <h2>Informações</h2>
+            <a href="/docs/">Documentação</a><a href="/privacy">Privacidade</a
+            ><a href="/terms">Termos de serviço</a
+            ><a href="/contato#suporte">Suporte</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>© 2026 Zenit · Equinox Tecnologia</p>
+          <p>Feito para fazer parte da sua rotina.</p>
+        </div>
+      </div>
+    </footer>
+  </body>
 </html>

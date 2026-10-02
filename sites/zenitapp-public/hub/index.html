@@ -1,66 +1,383 @@
 <!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Zenit Hub | Sua rotina pelo WhatsApp</title>
-  <meta name="description" content="Conecte Google Calendar, Cash e Day ao Zenit Hub para consultar informacoes e organizar sua rotina pelo WhatsApp." />
-  <meta name="theme-color" content="#07112a" />
-  <link rel="icon" type="image/png" href="/assets/images/logo_principal.png" />
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <main class="container">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zenit Hub — suas conexões pelo WhatsApp | Zenit</title>
+    <meta
+      name="description"
+      content="Conecte Cash, Day e Google Calendar ao WhatsApp com o Zenit Hub. Consulte informações por texto ou áudio e confirme alterações antes da execução."
+    />
+    <meta name="theme-color" content="#101e35" />
+    <meta
+      property="og:title"
+      content="Zenit Hub — suas conexões pelo WhatsApp | Zenit"
+    />
+    <meta
+      property="og:description"
+      content="Conecte Cash, Day e Google Calendar ao WhatsApp com o Zenit Hub. Consulte informações por texto ou áudio e confirme alterações antes da execução."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:url" content="https://zenitapp.net/hub" />
+    <link rel="canonical" href="https://zenitapp.net/hub" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="/assets/images/logo_principal.png"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
     <header class="site-header">
-      <a class="brand brand-compact" href="/" aria-label="Zenit App">
-        <img class="brand-logo" src="/assets/images/logo_principal.png" alt="Logo oficial do Zenit App" />
-      </a>
-      <nav class="top-nav" aria-label="Navegacao principal">
-        <a href="/">Ecossistema Zenit</a>
-        <a href="/privacy">Privacidade</a>
-        <a href="/terms">Termos de servico</a>
-      </nav>
-    </header>
-    <section class="panel legal">
-      <p class="eyebrow">Assistente pessoal por conversa</p>
-      <h1 class="title">Zenit Hub</h1>
-      <p class="subtitle">Sua agenda, suas tarefas e suas financas acessiveis pelo WhatsApp.</p>
-      <p>
-        O Hub conecta o Google Calendar, o Zenit Cash e o Zenit Day para ajudar voce a consultar informacoes
-        e organizar a rotina. Cada conexao e opcional e utiliza a conta que voce autorizar naquele servico.
-        O acesso e destinado, neste momento, ao uso pessoal de um grupo limitado de usuarios.
-      </p>
-      <h2>O que voce pode fazer</h2>
-      <ul>
-        <li>Perguntar quais compromissos estao na sua agenda em um dia ou periodo.</li>
-        <li>Solicitar a criacao, alteracao ou exclusao de eventos do Calendar, revisando e confirmando cada operacao.</li>
-        <li>Consultar tarefas do Day e informacoes financeiras do Cash, quando esses servicos estiverem conectados.</li>
-        <li>Configurar lembretes e assinar o resumo diario pelo WhatsApp, conforme os recursos habilitados.</li>
-      </ul>
-      <h2>Como conectar o Google Calendar</h2>
-      <ol>
-        <li>Na conversa do WhatsApp que voce ja utiliza com o Zenit, envie <strong>conectar Calendar</strong>.</li>
-        <li>Abra o link, escolha sua conta Google e autorize as permissoes de agenda solicitadas.</li>
-        <li>Retorne ao WhatsApp, confira a conta apresentada e pressione <strong>Conectar</strong>.</li>
-      </ol>
-      <p>
-        A autorizacao permite listar agendas e consultar, criar, alterar e excluir eventos.
-        As alteracoes so sao executadas depois da sua confirmacao pelo botao no WhatsApp.
-        Para interromper o acesso, envie <strong>desconectar Calendar</strong> ou revogue a permissao na Conta Google.
-      </p>
-      <h2>Seus dados e a IA</h2>
-      <p>
-        O Hub utiliza IA para interpretar pedidos e redigir respostas com as informacoes das conexoes autorizadas.
-        Dados de agenda necessarios a resposta podem ser processados pela OpenAI e enviados pelo WhatsApp, operado
-        pela Meta. Consulte a <a href="/privacy">Politica de Privacidade</a> para conhecer os dados acessados,
-        o armazenamento, os provedores envolvidos e as formas de desconectar e solicitar exclusao.
-      </p>
-      <p>Suporte: <a href="mailto:suporte@equinoxtecnologia.com">suporte@equinoxtecnologia.com</a>.</p>
-      <div class="actions">
-        <a class="btn secondary" href="/privacy">Politica de Privacidade</a>
-        <a class="btn ghost" href="/terms">Termos de servico</a>
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Zenit — início"
+          ><img
+            src="/assets/images/logo_principal.png"
+            alt="Zenit"
+            width="118"
+            height="56"
+        /></a>
+        <button
+          class="menu-toggle"
+          type="button"
+          data-menu-toggle
+          aria-controls="site-navigation"
+          aria-expanded="false"
+          aria-label="Abrir navegação"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <path d="M2 5h16M2 10h16M2 15h16" /></svg
+          >Menu
+        </button>
+        <nav
+          class="site-nav"
+          id="site-navigation"
+          aria-label="Navegação principal"
+        >
+          <a href="/para-voce">Para você</a>
+          <a href="/para-negocios">Para negócios</a>
+          <a href="/sobre">O Zenit</a>
+          <a href="/contato" class="nav-contact">Contato</a>
+        </nav>
       </div>
-    </section>
-  </main>
-</body>
+    </header>
+    <main id="conteudo">
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div>
+            <p class="eyebrow">Zenit Hub · Conexões pelo WhatsApp</p>
+            <h1 class="wide-title">
+              Suas informações,
+              <span class="hero-accent">a uma conversa de distância.</span>
+            </h1>
+            <p class="lead">
+              Pergunte sobre gastos, tarefas ou compromissos por texto ou áudio.
+              O Hub consulta os serviços que você autorizou e traz a resposta
+              para a conversa.
+            </p>
+            <div class="actions">
+              <a class="button" href="#conectar"
+                >Como conectar
+                <span class="arrow" aria-hidden="true">↗</span></a
+              ><a class="button secondary" href="/contato"
+                >Consultar acesso ao Hub
+                <span class="arrow" aria-hidden="true">↗</span></a
+              >
+            </div>
+            <p class="hero-note">
+              Disponível para usuários autorizados. Cada serviço é conectado
+              separadamente.
+            </p>
+          </div>
+          <div class="example-surface">
+            <div class="example-label">
+              <span>Zenit Hub · WhatsApp</span><span>Exemplo ilustrativo</span>
+            </div>
+            <p class="example-title">Perguntas do dia a dia.</p>
+            <div class="bubble user">
+              Quanto gastei este mês com alimentação?
+            </div>
+            <div class="bubble answer">
+              Consulte seus lançamentos no Cash, com filtros por período e
+              categoria.
+            </div>
+            <div class="bubble user">
+              E quais são meus compromissos de amanhã?
+            </div>
+            <div class="bubble answer">
+              Confira os eventos do Google Calendar que você conectou.
+            </div>
+            <div class="connection-chips">
+              <span>Cash</span><span>Day</span><span>Google Calendar</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="section">
+        <div class="wrap split-section">
+          <div>
+            <p class="eyebrow">O que você pode fazer</p>
+            <h2>Peça com suas palavras.</h2>
+            <p class="intro">
+              O Hub interpreta o pedido e consulta os recursos disponíveis nos
+              serviços conectados à sua conversa.
+            </p>
+          </div>
+          <ul class="feature-list">
+            <li>
+              <h3>Finanças com o Cash</h3>
+              <p>
+                Consulte saldos, compromissos financeiros e gastos por período.
+                Prepare lançamentos, confira os dados e confirme antes de
+                gravar.
+              </p>
+            </li>
+            <li>
+              <h3>Organização com o Day</h3>
+              <p>
+                Consulte seus assuntos e tarefas. Use os recursos de lembretes e
+                notificações quando estiverem habilitados para sua conexão.
+              </p>
+            </li>
+            <li>
+              <h3>Agenda com o Google Calendar</h3>
+              <p>
+                Consulte eventos nas agendas às quais sua conta tem acesso.
+                Prepare criações, alterações e exclusões de eventos e confirme
+                cada operação pelo botão do WhatsApp.
+              </p>
+            </li>
+            <li>
+              <h3>Conexões sob seu controle</h3>
+              <p>
+                Use “conexões” para consultar os serviços associados. Contas de
+                aplicativos diferentes podem ser conectadas independentemente.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+      <section class="section section-soft" id="conectar">
+        <div class="wrap split-section">
+          <div>
+            <p class="eyebrow">Conectando sua agenda</p>
+            <h2>Você autoriza. O Hub conecta.</h2>
+            <p class="intro">
+              O acesso ao Google Calendar é opcional. A conexão começa na sua
+              conversa com o Zenit no WhatsApp.
+            </p>
+            <div class="info-note">
+              <p>
+                Para consultar acesso ao serviço ou conectar Cash e Day,
+                <a class="text-link" href="/contato"
+                  >fale com o suporte
+                  <span class="arrow" aria-hidden="true">↗</span></a
+                >.
+              </p>
+            </div>
+          </div>
+          <ol class="steps">
+            <li>
+              <h3>Envie “conectar Calendar”</h3>
+              <p>
+                Na conversa do Zenit, peça a conexão. Você receberá um link para
+                autorizar sua conta Google.
+              </p>
+            </li>
+            <li>
+              <h3>Escolha a conta e autorize</h3>
+              <p>
+                No Google, confira o nome Zenit e as permissões solicitadas.
+                Autorize a consulta às agendas e o acesso aos eventos.
+              </p>
+            </li>
+            <li>
+              <h3>Confirme no WhatsApp</h3>
+              <p>
+                Retorne à conversa, confira a conta escolhida e toque em
+                “Conectar”. A agenda ficará disponível para suas consultas.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
+      <section class="section">
+        <div class="wrap split-section">
+          <div>
+            <p class="eyebrow">Privacidade e autorização</p>
+            <h2>Entenda como seus dados são usados.</h2>
+            <p class="intro">
+              O Hub conecta os serviços que você escolher, respeitando as
+              permissões da conta autorizada.
+            </p>
+          </div>
+          <ul class="feature-list">
+            <li>
+              <h3>Acesso necessário para a agenda</h3>
+              <p>
+                A conexão Google usa a identificação da conta, a lista de
+                agendas e os eventos. Permite consultar, criar, alterar e
+                excluir eventos onde sua conta tiver permissão. Essa conexão não
+                dá acesso ao Gmail nem à administração ou ao compartilhamento de
+                agendas.
+              </p>
+            </li>
+            <li>
+              <h3>IA para interpretar e responder</h3>
+              <p>
+                Mensagens e dados necessários à resposta podem ser processados
+                pela API da OpenAI. As respostas passam pelo WhatsApp, operado
+                pela Meta, e o Hub é hospedado no Render. Credenciais de acesso
+                não são enviadas ao modelo de IA.
+              </p>
+            </li>
+            <li>
+              <h3>Desconexão a qualquer momento</h3>
+              <p>
+                Envie “desconectar Calendar” no WhatsApp ou revogue a
+                autorização nas conexões da sua Conta Google. Os tokens são
+                removidos do Hub; eventos e mensagens já entregues permanecem
+                nos respectivos serviços.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+      <section class="section section-soft">
+        <div class="wrap split-section">
+          <div>
+            <p class="eyebrow">Uso de dados Google</p>
+            <h2>Finalidade definida. Acesso revogável.</h2>
+          </div>
+          <div>
+            <p>
+              O Hub utiliza os dados para responder solicitações, preparar
+              operações e compor resumos que o usuário optar por receber. Não
+              utiliza dados do Google para publicidade nem para treinar modelos
+              de IA de uso geral.
+            </p>
+            <p>
+              O uso e a transferência de informações recebidas das APIs do
+              Google seguem a
+              <a
+                href="https://developers.google.com/terms/api-services-user-data-policy"
+                >Google API Services User Data Policy</a
+              >, incluindo os requisitos de <strong>Limited Use</strong>.
+            </p>
+            <a class="text-link" href="/privacy"
+              >Leia a Política de Privacidade
+              <span class="arrow" aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+      </section>
+      <section class="section section-soft">
+        <div class="wrap faq-layout">
+          <div>
+            <p class="eyebrow">Bom saber</p>
+            <h2>Algumas respostas antes de começar.</h2>
+          </div>
+          <div>
+            <details>
+              <summary>
+                Alterações acontecem assim que envio a mensagem?
+              </summary>
+              <p>
+                Operações que criam, alteram ou excluem eventos e lançamentos
+                são preparadas para revisão. Você precisa confirmar a operação
+                no botão apresentado pelo WhatsApp.
+              </p>
+            </details>
+            <details>
+              <summary>Como desconecto a minha agenda?</summary>
+              <p>
+                Envie “desconectar Calendar” na conversa. Você também pode
+                revogar o acesso em
+                <a href="https://myaccount.google.com/connections"
+                  >Conexões da sua Conta Google</a
+                >. Para solicitar exclusão dos demais registros, entre em
+                contato com o suporte.
+              </p>
+            </details>
+            <details>
+              <summary>O Hub guarda uma cópia de toda a agenda?</summary>
+              <p>
+                Não mantém uma réplica permanente de todas as agendas. Armazena
+                a identificação da conexão, tokens criptografados, contexto
+                recente, rascunhos e registros operacionais. Trechos de eventos
+                podem aparecer nas respostas e nesses registros.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+      <section class="contact-band">
+        <div class="wrap contact-inner">
+          <div>
+            <h2>Quer consultar seus serviços pelo WhatsApp?</h2>
+            <p>
+              Entre em contato para saber sobre a disponibilidade do Hub e as
+              conexões habilitadas.
+            </p>
+          </div>
+          <a class="button" href="/contato"
+            >Fale com a gente
+            <span class="arrow" aria-hidden="true">↗</span></a
+          >
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <a href="/" aria-label="Zenit — início"
+              ><img
+                src="/assets/images/logo_principal.png"
+                alt="Zenit"
+                width="118"
+                height="56"
+            /></a>
+            <p>
+              Aplicativos para organizar a vida e acompanhar o trabalho.<br />Desenvolvidos
+              pela Equinox Tecnologia.
+            </p>
+          </div>
+          <div class="footer-column">
+            <h2>Explore</h2>
+            <a href="/para-voce">Para você</a
+            ><a href="/para-negocios">Para negócios</a
+            ><a href="/sobre">O Zenit</a><a href="/contato">Contato</a>
+          </div>
+          <div class="footer-column">
+            <h2>Aplicativos</h2>
+            <a href="/cash">Zenit Cash</a><a href="/day">Zenit Day</a
+            ><a href="/clock">Zenit Clock</a><a href="/hub">Zenit Hub</a
+            ><a href="/zenitcalc">Zenit Calc</a>
+          </div>
+          <div class="footer-column">
+            <h2>Informações</h2>
+            <a href="/docs/">Documentação</a><a href="/privacy">Privacidade</a
+            ><a href="/terms">Termos de serviço</a
+            ><a href="/contato#suporte">Suporte</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>© 2026 Zenit · Equinox Tecnologia</p>
+          <p>Feito para fazer parte da sua rotina.</p>
+        </div>
+      </div>
+    </footer>
+  </body>
 </html>

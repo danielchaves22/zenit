@@ -1,96 +1,237 @@
 <!doctype html>
 <html lang="pt-BR">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ZenitCalc | Mais controle para calculo trabalhista</title>
-  <meta
-    name="description"
-    content="Conheca o ZenitCalc e veja como a aplicacao ajuda a organizar solicitacoes de calculo trabalhista com mais controle e rastreabilidade."
-  />
-  <meta name="theme-color" content="#07112a" />
-  <link rel="icon" type="image/png" href="/assets/images/logo_principal.png" />
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <main class="container">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zenit Calc — solicitações de cálculos trabalhistas | Zenit</title>
+    <meta
+      name="description"
+      content="Conheça o Zenit Calc para organizar solicitações de cálculos trabalhistas, dados de processos e etapas de revisão. Disponibilidade sob consulta."
+    />
+    <meta name="theme-color" content="#101e35" />
+    <meta
+      property="og:title"
+      content="Zenit Calc — solicitações de cálculos trabalhistas | Zenit"
+    />
+    <meta
+      property="og:description"
+      content="Conheça o Zenit Calc para organizar solicitações de cálculos trabalhistas, dados de processos e etapas de revisão. Disponibilidade sob consulta."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta property="og:url" content="https://zenitapp.net/zenitcalc" />
+    <link rel="canonical" href="https://zenitapp.net/zenitcalc" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="/assets/images/logo_principal.png"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
     <header class="site-header">
-      <div class="brand-banner">
-        <a class="brand brand-home" href="/" aria-label="Zenit App">
-          <img class="brand-logo" src="/assets/images/logo_principal.png" alt="Logo oficial da Zenit App" />
-        </a>
-        <p class="brand-tagline">Ecossistema para operacao, controle e decisao</p>
+      <div class="wrap header-inner">
+        <a class="brand" href="/" aria-label="Zenit — início"
+          ><img
+            src="/assets/images/logo_principal.png"
+            alt="Zenit"
+            width="118"
+            height="56"
+        /></a>
+        <button
+          class="menu-toggle"
+          type="button"
+          data-menu-toggle
+          aria-controls="site-navigation"
+          aria-expanded="false"
+          aria-label="Abrir navegação"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 20 20"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <path d="M2 5h16M2 10h16M2 15h16" /></svg
+          >Menu
+        </button>
+        <nav
+          class="site-nav"
+          id="site-navigation"
+          aria-label="Navegação principal"
+        >
+          <a href="/para-voce">Para você</a>
+          <a href="/para-negocios">Para negócios</a>
+          <a href="/sobre">O Zenit</a>
+          <a href="/contato" class="nav-contact">Contato</a>
+        </nav>
       </div>
-
-      <nav class="top-nav" aria-label="Navegacao principal">
-        <a href="/">Visao geral</a>
-        <a href="/cash">Cash</a>
-        <a href="/orcamento-mobile">Orcamento Mobile</a>
-      </nav>
     </header>
-
-    <section class="app-page">
-      <div class="breadcrumb">
-        <a href="/">Zenit App</a>
-        <span>/</span>
-        <span>ZenitCalc</span>
-      </div>
-
-      <div class="page-hero">
-        <div class="page-copy">
-          <p class="eyebrow">Aplicacao do ecossistema</p>
-          <h1 class="title">ZenitCalc para dar mais controle ao fluxo de calculo trabalhista.</h1>
-          <p class="subtitle">
-            O ZenitCalc centraliza solicitacoes, organiza prioridades e torna cada etapa do calculo mais facil de
-            acompanhar, ajudando a equipe a trabalhar com menos retrabalho e mais previsibilidade.
-          </p>
-
-          <section class="actions">
-            <a class="btn" href="https://calc.zenitapp.net/login">Acessar aplicacao</a>
-            <a class="btn secondary" href="/">Voltar ao ecossistema</a>
-          </section>
+    <main id="conteudo">
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div>
+            <p class="eyebrow">Zenit Calc · Rotinas de cálculo</p>
+            <h1 class="wide-title">
+              Cada cálculo,
+              <span class="hero-accent">com seu contexto.</span>
+            </h1>
+            <p class="lead">
+              Organize solicitações de cálculos trabalhistas com as informações
+              do processo e suas etapas de trabalho. Reúna dados para preparar,
+              acompanhar e revisar cada pedido.
+            </p>
+            <div class="actions">
+              <a class="button" href="/contato"
+                >Consultar disponibilidade
+                <span class="arrow" aria-hidden="true">↗</span></a
+              >
+            </div>
+            <p class="hero-note">
+              Solução de uso específico. Disponibilidade e adequação sob
+              consulta.
+            </p>
+          </div>
+          <div class="example-surface">
+            <div class="example-label">
+              <span>Zenit Calc · Fluxo de trabalho</span><span>Ilustração</span>
+            </div>
+            <p class="example-title">Uma solicitação com contexto.</p>
+            <ol class="business-steps">
+              <li>
+                <div>
+                  <strong>Processo e informações</strong>Reúna os dados
+                  necessários para o cálculo.
+                </div>
+              </li>
+              <li>
+                <div>
+                  <strong>Preparação e acompanhamento</strong>Acompanhe a
+                  solicitação e sua etapa de trabalho.
+                </div>
+              </li>
+              <li>
+                <div>
+                  <strong>Revisão do resultado</strong>Confira as informações
+                  antes de dar seguimento.
+                </div>
+              </li>
+            </ol>
+          </div>
         </div>
-
-        <aside class="page-side">
-          <section class="surface-note">
-            <h2>Valor pratico</h2>
-            <ul class="checklist">
-              <li>Padroniza a entrada de pedidos e evita perda de informacao logo no inicio do fluxo.</li>
-              <li>Facilita a visualizacao de pendencias, prioridades e entregas em andamento.</li>
-              <li>Fortalece rastreabilidade e historico para uma operacao mais segura e organizada.</li>
-            </ul>
-          </section>
-        </aside>
+      </section>
+      <section class="section">
+        <div class="wrap split-section">
+          <div>
+            <p class="eyebrow">Do pedido à revisão</p>
+            <h2>O processo acompanha o cálculo.</h2>
+            <p class="intro">
+              O Calc concentra informações necessárias ao trabalho e permite
+              acompanhar a evolução de uma solicitação.
+            </p>
+          </div>
+          <ul class="feature-list">
+            <li>
+              <h3>Dados de entrada organizados</h3>
+              <p>
+                Reúna os dados do processo e da solicitação em registros
+                estruturados para preparação do cálculo.
+              </p>
+            </li>
+            <li>
+              <h3>Etapas de acompanhamento</h3>
+              <p>
+                Acompanhe a abertura, a preparação e a revisão do pedido, de
+                acordo com o fluxo configurado.
+              </p>
+            </li>
+            <li>
+              <h3>Histórico para conferência</h3>
+              <p>
+                Consulte informações e resultados registrados para apoiar a
+                conferência por quem é responsável pelo trabalho.
+              </p>
+            </li>
+          </ul>
+        </div>
+      </section>
+      <section class="section section-soft">
+        <div class="wrap split-section">
+          <div>
+            <p class="eyebrow">Acesso e uso</p>
+            <h2>Avalie o Calc para o seu fluxo.</h2>
+          </div>
+          <div>
+            <p>
+              O acesso é destinado a usuários cadastrados. Entre em contato para
+              conhecer o escopo disponível e verificar se ele atende às
+              necessidades da sua operação.
+            </p>
+            <p>
+              Os recursos apoiam a preparação e o acompanhamento dos cálculos.
+              Os dados e resultados precisam ser revisados pelo profissional
+              responsável.
+            </p>
+            <div class="actions">
+              <a class="button" href="/contato"
+                >Falar sobre o Calc
+                <span class="arrow" aria-hidden="true">↗</span></a
+              ><a
+                class="button secondary"
+                href="https://calc.zenitapp.net/login"
+                >Acesso de usuários cadastrados
+                <span class="arrow" aria-hidden="true">↗</span></a
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer">
+      <div class="wrap">
+        <div class="footer-grid">
+          <div class="footer-brand">
+            <a href="/" aria-label="Zenit — início"
+              ><img
+                src="/assets/images/logo_principal.png"
+                alt="Zenit"
+                width="118"
+                height="56"
+            /></a>
+            <p>
+              Aplicativos para organizar a vida e acompanhar o trabalho.<br />Desenvolvidos
+              pela Equinox Tecnologia.
+            </p>
+          </div>
+          <div class="footer-column">
+            <h2>Explore</h2>
+            <a href="/para-voce">Para você</a
+            ><a href="/para-negocios">Para negócios</a
+            ><a href="/sobre">O Zenit</a><a href="/contato">Contato</a>
+          </div>
+          <div class="footer-column">
+            <h2>Aplicativos</h2>
+            <a href="/cash">Zenit Cash</a><a href="/day">Zenit Day</a
+            ><a href="/clock">Zenit Clock</a><a href="/hub">Zenit Hub</a
+            ><a href="/zenitcalc">Zenit Calc</a>
+          </div>
+          <div class="footer-column">
+            <h2>Informações</h2>
+            <a href="/docs/">Documentação</a><a href="/privacy">Privacidade</a
+            ><a href="/terms">Termos de serviço</a
+            ><a href="/contato#suporte">Suporte</a>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>© 2026 Zenit · Equinox Tecnologia</p>
+          <p>Feito para fazer parte da sua rotina.</p>
+        </div>
       </div>
-
-      <div class="detail-grid">
-        <article class="detail-card">
-          <span class="detail-kicker">Triagem</span>
-          <strong>Entrada com mais padrao</strong>
-          <p>As demandas chegam com mais contexto e consistencia para acelerar triagem, distribuicao e resposta.</p>
-        </article>
-        <article class="detail-card">
-          <span class="detail-kicker">Fluxo</span>
-          <strong>Acompanhamento objetivo</strong>
-          <p>Status, responsaveis e andamento ficam visiveis para reduzir cobrancas dispersas e ruido operacional.</p>
-        </article>
-        <article class="detail-card">
-          <span class="detail-kicker">Rastreabilidade</span>
-          <strong>Historico auditavel</strong>
-          <p>Eventos e avancos ficam registrados para apoiar qualidade, aprendizado e melhoria continua do processo.</p>
-        </article>
-      </div>
-    </section>
-
-    <section class="legal-panel">
-      <p class="small">
-        Para requisitos de conformidade, consulte a politica e os termos oficiais da plataforma.
-      </p>
-      <div class="legal-links">
-        <a class="btn ghost" href="/privacy" target="_blank" rel="noopener noreferrer">Ver politica</a>
-        <a class="btn ghost" href="/terms" target="_blank" rel="noopener noreferrer">Ver termos</a>
-      </div>
-    </section>
-  </main>
-</body>
+    </footer>
+  </body>
 </html>

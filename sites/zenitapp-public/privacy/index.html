@@ -92,15 +92,21 @@
         <article class="article-body">
           <h2 id="quem-somos">1. Quem somos</h2>
           <p>
-            O Zenit App é operado pela Equinox Tecnologia para suporte a fluxos
-            operacionais, financeiros e assistidos por IA dentro dos produtos do
-            ecossistema. Contato:
+            O Zenit é desenvolvido e operado pela Equinox Tecnologia. Esta
+            política abrange o site e os aplicativos Zenit, incluindo o Zenit
+            Hub, assistente que conecta serviços pelo WhatsApp. Na autorização
+            do Google, o aplicativo é identificado como <strong>Zenit</strong>.
+            Para dúvidas sobre privacidade ou solicitações sobre seus dados,
+            entre em contato:
             <a href="mailto:suporte@equinoxtecnologia.com"
               >suporte@equinoxtecnologia.com</a
             >.
           </p>
           <h2 id="dados">2. Dados tratados</h2>
-          <p>Podemos tratar dados cadastrais e operacionais, incluindo:</p>
+          <p>
+            Os dados tratados dependem dos aplicativos e das conexões que você
+            utiliza. Eles incluem:
+          </p>
           <ul>
             <li>dados de conta e autenticação de usuários;</li>
             <li>
@@ -116,8 +122,9 @@
               conversacionais habilitados;
             </li>
             <li>
-              metadados e conteúdo de e-mail quando a integração Gmail estiver
-              habilitada;
+              metadados e conteúdo de e-mail apenas em funcionalidades com
+              integração Gmail autorizada separadamente; conectar o Calendar ao
+              Hub não concede esse acesso;
             </li>
             <li>
               identificação da conta Google, lista de agendas e dados de eventos
@@ -134,10 +141,54 @@
           </p>
           <h2 id="compartilhamento">4. Compartilhamento</h2>
           <p>
-            Dados podem ser compartilhados apenas com provedores necessários
-            para operação, como infraestrutura, autenticação, serviços de
-            e-mail, canais de mensageria e IA, sempre dentro da finalidade
-            contratada.
+            Usamos provedores para executar as funcionalidades solicitadas. No
+            Zenit Hub, os dados seguem este fluxo:
+          </p>
+          <ul>
+            <li>
+              <strong>Google:</strong> autentica a conta, concede e renova a
+              autorização e recebe as consultas e alterações de eventos.
+            </li>
+            <li>
+              <strong>Meta / WhatsApp:</strong> transporta o identificador e o
+              número do remetente, mensagens, áudios, respostas, botões e
+              notificações. Uma resposta enviada pode conter dados de agenda,
+              tarefas ou finanças que você pediu para consultar.
+            </li>
+            <li>
+              <strong>OpenAI:</strong> processa a mensagem, o contexto recente e
+              os resultados das consultas necessários para interpretar o pedido
+              e elaborar a resposta. Isso pode incluir dados de eventos do
+              Google Calendar. Quando você envia voz, o áudio também é
+              encaminhado para transcrição. Tokens de acesso e segredos dos
+              conectores não são enviados ao modelo de IA.
+            </li>
+            <li>
+              <strong>Render:</strong> hospeda o serviço e o banco de dados do
+              Hub, com os registros operacionais descritos nesta política.
+            </li>
+            <li>
+              <strong>Cash e Day:</strong> recebem as consultas ou ações do
+              respectivo domínio somente quando a conexão está autorizada. Cada
+              conexão tem sua própria conta e suas permissões.
+            </li>
+          </ul>
+          <p>
+            Não vendemos dados pessoais. Não usamos nem transferimos dados
+            obtidos das APIs do Google para publicidade, criação de perfis
+            publicitários ou treinamento de modelos de IA de uso geral. O
+            processamento pela IA serve às funcionalidades que você solicita ou
+            escolhe receber.
+          </p>
+          <p>
+            O Hub desativa o armazenamento de estado das respostas na API da
+            OpenAI. Isso não equivale a retenção zero: registros de segurança e
+            prevenção de abuso podem ser mantidos pelo provedor conforme sua
+            <a href="https://developers.openai.com/api/docs/guides/your-data"
+              >política de dados da API</a
+            >. Os provedores também aplicam suas próprias políticas aos dados
+            que processam, inclusive quando o processamento ocorre fora do
+            Brasil.
           </p>
           <h2 id="google">5. Google APIs</h2>
           <h3>Google Calendar no Zenit Hub</h3>
@@ -157,14 +208,47 @@
             receber. Criações, alterações e exclusões de eventos exigem uma
             prévia e a confirmação pelo botão no WhatsApp antes da execução.
           </p>
+          <h3>Quais dados do Google acessamos e por quê</h3>
+          <ul>
+            <li>
+              <strong>Conta:</strong> identificador da conta Google e e-mail,
+              para mostrar qual conta foi conectada e vinculá-la ao remetente
+              correto do WhatsApp. O Hub não recebe sua senha do Google.
+            </li>
+            <li>
+              <strong>Agendas:</strong> identificadores, nomes, fuso horário,
+              indicação da agenda principal e nível de acesso da conta, para
+              listar agendas e verificar onde você pode consultar ou alterar
+              eventos.
+            </li>
+            <li>
+              <strong>Consultas de eventos:</strong> identificador, título,
+              início, fim, local, status e referência de recorrência, para
+              responder sobre compromissos em um período e compor o resumo
+              diário quando essa notificação for assinada.
+            </li>
+            <li>
+              <strong>Preparação de alterações:</strong> ao consultar um evento
+              específico para edição ou exclusão, a API pode retornar também
+              descrição, lembretes, recorrência, organizador, participantes e
+              metadados de versão. Esses dados permitem preparar a prévia,
+              detectar alterações concorrentes e informar efeitos sobre
+              participantes. O Google pode enviar notificações aos participantes
+              de um evento alterado ou excluído.
+            </li>
+            <li>
+              <strong>Autorização:</strong> tokens de acesso e renovação,
+              permissões concedidas e validade, para executar as operações
+              autorizadas sem pedir login a cada mensagem.
+            </li>
+          </ul>
           <p>
-            Mensagens e dados de eventos necessários à resposta podem ser
-            processados pela API da OpenAI para interpretar pedidos e redigir
-            respostas. As respostas enviadas pelo WhatsApp são processadas pela
-            Meta; a infraestrutura do Hub é hospedada no Render. As credenciais
-            de acesso ao Google não são enviadas ao modelo de IA. O Hub não
-            utiliza dados do Google para publicidade nem para treinar modelos de
-            IA de uso geral.
+            As permissões solicitadas são identificação e e-mail da conta,
+            leitura da lista de agendas e leitura e escrita de eventos. O acesso
+            de escrita é necessário para criar, editar ou excluir os
+            compromissos que você solicitar, inclusive eventos já existentes nas
+            suas agendas. Autorizar a conexão não executa essas alterações nem
+            assina notificações automaticamente.
           </p>
           <p>
             O Hub armazena a identificação da conexão e tokens de autorização
@@ -174,19 +258,24 @@
             respostas e desses registros operacionais. Os tokens permitem
             renovar o acesso enquanto a autorização permanecer válida.
           </p>
+          <h3>Como interromper a conexão</h3>
           <p>
             Para interromper o acesso, envie
             <strong>desconectar Calendar</strong> na conversa do WhatsApp. Você
             também pode revogar a permissão na página de
             <a href="https://myaccount.google.com/connections"
               >conexões da sua Conta Google</a
-            >. A desconexão remove a conexão e seus tokens do Hub; não apaga os
-            eventos da agenda nem as mensagens já entregues no WhatsApp. Para
-            solicitar a exclusão dos demais registros associados à sua conta,
-            entre em contato pelo e-mail
-            <a href="mailto:suporte@equinoxtecnologia.com"
-              >suporte@equinoxtecnologia.com</a
-            >.
+            >. A desconexão pelo Hub remove a conexão e seus tokens, limpa o
+            contexto recente de conversa, cancela as prévias pendentes do
+            Calendar e desativa as assinaturas de notificações desse remetente.
+            Revogar a permissão no Google impede novos acessos, mas não é um
+            pedido de exclusão dos registros já armazenados no Hub.
+          </p>
+          <p>
+            Nenhuma dessas ações apaga os eventos da agenda ou as mensagens já
+            entregues no WhatsApp. Filas, comprovantes e registros operacionais
+            remanescentes seguem os prazos abaixo. Você também pode solicitar a
+            exclusão desses dados pelo nosso canal de privacidade.
           </p>
           <h3>Compromisso de uso limitado</h3>
           <p>
@@ -198,18 +287,86 @@
             >, incluindo os requisitos de Limited Use.
           </p>
           <h2 id="retencao">6. Retenção e segurança</h2>
+          <h3>Prazos no Zenit Hub</h3>
+          <ul>
+            <li>
+              <strong>Conexões e tokens:</strong> permanecem enquanto a conexão
+              estiver cadastrada. São removidos da base operacional ao
+              desconectar o serviço no Hub ou atender a uma solicitação de
+              exclusão correspondente.
+            </li>
+            <li>
+              <strong>Contexto de conversa:</strong> o assistente utiliza no
+              máximo as 12 mensagens recentes das últimas 24 horas. A limpeza
+              automática remove esse histórico quando ultrapassa 24 horas.
+              Cópias em filas e registros de entrega têm os prazos próprios
+              abaixo.
+            </li>
+            <li>
+              <strong>Áudio:</strong> o Hub mantém o arquivo somente em memória
+              durante o download e a transcrição; não grava uma cópia permanente
+              do arquivo. A referência da mídia, a transcrição e a resposta
+              podem integrar as filas e o histórico como as mensagens de texto.
+            </li>
+            <li>
+              <strong>Mensagens processadas e respostas enviadas:</strong>
+              os registros dessas filas são removidos pela limpeza automática
+              após 30 dias contados da criação do registro. Mensagens ainda
+              pendentes, com falha ou resultado incerto podem permanecer até a
+              resolução operacional ou uma solicitação de exclusão.
+            </li>
+            <li>
+              <strong>Prévias de eventos e de notificações:</strong> são
+              removidas 30 dias após a expiração, exceto operações ainda em
+              execução. Entregas de notificações são removidas após 30 dias da
+              criação, exceto as ainda pendentes ou em envio.
+            </li>
+            <li>
+              <strong>Preferências e assinaturas:</strong> ficam armazenadas
+              para aplicar horários, fuso, pausas e cancelamentos. Cancelar uma
+              assinatura interrompe os envios, mas não elimina automaticamente
+              seu registro; a exclusão pode ser solicitada ao suporte.
+            </li>
+          </ul>
           <p>
-            Mantemos dados pelo prazo necessário para as finalidades descritas e
-            aplicamos medidas técnicas e organizacionais para proteção contra
-            acesso não autorizado.
+            A limpeza é executada periodicamente enquanto o serviço está em
+            funcionamento. Esses prazos se referem à base operacional do Hub,
+            não à exclusão imediata de backups nem aos registros mantidos pelos
+            provedores. Cópias de segurança seguem o ciclo de retenção da
+            infraestrutura. Registros financeiros do Cash, tarefas do Day e
+            eventos do Calendar permanecem nos respectivos serviços; não são
+            apagados ao desconectar o Hub.
+          </p>
+          <h3>Proteção dos dados</h3>
+          <p>
+            O Hub usa conexões HTTPS com os provedores e criptografia na
+            aplicação para tokens, conteúdo de mensagens, histórico e prévias
+            armazenados. As chaves e credenciais ficam no servidor. Cada
+            operação verifica o remetente, a conexão e as permissões concedidas;
+            mudanças no Calendar exigem confirmação por um botão válido na
+            conversa do titular. Nenhum mecanismo elimina todos os riscos, e
+            incidentes ou suspeitas podem ser comunicados pelo canal de
+            privacidade.
           </p>
           <h2 id="direitos">7. Direitos dos titulares</h2>
           <p>
-            O titular pode solicitar acesso, correção e demais direitos
-            previstos na legislação aplicável pelo e-mail
+            Você pode solicitar acesso, correção, informações sobre o tratamento
+            e exclusão de seus dados, além dos demais direitos previstos na
+            legislação aplicável. Envie o pedido para
             <a href="mailto:suporte@equinoxtecnologia.com"
               >suporte@equinoxtecnologia.com</a
             >.
+          </p>
+          <p>
+            Informe o aplicativo, a conta ou o número de WhatsApp associado e o
+            que deseja excluir. Podemos confirmar sua identidade antes de
+            atender ao pedido para proteger os dados de outras pessoas. Não
+            envie senhas, tokens ou códigos de autenticação. Caso algum registro
+            precise ser preservado por obrigação legal ou para apurar um
+            incidente, informaremos a justificativa aplicável. A exclusão no
+            Zenit não apaga conversas dos aparelhos dos participantes nem dados
+            mantidos pelo Google, Meta ou outros provedores sob suas próprias
+            políticas.
           </p>
           <h2 id="alteracoes">8. Alterações</h2>
           <p>

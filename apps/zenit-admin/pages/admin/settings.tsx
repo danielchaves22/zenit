@@ -1,5 +1,6 @@
 // frontend/pages/admin/settings.tsx - PÁGINA DE CONFIGURAÇÕES COM PROTEÇÃO
 import React from 'react';
+import BizzAccessSettings from '@/components/admin/BizzAccessSettings';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -30,6 +31,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <BizzAccessSettings />
           {/* Configurações de Tema */}
           <Card className="p-6">
             <div className="flex items-center gap-3 mb-6">

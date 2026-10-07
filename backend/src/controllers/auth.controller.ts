@@ -360,3 +360,20 @@ export async function logout(req: Request, res: Response) {
     return res.status(500).json({ error: 'Erro interno do servidor' });
   }
 }
+
+export async function changeOwnPassword(req: Request, res: Response) {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.userId }, select: { password: true } });
+    if (!user || !await bcrypt.compare(req.body.currentPassword, user.password)) {
+      return res.status(400).json({ error: 'A senha atual está incorreta.' });
+    }
+    const password = await bcrypt.hash(req.body.newPassword, 10);
+    const changed = await prisma.user.updateMany({
+      where: { id: req.user.userId, password: user.password }, data: { password, mustChangePassword: false }
+    });
+    if (!changed.count) return res.status(409).json({ error: 'A senha foi alterada. Entre novamente.' });
+    return res.json({ message: 'Senha alterada com sucesso.' });
+  } catch {
+    return res.status(500).json({ error: 'Não foi possível alterar a senha. Tente novamente.' });
+  }
+}

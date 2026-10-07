@@ -31,6 +31,8 @@ import personalFinancialProfileRoutes from './routes/personal-financial-profile.
 import { authMiddleware } from './middlewares/auth.middleware';
 import { tenantMiddleware } from './middlewares/tenant.middleware';
 import { appAccessMiddleware } from './middlewares/app-access.middleware';
+import { bizzScopeMiddleware } from './middlewares/bizz-scope.middleware';
+import bizzRoutes from './routes/bizz.routes';
 import { errorHandler } from './middlewares/error.middleware';
 import { createRateLimitMiddleware } from './middlewares/rate-limit.middleware';
 import { requestLogger } from './middlewares/request-logger.middleware';
@@ -204,6 +206,7 @@ app.use('/api', createRateLimitMiddleware('api'), integrationPublicRoutes);
 
 // 14) Middleware de autenticação
 app.use('/api', authMiddleware);
+app.use('/api', bizzScopeMiddleware);
 app.use('/api/cash', createRateLimitMiddleware('api'), cashBootstrapRoutes);
 
 // 15) Middleware de tenant
@@ -211,6 +214,7 @@ app.use('/api', tenantMiddleware);
 
 // 15.1) Middleware de acesso por aplicacao (SSO + grants por app)
 app.use('/api', appAccessMiddleware);
+app.use('/api/bizz', createRateLimitMiddleware('api'), bizzRoutes);
 app.use(
   '/api/me',
   createRateLimitMiddleware('api'),

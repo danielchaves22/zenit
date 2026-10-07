@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+export const changeOwnPasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(128),
+  newPassword: z.string().min(8, 'Use pelo menos 8 caracteres.').max(72, 'Use no máximo 72 caracteres.')
+}).strict().refine(value => value.currentPassword !== value.newPassword, { message: 'Escolha uma senha diferente da atual.' });
+
 // Schema para registro (manter, mesmo que self‑signup esteja bloqueado)
 export const registerSchema = z.object({
   email: z.string().email({ message: 'Email inválido.' }),

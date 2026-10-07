@@ -60,7 +60,7 @@ export const userCreationWithPermissionsSchema = z
       .array(
         z.object({
           companyId: z.number(),
-          appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin', 'zenit-whatsapp']),
+          appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin', 'zenit-whatsapp', 'zenit-bizz']),
           granted: z.boolean().optional()
         })
       )

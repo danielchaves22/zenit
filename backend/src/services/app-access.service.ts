@@ -17,7 +17,8 @@ export default class AppAccessService {
       { appKey: AppKey.ZENIT_CASH, name: 'Zenit Cash' },
       { appKey: AppKey.ZENIT_CALC, name: 'Zenit Calc' },
       { appKey: AppKey.ZENIT_ADMIN, name: 'Zenit Admin' },
-      { appKey: AppKey.ZENIT_WHATSAPP, name: 'Zenit WhatsApp' }
+      { appKey: AppKey.ZENIT_WHATSAPP, name: 'Zenit WhatsApp' },
+      { appKey: AppKey.ZENIT_BIZZ, name: 'Zenit Bizz' }
     ]
 
     for (const item of catalog) {
@@ -194,7 +195,8 @@ export default class AppAccessService {
       include: { app: true }
     })
 
-    return entitlements.map(entitlement => ({
+    // Bizz requires an explicit grant, including for newly created users.
+    return entitlements.filter(entitlement => entitlement.app.appKey !== AppKey.ZENIT_BIZZ).map(entitlement => ({
       companyId: entitlement.companyId,
       appKey: entitlement.app.appKey,
       granted: true

@@ -6,14 +6,16 @@ export const APP_KEY_BY_HEADER: Record<string, AppKey> = {
   'zenit-cash': AppKey.ZENIT_CASH,
   'zenit-calc': AppKey.ZENIT_CALC,
   'zenit-admin': AppKey.ZENIT_ADMIN,
-  'zenit-whatsapp': AppKey.ZENIT_WHATSAPP
+  'zenit-whatsapp': AppKey.ZENIT_WHATSAPP,
+  'zenit-bizz': AppKey.ZENIT_BIZZ
 }
 
 export const APP_HEADER_BY_KEY: Record<AppKey, string> = {
   [AppKey.ZENIT_CASH]: 'zenit-cash',
   [AppKey.ZENIT_CALC]: 'zenit-calc',
   [AppKey.ZENIT_ADMIN]: 'zenit-admin',
-  [AppKey.ZENIT_WHATSAPP]: 'zenit-whatsapp'
+  [AppKey.ZENIT_WHATSAPP]: 'zenit-whatsapp',
+  [AppKey.ZENIT_BIZZ]: 'zenit-bizz'
 }
 
 export function toPrismaAppKey(headerValue: string | undefined | null): AppKey | null {

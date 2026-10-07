@@ -44,6 +44,7 @@ const labels = {
   "zenit-clock": "Zenit Clock",
   "zenit-hub": "Zenit Hub",
   "zenit-calc": "Zenit Calc",
+  "zenit-bizz": "Zenit Bizz",
   help: "Guias de uso",
   products: "Produtos",
   architecture: "Arquitetura",

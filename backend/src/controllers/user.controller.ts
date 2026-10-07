@@ -198,6 +198,11 @@ export const createUser = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'E necessario informar companies ou companyId.' });
   }
 
+  const explicitGrants = toAppGrantPayload(appGrants);
+  if (explicitGrants.some(grant => !companiesToCreate.some(company => company.companyId === grant.companyId))) {
+    return res.status(403).json({ error: 'Permissões de aplicativos devem pertencer às empresas do usuário.' });
+  }
+
   try {
     const created = await UserService.createUser({
       email,
@@ -207,8 +212,8 @@ export const createUser = async (req: Request, res: Response) => {
     });
 
     const grantsPayload =
-      Array.isArray(appGrants) && appGrants.length > 0
-        ? toAppGrantPayload(appGrants)
+      Array.isArray(appGrants)
+        ? explicitGrants
         : await AppAccessService.buildDefaultGrantsForCompanies(
             companiesToCreate.map((company) => company.companyId)
           );
@@ -358,6 +363,12 @@ export const updateUser = async (req: Request, res: Response) => {
   const { email, password, name, newRole, companies, appGrants } = req.body;
   const requestedCompanies = normalizeCompanyMemberships(companies);
   const mayManageOwnership = canManageCompanyOwnership(actor);
+  const grantsPayload = toAppGrantPayload(appGrants);
+
+  if ((role === 'USER' && Array.isArray(appGrants)) ||
+      (role !== 'ADMIN' && grantsPayload.some(grant => grant.companyId !== companyId))) {
+    return res.status(403).json({ error: 'Sem permissão para alterar estes acessos por aplicativo.' });
+  }
 
   if (isNaN(id)) {
     return res.status(400).json({ error: 'ID invalido.' });
@@ -453,8 +464,13 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
 
+    const permittedCompanyIds = Array.isArray(ctx)
+      ? ctx.map(company => company.companyId)
+      : (await prisma.userCompany.findMany({ where: { userId: id }, select: { companyId: true } })).map(company => company.companyId);
+    if (grantsPayload.some(grant => !permittedCompanyIds.includes(grant.companyId))) {
+      return res.status(403).json({ error: 'Permissões de aplicativos devem pertencer às empresas do usuário.' });
+    }
     const updated = await UserService.updateUser(id, updateData, ctx);
-    const grantsPayload = toAppGrantPayload(appGrants);
 
     if (grantsPayload.length > 0) {
       await AppAccessService.setUserGrantsForManyCompanies(id, grantsPayload);

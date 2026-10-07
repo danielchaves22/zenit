@@ -34,7 +34,7 @@ interface UserResponse {
     companyId: number
     granted: boolean
     app: {
-      appKey: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN' | 'ZENIT_WHATSAPP'
+      appKey: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN' | 'ZENIT_WHATSAPP' | 'ZENIT_BIZZ'
     }
   }[]
 }
@@ -64,8 +64,9 @@ function normalizeRole(value: string | null | undefined): Role {
 }
 
 function fromBackendAppKey(
-  value: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN' | 'ZENIT_WHATSAPP'
+  value: 'ZENIT_CASH' | 'ZENIT_CALC' | 'ZENIT_ADMIN' | 'ZENIT_WHATSAPP' | 'ZENIT_BIZZ'
 ): AppKey {
+  if (value === 'ZENIT_BIZZ') return 'zenit-bizz';
   if (value === 'ZENIT_CASH') return 'zenit-cash'
   if (value === 'ZENIT_CALC') return 'zenit-calc'
   if (value === 'ZENIT_WHATSAPP') return 'zenit-whatsapp'
@@ -77,7 +78,8 @@ const APP_LABELS: Record<AppKey, string> = {
   'zenit-cash': 'Zenit Cash',
   'zenit-calc': 'Zenit Calc',
   'zenit-admin': 'Zenit Admin',
-  'zenit-whatsapp': 'Zenit WhatsApp'
+  'zenit-whatsapp': 'Zenit WhatsApp',
+  'zenit-bizz': 'Zenit Bizz'
 }
 
 export function UserForm({ mode, userId }: UserFormProps) {
@@ -234,7 +236,7 @@ export function UserForm({ mode, userId }: UserFormProps) {
       }
 
       const fallbackRole = allowedRoles[allowedRoles.length - 1] || 'USER'
-      const enabledApps = companyEntitlements[companyId] || []
+      const enabledApps: AppKey[] = (companyEntitlements[companyId] || []).filter(app => app !== 'zenit-bizz')
       const defaultApps = enabledApps.includes(APP_KEY)
         ? [APP_KEY]
         : enabledApps.length > 0

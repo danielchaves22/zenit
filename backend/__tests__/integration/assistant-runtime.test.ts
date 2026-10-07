@@ -13,7 +13,7 @@ import PendingActionService from '../../src/services/pending-action.service';
 import FinancialTransactionService from '../../src/services/financial-transaction.service';
 import WhatsAppIntegrationService from '../../src/services/whatsapp-integration.service';
 import WhatsAppCloudApiService from '../../src/services/whatsapp-cloud-api.service';
-import { buildPendingActionButtons } from '../../src/utils/whatsapp-pending-action';
+import { buildCategoryChoiceList, buildPendingActionButtons } from '../../src/utils/whatsapp-pending-action';
 import type { PendingAction } from '@zenit/assistant-contracts';
 import ToolExecutorService from '../../src/services/tool-executor.service';
 import ToolRegistryService from '../../src/services/tool-registry.service';
@@ -197,6 +197,142 @@ describe('Assistant runtime', () => {
     return { pendingActionId: action.id, sessionId: session.id, userId, companyId,
       role: 'ADMIN' as const, expectedUpdatedAt: new Date(action.updatedAt) };
   }
+
+  async function categoryChoiceFixture() {
+    const session = await prisma.assistantSession.create({ data: { userId, companyId } });
+    const turn = await prisma.assistantTurn.create({ data: { sessionId: session.id, userId, companyId } });
+    const categories = await Promise.all(['Restaurante', 'Lanches'].map(name => prisma.financialCategory.create({
+      data: { name, companyId, type: 'EXPENSE', color: '#123456', icon: 'wallet' }
+    })));
+    const context = { sessionId: session.id, turnId: turn.id, userId, companyId, role: 'ADMIN' as const,
+      mode: 'OPERATOR' as const, requireConfirmationButton: true };
+    const args = { description: 'Almoço', amount: 40, type: 'EXPENSE', date: '2026-10-07',
+      notes: 'Manter observação', categoryCandidateIds: categories.map(category => category.id) };
+    const result = await ToolExecutorService.executeTool('create_transaction_draft', args, context);
+    return { context, args, categories, action: result.pendingAction! };
+  }
+
+  it('persiste a escolha no rascunho, preserva correcoes e exige confirmacao atual depois da selecao', async () => {
+    const { context, categories, action } = await categoryChoiceFixture();
+    const decision = { ...context, pendingActionId: action.id, expectedUpdatedAt: new Date(action.updatedAt) };
+    expect(action.summary.category).toBeNull();
+    expect(action.summary.categoryOptions?.map(option => option.id)).toEqual(categories.map(category => category.id));
+    expect(buildPendingActionButtons(action).some(button => button.title === 'Confirmar')).toBe(false);
+    await expect(PendingActionService.confirmTransactionDraft(decision)).rejects.toThrow('Escolha a categoria');
+    const corrected = (await ToolExecutorService.executeTool('update_transaction_draft', {
+      pendingActionId: action.id, amount: 45, categoryCandidateIds: null, categoryId: null
+    }, context)).pendingAction!;
+    expect(corrected.id).toBe(action.id);
+    expect(corrected.summary.categoryOptions).toEqual(action.summary.categoryOptions);
+    await expect(PendingActionService.selectTransactionCategory({ ...decision, categoryId: categories[0].id })).rejects.toThrow('desatualizada');
+    const current = { ...decision, expectedUpdatedAt: new Date(corrected.updatedAt) };
+    await expect(PendingActionService.selectTransactionCategory({ ...current, sessionId: 999999, categoryId: categories[0].id })).rejects.toThrow();
+    const unoffered = await prisma.financialCategory.findFirstOrThrow({ where: { companyId, type: 'EXPENSE', isDefault: true } });
+    await expect(PendingActionService.selectTransactionCategory({ ...current, categoryId: unoffered.id })).rejects.toThrow('nao oferecida');
+    const selected = await PendingActionService.selectTransactionCategory({ ...current, categoryId: categories[1].id });
+    expect(selected.summary).toMatchObject({ amount: 45, description: 'Almoço', date: '2026-10-07',
+      notes: 'Manter observação', category: { id: categories[1].id } });
+    expect(selected.summary.categoryOptions).toBeUndefined();
+    const stored = await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: action.id } });
+    expect(stored.payload).toMatchObject({ amount: 45, categoryId: categories[1].id, fromAccountId: selected.summary.fromAccount!.id });
+    expect(await prisma.assistantPendingAction.count({ where: { companyId } })).toBe(1);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    await expect(PendingActionService.selectTransactionCategory({ ...current, categoryId: categories[0].id })).rejects.toThrow();
+    await expect(PendingActionService.confirmTransactionDraft(current)).rejects.toThrow();
+    await PendingActionService.confirmTransactionDraft({ ...current, expectedUpdatedAt: new Date(selected.updatedAt) });
+    expect(await prisma.financialTransaction.count({ where: { companyId, categoryId: categories[1].id } })).toBe(1);
+  });
+
+  it('revalida empresa e tipo dos candidatos e da escolha; permite categoria explicita sem lista', async () => {
+    const { context, categories, action, args } = await categoryChoiceFixture();
+    const income = await prisma.financialCategory.findFirstOrThrow({ where: { companyId, type: 'INCOME' } });
+    for (const ids of [[categories[0].id, income.id], [categories[0].id, 99999999], [categories[0].id, categories[0].id]]) {
+      await expect(ToolExecutorService.executeTool('create_transaction_draft', { ...args, categoryCandidateIds: ids }, context)).rejects.toThrow();
+    }
+    await prisma.financialCategory.update({ where: { id: categories[0].id }, data: { type: 'INCOME' } });
+    await expect(PendingActionService.selectTransactionCategory({ ...context, pendingActionId: action.id,
+      expectedUpdatedAt: new Date(action.updatedAt), categoryId: categories[0].id })).rejects.toThrow('indisponivel');
+    const chosen = (await ToolExecutorService.executeTool('update_transaction_draft', {
+      pendingActionId: action.id, categoryId: categories[1].id
+    }, context)).pendingAction!;
+    expect(chosen.id).toBe(action.id);
+    expect(chosen.summary.categoryOptions).toBeUndefined();
+    expect(chosen.summary.category?.id).toBe(categories[1].id);
+  });
+
+  it('resolve opcao unica, oferece empate sem hint e pede esclarecimento quando nao ha correspondencia', async () => {
+    const { context } = await categoryChoiceFixture();
+    context.turnId = (await prisma.assistantTurn.create({ data: { sessionId: context.sessionId, userId, companyId } })).id;
+    const unique = await ToolExecutorService.executeTool('create_transaction_draft', {
+      description: 'Gasolina', amount: 50, type: 'EXPENSE'
+    }, context);
+    expect(unique.pendingAction?.summary.category?.name).toBe('Combustivel');
+    expect(unique.pendingAction?.summary.categoryOptions).toBeUndefined();
+    await prisma.financialCategory.create({ data: { companyId, name: 'Combustivel carro', type: 'EXPENSE', color: '#123456', icon: 'fuel' } });
+    context.turnId = (await prisma.assistantTurn.create({ data: { sessionId: context.sessionId, userId, companyId } })).id;
+    const tied = await ToolExecutorService.executeTool('create_transaction_draft', {
+      description: 'Gasolina', amount: 50, type: 'EXPENSE'
+    }, context);
+    expect(tied.pendingAction?.summary.categoryOptions).toHaveLength(2);
+    const missing = await ToolExecutorService.executeTool('create_transaction_draft', {
+      description: 'Xyz123', amount: 50, type: 'EXPENSE'
+    }, context);
+    expect(missing.pendingAction).toBeUndefined();
+    expect(missing.data).toMatchObject({ ok: false, missingFields: ['category'] });
+  });
+
+  it.each(['hub', 'webhook'] as const)('entrega lista e usa o ID da selecao sem pedir outra decisao a IA (%s)', async transport => {
+    await AppAccessService.setCompanyEntitlements(companyId, [
+      { appKey: AppKey.ZENIT_CASH, enabled: true }, { appKey: AppKey.ZENIT_WHATSAPP, enabled: true }
+    ]);
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_CASH, granted: true }, { appKey: AppKey.ZENIT_WHATSAPP, granted: true }
+    ]);
+    const { context, categories, action } = await categoryChoiceFixture();
+    const waId = `5598${String(userId).padStart(9, '0')}`;
+    const binding = await prisma.whatsAppUserBinding.create({ data: { userId, activeCompanyId: companyId, waId, phoneNumber: `+${waId}` } });
+    await prisma.whatsAppBindingCompanyContext.create({ data: {
+      bindingId: binding.id, companyId, assistantSessionId: context.sessionId
+    } });
+    jest.spyOn(WhatsAppCloudApiService, 'verifySignature').mockReturnValue(true);
+    jest.spyOn(WhatsAppCloudApiService, 'sendTypingIndicator').mockResolvedValue();
+    let sent = 0;
+    const sentResult = async () => ({ messageId: `wamid.choice.out.${companyId}.${++sent}`, raw: {} });
+    jest.spyOn(WhatsAppCloudApiService, 'sendTextMessage').mockImplementation(sentResult);
+    const listSpy = jest.spyOn(WhatsAppCloudApiService, 'sendListMessage').mockImplementation(sentResult);
+    const buttonSpy = jest.spyOn(WhatsAppCloudApiService, 'sendReplyButtons').mockImplementation(sentResult);
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ id: 'resp.read', output: [
+      { type: 'function_call', name: 'get_pending_action', call_id: 'read', arguments: '{}' }
+    ] }))).mockResolvedValueOnce(new Response(JSON.stringify({ output_text: '{"mode":"OPERATOR","message":"Escolha a categoria."}' })));
+    if (transport === 'hub') {
+      const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `list.${transport}.${companyId}`, text: 'Reenvie o rascunho' });
+      expect(result.replies[0].list).toEqual(buildCategoryChoiceList(action));
+      expect(result.replies[0].buttons).toBeUndefined();
+    } else {
+      await WhatsAppIntegrationService.processWebhookPayload({ payload: { entry: [{ changes: [{ value: { messages: [
+        { id: `list.${transport}.${companyId}`, from: waId, type: 'text', text: { body: 'Reenvie o rascunho' } }
+      ] } }] }] } });
+      expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ list: buildCategoryChoiceList(action) }));
+      expect(buttonSpy).not.toHaveBeenCalled();
+    }
+    const before = fetchSpy.mock.calls.length;
+    const row = buildCategoryChoiceList(action).rows[1];
+    if (transport === 'hub') {
+      const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `choice.${transport}.${companyId}`, text: '', buttonId: row.id });
+      expect(result.replies[0].buttons?.[0].title).toBe('Confirmar');
+      expect(result.replies[0].text).toContain(categories[1].name);
+    } else {
+      await WhatsAppIntegrationService.processWebhookPayload({ payload: { entry: [{ changes: [{ value: { messages: [
+        { id: `choice.${transport}.${companyId}`, from: waId, type: 'interactive', interactive: {
+          type: 'list_reply', list_reply: { id: row.id, title: 'Confirmar tudo' }
+        } }
+      ] } }] }] } });
+      expect(buttonSpy).toHaveBeenCalledWith(expect.objectContaining({ buttons: expect.arrayContaining([expect.objectContaining({ title: 'Confirmar' })]) }));
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(before);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    expect((await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toMatchObject({ categoryId: categories[1].id });
+  });
 
   it.each(['webhook', 'hub'] as const)('recebe voz, corrige o mesmo rascunho por voz, rejeita botoes antigos e grava apenas a versao revisada (%s)', async (transport) => {
     await AppAccessService.setCompanyEntitlements(companyId, [
@@ -1023,6 +1159,7 @@ describe('Assistant runtime', () => {
                   type: 'INCOME',
                   date: '2026-06-03',
                   accountHint: 'Nubank',
+                  categoryHint: 'Receitas',
                   status: 'COMPLETED'
                 })
               }

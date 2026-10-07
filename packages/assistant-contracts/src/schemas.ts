@@ -30,7 +30,8 @@ export const draftTransactionSummarySchema = z.object({
   installmentCount: z.number().int().min(1).max(120).optional(),
   fromAccount: assistantAccountRefSchema.nullable().optional(),
   toAccount: assistantAccountRefSchema.nullable().optional(),
-  category: assistantCategoryRefSchema.nullable().optional()
+  category: assistantCategoryRefSchema.nullable().optional(),
+  categoryOptions: z.array(assistantCategoryRefSchema.extend({ parentName: z.string().optional() })).min(2).max(10).optional()
 });
 
 export const pendingActionSchema = z.object({

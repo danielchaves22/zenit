@@ -129,9 +129,10 @@ function buildSystemPrompt(todayDate: string, requireConfirmationButton = false)
     'Mensagens podem vir de transcricao de audio. Trate-as como continuacao da mesma conversa. Expressoes como "na verdade", "corrigindo", "troque a conta" e "o valor era" podem corrigir o rascunho pendente: consulte get_pending_action, preserve os campos nao alterados e atualize o mesmo rascunho. Nao crie outro lancamento para representar uma correcao.',
     'Depois de corrigir, apresente o resumo atualizado e aguarde uma nova confirmacao. Se valor, conta ou intencao estiverem ambiguos, pergunte sem gravar nem afirmar que a correcao foi aplicada. Nesta versao nao edite lancamentos ja confirmados; explique essa limitacao sem criar uma copia.',
     'Se uma correcao mencionar troca de conta mas o nome nao estiver claro, pergunte qual conta. Nao ignore essa parte da correcao nem mantenha silenciosamente a conta anterior; a transcricao pode confundir nomes de bancos com palavras comuns.',
-    'Quando houver duvida sobre categoria, use search_categories antes de criar ou atualizar o rascunho.',
+    'Antes de inferir uma categoria, use search_categories com o tipo do lancamento. Respeite a categoria explicitamente indicada pelo usuario. Nao confunda uma categoria escolhida por voce com uma escolha explicita do usuario.',
     'Ao buscar categoria, pense por conceito e nao apenas por string literal. Exemplos: "cabeleireiro" pode virar "salao de beleza" ou "beleza"; "posto" pode virar "combustivel"; "tennis", "roupa" ou "sapato" podem virar "vestuario" ou "moda".',
-    'Se search_categories devolver candidatos plausiveis da empresa, escolha a melhor categoria disponivel sem exigir correspondencia textual exata, salvo ambiguidade real entre varias opcoes fortes.',
+    'Se houver uma unica categoria claramente adequada, use categoryId. Se houver duas ou mais opcoes fortes e plausiveis, crie ou atualize o rascunho com categoryCandidateIds (de 2 a 10 IDs reais), categoryId e categoryHint nulos. O WhatsApp exibira uma lista nativa para o usuario escolher. Nao escolha arbitrariamente a primeira, nao pergunte apenas em texto, nem crie outro rascunho. Preserve descricao, valor, conta, datas e demais dados.',
+    'Nao inclua alternativas fracas apenas para formar uma lista. Se nao houver categoria adequada, pergunte ao usuario. usedFallback indica que a busca nao achou correspondencia, nao que todas as categorias sao adequadas. categoryOptions no rascunho significa que falta a escolha; corrija outros campos sem resolver essa escolha por conta propria. Se o usuario indicar outra categoria por texto ou voz, busque-a e atualize o mesmo rascunho.',
     'Quando houver duvida sobre conta, banco ou cartao, use search_accounts antes de criar ou atualizar o rascunho.',
     'Por padrao, nomes de banco como "Bradesco", "Nubank" ou "Itau" devem ser tratados como conta de disponibilidade. So use cartao de credito se o usuario indicar explicitamente cartao, credito, fatura ou parcelamento.',
     'Se a frase mencionar Pix, dinheiro, debito, conta corrente, saldo ou disponibilidade, prefira conta de disponibilidade (CHECKING, CASH ou SAVINGS), nao cartao de credito, salvo indicacao explicita de cartao.',
@@ -315,6 +316,19 @@ export default class LlmRuntimeService {
             input: parsedArguments,
             output: result.data
           });
+
+          // Stop here so the model cannot resolve its own ambiguity in another tool call.
+          if (result.pendingAction?.status === 'PENDING' && result.pendingAction.summary?.categoryOptions?.length &&
+              (functionCall.name === 'create_transaction_draft' || functionCall.name === 'update_transaction_draft') &&
+              (result.data as { ok?: boolean }).ok === true) {
+            return { mode: 'OPERATOR', pendingAction: result.pendingAction,
+              message: `Qual categoria deseja usar? ${result.pendingAction.summary.categoryOptions.map(option =>
+                option.parentName ? `${option.parentName} / ${option.name}` : option.name).join('; ')}. O lançamento ainda não foi gravado.`,
+              telemetry: { model: selectedModel, promptVersion: credential.promptVersion,
+                latencyMs: Date.now() - startedAt, toolCalls: toolCallsCount,
+                reasoningEffort: getOpenAiReasoningEffort(selectedModel), usage, usedFallbackModel: usedFallbackModel || undefined }
+            };
+          }
 
           toolOutputs.push({
             type: 'function_call_output',

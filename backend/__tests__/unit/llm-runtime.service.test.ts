@@ -59,6 +59,22 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
     } });
   });
 
+  it('stops tool execution when the draft needs a category choice, even if the model scheduled another update', async () => {
+    const pendingAction = { id: 42, status: 'PENDING', summary: { categoryOptions: [
+      { id: 8, name: 'Restaurante' }, { id: 9, name: 'Lanches', parentName: 'Alimentação' }
+    ] } } as any;
+    jest.mocked(Executor.executeTool).mockResolvedValue({ data: { ok: true }, pendingAction });
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(reply({ id: 'choice', output: [
+      { type: 'function_call', name: 'create_transaction_draft', call_id: 'first', arguments: '{}' },
+      { type: 'function_call', name: 'update_transaction_draft', call_id: 'second', arguments: '{"categoryId":8}' }
+    ] }));
+    const result = await LlmRuntimeService.runOperatorTurn({ context, conversation: [] });
+    expect(Executor.executeTool).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.pendingAction).toEqual(pendingAction);
+    expect(result.message).toContain('Alimentação / Lanches');
+  });
+
   it('keeps the legacy fallback free of unsupported reasoning parameters', async () => {
     jest.mocked(Integration.getDecryptedCredential).mockResolvedValue({ apiKey: 'test-key', model: 'gpt-5.4-nano', promptVersion: 'v1' } as any);
     const fetchMock = jest.spyOn(global, 'fetch')

@@ -37,6 +37,7 @@ const createTransactionDraftArgsSchema = z.object({
   fromAccountHint: z.string().nullable().optional(),
   toAccountHint: z.string().nullable().optional(),
   categoryHint: z.string().nullable().optional(),
+  categoryCandidateIds: z.array(z.number().int().positive()).min(2).max(10).nullable().optional(),
   fromAccountId: z.coerce.number().int().positive().nullable().optional(),
   toAccountId: z.coerce.number().int().positive().nullable().optional(),
   categoryId: z.coerce.number().int().positive().nullable().optional()
@@ -61,6 +62,7 @@ const updateTransactionDraftArgsSchema = z.object({
   fromAccountHint: z.string().nullable().optional(),
   toAccountHint: z.string().nullable().optional(),
   categoryHint: z.string().nullable().optional(),
+  categoryCandidateIds: z.array(z.number().int().positive()).min(2).max(10).nullable().optional(),
   fromAccountId: z.coerce.number().int().positive().nullable().optional(),
   toAccountId: z.coerce.number().int().positive().nullable().optional(),
   categoryId: z.coerce.number().int().positive().nullable().optional()
@@ -1187,21 +1189,36 @@ export default class ToolExecutorService {
     }
 
     let matchedCategory: { id: number; name: string } | null = null;
+    let categoryOptions: DraftTransactionPayload['categoryOptions'];
     if (normalizedType !== TransactionType.TRANSFER) {
-      if (draftInput.categoryId != null) {
+      if (draftInput.categoryCandidateIds?.length) {
+        const ids = [...new Set(draftInput.categoryCandidateIds)];
+        if (ids.length < 2 || ids.some(id => !categories.some(category => category.id === id))) {
+          throw new Error('Informe de 2 a 10 categorias distintas existentes, da empresa e do tipo do lancamento');
+        }
+        categoryOptions = ids.map(id => {
+          const category = categories.find(candidate => candidate.id === id)!;
+          return { id, name: category.name, ...(category.parent ? { parentName: category.parent.name } : {}) };
+        });
+      } else if (draftInput.categoryId != null) {
         matchedCategory =
           categories.find((category) => category.id === draftInput.categoryId) ?? null;
       } else if (hasExplicitHint(draftInput.categoryHint)) {
         matchedCategory = chooseBestCategoryMatch(categories, draftInput.categoryHint);
       } else {
-        matchedCategory =
-          chooseBestCategoryMatch(categories, draftInput.description) ??
-          categories.find((category) => category.isDefault) ??
-          categories[0] ??
-          null;
+        const ranked = categories.map(category => ({ category, score: scoreCategoryCandidate(category, draftInput.description) }))
+          .filter(item => item.score >= 60).sort((a, b) => b.score - a.score);
+        // Scores rank semantic matches; they are not confidence percentages.
+        const close = ranked.filter(item => item.score >= ranked[0].score - 10).slice(0, 10);
+        if (close.length > 1) {
+          categoryOptions = close.map(({ category }) => ({ id: category.id, name: category.name,
+            ...(category.parent ? { parentName: category.parent.name } : {}) }));
+        } else {
+          matchedCategory = ranked[0]?.category ?? null;
+        }
       }
 
-      if (!matchedCategory) {
+      if (!matchedCategory && !categoryOptions) {
         missingFields.push('category');
       }
     }
@@ -1218,7 +1235,8 @@ export default class ToolExecutorService {
       installmentCount: draftInput.installmentCount ?? 1,
       fromAccountId: fromAccount?.id ?? null,
       toAccountId: toAccount?.id ?? null,
-      categoryId: matchedCategory?.id ?? null
+      categoryId: matchedCategory?.id ?? null,
+      ...(categoryOptions ? { categoryOptions } : {})
     };
 
     const summary = buildDraftSummary({
@@ -1235,6 +1253,7 @@ export default class ToolExecutorService {
       toAccount,
       category: matchedCategory
     });
+    if (categoryOptions) summary.categoryOptions = categoryOptions;
 
     return {
       explicitFromSelection,
@@ -1340,6 +1359,9 @@ export default class ToolExecutorService {
       fromAccountHint: args.fromAccountHint ?? null,
       toAccountHint: args.toAccountHint ?? null,
       categoryHint: args.categoryHint ?? null,
+      categoryCandidateIds: args.categoryCandidateIds ??
+        (args.categoryId == null && !hasExplicitHint(args.categoryHint) && (!args.type || args.type === existingPayload.type)
+          ? existingPayload.categoryOptions?.map(option => option.id) ?? null : null),
       fromAccountId:
         args.fromAccountId != null
           ? args.fromAccountId
@@ -1389,6 +1411,8 @@ export default class ToolExecutorService {
 
     const pendingAction = await PendingActionService.updateTransactionDraftAction({
       pendingActionId: record.id,
+      expectedUpdatedAt: record.updatedAt,
+      sessionId: context.sessionId,
       userId: context.userId,
       companyId: context.companyId,
       summary,

@@ -18,7 +18,9 @@ const draftTransactionPayloadSchema = z.object({
   installmentCount: z.number().int().min(1).max(120).optional(),
   fromAccountId: z.number().int().positive().nullable().optional(),
   toAccountId: z.number().int().positive().nullable().optional(),
-  categoryId: z.number().int().positive().nullable().optional()
+  categoryId: z.number().int().positive().nullable().optional(),
+  categoryOptions: z.array(z.object({ id: z.number().int().positive(), name: z.string().min(1),
+    parentName: z.string().optional() })).min(2).max(10).optional()
 });
 
 export type DraftTransactionPayload = z.infer<typeof draftTransactionPayloadSchema>;
@@ -142,6 +144,8 @@ export default class PendingActionService {
     companyId: number;
     summary: DraftTransactionSummary;
     payload: DraftTransactionPayload;
+    expectedUpdatedAt?: Date;
+    sessionId?: number;
   }): Promise<PendingAction> {
     const pendingAction = await this.getOwnedPendingActionOrThrow({
       pendingActionId: params.pendingActionId,
@@ -163,7 +167,8 @@ export default class PendingActionService {
       where: {
         id: params.pendingActionId,
         status: AssistantPendingActionStatus.PENDING,
-        updatedAt: pendingAction.updatedAt
+        updatedAt: params.expectedUpdatedAt ?? pendingAction.updatedAt,
+        sessionId: params.sessionId
       },
       data: {
         summary: params.summary,
@@ -174,6 +179,31 @@ export default class PendingActionService {
     });
 
     return assistantPendingActionToContract(updated);
+  }
+
+  static async selectTransactionCategory(params: {
+    pendingActionId: number; userId: number; companyId: number; sessionId: number;
+    expectedUpdatedAt: Date; categoryId: number;
+  }): Promise<PendingAction> {
+    const record = await this.getOwnedPendingActionOrThrow(params);
+    if (record.sessionId !== params.sessionId || record.updatedAt.getTime() !== params.expectedUpdatedAt.getTime()) {
+      throw new Error('Lista de categorias desatualizada');
+    }
+    const payload = draftTransactionPayloadSchema.parse(record.payload);
+    if (!payload.categoryOptions?.some(option => option.id === params.categoryId)) {
+      throw new Error('Categoria nao oferecida neste rascunho');
+    }
+    const category = await prisma.financialCategory.findFirst({
+      where: { id: params.categoryId, companyId: params.companyId, type: payload.type },
+      select: { id: true, name: true }
+    });
+    if (!category) throw new Error('Categoria indisponivel');
+    const summary = assistantPendingActionToContract(record).summary;
+    delete payload.categoryOptions;
+    delete summary.categoryOptions;
+    return this.updateTransactionDraftAction({ ...params,
+      payload: { ...payload, categoryId: category.id }, summary: { ...summary, category }
+    });
   }
 
   static async cancelPendingAction(params: {
@@ -218,6 +248,10 @@ export default class PendingActionService {
     }
 
     const payload = draftTransactionPayloadSchema.parse(pendingAction.payload);
+
+    if (payload.categoryOptions?.length) {
+      throw new Error('Escolha a categoria antes de confirmar o lancamento');
+    }
 
     if (payload.fromAccountId) {
       const allowed = await UserFinancialAccountAccessService.checkUserAccountAccess(

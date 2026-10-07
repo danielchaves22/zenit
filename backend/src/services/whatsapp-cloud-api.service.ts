@@ -14,6 +14,7 @@ type SendTextMessageResult = {
 };
 
 export type WhatsAppReplyButton = { id: string; title: string };
+export type WhatsAppReplyList = { button: string; rows: { id: string; title: string; description?: string }[] };
 
 function normalizeDigits(value: string): string {
   return String(value || '').replace(/\D/g, '');
@@ -200,6 +201,19 @@ export default class WhatsAppCloudApiService {
           buttons: params.buttons.map((reply) => ({ type: 'reply', reply }))
         }
       }
+    });
+    return this.messageResult(raw);
+  }
+
+  static async sendListMessage(params: SendTextMessageParams & { list: WhatsAppReplyList }): Promise<SendTextMessageResult> {
+    const { list } = params;
+    if (!params.text.trim() || params.text.length > 1024 || !list.button.trim() || list.button.length > 20 ||
+        list.rows.length < 1 || list.rows.length > 10 || new Set(list.rows.map(row => row.id)).size !== list.rows.length ||
+        list.rows.some(row => !row.id.trim() || row.id.length > 200 || !row.title.trim() || row.title.length > 24 ||
+          (row.description?.length ?? 0) > 72)) throw new Error('Lista do WhatsApp fora dos limites permitidos.');
+    const raw = await this.postMessage({ recipient_type: 'individual', to: normalizeDigits(params.to), type: 'interactive',
+      ...(params.replyToMessageId ? { context: { message_id: params.replyToMessageId } } : {}),
+      interactive: { type: 'list', body: { text: params.text }, action: { button: list.button, sections: [{ rows: list.rows }] } }
     });
     return this.messageResult(raw);
   }

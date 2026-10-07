@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-10-02
+last_reviewed: 2026-10-07
 summary: Contrato autenticado, responsabilidades e compatibilidade do canal WhatsApp.
 ---
 
@@ -20,7 +20,7 @@ O Hub passa a coordenar o canal WhatsApp e conecta outras aplicações. Esta mud
 Operações:
 
 - `status`: informa se o remetente tem vínculo validado e acesso vigente.
-- `message`: executa o fluxo existente, incluindo QR Code, áudio, correção de rascunhos e confirmação de lançamento. Retorna textos/botões para o Hub enviar. O Cash não envia outra resposta para a Meta neste caminho.
+- `message`: executa o fluxo existente, incluindo QR Code, áudio, correção de rascunhos e confirmação de lançamento. Retorna textos, botões ou listas para o Hub enviar. O Cash não envia outra resposta para a Meta neste caminho.
 - `query`: apenas a lista explícita de consultas financeiras para consolidação com outros domínios. Não aceita ferramentas de escrita.
 - `disconnect`: remove o vínculo do remetente.
 
@@ -35,5 +35,15 @@ A sessão, o histórico e as revisões do rascunho permanecem no Cash. Pedidos d
 O `AsyncLocalStorage` isola a saída do fluxo Hub por requisição. O caminho anterior mantém envio e indicador de digitação. O assistente web/mobile continua usando o orquestrador existente. Mensagens Hub recebem recibo antes da execução, com ID único. Repetições recebem orientação para consultar o estado atual, sem executar efeitos novamente ou reproduzir dados privados de um recibo antigo: permissões de workspace/contas podem ter mudado. Falhas de resultado incerto não são executadas novamente automaticamente.
 
 Não é necessário migrar o banco Cash. O registro de mensagens existente guarda os recibos. Registros antigos, operações em andamento, permissões revogadas e botões de outro usuário não autorizam uma nova execução.
+
+## Escolha de categoria
+
+Quando várias categorias forem plausíveis, as ferramentas de criação/correção recebem `categoryCandidateIds` com 2 a 10 IDs obtidos em `search_categories`. O Cash valida empresa e tipo e persiste `categoryOptions` no JSON do rascunho e do resumo; não há nova tabela ou migração. Uma categoria explícita ou uma única opção clara segue para a revisão habitual. Sem correspondência adequada, pede esclarecimento, sem selecionar a categoria padrão silenciosamente.
+
+A resposta contém `list: { button, rows: [{ id, title, description }] }`, sem botões de confirmação. O Hub envia `interactive.type=list`; o ID de `list_reply` volta pelo campo legado `buttonId`. O prefixo `zenit:category` encaminha a seleção diretamente ao Cash, sem chamada à IA. O título vindo do WhatsApp nunca determina a escolha. Listas têm até 10 linhas; títulos até 24 caracteres e descrições até 72, incluindo a categoria pai quando existente. Para outra categoria ou cancelamento, o usuário pode escrever ou enviar áudio.
+
+A seleção fica vinculada ao usuário, empresa, sessão, rascunho e revisão. O Cash revalida a categoria, atualiza o mesmo rascunho e emite novos botões. Escolhas antigas/repetidas e categorias fora da lista são recusadas; a confirmação é bloqueada no serviço enquanto houver opções pendentes. Alterar valor ou conta preserva a escolha pendente. Apenas Confirmar da revisão atual grava a transação.
+
+Publique primeiro o suporte a listas do Hub e depois o Cash. O webhook direto do Cash também suporta listas; não é necessário criar template nem mudar configurações na Meta para essa resposta a uma mensagem do usuário.
 
 Para ativar, publique a ponte, configure e teste o Hub, e só então troque o webhook na Meta. Preserve o número e o prefixo do QR Code. Não configure os dois backends para processar a mesma mensagem simultaneamente. Em rollback, restaure o callback anterior. Veja o README do repositório `zenit-hub` para o procedimento completo.

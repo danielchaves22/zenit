@@ -44,6 +44,18 @@ describe('WhatsApp Cloud API feedback', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('sends a single-choice list and refuses duplicate or oversized choices before calling Meta', async () => {
+    const list = { button: 'Escolher categoria', rows: [{ id: 'zenit:category:1:1000:8', title: 'Restaurante' }] };
+    await WhatsAppCloudApiService.sendListMessage({ to: '5544999990000', text: 'Escolha', list });
+    expect(JSON.parse(String(jest.mocked(fetch).mock.calls[0][1]?.body)).interactive).toEqual({
+      type: 'list', body: { text: 'Escolha' }, action: { button: list.button, sections: [{ rows: list.rows }] }
+    });
+    for (const rows of [[], [list.rows[0], list.rows[0]], [{ id: '1', title: 'x'.repeat(25) }], Array(11).fill(list.rows[0])]) {
+      await expect(WhatsAppCloudApiService.sendListMessage({ to: '5544999990000', text: 'Escolha', list: { ...list, rows } })).rejects.toThrow('limites');
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps ordinary text replies and reports Meta rejection', async () => {
     await WhatsAppCloudApiService.sendTextMessage({ to: '5544999990000', text: 'Olá' });
     expect(JSON.parse(jest.mocked(fetch).mock.calls[0][1]!.body as string)).toMatchObject({

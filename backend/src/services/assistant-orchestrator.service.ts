@@ -30,7 +30,7 @@ function buildCards(pendingAction?: PendingAction): AssistantCard[] {
       id: `draft-transaction-${pendingAction.id}`,
       kind: 'draft_transaction',
       title: 'Rascunho de lancamento',
-      body: 'Confirme para gravar a transacao.',
+      body: pendingAction.summary.categoryOptions?.length ? 'Escolha a categoria para revisar o rascunho.' : 'Confirme para gravar a transacao.',
       draft: pendingAction.summary
     }
   ];
@@ -41,7 +41,7 @@ function buildActions(pendingAction?: PendingAction): AssistantAction[] {
     return [];
   }
 
-  return [
+  const actions: AssistantAction[] = [
     {
       id: `confirm-${pendingAction.id}`,
       kind: 'confirm_pending_action',
@@ -55,6 +55,8 @@ function buildActions(pendingAction?: PendingAction): AssistantAction[] {
       pendingActionId: pendingAction.id
     }
   ];
+  return pendingAction.summary.categoryOptions?.length
+    ? actions.filter(action => action.kind !== 'confirm_pending_action') : actions;
 }
 
 async function emitEvent(

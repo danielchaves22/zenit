@@ -52,6 +52,8 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
         fromAccountHint: { type: ['string', 'null'] },
         toAccountHint: { type: ['string', 'null'] },
         categoryHint: { type: ['string', 'null'] },
+        categoryCandidateIds: { type: ['array', 'null'], items: { type: 'integer' }, minItems: 2, maxItems: 10,
+          description: 'Quando varias categorias forem plausiveis, informe seus IDs retornados por search_categories e categoryId/categoryHint nulos. O usuario escolhe na lista antes da confirmacao. null se categoria explicita ou unica opcao adequada.' },
         fromAccountId: { type: ['number', 'null'] },
         toAccountId: { type: ['number', 'null'] },
         categoryId: { type: ['number', 'null'] }
@@ -88,6 +90,8 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
       fromAccountHint: { type: ['string', 'null'] },
       toAccountHint: { type: ['string', 'null'] },
       categoryHint: { type: ['string', 'null'] },
+      categoryCandidateIds: { type: ['array', 'null'], items: { type: 'integer' }, minItems: 2, maxItems: 10,
+        description: 'De 2 a 10 IDs de categorias plausiveis para o usuario escolher; null preserva a escolha pendente, salvo categoria explicitamente corrigida pelo usuario.' },
       fromAccountId: { type: ['number', 'null'] },
       toAccountId: { type: ['number', 'null'] },
       categoryId: { type: ['number', 'null'] }

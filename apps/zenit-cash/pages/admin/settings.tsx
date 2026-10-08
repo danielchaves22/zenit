@@ -69,7 +69,6 @@ export default function SettingsPage() {
   const [resetAcknowledged, setResetAcknowledged] = useState(false);
   const [whatsappEnabled, setWhatsAppEnabled] = useState(false);
   const [whatsappLoading, setWhatsAppLoading] = useState(true);
-  const [whatsappSaving, setWhatsAppSaving] = useState(false);
   const [whatsappBackendConfig, setWhatsAppBackendConfig] =
     useState<WhatsAppBackendConfig | null>(null);
 
@@ -99,26 +98,6 @@ export default function SettingsPage() {
       );
     } finally {
       setWhatsAppLoading(false);
-    }
-  }
-
-  async function saveWhatsAppChannel() {
-    setWhatsAppSaving(true);
-
-    try {
-      await api.put('/app-access/company/entitlements', {
-        entitlements: [{ appKey: 'zenit-whatsapp', enabled: whatsappEnabled }]
-      });
-
-      addToast('Configuracao do WhatsApp atualizada com sucesso', 'success');
-      await loadWhatsAppChannel();
-    } catch (error: any) {
-      addToast(
-        error.response?.data?.error || 'Erro ao salvar configuracao do WhatsApp',
-        'error'
-      );
-    } finally {
-      setWhatsAppSaving(false);
     }
   }
 
@@ -372,20 +351,17 @@ export default function SettingsPage() {
           </div>
 
           <div className="space-y-5">
-            <div className="flex items-center justify-between rounded-lg border border-border bg-background p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background p-4">
               <div>
                 <div className="text-text font-medium">WhatsApp da empresa</div>
                 <div className="text-sm text-text-muted">
-                  O grant individual continua sendo controlado no cadastro de usuarios.
+                  A habilitação é feita pelo administrador no cadastro da empresa, no Zenit Admin.
+                  O acesso de cada pessoa é definido no cadastro de usuários.
                 </div>
               </div>
-              <input
-                checked={whatsappEnabled}
-                className="w-4 h-4 text-accent bg-background border-border rounded focus:ring-accent"
-                disabled={whatsappLoading || whatsappSaving}
-                onChange={(event) => setWhatsAppEnabled(event.target.checked)}
-                type="checkbox"
-              />
+              <span className="text-sm font-medium text-text">
+                {whatsappLoading ? 'Carregando…' : whatsappEnabled ? 'Habilitado' : 'Não habilitado'}
+              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -466,12 +442,12 @@ export default function SettingsPage() {
             <div className="flex justify-end">
               <Button
                 className="flex items-center gap-2"
-                disabled={whatsappLoading || whatsappSaving}
-                onClick={() => void saveWhatsAppChannel()}
-                variant="accent"
+                disabled={whatsappLoading}
+                onClick={() => void loadWhatsAppChannel()}
+                variant="outline"
               >
-                <Save size={16} />
-                {whatsappSaving ? 'Salvando...' : 'Salvar Canal do WhatsApp'}
+                <RefreshCw size={16} />
+                Atualizar status
               </Button>
             </div>
           </div>

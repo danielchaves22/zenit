@@ -4,6 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { Brand } from './Brand';
 
+const tagline = 'Seu negócio. Novos horizontes.';
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const { user, company, companies, loading, error, login, logout, selectCompany, reload } = useAuth();
   const [email, setEmail] = useState('');
@@ -55,25 +57,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <section className="auth-story">
         <Brand />
         <div className="auth-copy">
-          <span className="eyebrow">SEU NEGÓCIO, BEM CUIDADO</span>
-          <h1>
-            Mais espaço para
-            <br />o que faz
+          <h2>
+            Seu negócio.
             <br />
-            <em>seu negócio crescer.</em>
-          </h1>
+            <em>Novos horizontes.</em>
+          </h2>
           <p>
-            Clientes e fornecedores organizados.
+            Gestão comercial e operacional.
             <br />
-            Um começo simples para o dia a dia da sua empresa.
+            Simplicidade a favor da produtividade
           </p>
         </div>
-        <span className="auth-footer">Parte do ecossistema Zenit</span>
       </section>
       <section className="auth-panel">
         <div className="auth-card">
           <div className="mobile-brand">
             <Brand />
+            <p className="auth-tagline">{tagline}</p>
           </div>
           {error ? (
             <>
@@ -90,12 +90,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
             </>
           ) : !user || user.mustChangePassword ? (
             <>
-              <span className="eyebrow">ZENIT BIZZ</span>
-              <h1>{user ? 'Defina sua nova senha' : 'Bem-vindo ao seu negócio'}</h1>
+              <h1>{user ? 'Defina sua nova senha' : 'Bem-vindo ao Zenit Bizz'}</h1>
               <p className="subtle">
                 {user
                   ? 'Para concluir seu primeiro acesso, escolha uma senha pessoal.'
-                  : 'Entre com sua conta do ecossistema Zenit.'}
+                  : 'Entre com sua conta Zenit.'}
               </p>
               <form onSubmit={submit} className="stack">
                 {!user && (
@@ -164,16 +163,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
                   </p>
                 )}
                 <button className="button primary full" disabled={busy}>
-                  {busy ? 'Aguarde…' : user ? 'Salvar nova senha' : 'Entrar no Bizz'}
-                  <ArrowRight size={18} />
+                  {busy ? 'Aguarde…' : user ? 'Salvar nova senha' : 'Entrar'}
+                  {user && <ArrowRight size={18} />}
                 </button>
               </form>
-              {user ? (
+              {!user && (
+                <details className="auth-help">
+                  <summary>Esqueci minha senha</summary>
+                  <div className="auth-help-content">
+                    <p>Peça a quem administra seu acesso ao Zenit para redefinir sua senha.</p>
+                    <p>Depois, entre com a senha temporária recebida e escolha sua nova senha.</p>
+                  </div>
+                </details>
+              )}
+              {user && (
                 <button className="button quiet" onClick={logout}>
                   Sair
                 </button>
-              ) : (
-                <p className="login-help">Seu acesso é liberado pelo responsável da empresa.</p>
               )}
             </>
           ) : companies.length === 0 ? (

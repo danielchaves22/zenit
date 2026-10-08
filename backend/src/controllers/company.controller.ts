@@ -3,6 +3,12 @@ import prisma from '../lib/prisma';
 import { Request, Response } from 'express';
 import CompanyService from '../services/company.service';
 import { logger } from '../utils/logger';
+import { APP_KEY_BY_HEADER } from '../constants/app-access';
+
+// App keys have already been validated by the route schema.
+function mapEntitlements(entries?: Array<{ appKey: keyof typeof APP_KEY_BY_HEADER; enabled: boolean }>) {
+  return entries?.map(({ appKey, enabled }) => ({ appKey: APP_KEY_BY_HEADER[appKey], enabled }));
+}
 
 
 /**
@@ -27,7 +33,7 @@ export const createCompany = async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'Acesso negado: apenas ADMIN pode criar empresas.' });
   }
 
-  const { name, address, createFinancialStructure = true } = req.body;
+  const { name, address, createFinancialStructure = true, appEntitlements } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'O campo name é obrigatório.' });
   }
@@ -36,7 +42,8 @@ export const createCompany = async (req: Request, res: Response) => {
     const result = await CompanyService.createCompany({ 
       name, 
       address, 
-      createFinancialStructure 
+      createFinancialStructure,
+      appEntitlements: mapEntitlements(appEntitlements)
     });
     
     const response = {
@@ -188,13 +195,15 @@ export const updateCompany = async (req: Request, res: Response) => {
   }
 
   const id = Number(req.params.id);
-  const { name, address } = req.body;
-  if (isNaN(id) || (name === undefined && address === undefined)) {
+  const { name, address, appEntitlements } = req.body;
+  if (!Number.isSafeInteger(id) || id <= 0 || (name === undefined && address === undefined && appEntitlements === undefined)) {
     return res.status(400).json({ error: 'ID inválido ou nenhum campo para atualizar.' });
   }
 
   try {
-    const company = await CompanyService.updateCompany(id, { name, address });
+    const company = await CompanyService.updateCompany(id, {
+      name, address, appEntitlements: mapEntitlements(appEntitlements)
+    });
     return res.status(200).json(company);
   } catch (error) {
     logger.error(`Erro ao atualizar empresa ${id}:`, error);

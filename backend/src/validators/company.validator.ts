@@ -1,16 +1,19 @@
 // backend/src/validators/company.validator.ts
 import { z } from 'zod';
+import { companyEntitlementSchema } from './app-access.validator';
 
 export const createCompanySchema = z.object({
   name: z.string().min(1, { message: 'Nome é obrigatório.' }),
   address: z.string().optional(),
-  createFinancialStructure: z.boolean().optional().default(true)
+  createFinancialStructure: z.boolean().optional().default(true),
+  appEntitlements: companyEntitlementSchema.shape.entitlements.optional()
 });
 
 export const updateCompanySchema = z
   .object({
     name: z.string().min(1, { message: 'Nome é obrigatório.' }).optional(),
-    address: z.string().optional()
+    address: z.string().optional(),
+    appEntitlements: companyEntitlementSchema.shape.entitlements.optional()
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Ao menos um campo deve ser fornecido para atualização.'

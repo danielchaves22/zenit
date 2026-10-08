@@ -29,12 +29,12 @@ Frontend: http://localhost:3004. `BACKEND_URL` aponta para a origem do backend c
 
 ## Liberação do acesso
 
-1. No Zenit Admin, selecione a empresa e abra **Administração → Configurações**.
-2. Habilite **Zenit Bizz nesta empresa** e salve.
+1. No Zenit Admin, como administrador da plataforma (`ADMIN`), abra **Administração → Empresas** e crie ou edite a empresa desejada. Não é necessário trocar a empresa ativa.
+2. Em **Aplicativos da empresa**, marque **Zenit Bizz** e salve o cadastro.
 3. Abra **Administração → Usuários**, edite a pessoa e conceda **Zenit Bizz** na empresa correspondente.
 4. Entre no Bizz com as mesmas credenciais. Se necessário, troque a senha e selecione a empresa.
 
-O formulário de concessão existente também está disponível no Cash e no Calc. `ADMIN` e `SUPERUSER` seguem as regras existentes de administração; ser administrador não substitui habilitação da empresa, vínculo e concessão individual. Bizz não é habilitado ou concedido automaticamente pelas migrações, nem incluído nas concessões padrão de novos usuários.
+O formulário de concessão existente também está disponível no Cash e no Calc. Somente `ADMIN` habilita aplicativos para empresas. `ADMIN` e `SUPERUSER` concedem acessos individuais dentro de seus escopos; ser administrador não substitui habilitação da empresa, vínculo e concessão individual. Bizz não é habilitado ou concedido automaticamente pelas migrações, nem incluído nas concessões padrão de novos usuários.
 
 Mais detalhes: [acesso e cadastros](../../docs/products/zenit-bizz/foundation.md).
 

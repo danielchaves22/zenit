@@ -6,6 +6,7 @@ import AppAccessService from './app-access.service';
 
 
 type PrismaExecutor = PrismaClient | Prisma.TransactionClient;
+type CompanyEntitlement = { appKey: AppKey; enabled: boolean };
 
 type FinancialStructurePayload = {
   account: any;
@@ -53,8 +54,9 @@ export default class CompanyService {
     name: string;
     address?: string;
     createFinancialStructure?: boolean;
+    appEntitlements?: CompanyEntitlement[];
   }): Promise<CreateCompanyResult> {
-    const { name, address, createFinancialStructure = true } = data;
+    const { name, address, createFinancialStructure = true, appEntitlements } = data;
 
     logger.info('Creating new company', { name, createFinancialStructure });
 
@@ -68,7 +70,7 @@ export default class CompanyService {
 
           await AppAccessService.setCompanyEntitlements(
             company.id,
-            [...DEFAULT_COMPANY_ENTITLEMENTS],
+            appEntitlements ?? [...DEFAULT_COMPANY_ENTITLEMENTS],
             tx
           );
 
@@ -153,9 +155,16 @@ export default class CompanyService {
 
   static async updateCompany(
     id: number,
-    data: Partial<Prisma.CompanyUpdateInput>
+    data: Partial<Prisma.CompanyUpdateInput> & { appEntitlements?: CompanyEntitlement[] }
   ): Promise<Company> {
-    return prisma.company.update({ where: { id }, data });
+    const { appEntitlements, ...companyData } = data;
+    return prisma.$transaction(async (tx) => {
+      const company = await tx.company.update({ where: { id }, data: companyData });
+      if (appEntitlements !== undefined) {
+        await AppAccessService.setCompanyEntitlements(id, appEntitlements, tx);
+      }
+      return company;
+    });
   }
 
   static async deleteCompany(id: number): Promise<void> {

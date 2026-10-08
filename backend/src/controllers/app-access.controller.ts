@@ -38,8 +38,8 @@ export async function getCompanyEntitlementsById(req: Request, res: Response) {
 
 export async function updateCurrentCompanyEntitlements(req: Request, res: Response) {
   const { role, companyId } = getContext(req)
-  if (role !== 'ADMIN' && role !== 'SUPERUSER') {
-    return res.status(403).json({ error: 'Acesso negado.' })
+  if (role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Apenas o administrador da plataforma pode habilitar aplicativos para empresas.' })
   }
 
   const entries: unknown[] = Array.isArray(req.body.entitlements) ? req.body.entitlements : []

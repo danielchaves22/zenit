@@ -37,6 +37,14 @@ interface CompanyFormProps {
   onCancel?: () => void;
 }
 
+interface CompanyApp {
+  appKey: string;
+  name: string;
+  enabled: boolean;
+}
+
+const DEFAULT_COMPANY_APPS = ['zenit-cash', 'zenit-calc', 'zenit-admin'];
+
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4-nano';
 
 export default function CompanyForm({
@@ -50,6 +58,9 @@ export default function CompanyForm({
 
   const [loading, setLoading] = useState(mode === 'edit');
   const [saving, setSaving] = useState(false);
+  const [apps, setApps] = useState<CompanyApp[]>([]);
+  const [loadingApps, setLoadingApps] = useState(true);
+  const [appsError, setAppsError] = useState('');
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -67,10 +78,34 @@ export default function CompanyForm({
   const [openAiEnabled, setOpenAiEnabled] = useState(true);
 
   useEffect(() => {
+    void loadApps();
     if (mode === 'edit' && companyId) {
       void initializeEdit(companyId);
     }
   }, [companyId, mode]);
+
+  async function loadApps() {
+    setLoadingApps(true);
+    setAppsError('');
+    try {
+      const [catalog, entitlements] = await Promise.all([
+        api.get<CompanyApp[]>('/app-access/catalog'),
+        mode === 'edit'
+          ? api.get<Array<{ appKey: string; enabled: boolean }>>(`/app-access/company/${companyId}/entitlements`)
+          : Promise.resolve(null)
+      ]);
+      setApps(catalog.data.map((app) => ({
+        ...app,
+        enabled: entitlements
+          ? entitlements.data.some((item) => item.appKey === app.appKey && item.enabled)
+          : DEFAULT_COMPANY_APPS.includes(app.appKey)
+      })));
+    } catch {
+      setAppsError('Não foi possível carregar os aplicativos. Tente novamente antes de salvar.');
+    } finally {
+      setLoadingApps(false);
+    }
+  }
 
   function resetOpenAiState() {
     setOpenAiStatus(null);
@@ -148,6 +183,7 @@ export default function CompanyForm({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (saving || loadingApps || appsError) return;
 
     if (!formData.name.trim()) {
       addToast('Nome da empresa e obrigatorio', 'error');
@@ -157,11 +193,14 @@ export default function CompanyForm({
     setSaving(true);
 
     try {
+      const payload = {
+        ...formData,
+        appEntitlements: apps.map(({ appKey, enabled }) => ({ appKey, enabled }))
+      };
       if (mode === 'create') {
-        await api.post('/companies', formData);
+        await api.post('/companies', payload);
         addToast('Empresa criada com sucesso', 'success');
       } else {
-        const payload = formData.address ? formData : { name: formData.name };
         await api.put(`/companies/${companyId}`, payload);
         addToast('Empresa atualizada com sucesso', 'success');
       }
@@ -264,7 +303,7 @@ export default function CompanyForm({
             type="submit"
             form="company-form"
             variant="accent"
-            disabled={saving}
+            disabled={saving || loadingApps || Boolean(appsError)}
             className="flex items-center gap-2"
           >
             <Save size={16} />
@@ -300,6 +339,40 @@ export default function CompanyForm({
               placeholder="Ex: Rua das Flores, 123 - Centro"
               disabled={saving}
             />
+
+            <fieldset className="space-y-4 border-t border-gray-700 pt-6" disabled={saving || loadingApps}>
+              <legend className="px-1 text-base font-medium text-white">Aplicativos da empresa</legend>
+              <p className="text-sm text-gray-400">
+                Selecione os aplicativos disponíveis para esta empresa. Depois, conceda o acesso de cada pessoa no cadastro de usuários.
+              </p>
+              {loadingApps ? (
+                <p role="status" className="text-sm text-gray-400">Carregando aplicativos…</p>
+              ) : appsError ? (
+                <div className="space-y-3">
+                  <p role="alert" className="text-sm text-red-400">{appsError}</p>
+                  <Button type="button" variant="outline" onClick={() => void loadApps()}>Tentar novamente</Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {apps.map((app) => (
+                    <label key={app.appKey} className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-white">
+                      <input
+                        type="checkbox"
+                        checked={app.enabled}
+                        onChange={(event) => setApps((current) => current.map((item) =>
+                          item.appKey === app.appKey ? { ...item, enabled: event.target.checked } : item
+                        ))}
+                        className="h-4 w-4 rounded border-gray-500 text-accent focus:ring-accent focus:ring-offset-2 focus:ring-offset-[#11161d]"
+                      />
+                      {app.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-gray-400">
+                Desabilitar um aplicativo bloqueia o acesso de todos os usuários desta empresa, sem apagar os dados. As permissões individuais são mantidas para uma futura reativação.
+              </p>
+            </fieldset>
 
             {editingCompany && (
               <div className="border-t border-gray-700 pt-6">
@@ -401,8 +474,8 @@ export default function CompanyForm({
               <div className="text-sm font-medium text-white">Resumo</div>
               <div className="mt-1 text-sm text-gray-400">
                 {mode === 'create'
-                  ? 'A empresa sera criada e ficara disponivel para vinculacao de usuarios.'
-                  : 'Ajuste os dados cadastrais e as configuracoes internas da plataforma.'}
+                  ? 'Crie a empresa com os aplicativos que ela poderá utilizar.'
+                  : 'Gerencie os dados e os aplicativos desta empresa, sem trocar a empresa ativa.'}
               </div>
             </div>
 

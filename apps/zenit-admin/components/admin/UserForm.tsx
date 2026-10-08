@@ -806,8 +806,17 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                       {config && (
                         <div className="ml-6 mt-2 space-y-2">
                           <label className="mb-1 block text-sm font-medium text-gray-300">
-                            Aplicativos do ecossistema
+                            Aplicativos permitidos para este usuário
                           </label>
+                          <p className="text-xs text-gray-400">
+                            Apenas aplicativos habilitados para {company.name} aparecem aqui.
+                            {userRole === 'ADMIN'
+                              ? ' Para alterar essa lista, edite o cadastro da empresa.'
+                              : ' Para habilitar outros aplicativos, solicite ao administrador da plataforma.'}
+                          </p>
+                          {(companyEntitlements[company.id] || []).length === 0 && (
+                            <p className="text-sm text-amber-200">Nenhum aplicativo habilitado para esta empresa.</p>
+                          )}
                           <div className="flex flex-wrap gap-3">
                             {(companyEntitlements[company.id] || []).map((appKey) => (
                               <label

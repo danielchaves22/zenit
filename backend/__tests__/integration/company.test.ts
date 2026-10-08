@@ -20,6 +20,7 @@ describe('Company routes (RBAC)', () => {
   let userToken: string;
   let equinoxId: number;
   let otherCompanyId: number;
+  let regularUserId: number;
   const createdCompanyIds: number[] = [];
 
   beforeAll(async () => {
@@ -57,6 +58,7 @@ describe('Company routes (RBAC)', () => {
         role: 'USER'
       }
     });
+    regularUserId = us.id;
 
     await prisma.userCompany.create({ data: { userId: ad.id, companyId: eq.id, isDefault: true, role: 'ADMIN' } });
     await prisma.userCompany.create({ data: { userId: su.id, companyId: ot.id, isDefault: true, role: 'SUPERUSER' } });
@@ -176,6 +178,88 @@ describe('Company routes (RBAC)', () => {
         .set(authHeaders(superToken, otherCompanyId))
         .send({ name: `Teste ${uniqueSuffix}` });
       expect(res.status).toBe(403);
+    });
+  });
+
+  describe('Aplicativos administrados no cadastro da empresa', () => {
+    it('cria a empresa com a seleção explícita, sem conceder acesso a usuários', async () => {
+      const res = await request(app)
+        .post('/api/companies')
+        .set(authHeaders(adminToken, equinoxId))
+        .send({ name: `Bizz ${uniqueSuffix}`, createFinancialStructure: false,
+          appEntitlements: [{ appKey: 'zenit-bizz', enabled: true }] });
+      expect(res.status).toBe(201);
+      createdCompanyIds.push(res.body.id);
+      const apps = await AppAccessService.getCompanyEntitlements(res.body.id);
+      expect(apps.filter((item) => item.enabled)).toEqual([{ appKey: 'zenit-bizz', enabled: true }]);
+      expect(await prisma.userAppGrant.count({ where: { companyId: res.body.id } })).toBe(0);
+    });
+
+    it('ADMIN habilita outra empresa sem vínculo ou troca de empresa ativa', async () => {
+      const res = await request(app)
+        .put(`/api/companies/${otherCompanyId}`)
+        .set(authHeaders(adminToken, equinoxId))
+        .send({ appEntitlements: [{ appKey: 'zenit-bizz', enabled: true }] });
+      expect(res.status).toBe(200);
+      const apps = await request(app).get(`/api/app-access/company/${otherCompanyId}/entitlements`)
+        .set(authHeaders(adminToken, equinoxId));
+      expect(apps.body).toContainEqual({ appKey: 'zenit-bizz', enabled: true });
+      expect(await AppAccessService.hasEffectiveAccess(regularUserId, otherCompanyId, AppKey.ZENIT_BIZZ)).toBe(false);
+      expect(await AppAccessService.getCompanyEntitlements(equinoxId)).toContainEqual({ appKey: 'zenit-bizz', enabled: false });
+    });
+
+    it('SUPERUSER concede acesso individual, mas não habilita aplicativos da empresa', async () => {
+      for (const [url, body] of [
+        [`/api/companies/${otherCompanyId}`, { appEntitlements: [{ appKey: 'zenit-calc', enabled: true }] }],
+        ['/api/app-access/company/entitlements', { entitlements: [{ appKey: 'zenit-calc', enabled: true }] }]
+      ] as const) {
+        const denied = await request(app).put(url).set(authHeaders(superToken, otherCompanyId)).send(body);
+        expect(denied.status).toBe(403);
+      }
+      const granted = await request(app).put(`/api/app-access/users/${regularUserId}/grants`)
+        .set(authHeaders(superToken, otherCompanyId))
+        .send({ grants: [{ appKey: 'zenit-bizz', granted: true }] });
+      expect(granted.status).toBe(200);
+      expect(await AppAccessService.hasEffectiveAccess(regularUserId, otherCompanyId, AppKey.ZENIT_BIZZ)).toBe(true);
+      expect(await AppAccessService.getCompanyEntitlements(otherCompanyId)).toContainEqual({ appKey: 'zenit-calc', enabled: false });
+    });
+
+    it('desabilitar bloqueia acesso e reativar preserva a permissão individual', async () => {
+      for (const enabled of [false, true]) {
+        const res = await request(app).put(`/api/companies/${otherCompanyId}`)
+          .set(authHeaders(adminToken, equinoxId))
+          .send({ appEntitlements: [{ appKey: 'zenit-bizz', enabled }] });
+        expect(res.status).toBe(200);
+        const access = await request(app).get('/api/bizz/session')
+          .set({ ...authHeaders(userToken, otherCompanyId), 'x-app-key': 'zenit-bizz' });
+        expect(access.status).toBe(enabled ? 200 : 403);
+        expect(await AppAccessService.getUserGrants(regularUserId, otherCompanyId))
+          .toContainEqual({ appKey: 'zenit-bizz', granted: true });
+      }
+    });
+
+    it('rejeita aplicativo desconhecido sem alterar os dados da empresa', async () => {
+      const before = await prisma.company.findUniqueOrThrow({ where: { id: otherCompanyId } });
+      const res = await request(app).put(`/api/companies/${otherCompanyId}`)
+        .set(authHeaders(adminToken, equinoxId))
+        .send({ name: 'Não deve salvar', appEntitlements: [{ appKey: 'desconhecido', enabled: true }] });
+      expect(res.status).toBe(400);
+      expect(await prisma.company.findUniqueOrThrow({ where: { id: otherCompanyId } })).toEqual(before);
+    });
+
+    it('reverte os dados cadastrais se a gravação dos aplicativos falhar', async () => {
+      const before = await prisma.company.findUniqueOrThrow({ where: { id: otherCompanyId } });
+      const failure = jest.spyOn(AppAccessService, 'setCompanyEntitlements')
+        .mockRejectedValueOnce(new Error('Falha simulada ao salvar aplicativos'));
+      try {
+        const res = await request(app).put(`/api/companies/${otherCompanyId}`)
+          .set(authHeaders(adminToken, equinoxId))
+          .send({ name: 'Não deve salvar', appEntitlements: [{ appKey: 'zenit-bizz', enabled: false }] });
+        expect(res.status).toBe(500);
+        expect(await prisma.company.findUniqueOrThrow({ where: { id: otherCompanyId } })).toEqual(before);
+      } finally {
+        failure.mockRestore();
+      }
     });
   });
 

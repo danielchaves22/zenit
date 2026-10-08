@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-10-07
+last_reviewed: 2026-10-08
 summary: Fundação do Bizz, acesso por usuário e empresa, cadastros e limites da primeira versão.
 tags:
   - zenit-bizz
@@ -30,6 +30,14 @@ As rotas `/api/bizz/*` exigem a chave do Bizz. Uma chamada identificada como Biz
 O endpoint compartilhado autenticado `PUT /api/auth/password` exige a senha atual, valida a nova senha e conclui o primeiro acesso. Os cadastros do Bizz recusam usuários com troca de senha pendente.
 
 A revisão do fluxo de concessões também bloqueia alterações de `appGrants` por usuários comuns em seu próprio perfil, concessões fora da empresa por `SUPERUSER` e concessões para empresas sem vínculo com o usuário. Na criação, uma lista de concessões explicitamente vazia permanece vazia. Os padrões anteriores continuam para chamadas sem essa lista, exceto Bizz, cuja concessão é sempre explícita.
+
+## Administração de aplicativos
+
+O administrador da plataforma (`ADMIN`) seleciona os aplicativos em **Zenit Admin → Administração → Empresas → Criar/Editar → Aplicativos da empresa**. A edição usa o ID da empresa cadastrada, sem exigir vínculo ou troca da empresa ativa do administrador. A habilitação não concede acesso individual automaticamente.
+
+`POST /api/companies` e `PUT /api/companies/:id` aceitam `appEntitlements`, uma lista de `{ appKey, enabled }`, e salvam os dados e as habilitações na mesma transação. Na criação, omitir a lista mantém os padrões legados; enviá-la explicitamente substitui esses padrões. Na edição, somente as entradas enviadas são alteradas. A rota legada `PUT /api/app-access/company/entitlements` também exige `ADMIN`.
+
+Quem gerencia usuários (`ADMIN` ou `SUPERUSER`, conforme seu escopo) escolhe os acessos individuais no cadastro de usuários entre os aplicativos habilitados para cada empresa. Desabilitar um aplicativo bloqueia o acesso efetivo sem apagar os dados nem as concessões individuais; reabilitá-lo restaura o acesso dos usuários que mantiveram a concessão. O Cash apenas apresenta o estado da habilitação do WhatsApp; a alteração fica centralizada no Zenit Admin.
 
 ## Cadastro único
 

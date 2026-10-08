@@ -62,6 +62,7 @@ async function buildAuthPayload(
     name: string;
     email: string;
     mustChangePassword: boolean;
+    platformAdmin: boolean;
     companies: AuthCompanyView[];
     appAccessByCompany: Record<
       number,
@@ -103,7 +104,11 @@ async function buildAuthPayload(
     companies.map((company) => company.id)
   );
 
-  if (requestedApp && companies.length > 0) {
+  if (requestedApp === 'ZENIT_ADMIN' && user.role !== 'ADMIN') {
+    throw new Error('Usuario sem acesso ao aplicativo solicitado.');
+  }
+
+  if (requestedApp && requestedApp !== 'ZENIT_ADMIN' && companies.length > 0) {
     const requestedKey = toHeaderAppKey(requestedApp);
     const hasRequestedAccess = Object.values(appAccessByCompany).some((companyAccess) =>
       companyAccess.some((access) => access.appKey === requestedKey && access.allowed)
@@ -124,6 +129,7 @@ async function buildAuthPayload(
       name: user.name,
       email: user.email,
       mustChangePassword: user.mustChangePassword,
+      platformAdmin: user.role === 'ADMIN',
       companies,
       appAccessByCompany
     },
@@ -215,6 +221,10 @@ export async function register(req: Request, res: Response) {
   const appHeader = req.headers[APP_HEADER];
   const appHeaderValue = Array.isArray(appHeader) ? appHeader[0] : appHeader;
 
+  if (toPrismaAppKey(appHeaderValue) === 'ZENIT_ADMIN') {
+    return res.status(403).json({ error: 'Administradores do Zenit devem ser cadastrados por outro administrador.' });
+  }
+
   if (!email || !password || !name) {
     return res.status(400).json({ error: 'Nome, email e senha sao obrigatorios' });
   }
@@ -286,7 +296,7 @@ export async function refreshToken(req: Request, res: Response) {
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      select: { id: true }
+      select: { id: true, role: true }
     });
 
     if (!user) {
@@ -296,6 +306,10 @@ export async function refreshToken(req: Request, res: Response) {
       });
 
       return res.status(401).json({ error: 'Usuario invalido ou inativo' });
+    }
+
+    if (toPrismaAppKey(req.get(APP_HEADER)) === 'ZENIT_ADMIN' && user.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Acesso exclusivo aos administradores da plataforma Zenit.' });
     }
 
     const newToken = generateToken({
@@ -321,13 +335,16 @@ export async function refreshToken(req: Request, res: Response) {
 export async function getCurrentUser(req: Request, res: Response) {
   try {
     const userId = req.user.userId;
-    const authPayload = await buildAuthPayload(userId);
+    const authPayload = await buildAuthPayload(userId, toPrismaAppKey(req.get(APP_HEADER)) === 'ZENIT_ADMIN' ? 'zenit-admin' : undefined);
 
     return res.status(200).json({
       user: authPayload.user,
       preferences: authPayload.preferences
     });
   } catch (error: unknown) {
+    if (getErrorMessage(error) === 'Usuario sem acesso ao aplicativo solicitado.') {
+      return res.status(403).json({ error: 'Acesso exclusivo aos administradores da plataforma Zenit.' });
+    }
     logger.error('Error fetching current user', {
       error: getErrorMessage(error),
       userId: req.user?.userId

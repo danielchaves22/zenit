@@ -224,7 +224,7 @@ describe('Bizz foundation and per-user application grants', () => {
       .put(`/api/users/${foreignId}`)
       .set(headers(foreignToken, otherCompanyId, 'zenit-cash'))
       .send({
-        appGrants: [{ companyId: otherCompanyId, appKey: 'zenit-admin', granted: true }]
+        appGrants: [{ companyId: otherCompanyId, appKey: 'zenit-bizz', granted: true }]
       });
     expect(own.status).toBe(403);
     await AppAccessService.setUserGrants(userId, companyId, [{ appKey: AppKey.ZENIT_CASH, granted: true }]);
@@ -233,7 +233,7 @@ describe('Bizz foundation and per-user application grants', () => {
       .set(headers(token, companyId, 'zenit-cash'))
       .send({
         name: 'Unauthorized edit',
-        appGrants: [{ companyId: otherCompanyId, appKey: 'zenit-admin', granted: true }]
+        appGrants: [{ companyId: otherCompanyId, appKey: 'zenit-bizz', granted: true }]
       });
     expect(cross.status).toBe(403);
     expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).name).toBe('Operador Bizz');

@@ -33,7 +33,7 @@ export default class AppAccessService {
   static async listCatalog() {
     await this.ensureCatalog()
     const apps = await prisma.ecosystemApp.findMany({
-      where: { isActive: true },
+      where: { isActive: true, appKey: { not: AppKey.ZENIT_ADMIN } },
       orderBy: { id: 'asc' }
     })
 
@@ -48,7 +48,7 @@ export default class AppAccessService {
     await this.ensureCatalog()
     const [apps, entitlements] = await Promise.all([
       prisma.ecosystemApp.findMany({
-        where: { isActive: true },
+        where: { isActive: true, appKey: { not: AppKey.ZENIT_ADMIN } },
         orderBy: { id: 'asc' }
       }),
       prisma.companyAppEntitlement.findMany({
@@ -71,6 +71,7 @@ export default class AppAccessService {
     payload: Array<{ appKey: AppKey; enabled: boolean }>,
     db: PrismaExecutor = prisma
   ) {
+    payload = payload.filter(item => item.appKey !== AppKey.ZENIT_ADMIN)
     await this.ensureCatalog(db)
 
     const apps = await db.ecosystemApp.findMany({
@@ -95,7 +96,7 @@ export default class AppAccessService {
     await this.ensureCatalog()
     const [apps, grants] = await Promise.all([
       prisma.ecosystemApp.findMany({
-        where: { isActive: true },
+        where: { isActive: true, appKey: { not: AppKey.ZENIT_ADMIN } },
         orderBy: { id: 'asc' }
       }),
       prisma.userAppGrant.findMany({
@@ -114,6 +115,7 @@ export default class AppAccessService {
   }
 
   static async setUserGrants(userId: number, companyId: number, payload: Array<{ appKey: AppKey; granted: boolean }>) {
+    payload = payload.filter(item => item.appKey !== AppKey.ZENIT_ADMIN)
     await this.ensureCatalog()
     const apps = await prisma.ecosystemApp.findMany({
       where: { appKey: { in: payload.map(item => item.appKey) } }
@@ -144,6 +146,7 @@ export default class AppAccessService {
     userId: number,
     payload: Array<{ companyId: number; appKey: AppKey; granted: boolean }>
   ) {
+    payload = payload.filter(item => item.appKey !== AppKey.ZENIT_ADMIN)
     await this.ensureCatalog()
     const appMap = new Map(
       (
@@ -196,7 +199,7 @@ export default class AppAccessService {
     })
 
     // Bizz requires an explicit grant, including for newly created users.
-    return entitlements.filter(entitlement => entitlement.app.appKey !== AppKey.ZENIT_BIZZ).map(entitlement => ({
+    return entitlements.filter(entitlement => entitlement.app.appKey !== AppKey.ZENIT_BIZZ && entitlement.app.appKey !== AppKey.ZENIT_ADMIN).map(entitlement => ({
       companyId: entitlement.companyId,
       appKey: entitlement.app.appKey,
       granted: true
@@ -207,7 +210,7 @@ export default class AppAccessService {
     await this.ensureCatalog()
 
     const apps = await prisma.ecosystemApp.findMany({
-      where: { isActive: true },
+      where: { isActive: true, appKey: { not: AppKey.ZENIT_ADMIN } },
       orderBy: { id: 'asc' }
     })
 
@@ -235,6 +238,10 @@ export default class AppAccessService {
   }
 
   static async hasEffectiveAccess(userId: number, companyId: number, appKey: AppKey): Promise<boolean> {
+    if (appKey === AppKey.ZENIT_ADMIN) {
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } })
+      return user?.role === 'ADMIN'
+    }
     await this.ensureCatalog()
     const app = await prisma.ecosystemApp.findUnique({ where: { appKey } })
     if (!app || !app.isActive) return false

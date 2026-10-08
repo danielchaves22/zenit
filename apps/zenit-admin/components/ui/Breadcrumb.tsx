@@ -14,11 +14,11 @@ interface BreadcrumbProps {
 
 export function Breadcrumb({ items }: BreadcrumbProps) {
   return (
-    <nav className="flex items-center text-sm text-gray-400 mb-4">
+    <nav aria-label="Navegação estrutural" className="flex flex-wrap items-center gap-y-1 text-sm text-gray-400 mb-4">
       {items.map((item, index) => (
-        <React.Fragment key={index}>
+        <span key={index} className="inline-flex min-w-0 items-center">
           {index > 0 && (
-            <ChevronRight size={14} className="mx-2 text-gray-500" />
+            <ChevronRight size={14} className="mx-2 shrink-0 text-gray-500" />
           )}
           
           {item.href ? (
@@ -31,7 +31,7 @@ export function Breadcrumb({ items }: BreadcrumbProps) {
           ) : (
             <span className="text-gray-300 font-medium">{item.label}</span>
           )}
-        </React.Fragment>
+        </span>
       ))}
     </nav>
   );

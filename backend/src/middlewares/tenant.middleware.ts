@@ -10,6 +10,7 @@ export async function tenantMiddleware(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  if (req.user?.platformAdmin) { next(); return; }
   try {
     const header = req.headers['x-company-id'];
     const companyId = header ? parseInt(Array.isArray(header) ? header[0] : header) : NaN;
@@ -39,7 +40,7 @@ export async function tenantMiddleware(
     // @ts-ignore
     req.user.companyId = companyId;
     // @ts-ignore
-    req.user.role = context.role;
+    req.user.role = context.role === 'ADMIN' ? 'SUPERUSER' : context.role;
     // @ts-ignore
     req.user.isCompanyOwner = context.isCompanyOwner;
     // @ts-ignore

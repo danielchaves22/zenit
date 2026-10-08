@@ -5,11 +5,11 @@ import { logAuditEvent } from '../utils/audit-logger';
 import { logger } from '../utils/logger';
 
 
-function getActorContext(req: Request): { actorUserId: number; actorRole: string; actorCompanyId: number } {
+function getActorContext(req: Request): { actorUserId: number; actorRole: string; actorCompanyId?: number } {
   // @ts-ignore - populated by middlewares
   const { userId, role, companyId } = req.user;
 
-  if (!userId || !role || !companyId) {
+  if (!userId || !role) {
     throw new Error('Contexto de usuario invalido.');
   }
 

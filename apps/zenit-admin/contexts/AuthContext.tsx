@@ -2,7 +2,6 @@ import {
   createContext,
   useContext,
   useEffect,
-  useMemo,
   useState,
   ReactNode
 } from 'react'
@@ -31,6 +30,7 @@ interface User {
   id: number
   name: string
   email: string
+  platformAdmin: boolean
   companies: CompanyRole[]
   appAccessByCompany?: Record<number, AppAccess[]>
   mustChangePassword?: boolean
@@ -58,7 +58,6 @@ interface AuthContextData {
 }
 
 const AuthContext = createContext<AuthContextData>({} as AuthContextData)
-const APP_KEY = process.env.NEXT_PUBLIC_APP_KEY || 'zenit-admin'
 
 function setSecureCookie(name: string, value: string, maxAge?: number) {
   const domain = window.location.hostname
@@ -100,28 +99,11 @@ function removeSecureCookie(name: string) {
   })
 }
 
-function hasAppAccess(user: User | null, currentCompanyId: number | null): boolean {
-  if (!user || !currentCompanyId) return false
-  const appAccess = user.appAccessByCompany?.[currentCompanyId] || []
-  return appAccess.some(entry => entry.appKey === APP_KEY && entry.allowed)
-}
-
-function pickAccessibleCompanyId(user: User): number | null {
-  for (const company of user.companies) {
-    const access = user.appAccessByCompany?.[company.id] || []
-    if (access.some(entry => entry.appKey === APP_KEY && entry.allowed)) {
-      return company.id
-    }
-  }
-  return null
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const { changeTheme } = useTheme()
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const [companyId, setCompanyId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [mustChangePassword, setMustChangePassword] = useState<boolean>(false)
 
@@ -158,18 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('selected-theme', response.data.preferences.colorScheme)
         }
 
-        const storedCompanyId = localStorage.getItem(SSO_STORAGE_KEYS.companyId)
-        const parsedStoredCompany = storedCompanyId ? Number(storedCompanyId) : null
-        const accessibleCompany = pickAccessibleCompanyId(userData)
-        const selectedCompanyId =
-          parsedStoredCompany && hasAppAccess(userData, parsedStoredCompany)
-            ? parsedStoredCompany
-            : accessibleCompany
 
-        setCompanyId(selectedCompanyId)
-        if (selectedCompanyId !== null) {
-          localStorage.setItem(SSO_STORAGE_KEYS.companyId, String(selectedCompanyId))
-        }
       }
     } catch (error) {
       safeCleanup()
@@ -199,12 +170,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (preferences?.colorScheme) {
       changeTheme(preferences.colorScheme)
       localStorage.setItem('selected-theme', preferences.colorScheme)
-    }
-
-    const nextCompanyId = pickAccessibleCompanyId(userData)
-    setCompanyId(nextCompanyId)
-    if (nextCompanyId !== null) {
-      localStorage.setItem(SSO_STORAGE_KEYS.companyId, nextCompanyId.toString())
     }
 
     return userData
@@ -244,7 +209,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setToken(null)
     setUser(null)
-    setCompanyId(null)
   }
 
   function logout() {
@@ -253,6 +217,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    if (!isLoading && !user && router.pathname !== '/login') {
+      void router.replace('/login')
+    }
     if (!isLoading && user?.mustChangePassword && router.pathname !== '/first-access') {
       router.replace('/first-access')
     }
@@ -264,11 +231,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (user) {
       setUser({ ...user, mustChangePassword: value })
     }
-  }
-
-  function changeCompany(id: number) {
-    setCompanyId(id)
-    localStorage.setItem(SSO_STORAGE_KEYS.companyId, String(id))
   }
 
   useEffect(() => {
@@ -291,7 +253,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval)
   }, [token])
 
-  const hasCurrentAppAccess = useMemo(() => hasAppAccess(user, companyId), [user, companyId])
+  const hasCurrentAppAccess = user?.platformAdmin === true
 
   return (
     <AuthContext.Provider
@@ -302,30 +264,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         refreshToken,
         isLoading,
-        userRole: user && companyId ? user.companies.find(c => c.id === companyId)?.role || null : null,
+        userRole: hasCurrentAppAccess ? 'ADMIN' : null,
         userId: user?.id || null,
-        companyId,
+        companyId: null,
         userName: user?.name || null,
-        companyName: user && companyId ? user.companies.find(c => c.id === companyId)?.name || null : null,
-        isCompanyOwner:
-          user && companyId
-            ? user.companies.find(c => c.id === companyId)?.isCompanyOwner || false
-            : false,
-        manageFinancialAccounts:
-          user && companyId
-            ? user.companies.find(c => c.id === companyId)?.manageFinancialAccounts || false
-            : false,
-        manageFinancialCategories:
-          user && companyId
-            ? user.companies.find(c => c.id === companyId)?.manageFinancialCategories || false
-            : false,
+        companyName: null,
+        isCompanyOwner: false,
+        manageFinancialAccounts: false,
+        manageFinancialCategories: false,
         mustChangePassword,
         updateMustChangePassword,
-        changeCompany,
+        changeCompany: () => {},
         hasCurrentAppAccess
       }}
     >
-      {children}
+      {isLoading || user || router.pathname === '/login' ? children : null}
     </AuthContext.Provider>
   )
 }

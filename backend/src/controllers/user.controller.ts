@@ -6,8 +6,6 @@ import { logger } from '../utils/logger';
 import AppAccessService from '../services/app-access.service';
 import { toPrismaAppKey } from '../constants/app-access';
 
-const EQUINOX_COMPANY_CODE = 0;
-
 type CompanyMembershipInput = {
   companyId: number;
   role: Role;
@@ -99,7 +97,7 @@ function getBusinessErrorStatus(error: unknown): number | null {
 export const createUser = async (req: Request, res: Response) => {
   const actor = getUserContext(req);
   const { role, companyId } = actor;
-  const { email, password, name, newRole, companyId: targetCompanyId, companies, appGrants } = req.body;
+  const { email, password, name, newRole, companyId: targetCompanyId, companies, appGrants, platformAdmin } = req.body;
   const requestedCompanies = normalizeCompanyMemberships(companies);
   const mayManageOwnership = canManageCompanyOwnership(actor);
 
@@ -111,10 +109,8 @@ export const createUser = async (req: Request, res: Response) => {
     return res.status(403).json({ error: 'Acesso negado: USER nao pode criar usuarios.' });
   }
 
-  if (role === 'ADMIN' && newRole !== 'ADMIN' && newRole !== 'SUPERUSER') {
-    return res.status(403).json({
-      error: 'ADMIN so pode criar usuarios ADMIN ou SUPERUSER.'
-    });
+  if (platformAdmin !== undefined && !req.user.platformAdmin) {
+    return res.status(403).json({ error: 'Apenas administradores do Zenit podem definir acesso à plataforma.' });
   }
 
   if (role === 'SUPERUSER' && newRole === 'ADMIN') {
@@ -126,7 +122,7 @@ export const createUser = async (req: Request, res: Response) => {
   let companiesToCreate: CompanyMembershipInput[] = [];
   const roleToAssign: Role =
     role === 'ADMIN'
-      ? (newRole as Role)
+      ? (newRole as Role || 'SUPERUSER')
       : newRole === 'SUPERUSER'
         ? 'SUPERUSER'
         : 'USER';
@@ -174,27 +170,13 @@ export const createUser = async (req: Request, res: Response) => {
   } else if (requestedCompanies.length > 0) {
     companiesToCreate = requestedCompanies;
 
-    const adminCompanies = companiesToCreate.filter((company) => company.role === 'ADMIN');
-    if (adminCompanies.length > 0) {
-      const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
-      if (!equinox || adminCompanies.some((company) => company.companyId !== equinox.id)) {
-        return res.status(403).json({ error: 'ADMIN so pode criar ADMIN vinculado a Equinox.' });
-      }
-    }
   } else if (targetCompanyId !== undefined) {
-    if (roleToAssign === 'ADMIN') {
-      const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
-      if (!equinox || Number(targetCompanyId) !== equinox.id) {
-        return res.status(403).json({ error: 'ADMIN so pode criar ADMIN vinculado a Equinox.' });
-      }
-    }
-
     companiesToCreate.push({
       companyId: Number(targetCompanyId),
       role: roleToAssign,
       isCompanyOwner: false
     });
-  } else {
+  } else if (!platformAdmin) {
     return res.status(400).json({ error: 'E necessario informar companies ou companyId.' });
   }
 
@@ -208,7 +190,8 @@ export const createUser = async (req: Request, res: Response) => {
       email,
       password,
       name,
-      companies: companiesToCreate
+      companies: companiesToCreate,
+      platformAdmin
     });
 
     const grantsPayload =
@@ -360,10 +343,17 @@ export const updateUser = async (req: Request, res: Response) => {
   const actor = getUserContext(req);
   const { role, companyId, userId: me } = actor;
   const id = Number(req.params.id);
-  const { email, password, name, newRole, companies, appGrants } = req.body;
+  const { email, password, name, newRole, companies, appGrants, platformAdmin } = req.body;
   const requestedCompanies = normalizeCompanyMemberships(companies);
   const mayManageOwnership = canManageCompanyOwnership(actor);
   const grantsPayload = toAppGrantPayload(appGrants);
+
+  if (platformAdmin !== undefined && !req.user.platformAdmin) {
+    return res.status(403).json({ error: 'Apenas administradores do Zenit podem definir acesso à plataforma.' });
+  }
+  if (platformAdmin === false && id === me) {
+    return res.status(403).json({ error: 'Você não pode remover seu próprio acesso à plataforma.' });
+  }
 
   if ((role === 'USER' && Array.isArray(appGrants)) ||
       (role !== 'ADMIN' && grantsPayload.some(grant => grant.companyId !== companyId))) {
@@ -379,6 +369,13 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 
   try {
+    const targetUser = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (targetUser?.role === 'ADMIN' && !req.user.platformAdmin && id !== me) {
+      return res.status(403).json({ error: 'Somente administradores do Zenit podem editar este usuário.' });
+    }
+    if (Array.isArray(companies) && companies.length === 0 && !(platformAdmin ?? targetUser?.role === 'ADMIN')) {
+      return res.status(400).json({ error: 'Vincule o usuário a uma empresa ou conceda acesso à plataforma.' });
+    }
     const userExists = await UserService.userBelongsToCompany(id, companyId);
 
     if (role !== 'ADMIN' && !userExists) {
@@ -410,20 +407,7 @@ export const updateUser = async (req: Request, res: Response) => {
     }
 
     let ctx: number | CompanyMembershipInput[] | undefined = companyId;
-    const equinox = await prisma.company.findUnique({ where: { code: EQUINOX_COMPANY_CODE } });
-
-    if (role === 'ADMIN' && requestedCompanies.length > 0) {
-      if (!equinox) {
-        return res.status(500).json({ error: 'Empresa Equinox nao encontrada' });
-      }
-
-      const invalidAdmin = requestedCompanies.some(
-        (company) => company.role === 'ADMIN' && company.companyId !== equinox.id
-      );
-      if (invalidAdmin) {
-        return res.status(403).json({ error: 'ADMIN so pode vincular ADMIN a Equinox.' });
-      }
-
+    if (role === 'ADMIN' && Array.isArray(companies)) {
       ctx = requestedCompanies;
     } else if (role === 'SUPERUSER' && actor.isCompanyOwner && requestedCompanies.length > 0) {
       if (requestedCompanies.some((company) => company.companyId !== companyId)) {
@@ -447,30 +431,13 @@ export const updateUser = async (req: Request, res: Response) => {
       }
     }
 
-    if (newRole === 'ADMIN' && role === 'ADMIN') {
-      if (!equinox) {
-        return res.status(500).json({ error: 'Empresa Equinox nao encontrada' });
-      }
-
-      if (Array.isArray(ctx)) {
-        const hasEquinoxAdmin = ctx.some(
-          (company) => company.role === 'ADMIN' && company.companyId === equinox.id
-        );
-        if (!hasEquinoxAdmin) {
-          return res.status(403).json({ error: 'Usuario ADMIN deve estar vinculado a Equinox.' });
-        }
-      } else if (ctx && typeof ctx === 'number' && ctx !== equinox.id) {
-        return res.status(403).json({ error: 'Usuario ADMIN deve estar vinculado a Equinox.' });
-      }
-    }
-
     const permittedCompanyIds = Array.isArray(ctx)
       ? ctx.map(company => company.companyId)
       : (await prisma.userCompany.findMany({ where: { userId: id }, select: { companyId: true } })).map(company => company.companyId);
     if (grantsPayload.some(grant => !permittedCompanyIds.includes(grant.companyId))) {
       return res.status(403).json({ error: 'Permissões de aplicativos devem pertencer às empresas do usuário.' });
     }
-    const updated = await UserService.updateUser(id, updateData, ctx);
+    const updated = await UserService.updateUser(id, updateData, ctx, platformAdmin);
 
     if (grantsPayload.length > 0) {
       await AppAccessService.setUserGrantsForManyCompanies(id, grantsPayload);
@@ -502,6 +469,10 @@ export const deleteUser = async (req: Request, res: Response) => {
   }
 
   try {
+    const targetUser = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (targetUser?.role === 'ADMIN' && (!req.user.platformAdmin || req.user.userId === id)) {
+      return res.status(403).json({ error: 'Não é permitido excluir este administrador da plataforma.' });
+    }
     const userExists = await UserService.userBelongsToCompany(id, companyId);
 
     if (role !== 'ADMIN' && !userExists) {

@@ -40,14 +40,15 @@ export const userCreationWithPermissionsSchema = z
       .array(
         z.object({
           companyId: z.number(),
-          role: z.enum(['ADMIN', 'SUPERUSER', 'USER']),
+          role: z.enum(['SUPERUSER', 'USER']),
           isCompanyOwner: z.boolean().optional(),
           manageFinancialAccounts: z.boolean().optional(),
           manageFinancialCategories: z.boolean().optional()
         })
       )
       .optional(),
-    newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional(),
+    platformAdmin: z.boolean().optional(),
+    newRole: z.enum(['SUPERUSER', 'USER']).optional(),
     manageFinancialAccounts: z.boolean().optional(),
     manageFinancialCategories: z.boolean().optional(),
     accountPermissions: z
@@ -60,14 +61,14 @@ export const userCreationWithPermissionsSchema = z
       .array(
         z.object({
           companyId: z.number(),
-          appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin', 'zenit-whatsapp', 'zenit-bizz']),
+          appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-whatsapp', 'zenit-bizz']),
           granted: z.boolean().optional()
         })
       )
       .optional()
   })
   .refine(data => {
-    if (!data.companyId && (!data.companies || data.companies.length === 0)) {
+    if (!data.platformAdmin && !data.companyId && (!data.companies || data.companies.length === 0)) {
       return false
     }
 
@@ -86,7 +87,7 @@ export const userCreationWithPermissionsSchema = z
     message: 'Configure permissoes: ou acesso total ou contas especificas, nao ambos',
     path: ['accountPermissions']
   })
-  .refine(data => !!data.companyId || (data.companies && data.companies.length > 0), {
+  .refine(data => data.platformAdmin || !!data.companyId || (data.companies && data.companies.length > 0), {
     message: 'Informe companyId ou companies',
     path: ['companyId']
   })

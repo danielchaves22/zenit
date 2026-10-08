@@ -43,7 +43,7 @@ interface CompanyApp {
   enabled: boolean;
 }
 
-const DEFAULT_COMPANY_APPS = ['zenit-cash', 'zenit-calc', 'zenit-admin'];
+const DEFAULT_COMPANY_APPS = ['zenit-cash', 'zenit-calc'];
 
 const DEFAULT_OPENAI_MODEL = 'gpt-5.4-nano';
 
@@ -273,7 +273,7 @@ export default function CompanyForm({
   return (
     <>
       <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             onClick={handleCancel}
@@ -288,7 +288,7 @@ export default function CompanyForm({
           </h1>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button
             type="button"
             variant="outline"
@@ -475,7 +475,7 @@ export default function CompanyForm({
               <div className="mt-1 text-sm text-gray-400">
                 {mode === 'create'
                   ? 'Crie a empresa com os aplicativos que ela poderá utilizar.'
-                  : 'Gerencie os dados e os aplicativos desta empresa, sem trocar a empresa ativa.'}
+                  : 'Gerencie os dados e os aplicativos disponíveis para esta empresa.'}
               </div>
             </div>
 

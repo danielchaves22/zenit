@@ -21,8 +21,7 @@ type CreateCompanyResult = {
 
 const DEFAULT_COMPANY_ENTITLEMENTS = [
   { appKey: AppKey.ZENIT_CASH, enabled: true },
-  { appKey: AppKey.ZENIT_CALC, enabled: true },
-  { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+  { appKey: AppKey.ZENIT_CALC, enabled: true }
 ] as const;
 
 const MAX_CREATE_COMPANY_ATTEMPTS = 5;

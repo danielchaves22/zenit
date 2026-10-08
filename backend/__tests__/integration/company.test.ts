@@ -6,11 +6,12 @@ import AppAccessService from '../../src/services/app-access.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
+let platformToken: string;
 const APP_KEY_VALUE = 'zenit-admin';
 const authHeaders = (token: string, companyId: number) => ({
   Authorization: `Bearer ${token}`,
   'X-Company-Id': companyId.toString(),
-  [APP_KEY_HEADER]: APP_KEY_VALUE
+  [APP_KEY_HEADER]: token === platformToken ? APP_KEY_VALUE : 'zenit-cash'
 });
 
 describe('Company routes (RBAC)', () => {
@@ -65,25 +66,26 @@ describe('Company routes (RBAC)', () => {
     await prisma.userCompany.create({ data: { userId: us.id, companyId: ot.id, isDefault: true, role: 'USER' } });
 
     await AppAccessService.setCompanyEntitlements(eq.id, [
-      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+      { appKey: AppKey.ZENIT_CASH, enabled: true }
     ]);
     await AppAccessService.setCompanyEntitlements(ot.id, [
-      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+      { appKey: AppKey.ZENIT_CASH, enabled: true }
     ]);
     await AppAccessService.setUserGrants(ad.id, eq.id, [
-      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+      { appKey: AppKey.ZENIT_CASH, granted: true }
     ]);
     await AppAccessService.setUserGrants(su.id, ot.id, [
-      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+      { appKey: AppKey.ZENIT_CASH, granted: true }
     ]);
     await AppAccessService.setUserGrants(us.id, ot.id, [
-      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+      { appKey: AppKey.ZENIT_CASH, granted: true }
     ]);
 
     const r1 = await request(app)
       .post('/api/auth/login')
       .send({ email: `admin.${uniqueSuffix}@e.com`, password: 'Senha123' });
     adminToken = r1.body.token;
+    platformToken = adminToken;
     const r2 = await request(app)
       .post('/api/auth/login')
       .send({ email: `super.${uniqueSuffix}@o.com`, password: 'Senha123' });

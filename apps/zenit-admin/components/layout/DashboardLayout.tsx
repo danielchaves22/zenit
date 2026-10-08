@@ -6,9 +6,8 @@ import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { Sidebar } from './Sidebar';
 import { ThemeSelector } from '@/components/ui/ThemeSelector';
-import { User, Repeat } from 'lucide-react';
+import { User } from 'lucide-react';
 import { RoleBasedItem } from '@/components/navigation/RoleBasedNavigation';
-import { CompanySwitcherModal } from '@/components/ui/CompanySwitcherModal';
 import { 
   Building2, 
   Users, 
@@ -24,20 +23,17 @@ interface DashboardLayoutProps {
 }
 
 export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayoutProps) {
-  const { logout, userName, companyName, userRole, user, hasCurrentAppAccess } = useAuth();
+  const { logout, userName, userRole, user, hasCurrentAppAccess } = useAuth();
   const router = useRouter();
   
   // Estado para controlar a visibilidade do menu do usuário
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const [companyModalOpen, setCompanyModalOpen] = useState(false);
-  const canSwitchCompany = user?.companies && user.companies.length > 1;
-  
   // Obtém o estado salvo no localStorage ou usa o padrão
   const getSavedCollapsedState = () => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : false;
+      return saved ? JSON.parse(saved) : window.innerWidth < 768;
     }
     return false;
   };
@@ -88,7 +84,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
         <div className="max-w-lg w-full bg-surface border border-gray-700 rounded-lg p-6 text-center">
           <h2 className="text-xl font-semibold mb-3">Acesso ao aplicativo negado</h2>
           <p className="text-gray-300 mb-4">
-            Seu usuario nao possui grant para este aplicativo na empresa selecionada.
+            O Zenit Admin é exclusivo dos administradores da plataforma.
           </p>
           <button onClick={logout} className="px-4 py-2 rounded bg-accent text-white">
             Sair
@@ -101,7 +97,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Top Navigation com uma borda sutil */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-6 flex justify-between items-center h-[60px] border-b border-gray-700">
+      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-3 sm:px-6 gap-3 flex justify-between items-center h-[60px] border-b border-gray-700">
         <div className="flex items-center space-x-4">
           <Link href="/" className="flex items-center hover:opacity-90">
             <Image
@@ -113,19 +109,9 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
               className="h-10 w-auto"
             />
           </Link>
-          <span className="text-white text-lg font-bold font-heading">
-            {companyName}
+          <span className="hidden sm:inline text-white text-lg font-bold font-heading">
+            Plataforma Zenit
           </span>
-          {canSwitchCompany && (
-            <button
-              onClick={() => setCompanyModalOpen(true)}
-              className="text-gray-300 hover:text-accent p-1 rounded"
-              title="Alterar empresa"
-              aria-label="Alterar empresa"
-            >
-              <Repeat size={16} />
-            </button>
-          )}
         </div>
 
         <div className="flex items-center space-x-3">
@@ -133,12 +119,13 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           <div>
             <ThemeSelector showLabel={false} size="sm" />
           </div>
-          <span className="text-sm text-gray-300">{userName}</span>
+          <span className="hidden md:inline text-sm text-gray-300">{userName}</span>
           
           <div className="relative" ref={userMenuRef}>
             <button 
               onClick={toggleUserMenu}
-              className="flex items-center space-x-1 focus:outline-none"
+              aria-label="Menu do usuário"
+              className="flex items-center space-x-1 focus-visible:ring-2 focus-visible:ring-accent rounded"
             >
               {/* ✅ AVATAR COM COR DINÂMICA */}
               <div className="bg-accent rounded-full p-1 transition-colors duration-200">
@@ -150,7 +137,7 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
               <div className="absolute right-0 mt-2 w-48 bg-surface shadow-lg rounded-md z-10 border border-gray-700 animate-fadeIn">
                 <div className="p-3 border-b border-gray-700">
                   <p className="font-medium text-white">{userName}</p>
-                  <p className="text-sm text-gray-400">{companyName}</p>
+                  <p className="text-sm text-gray-400">Plataforma Zenit</p>
                   {/* ✅ ROLE BADGE COM COR DINÂMICA */}
                   <p className="text-xs text-accent">{userRole}</p>
                 </div>
@@ -183,17 +170,11 @@ export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayo
           sidebarCollapsed ? 'ml-16' : 'ml-52'
         }`}>
           {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-6 bg-background text-gray-300">
+          <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-background text-gray-300">
             {children}
           </main>
         </div>
       </div>
-      {canSwitchCompany && (
-        <CompanySwitcherModal
-          isOpen={companyModalOpen}
-          onClose={() => setCompanyModalOpen(false)}
-        />
-      )}
     </div>
   );
 }

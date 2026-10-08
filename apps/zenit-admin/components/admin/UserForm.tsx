@@ -24,6 +24,7 @@ interface User {
   id: number;
   name: string;
   email: string;
+  role: Role;
   appGrants?: {
     companyId: number;
     granted: boolean;
@@ -87,18 +88,19 @@ function getDefaultRole(
     return 'USER';
   }
 
-  return defaultRoleForCompany(userRole as any, company) as Role;
+  return userRole === 'ADMIN' ? 'SUPERUSER' : defaultRoleForCompany(userRole as any, company) as Role;
 }
 
 export default function UserForm({ mode, userId, onSuccess, onCancel }: UserFormProps) {
   const router = useRouter();
   const confirmation = useConfirmation();
-  const { userRole, companyId } = useAuth();
+  const { userRole, companyId, userId: currentUserId } = useAuth();
   const { isAdmin, canManageCompanyOwnership } = usePermissions();
   const { addToast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [platformAdmin, setPlatformAdmin] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companiesError, setCompaniesError] = useState<string | null>(null);
@@ -285,16 +287,17 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
         : user.companies;
 
     setEditingUser(user);
+    setPlatformAdmin(user.role === 'ADMIN');
     setFormData({
       name: user.name,
       email: user.email,
       password: '',
-      newRole: (visibleCompanies[0]?.role || 'USER') as Role
+      newRole: (visibleCompanies[0]?.role === 'ADMIN' ? 'SUPERUSER' : visibleCompanies[0]?.role || 'USER') as Role
     });
     setCompanyConfigs(
       visibleCompanies.map((companyConfig) => ({
         companyId: companyConfig.company.id,
-        role: companyConfig.role,
+        role: companyConfig.role === 'ADMIN' ? 'SUPERUSER' : companyConfig.role,
         isCompanyOwner: companyConfig.isCompanyOwner || false,
         manageFinancialAccounts: companyConfig.manageFinancialAccounts || false,
         manageFinancialCategories: companyConfig.manageFinancialCategories || false
@@ -480,7 +483,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
       return true;
     }
 
-    if (mode === 'create' && companies.length === 0) {
+    if (mode === 'create' && companies.length === 0 && !platformAdmin) {
       return true;
     }
 
@@ -521,12 +524,12 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
       return;
     }
 
-    if (companies.length === 0) {
+    if (companies.length === 0 && !platformAdmin) {
       addToast('Nao e possivel salvar usuarios sem empresas disponiveis', 'error');
       return;
     }
 
-    if (isAdmin() && companyConfigs.length === 0) {
+    if (isAdmin() && companyConfigs.length === 0 && !platformAdmin) {
       addToast('Selecione ao menos uma empresa', 'error');
       return;
     }
@@ -563,7 +566,10 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
         }
 
         const payload = {
-          ...updateData,
+          name: updateData.name,
+          email: updateData.email,
+          password: updateData.password,
+          platformAdmin,
           companies: companyConfigs,
           appGrants: buildAppGrantsPayload()
         };
@@ -601,6 +607,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
           email: formData.email,
           password: formData.password,
           newRole: formData.newRole,
+          platformAdmin,
           companies: companyConfigs,
           appGrants: buildAppGrantsPayload()
         };
@@ -658,7 +665,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
   return (
     <>
       <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             onClick={handleCancel}
@@ -673,7 +680,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
           </h1>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button
             type="button"
             variant="outline"
@@ -745,6 +752,22 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
             />
           </div>
 
+          <fieldset className="rounded-lg border border-accent/40 bg-accent/5 p-4">
+            <legend className="px-1 font-semibold">Acesso à plataforma</legend>
+            <label className="flex items-start gap-3">
+              <input type="checkbox" className={checkboxClasses} checked={platformAdmin}
+                onChange={(event) => setPlatformAdmin(event.target.checked)}
+                disabled={saving || editingUser?.id === currentUserId} />
+              <span>
+                <span className="block font-medium">Administrador do Zenit</span>
+                <span className="block text-sm text-gray-400">
+                  Permite administrar empresas, usuários e serviços no Zenit Admin. Não depende de uma empresa e não libera acesso aos demais aplicativos.
+                </span>
+              </span>
+            </label>
+            {editingUser?.id === currentUserId && <p className="mt-2 text-xs text-gray-400">Você não pode remover seu próprio acesso à plataforma.</p>}
+          </fieldset>
+
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-300">Empresas</label>
             <div className="space-y-2">
@@ -764,7 +787,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                       key={company.id}
                       className="space-y-2 rounded-lg border border-gray-700 bg-[#1e2126] p-3"
                     >
-                      <label className="flex items-center gap-3 rounded-md border border-gray-600 bg-[#0f1419] px-3 py-2 font-semibold">
+                      <label className="flex flex-wrap items-center gap-3 rounded-md border border-gray-600 bg-[#0f1419] px-3 py-2 font-semibold">
                         <input
                           type="checkbox"
                           checked={Boolean(config)}
@@ -776,13 +799,14 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
 
                             removeCompanyConfig(company.id);
                           }}
-                          disabled={saving || singleCompany}
+                          disabled={saving}
                           className={checkboxClasses}
                         />
                         <span className="flex-1 text-sm text-white">{company.name}</span>
 
                         {config && (
                           <select
+                            aria-label={`Perfil em ${company.name}`}
                             value={config.role}
                             onChange={(event) =>
                               updateCompanyRole(company.id, event.target.value)
@@ -796,9 +820,6 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                             {allowedRolesForCompany(userRole as any, company).includes(
                               'SUPERUSER'
                             ) && <option value="SUPERUSER">Superusuario</option>}
-                            {allowedRolesForCompany(userRole as any, company).includes('ADMIN') && (
-                              <option value="ADMIN">Administrador</option>
-                            )}
                           </select>
                         )}
                       </label>

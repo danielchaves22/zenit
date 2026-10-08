@@ -3,6 +3,7 @@ import AppAccessService from '../services/app-access.service'
 import { APP_HEADER, toPrismaAppKey } from '../constants/app-access'
 
 export async function appAccessMiddleware(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.platformAdmin) return next()
   try {
     const rawHeader = req.headers[APP_HEADER]
     const appHeaderValue = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader

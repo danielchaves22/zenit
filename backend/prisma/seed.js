@@ -100,7 +100,7 @@ async function main() {
           userId: adminUser.id,
           companyId: company.id,
           isDefault: true,
-          role: 'ADMIN',
+          role: 'SUPERUSER',
         },
       });
 
@@ -110,7 +110,7 @@ async function main() {
         where: { id: existingUserCompany.id },
         data: {
           isDefault: true,
-          role: 'ADMIN',
+          role: 'SUPERUSER',
         },
       });
 
@@ -200,6 +200,8 @@ async function ensureAppAccess(companyId, userId) {
       update: { name: app.name, isActive: true },
       create: { appKey: app.appKey, name: app.name, isActive: true }
     });
+
+    if (app.appKey === 'ZENIT_ADMIN') continue;
 
     await prisma.companyAppEntitlement.upsert({
       where: {

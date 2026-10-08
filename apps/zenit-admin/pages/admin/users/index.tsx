@@ -17,6 +17,7 @@ interface User {
   id: number;
   name: string;
   email: string;
+  role: string;
   companies: {
     company: {
       id: number;
@@ -159,7 +160,7 @@ export default function UsersPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-medium text-white">{user.name}</td>
+                      <td className="px-4 py-3 font-medium text-white">{user.name}{user.role === 'ADMIN' && <span className="mt-1 block text-xs text-accent">Administrador do Zenit</span>}</td>
                       <td className="px-4 py-3 text-gray-300">{user.email}</td>
                       <td className="px-4 py-3 text-gray-300">
                         {user.companies.map((companyUser) => companyUser.company.name).join(', ')}

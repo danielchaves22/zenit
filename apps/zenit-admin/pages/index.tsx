@@ -9,7 +9,7 @@ export default function AdminHomePage() {
   const { user } = useAuth();
 
   return (
-    <DashboardLayout title="Administração de Empresas">
+    <DashboardLayout title="Administração do Zenit">
       <Breadcrumb items={[{ label: 'Início' }]} />
 
       <div className="space-y-6">
@@ -22,13 +22,12 @@ export default function AdminHomePage() {
               </div>
               <div>
                 <p className="text-sm text-blue-200">Área restrita</p>
-                <h1 className="text-2xl font-semibold text-white">Administração de empresas</h1>
+                <h1 className="text-2xl font-semibold text-white">Administração do Zenit</h1>
               </div>
             </div>
 
             <p className="text-gray-300">
-              Esta aplicação é dedicada à gestão centralizada das empresas. Somente administradores têm acesso e cada sessão
-              é isolada das demais aplicações para manter o controle de segurança.
+              Gerencie empresas, usuários e serviços do ecossistema. Acesso exclusivo aos administradores do Zenit, independente de vínculo com uma empresa.
             </p>
 
             <div className="flex items-center gap-3 flex-wrap">
@@ -59,9 +58,9 @@ export default function AdminHomePage() {
           <div className="p-6 space-y-3">
             <h2 className="text-lg font-semibold text-white">Como funciona</h2>
             <ul className="list-disc list-inside text-gray-300 space-y-2">
-              <li>Apenas usuários com role <strong>ADMIN</strong> conseguem acessar esta aplicação.</li>
-              <li>O gerenciamento de empresas foi removido das demais apps para evitar duplicidade e fortalecer o controle de acesso.</li>
-              <li>Os tokens e cookies usam chaves exclusivas desta app para manter sessões separadas.</li>
+              <li>No cadastro da empresa, defina quais aplicativos ela pode utilizar.</li>
+              <li>No cadastro do usuário, conceda os acessos necessários em cada empresa.</li>
+              <li>O acesso ao Zenit Admin é uma permissão separada de administração da plataforma.</li>
             </ul>
           </div>
         </Card>

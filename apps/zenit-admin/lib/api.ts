@@ -15,11 +15,6 @@ api.interceptors.request.use(config => {
     config.headers.Authorization = `Bearer ${token}`
   }
 
-  const companyId = localStorage.getItem(SSO_STORAGE_KEYS.companyId)
-  if (companyId && config.headers && !config.headers['X-Company-Id']) {
-    config.headers['X-Company-Id'] = companyId
-  }
-
   if (config.headers) {
     config.headers['X-App-Key'] = APP_KEY
   }

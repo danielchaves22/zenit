@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const appGrantSchema = z.object({
   companyId: z.number(),
-  appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-admin', 'zenit-whatsapp', 'zenit-bizz']),
+  appKey: z.enum(['zenit-cash', 'zenit-calc', 'zenit-whatsapp', 'zenit-bizz']),
   granted: z.boolean().optional()
 })
 
@@ -15,7 +15,7 @@ export const createUserSchema = z.object({
     .array(
       z.object({
         companyId: z.number(),
-        role: z.enum(['ADMIN', 'SUPERUSER', 'USER']),
+        role: z.enum(['SUPERUSER', 'USER']),
         isCompanyOwner: z.boolean().optional(),
         manageFinancialAccounts: z.boolean().optional(),
         manageFinancialCategories: z.boolean().optional()
@@ -23,7 +23,8 @@ export const createUserSchema = z.object({
     )
     .optional(),
   appGrants: z.array(appGrantSchema).optional(),
-  newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional()
+  platformAdmin: z.boolean().optional(),
+  newRole: z.enum(['SUPERUSER', 'USER']).optional()
 })
 
 export const updateUserSchema = z
@@ -36,7 +37,7 @@ export const updateUserSchema = z
       .array(
         z.object({
           companyId: z.number(),
-          role: z.enum(['ADMIN', 'SUPERUSER', 'USER']),
+          role: z.enum(['SUPERUSER', 'USER']),
           isCompanyOwner: z.boolean().optional(),
           manageFinancialAccounts: z.boolean().optional(),
           manageFinancialCategories: z.boolean().optional()
@@ -44,7 +45,8 @@ export const updateUserSchema = z
       )
       .optional(),
     appGrants: z.array(appGrantSchema).optional(),
-    newRole: z.enum(['ADMIN', 'SUPERUSER', 'USER']).optional()
+    platformAdmin: z.boolean().optional(),
+    newRole: z.enum(['SUPERUSER', 'USER']).optional()
   })
   .refine(data => Object.keys(data).length > 0, {
     message: 'Ao menos um campo deve ser fornecido para atualizacao.'

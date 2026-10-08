@@ -5,16 +5,8 @@ export interface CompanyRef {
   code: number
 }
 
-const EQUINOX_COMPANY_CODE = 0
-
-export function allowedRolesForCompany(currentRole: UserRole | null, company: CompanyRef): UserRole[] {
-  if (currentRole === 'ADMIN') {
-    const roles: UserRole[] = ['SUPERUSER', 'USER']
-    if (company.code === EQUINOX_COMPANY_CODE) {
-      roles.unshift('ADMIN')
-    }
-    return roles
-  }
+export function allowedRolesForCompany(currentRole: UserRole | null, _company: CompanyRef): UserRole[] {
+  if (currentRole === 'ADMIN') return ['SUPERUSER', 'USER']
 
   if (currentRole === 'SUPERUSER') {
     return ['SUPERUSER', 'USER']

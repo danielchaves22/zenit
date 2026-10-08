@@ -6,11 +6,12 @@ import AppAccessService from '../../src/services/app-access.service';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
+let platformToken: string;
 const APP_KEY_VALUE = 'zenit-admin';
 const authHeaders = (token: string, companyId: number) => ({
   Authorization: `Bearer ${token}`,
   'X-Company-Id': companyId.toString(),
-  [APP_KEY_HEADER]: APP_KEY_VALUE
+  [APP_KEY_HEADER]: token === platformToken ? APP_KEY_VALUE : 'zenit-cash'
 });
 
 describe('User routes (CRUD & RBAC)', () => {
@@ -68,25 +69,26 @@ describe('User routes (CRUD & RBAC)', () => {
     await prisma.userCompany.create({ data: { userId, companyId: otherCompanyId, isDefault: true, role: 'USER' } });
 
     await AppAccessService.setCompanyEntitlements(equinoxId, [
-      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+      { appKey: AppKey.ZENIT_CASH, enabled: true }
     ]);
     await AppAccessService.setCompanyEntitlements(otherCompanyId, [
-      { appKey: AppKey.ZENIT_ADMIN, enabled: true }
+      { appKey: AppKey.ZENIT_CASH, enabled: true }
     ]);
     await AppAccessService.setUserGrants(adminId, equinoxId, [
-      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+      { appKey: AppKey.ZENIT_CASH, granted: true }
     ]);
     await AppAccessService.setUserGrants(superId, otherCompanyId, [
-      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+      { appKey: AppKey.ZENIT_CASH, granted: true }
     ]);
     await AppAccessService.setUserGrants(userId, otherCompanyId, [
-      { appKey: AppKey.ZENIT_ADMIN, granted: true }
+      { appKey: AppKey.ZENIT_CASH, granted: true }
     ]);
 
     const resAd = await request(app)
       .post('/api/auth/login')
       .send({ email: `admin.${uniqueSuffix}@equinox.com`, password: 'P@ssw0rd' });
     adminToken = resAd.body.token;
+    platformToken = adminToken;
 
     const resSu = await request(app)
       .post('/api/auth/login')
@@ -171,7 +173,7 @@ describe('User routes (CRUD & RBAC)', () => {
       expect(res.body).toHaveProperty('id');
     });
 
-    it('ADMIN nao pode criar USER', async () => {
+    it('ADMIN pode criar USER em qualquer empresa', async () => {
       const res = await request(app)
         .post('/api/users')
         .set(authHeaders(adminToken, equinoxId))
@@ -182,7 +184,7 @@ describe('User routes (CRUD & RBAC)', () => {
           companyId: otherCompanyId,
           newRole: 'USER'
         });
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(201);
     });
 
     it('SUPERUSER nao pode criar em outra empresa', async () => {

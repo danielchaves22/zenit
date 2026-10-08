@@ -21,6 +21,7 @@ declare global {
         manageFinancialAccounts?: boolean;
         manageFinancialCategories?: boolean;
         appKey?: AppKey;
+        platformAdmin?: boolean;
       };
     }
   }

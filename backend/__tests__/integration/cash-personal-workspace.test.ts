@@ -208,10 +208,10 @@ describe('Cash personal workspace bootstrap', () => {
 
     expect(entitlementsByKey[AppKey.ZENIT_CASH]).toBe(true);
     expect(entitlementsByKey[AppKey.ZENIT_CALC]).toBe(false);
-    expect(entitlementsByKey[AppKey.ZENIT_ADMIN]).toBe(false);
+    expect(entitlementsByKey[AppKey.ZENIT_ADMIN]).toBeUndefined();
     expect(grantsByKey[AppKey.ZENIT_CASH]).toBe(true);
     expect(grantsByKey[AppKey.ZENIT_CALC]).toBe(false);
-    expect(grantsByKey[AppKey.ZENIT_ADMIN]).toBe(false);
+    expect(grantsByKey[AppKey.ZENIT_ADMIN]).toBeUndefined();
 
     const secondResponse = await request(app)
       .get('/api/cash/personal-workspace')

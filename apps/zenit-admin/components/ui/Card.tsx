@@ -17,7 +17,7 @@ export function Card({ children, className = '', headerTitle, headerSubtitle }: 
           {headerSubtitle && <p className="text-sm text-gray-400">{headerSubtitle}</p>}
         </div>
       )}
-      <div className={!className?.includes('p-0') ? 'p-6' : ''}>
+      <div className={!className?.includes('p-0') ? 'p-3 sm:p-6' : ''}>
         {children}
       </div>
     </div>

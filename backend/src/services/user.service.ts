@@ -20,6 +20,7 @@ export interface CreateUserParams {
   password: string;
   name: string;
   companies: CompanyRoleInput[];
+  platformAdmin?: boolean;
 }
 
 export default class UserService {
@@ -122,8 +123,8 @@ export default class UserService {
    * Versão simplificada: um usuário pertence a apenas uma empresa.
    */
   static async createUser(params: CreateUserParams): Promise<Omit<User, 'password'>> {
-    const { email, password, name, companies } = params;
-    if (!companies || companies.length === 0) {
+    const { email, password, name, companies, platformAdmin = false } = params;
+    if (!platformAdmin && (!companies || companies.length === 0)) {
       throw new Error('É necessário vincular o usuário a pelo menos uma empresa');
     }
     this.ensureOwnerRoleCompatibility(companies);
@@ -136,7 +137,7 @@ export default class UserService {
     });
 
     if (existingUser) {
-      if (existingUser.companies.length > 0) {
+      if (existingUser.companies.length > 0 || existingUser.role === Role.ADMIN) {
         throw new Error('Este email já está associado a uma empresa');
       }
     }
@@ -150,7 +151,8 @@ export default class UserService {
             data: {
               name,
               password: hashed,
-              mustChangePassword: true
+              mustChangePassword: true,
+              role: platformAdmin ? Role.ADMIN : Role.USER
             }
           })
         : await tx.user.create({
@@ -158,7 +160,8 @@ export default class UserService {
               email,
               password: hashed,
               name,
-              mustChangePassword: true
+              mustChangePassword: true,
+              role: platformAdmin ? Role.ADMIN : Role.USER
             }
           });
 
@@ -238,7 +241,8 @@ export default class UserService {
   static async updateUser(
     id: number,
     data: Partial<Prisma.UserUpdateInput>,
-    companyContext?: number | CompanyRoleInput[]
+    companyContext?: number | CompanyRoleInput[],
+    platformAdmin?: boolean
   ): Promise<Omit<User, 'password'>> {
     let newRole: Role | undefined = undefined;
     if (data.password) {
@@ -249,6 +253,9 @@ export default class UserService {
       delete (data as any).role;
     }
     return prisma.$transaction(async (tx) => {
+      if (platformAdmin !== undefined) {
+        data.role = platformAdmin ? Role.ADMIN : Role.USER;
+      }
       const user = await tx.user.update({
         where: { id },
         data

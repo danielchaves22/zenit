@@ -242,13 +242,11 @@ export default class PersonalWorkspaceService {
     await AppAccessService.setCompanyEntitlements(companyId, [
       { appKey: AppKey.ZENIT_CASH, enabled: true },
       { appKey: AppKey.ZENIT_CALC, enabled: false },
-      { appKey: AppKey.ZENIT_ADMIN, enabled: false }
     ]);
 
     await AppAccessService.setUserGrants(userId, companyId, [
       { appKey: AppKey.ZENIT_CASH, granted: true },
       { appKey: AppKey.ZENIT_CALC, granted: false },
-      { appKey: AppKey.ZENIT_ADMIN, granted: false }
     ]);
   }
 }

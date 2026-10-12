@@ -15,13 +15,12 @@ export default function EditUserPage() {
   }
 
   return (
-    <DashboardLayout title="Editar Usuario">
+    <DashboardLayout title="Editar usuário">
       <Breadcrumb
         items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Usuarios', href: '/admin/users' },
-          { label: 'Editar Usuario' }
+          { label: 'Início', href: '/' },
+                    { label: 'Usuários', href: '/admin/users' },
+          { label: 'Editar usuário' }
         ]}
       />
 

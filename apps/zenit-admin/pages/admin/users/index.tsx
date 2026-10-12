@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ListToolbar } from '@/components/ui/ListToolbar';
 import React, { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
@@ -29,6 +31,7 @@ interface User {
 }
 
 export default function UsersPage() {
+  const [query, setQuery] = useState('');
   const confirmation = useConfirmation();
   const { canManageUsers } = usePermissions();
   const { addToast } = useToast();
@@ -60,8 +63,8 @@ export default function UsersPage() {
   async function handleDelete(user: User) {
     confirmation.confirm(
       {
-        title: 'Confirmar Exclusao',
-        message: `Tem certeza que deseja excluir o usuario "${user.name}"? Esta acao nao pode ser desfeita.`,
+        title: 'Confirmar exclusão',
+        message: `Tem certeza que deseja excluir o usuario "${user.name}"? Esta ação não pode ser desfeita.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         type: 'danger'
@@ -79,71 +82,98 @@ export default function UsersPage() {
     );
   }
 
+  const normalizedQuery = query
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const filtered = users.filter((item) =>
+    [item.name, item.email, ...item.companies.map((entry) => entry.company.name)]
+      .join(' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+
   return (
-    <DashboardLayout title="Usuarios">
-      <Breadcrumb
-        items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Usuarios' }
-        ]}
-      />
+    <DashboardLayout title="Usuários">
+      <Breadcrumb items={[{ label: 'Início', href: '/' }, { label: 'Usuários' }]} />
 
       <AccessGuard requiredRole="SUPERUSER">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-white">Usuarios</h1>
-          <Link href="/admin/users/new">
-            <Button variant="accent" className="flex items-center gap-2">
-              <Plus size={16} />
-              Novo Usuario
-            </Button>
+        <PageHeader title="Usuários">
+          <Link href="/admin/users/new" className="admin-button admin-button-primary">
+            <Plus size={16} />
+            Novo usuário
           </Link>
-        </div>
+        </PageHeader>
 
-        <Card>
+        <Card className="p-0">
+          {!loading && !error && (
+            <ListToolbar
+              query={query}
+              onChange={setQuery}
+              placeholder="Buscar usuários"
+              count={filtered.length}
+              label={filtered.length === 1 ? 'usuário' : 'usuários'}
+            />
+          )}
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-3 p-6">
               {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded bg-[#1e2126]" />
+                <Skeleton key={i} className="h-12 w-full rounded bg-elevated" />
               ))}
             </div>
           ) : error ? (
             <div className="py-10 text-center">
-              <div className="mb-4 text-red-400">{error}</div>
+              <div className="mb-4 text-tone-red">{error}</div>
               <Button variant="outline" onClick={() => void fetchUsers()}>
-                Tentar Novamente
+                Tentar novamente
               </Button>
             </div>
-          ) : users.length === 0 ? (
-            <div className="py-10 text-center">
-              <Users size={48} className="mx-auto mb-4 text-gray-400" />
-              <p className="mb-4 text-gray-400">Nenhum usuario encontrado</p>
-              <Link href="/admin/users/new">
-                <Button variant="accent" className="inline-flex items-center gap-2">
-                  <Plus size={16} />
-                  Criar Primeiro Usuario
-                </Button>
-              </Link>
+          ) : filtered.length === 0 ? (
+            <div className="admin-empty">
+              <Users size={32} />
+              <p>Nenhum usuário encontrado</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+              <table className="admin-table">
+                <caption className="sr-only">Usuários</caption>
+                <thead>
                   <tr>
-                    <th className="w-24 px-4 py-3 text-center">Acoes</th>
                     <th className="px-4 py-3 text-left">Nome</th>
                     <th className="px-4 py-3 text-left">Email</th>
                     <th className="px-4 py-3 text-left">Empresa</th>
+                    <th className="w-24 px-4 py-3 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((user) => (
-                    <tr key={user.id} className="border-b border-gray-700 hover:bg-[#1a1f2b]">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1">
+                  {filtered.map((user) => (
+                    <tr key={user.id} className="border-b border-border hover:bg-elevated">
+                      <td data-label="Usuário" className="px-4 py-3 font-medium text-text">
+                        <Link className="admin-row-title" href={'/admin/users/' + user.id}>
+                          {user.name}
+                        </Link>
+                        {user.role === 'ADMIN' && (
+                          <span className="mt-1 block text-xs text-accent">
+                            Administrador do Zenit
+                          </span>
+                        )}
+                      </td>
+                      <td data-label="E-mail" className="px-4 py-3 text-text">
+                        {user.email}
+                      </td>
+                      <td data-label="Empresas" className="px-4 py-3 text-text">
+                        {user.companies.map((companyUser) => companyUser.company.name).join(', ') ||
+                          '—'}
+                      </td>
+                      <td data-label="Ações" className="px-4 py-3">
+                        <div className="admin-row-actions">
                           <Link
                             href={`/admin/users/${user.id}`}
-                            className="p-1 text-gray-300 transition-colors hover:text-[#2563eb]"
+                            className="p-1 text-text transition-colors hover:text-accent"
+                            aria-label={'Editar ' + user.name}
                             title="Editar"
                           >
                             <Edit2 size={16} />
@@ -151,7 +181,8 @@ export default function UsersPage() {
                           {canManageUsers() && (
                             <button
                               onClick={() => void handleDelete(user)}
-                              className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                              className="p-1 text-text transition-colors hover:text-tone-red"
+                              aria-label={'Excluir ' + user.name}
                               title="Excluir"
                               disabled={confirmation.loading}
                             >
@@ -159,11 +190,6 @@ export default function UsersPage() {
                             </button>
                           )}
                         </div>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-white">{user.name}{user.role === 'ADMIN' && <span className="mt-1 block text-xs text-accent">Administrador do Zenit</span>}</td>
-                      <td className="px-4 py-3 text-gray-300">{user.email}</td>
-                      <td className="px-4 py-3 text-gray-300">
-                        {user.companies.map((companyUser) => companyUser.company.name).join(', ')}
                       </td>
                     </tr>
                   ))}

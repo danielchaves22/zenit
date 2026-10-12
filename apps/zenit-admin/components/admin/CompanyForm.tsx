@@ -271,8 +271,8 @@ export default function CompanyForm({
   }
 
   return (
-    <>
-      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <div className="max-w-4xl">
+      <div className="admin-form-header">
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
@@ -283,8 +283,8 @@ export default function CompanyForm({
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">
-            {mode === 'create' ? 'Nova Empresa' : 'Editar Empresa'}
+          <h1 className="text-2xl font-semibold text-text">
+            {mode === 'create' ? 'Nova empresa' : 'Editar empresa'}
           </h1>
         </div>
 
@@ -310,17 +310,18 @@ export default function CompanyForm({
             {saving
               ? 'Salvando...'
               : mode === 'create'
-                ? 'Criar Empresa'
-                : 'Salvar Alteracoes'}
+                ? 'Criar empresa'
+                : 'Salvar alterações'}
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.6fr)_340px]">
+      <div className="max-w-4xl">
         <Card>
           <form id="company-form" onSubmit={handleSubmit} className="space-y-6">
+            <h2 className="admin-form-section">Dados da empresa</h2>
             <Input
-              label="Nome da Empresa"
+              label="Nome da empresa"
               value={formData.name}
               onChange={(event) =>
                 setFormData((prev) => ({ ...prev, name: event.target.value }))
@@ -331,7 +332,7 @@ export default function CompanyForm({
             />
 
             <Input
-              label="Endereco"
+              label="Endereço"
               value={formData.address}
               onChange={(event) =>
                 setFormData((prev) => ({ ...prev, address: event.target.value }))
@@ -340,51 +341,49 @@ export default function CompanyForm({
               disabled={saving}
             />
 
-            <fieldset className="space-y-4 border-t border-gray-700 pt-6" disabled={saving || loadingApps}>
-              <legend className="px-1 text-base font-medium text-white">Aplicativos da empresa</legend>
-              <p className="text-sm text-gray-400">
-                Selecione os aplicativos disponíveis para esta empresa. Depois, conceda o acesso de cada pessoa no cadastro de usuários.
-              </p>
+            <fieldset className="space-y-4 border-t border-border pt-6" disabled={saving || loadingApps}>
+              <legend className="px-1 text-base font-medium text-text">Aplicativos da empresa</legend>
+
               {loadingApps ? (
-                <p role="status" className="text-sm text-gray-400">Carregando aplicativos…</p>
+                <p role="status" className="text-sm text-text-muted">Carregando aplicativos…</p>
               ) : appsError ? (
                 <div className="space-y-3">
-                  <p role="alert" className="text-sm text-red-400">{appsError}</p>
+                  <p role="alert" className="text-sm text-tone-red">{appsError}</p>
                   <Button type="button" variant="outline" onClick={() => void loadApps()}>Tentar novamente</Button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {apps.map((app) => (
-                    <label key={app.appKey} className="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-700 bg-[#11161d] p-3 text-sm text-white">
+                    <label key={app.appKey} className="admin-app-choice flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-surface p-4 text-sm text-text">
                       <input
                         type="checkbox"
                         checked={app.enabled}
                         onChange={(event) => setApps((current) => current.map((item) =>
                           item.appKey === app.appKey ? { ...item, enabled: event.target.checked } : item
                         ))}
-                        className="h-4 w-4 rounded border-gray-500 text-accent focus:ring-accent focus:ring-offset-2 focus:ring-offset-[#11161d]"
+                        className="h-4 w-4 rounded border-border text-accent focus:ring-accent focus:ring-offset-2 focus:ring-offset-[#11161d]"
                       />
                       {app.name}
                     </label>
                   ))}
                 </div>
               )}
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-text-muted">
                 Desabilitar um aplicativo bloqueia o acesso de todos os usuários desta empresa, sem apagar os dados. As permissões individuais são mantidas para uma futura reativação.
               </p>
             </fieldset>
 
             {editingCompany && (
-              <div className="border-t border-gray-700 pt-6">
+              <div className="border-t border-border pt-6">
                 <div className="mb-4 flex items-center gap-2">
-                  <KeyRound size={16} className="text-[#2563eb]" />
-                  <h2 className="text-base font-medium text-white">
-                    Configuracoes Internas (Plataforma)
+                  <KeyRound size={16} className="text-accent" />
+                  <h2 className="text-base font-medium text-text">
+                    Integração OpenAI
                   </h2>
                 </div>
 
                 {loadingOpenAi ? (
-                  <div className="text-sm text-gray-300">Carregando configuracao OpenAI...</div>
+                  <div className="text-sm text-text">Carregando configuracao OpenAI...</div>
                 ) : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -410,7 +409,7 @@ export default function CompanyForm({
                       />
 
                       <Input
-                        label="Versao do Prompt"
+                        label="Versão do prompt"
                         value={openAiPromptVersion}
                         onChange={(event) => setOpenAiPromptVersion(event.target.value)}
                         placeholder="v1"
@@ -418,7 +417,7 @@ export default function CompanyForm({
                       />
 
                       <div>
-                        <label className="mb-1 block text-sm text-gray-300">Ativa</label>
+                        <label className="mb-1 block text-sm text-text">Ativa</label>
                         <select
                           value={openAiEnabled ? 'true' : 'false'}
                           onChange={(event) => setOpenAiEnabled(event.target.value === 'true')}
@@ -451,11 +450,11 @@ export default function CompanyForm({
                         className="flex items-center gap-2"
                       >
                         <FlaskConical size={16} />
-                        {testingOpenAi ? 'Testando...' : 'Testar Credencial'}
+                        {testingOpenAi ? 'Testando...' : 'Testar credencial'}
                       </Button>
                     </div>
 
-                    <div className="text-sm text-gray-400">
+                    <div className="text-sm text-text-muted">
                       Status: {openAiStatus?.configured ? 'Configurada' : 'Nao configurada'}
                       {openAiStatus?.credential
                         ? ` | Atualizada em ${new Date(openAiStatus.credential.updatedAt).toLocaleString('pt-BR')}`
@@ -468,42 +467,7 @@ export default function CompanyForm({
           </form>
         </Card>
 
-        <Card>
-          <div className="space-y-4">
-            <div>
-              <div className="text-sm font-medium text-white">Resumo</div>
-              <div className="mt-1 text-sm text-gray-400">
-                {mode === 'create'
-                  ? 'Crie a empresa com os aplicativos que ela poderá utilizar.'
-                  : 'Gerencie os dados e os aplicativos disponíveis para esta empresa.'}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Nome</div>
-              <div className="mt-2 text-xl font-semibold text-white">
-                {formData.name || '-'}
-              </div>
-            </div>
-
-            {editingCompany && (
-              <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400">Codigo</div>
-                <div className="mt-2 text-xl font-semibold text-white">
-                  {editingCompany.code.toString().padStart(3, '0')}
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-lg border border-gray-700 bg-[#11161d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Endereco</div>
-              <div className="mt-2 text-sm text-white">
-                {formData.address || 'Nao informado'}
-              </div>
-            </div>
-          </div>
-        </Card>
       </div>
-    </>
+    </div>
   );
 }

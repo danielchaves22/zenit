@@ -6,13 +6,12 @@ import { Breadcrumb } from '@/components/ui/Breadcrumb';
 
 export default function NewBankPage() {
   return (
-    <DashboardLayout title="Novo Banco">
+    <DashboardLayout title="Novo banco">
       <Breadcrumb
         items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Bancos', href: '/admin/banks' },
-          { label: 'Novo Banco' }
+          { label: 'Início', href: '/' },
+                    { label: 'Bancos', href: '/admin/banks' },
+          { label: 'Novo banco' }
         ]}
       />
 

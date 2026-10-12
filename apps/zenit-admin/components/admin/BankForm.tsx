@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
-import { ArrowLeft, Landmark, Save, X } from 'lucide-react';
+import { ArrowLeft, Save, X } from 'lucide-react';
 import BankIconPreview from '@/components/admin/BankIconPreview';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -96,7 +96,7 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
     event.preventDefault();
 
     if (!formData.code.trim()) {
-      addToast('Codigo do banco e obrigatorio', 'error');
+      addToast('Código do banco e obrigatorio', 'error');
       return;
     }
 
@@ -147,8 +147,8 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
 
   return (
     <>
-      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <div className="flex items-center gap-3">
+      <div className="admin-form-header">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             onClick={handleCancel}
@@ -158,12 +158,12 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">
-            {mode === 'create' ? 'Novo Banco' : 'Editar Banco'}
+          <h1 className="text-2xl font-semibold text-text">
+            {mode === 'create' ? 'Novo banco' : 'Editar banco'}
           </h1>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Button
             type="button"
             variant="outline"
@@ -182,7 +182,7 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
             className="flex items-center gap-2"
           >
             <Save size={16} />
-            {saving ? 'Salvando...' : mode === 'create' ? 'Criar Banco' : 'Salvar Alteracoes'}
+            {saving ? 'Salvando...' : mode === 'create' ? 'Criar banco' : 'Salvar alterações'}
           </Button>
         </div>
       </div>
@@ -190,22 +190,11 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.6fr)_340px]">
         <Card>
           <form id="bank-form" onSubmit={handleSubmit} className="space-y-6">
-            <div className="rounded-xl border border-[#2563eb]/30 bg-[#2563eb]/10 p-4">
-              <div className="flex items-start gap-3">
-                <Landmark size={18} className="mt-0.5 text-[#60a5fa]" />
-                <div>
-                  <div className="font-medium text-white">Catalogo global de bancos</div>
-                  <div className="mt-1 text-sm text-gray-300">
-                    O cadastro e unico para toda a plataforma. O Zenit Cash consome este
-                    catalogo no dropdown de cartoes de credito.
-                  </div>
-                </div>
-              </div>
-            </div>
+            <h2 className="admin-form-section">Dados do banco</h2>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Input
-                label="Codigo"
+                label="Código"
                 value={formData.code}
                 onChange={(event) => setFormData({ ...formData, code: event.target.value })}
                 placeholder="Ex: ITAU"
@@ -224,13 +213,13 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-300">Icone SVG</label>
-                <select
+                <label htmlFor="bank-icon" className="admin-label">Ícone</label>
+                <select id="bank-icon"
                   value={formData.iconSlug}
                   onChange={(event) =>
                     setFormData({ ...formData, iconSlug: event.target.value })
                   }
-                  className="w-full rounded border border-gray-700 bg-background px-2 py-1.5 text-white focus:border-[#2563eb] focus:outline-none focus:ring"
+                  className="w-full rounded border border-border bg-background px-2 py-1.5 text-text focus:border-accent focus:outline-none focus:ring"
                   disabled={saving}
                 >
                   {iconOptions.map((option) => (
@@ -239,13 +228,10 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
                     </option>
                   ))}
                 </select>
-                <div className="mt-2 text-xs text-gray-400">
-                  Os SVGs ficam versionados no repositorio e o banco salva apenas o slug do icone.
-                </div>
               </div>
 
               <Input
-                label="Ordem de exibicao"
+                label="Ordem de exibição"
                 type="number"
                 min="0"
                 value={formData.displayOrder}
@@ -264,10 +250,10 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
                 onChange={(event) =>
                   setFormData({ ...formData, isActive: event.target.checked })
                 }
-                className="h-4 w-4 rounded border-gray-700 bg-background text-[#2563eb] focus:ring-[#2563eb]"
+                className="h-4 w-4 rounded border-border bg-background text-accent focus:ring-accent"
                 disabled={saving}
               />
-              <label htmlFor="bank-is-active" className="text-sm text-gray-300">
+              <label htmlFor="bank-is-active" className="text-sm text-text">
                 Banco ativo
               </label>
             </div>
@@ -277,13 +263,10 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
         <Card>
           <div className="space-y-4">
             <div>
-              <div className="text-sm font-medium text-white">Preview do banco</div>
-              <div className="mt-1 text-sm text-gray-400">
-                O mesmo icone sera usado no cadastro e na listagem de cartoes no Zenit Cash.
-              </div>
+              <div className="text-sm font-medium text-text">Prévia do banco</div>
             </div>
 
-            <div className="rounded-xl border border-gray-700 bg-[#10151d] p-5">
+            <div className="rounded-xl border border-border bg-elevated p-5">
               <div className="flex items-center gap-4">
                 <BankIconPreview
                   iconPath={selectedIconOption?.iconPath}
@@ -291,30 +274,20 @@ export default function BankForm({ mode, bankId, onSuccess, onCancel }: BankForm
                   size="lg"
                 />
                 <div>
-                  <div className="text-base font-semibold text-white">
+                  <div className="text-base font-semibold text-text">
                     {formData.name.trim() || 'Nome do banco'}
                   </div>
-                  <div className="mt-1 font-mono text-sm text-[#60a5fa]">
+                  <div className="mt-1 font-mono text-sm text-accent">
                     {formData.code.trim() || 'CODIGO'}
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-[#10151d] p-4">
-              <div className="text-xs uppercase tracking-wide text-gray-400">Icone selecionado</div>
-              <div className="mt-2 text-sm text-white">
-                {selectedIconOption?.label || 'Nenhum icone selecionado'}
-              </div>
-              <div className="mt-1 font-mono text-xs text-gray-400">
-                {selectedIconOption?.value || '-'}
-              </div>
-            </div>
-
             {editingBank && (
-              <div className="rounded-lg border border-gray-700 bg-[#10151d] p-4">
-                <div className="text-xs uppercase tracking-wide text-gray-400">Cartoes vinculados</div>
-                <div className="mt-2 text-2xl font-semibold text-white">
+              <div className="rounded-lg border border-border bg-elevated p-4">
+                <div className="text-xs uppercase tracking-wide text-text-muted">Cartões vinculados</div>
+                <div className="mt-2 text-2xl font-semibold text-text">
                   {editingBank.linkedAccountsCount || 0}
                 </div>
               </div>

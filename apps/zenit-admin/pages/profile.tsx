@@ -1,93 +1,40 @@
-// frontend/pages/profile.tsx
-import { useState } from 'react'
-import { useAuth } from '@/contexts/AuthContext'
-import { DashboardLayout } from '@/components/layout/DashboardLayout'
-import { Card } from '@/components/ui/Card'
-import { Input } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
-import { Breadcrumb } from '@/components/ui/Breadcrumb'
-import { useToast } from '@/components/ui/ToastContext'
+import Link from 'next/link';
+import { Pencil, ShieldCheck } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import { Card } from '@/components/ui/Card';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function ProfilePage() {
-  const { user } = useAuth()
-  const { addToast } = useToast()
-  
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    password: '',
-  })
-  
-  const [loading, setLoading] = useState(false)
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    
-    try {
-      // Simular atualização
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      addToast('Perfil atualizado com sucesso!', 'success')
-      setFormData(prev => ({ ...prev, password: '' }))
-    } catch (error) {
-      addToast('Erro ao atualizar perfil', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  const { user } = useAuth();
   return (
-    <DashboardLayout title="Meu Perfil">
-      <Breadcrumb items={[
-        { label: 'Dashboard', href: '/' },
-        { label: 'Meu Perfil' }
-      ]} />
-      
-      <div className="max-w-2xl mx-auto">
-        <Card headerTitle="Informações do Perfil" headerSubtitle="Atualize suas informações pessoais">
-          <form onSubmit={handleSubmit}>
-            <Input
-              label="Nome"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              required
-            />
-            
-            <Input
-              label="Email"
-              name="email"
-              type="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-            />
-            
-            <Input
-              label="Nova Senha"
-              name="password"
-              type="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder="Deixe em branco para manter a atual"
-            />
-            
-            <Button 
-              type="submit" 
-              variant="accent"
-              disabled={loading}
-              className="w-full"
-            >
-              {loading ? 'Salvando...' : 'Salvar Alterações'}
-            </Button>
-          </form>
+    <DashboardLayout title="Meu perfil">
+      <div className="max-w-3xl">
+        <PageHeader title="Meu perfil">
+          {user && (
+            <Link href={'/admin/users/' + user.id} className="admin-button admin-button-outline">
+              <Pencil size={16} />
+              Editar cadastro
+            </Link>
+          )}
+        </PageHeader>
+        <Card>
+          <dl className="space-y-6">
+            <div>
+              <dt className="text-xs text-text-muted mb-2">Nome</dt>
+              <dd className="font-medium break-words">{user?.name}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-text-muted mb-2">E-mail</dt>
+              <dd className="break-all">{user?.email}</dd>
+            </div>
+            <div className="flex items-center gap-2 pt-5 border-t border-border text-sm">
+              <ShieldCheck size={18} className="text-accent" />
+              Administrador do Zenit
+            </div>
+          </dl>
         </Card>
       </div>
     </DashboardLayout>
-  )
+  );
 }

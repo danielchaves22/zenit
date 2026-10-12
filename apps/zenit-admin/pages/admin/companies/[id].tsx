@@ -15,13 +15,12 @@ export default function EditCompanyPage() {
   }
 
   return (
-    <DashboardLayout title="Editar Empresa">
+    <DashboardLayout title="Editar empresa">
       <Breadcrumb
         items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Empresas', href: '/admin/companies' },
-          { label: 'Editar Empresa' }
+          { label: 'Início', href: '/' },
+                    { label: 'Empresas', href: '/admin/companies' },
+          { label: 'Editar empresa' }
         ]}
       />
 

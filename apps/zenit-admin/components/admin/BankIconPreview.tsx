@@ -36,7 +36,7 @@ export default function BankIconPreview({
 
   return (
     <div
-      className={`flex items-center justify-center overflow-hidden rounded-xl border border-gray-700 bg-white/95 font-semibold text-slate-700 shadow-sm ${sizeClasses[size]} ${className}`}
+      className={`flex items-center justify-center overflow-hidden rounded-xl border border-border bg-white/95 font-semibold text-slate-700 shadow-sm ${sizeClasses[size]} ${className}`}
       title={label || 'Banco'}
       aria-hidden="true"
     >

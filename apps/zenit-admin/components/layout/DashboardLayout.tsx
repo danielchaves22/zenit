@@ -1,179 +1,158 @@
-// frontend/components/layout/DashboardLayout.tsx - COM CORES DINÂMICAS
-import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/router';
-import Image from 'next/image';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { ChevronDown, LogOut, Menu, Moon, ShieldCheck, Sun, UserRound } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Sidebar } from './Sidebar';
-import { ThemeSelector } from '@/components/ui/ThemeSelector';
-import { User } from 'lucide-react';
-import { RoleBasedItem } from '@/components/navigation/RoleBasedNavigation';
-import { 
-  Building2, 
-  Users, 
-  DollarSign, 
-  BarChart3, 
-  Settings,
-  Home
-} from 'lucide-react';
 
-interface DashboardLayoutProps {
-  children: React.ReactNode;
+export function DashboardLayout({
+  children,
+  title = 'Início'
+}: {
+  children: ReactNode;
   title?: string;
-}
-
-export function DashboardLayout({ children, title = 'Dashboard' }: DashboardLayoutProps) {
-  const { logout, userName, userRole, user, hasCurrentAppAccess } = useAuth();
+}) {
+  const { logout, userName, user, hasCurrentAppAccess } = useAuth();
+  const { colorMode, changeColorMode } = useTheme();
   const router = useRouter();
-  
-  // Estado para controlar a visibilidade do menu do usuário
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  // Obtém o estado salvo no localStorage ou usa o padrão
-  const getSavedCollapsedState = () => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('sidebarCollapsed');
-      return saved ? JSON.parse(saved) : window.innerWidth < 768;
-    }
-    return false;
-  };
-  
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(getSavedCollapsedState);
-
-  // Esta função será passada para o Sidebar para atualizar o estado aqui
-  const handleSidebarToggle = (collapsed: boolean) => {
-    setSidebarCollapsed(collapsed);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('sidebarCollapsed', JSON.stringify(collapsed));
-    }
-  };
-
-  // Efeito para detectar cliques fora do menu do usuário
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const workspace = useRef<HTMLDivElement>(null);
+  const profile = useRef<HTMLDivElement>(null);
+  const profileTrigger = useRef<HTMLButtonElement>(null);
+  const closeNavigation = useCallback(() => setMobileOpen(false), []);
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setUserMenuOpen(false);
+    try {
+      setCollapsed(localStorage.getItem('zenit-admin-sidebar-collapsed') === 'true');
+    } catch {
+      /* Session state remains available. */
+    }
+    const media = window.matchMedia('(min-width: 768px)');
+    const resize = () => setMobileOpen(false);
+    media.addEventListener('change', resize);
+    return () => media.removeEventListener('change', resize);
+  }, []);
+  useEffect(() => {
+    setMobileOpen(false);
+    setProfileOpen(false);
+  }, [router.asPath]);
+  useEffect(() => {
+    if (!profileOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (!profile.current?.contains(event.target as Node)) setProfileOpen(false);
+    };
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProfileOpen(false);
+        profileTrigger.current?.focus();
       }
     };
-
-    // Adiciona o listener quando o menu está aberto
-    if (userMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    // Cleanup
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', keyboard);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', keyboard);
     };
-  }, [userMenuOpen]);
-
-  // Função para alternar o menu do usuário
-  const toggleUserMenu = () => {
-    setUserMenuOpen(!userMenuOpen);
-  };
-
-  // Função para fechar o menu e executar ação
-  const handleMenuAction = (action: () => void) => {
-    setUserMenuOpen(false);
-    action();
-  };
-
-  if (user && !hasCurrentAppAccess) {
+  }, [profileOpen]);
+  useEffect(() => {
+    if (workspace.current) workspace.current.inert = mobileOpen;
+  }, [mobileOpen]);
+  function toggleSidebar() {
+    setCollapsed(!collapsed);
+    try {
+      localStorage.setItem('zenit-admin-sidebar-collapsed', String(!collapsed));
+    } catch {
+      /* Optional preference. */
+    }
+  }
+  if (user && !hasCurrentAppAccess)
     return (
-      <div className="min-h-screen bg-background text-white flex items-center justify-center p-6">
-        <div className="max-w-lg w-full bg-surface border border-gray-700 rounded-lg p-6 text-center">
-          <h2 className="text-xl font-semibold mb-3">Acesso ao aplicativo negado</h2>
-          <p className="text-gray-300 mb-4">
+      <div className="admin-auth-page">
+        <div className="admin-card max-w-md p-8 text-center">
+          <h1 className="text-xl font-semibold mb-3">Acesso ao aplicativo negado</h1>
+          <p className="text-text-muted mb-6">
             O Zenit Admin é exclusivo dos administradores da plataforma.
           </p>
-          <button onClick={logout} className="px-4 py-2 rounded bg-accent text-white">
+          <button onClick={logout} className="admin-button admin-button-primary">
             Sair
           </button>
         </div>
       </div>
     );
-  }
-
   return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* Top Navigation com uma borda sutil */}
-      <header className="fixed top-0 left-0 right-0 z-40 bg-surface text-white py-3 px-3 sm:px-6 gap-3 flex justify-between items-center h-[60px] border-b border-gray-700">
-        <div className="flex items-center space-x-4">
-          <Link href="/" className="flex items-center hover:opacity-90">
-            <Image
-              src="/assets/images/logo_principal.png"
-              alt="ZENIT"
-              width={2000}
-              height={1000}
-              priority
-              className="h-10 w-auto"
-            />
-          </Link>
-          <span className="hidden sm:inline text-white text-lg font-bold font-heading">
-            Plataforma Zenit
-          </span>
-        </div>
-
-        <div className="flex items-center space-x-3">
-          {/* ✅ SELETOR DE TEMAS (oculto) */}
-          <div>
-            <ThemeSelector showLabel={false} size="sm" />
+    <div className={`admin-shell${collapsed ? ' is-collapsed' : ''}`}>
+      <a href="#admin-main" className="admin-skip-link">
+        Ir para o conteúdo
+      </a>
+      <Sidebar
+        collapsed={collapsed}
+        onToggle={toggleSidebar}
+        mobileOpen={mobileOpen}
+        onClose={closeNavigation}
+      />
+      <div ref={workspace} className="admin-workspace">
+        <header className="admin-header">
+          <button
+            className="admin-icon-button admin-mobile-trigger"
+            aria-label="Abrir navegação"
+            aria-expanded={mobileOpen}
+            aria-controls="admin-sidebar"
+            onClick={() => setMobileOpen(true)}
+          >
+            <Menu size={21} />
+          </button>
+          <div className="admin-header-context">
+            <ShieldCheck size={18} aria-hidden="true" />
+            <span>Plataforma Zenit</span>
+            <span className="admin-header-location">{title}</span>
           </div>
-          <span className="hidden md:inline text-sm text-gray-300">{userName}</span>
-          
-          <div className="relative" ref={userMenuRef}>
-            <button 
-              onClick={toggleUserMenu}
-              aria-label="Menu do usuário"
-              className="flex items-center space-x-1 focus-visible:ring-2 focus-visible:ring-accent rounded"
+          <div className="admin-header-tools">
+            <button
+              className="admin-icon-button"
+              aria-label={colorMode === 'light' ? 'Ativar tema escuro' : 'Ativar tema claro'}
+              onClick={() => changeColorMode(colorMode === 'light' ? 'dark' : 'light')}
             >
-              {/* ✅ AVATAR COM COR DINÂMICA */}
-              <div className="bg-accent rounded-full p-1 transition-colors duration-200">
-                <User size={18} className="text-white" />
-              </div>
+              {colorMode === 'light' ? <Moon size={19} /> : <Sun size={19} />}
             </button>
-            
-            {userMenuOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-surface shadow-lg rounded-md z-10 border border-gray-700 animate-fadeIn">
-                <div className="p-3 border-b border-gray-700">
-                  <p className="font-medium text-white">{userName}</p>
-                  <p className="text-sm text-gray-400">Plataforma Zenit</p>
-                  {/* ✅ ROLE BADGE COM COR DINÂMICA */}
-                  <p className="text-xs text-accent">{userRole}</p>
-                </div>
-                <div className="p-2">
-                  <button 
-                    onClick={() => handleMenuAction(() => router.push('/profile'))}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-elevated rounded text-gray-300"
-                  >
-                    Meu Perfil
-                  </button>
-                  <button 
-                    onClick={() => handleMenuAction(logout)}
-                    className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-elevated rounded"
-                  >
+            <div className="admin-profile" ref={profile}>
+              <button
+                ref={profileTrigger}
+                className="admin-profile-trigger"
+                aria-label="Menu do usuário"
+                aria-expanded={profileOpen}
+                aria-controls="admin-profile-menu"
+                onClick={() => setProfileOpen(!profileOpen)}
+              >
+                <span className="admin-avatar">
+                  {userName?.trim().slice(0, 1).toUpperCase() || <UserRound size={18} />}
+                </span>
+                <span className="admin-profile-name">{userName?.split(' ')[0]}</span>
+                <ChevronDown size={14} />
+              </button>
+              {profileOpen && (
+                <div id="admin-profile-menu" className="admin-profile-menu">
+                  <div className="admin-profile-summary">
+                    <strong>{userName}</strong>
+                    <span>Administrador do Zenit</span>
+                  </div>
+                  <Link href="/profile">
+                    <UserRound size={17} />
+                    Meu perfil
+                  </Link>
+                  <button onClick={logout}>
+                    <LogOut size={17} />
                     Sair
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      </header>
-
-      {/* Main Content with Sidebar - Abaixo da barra de navegação fixa */}
-      <div className="flex h-full pt-[60px]"> {/* Padding top para compensar a altura da navbar fixa */}
-        <Sidebar onToggle={handleSidebarToggle} isCollapsed={sidebarCollapsed} />
-        
-        {/* Conteúdo principal com margem esquerda para não ficar escondido pelo sidebar */}
-        <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
-          sidebarCollapsed ? 'ml-16' : 'ml-52'
-        }`}>
-          {/* Page Content */}
-          <main className="flex-1 overflow-y-auto p-3 sm:p-6 bg-background text-gray-300">
-            {children}
-          </main>
-        </div>
+        </header>
+        <main id="admin-main" className="admin-main" tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );

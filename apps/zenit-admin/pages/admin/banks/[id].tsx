@@ -11,20 +11,19 @@ export default function EditBankPage() {
 
   if (!router.isReady || typeof id !== 'string') {
     return (
-      <DashboardLayout title="Editar Banco">
-        <div className="text-sm text-gray-400">Carregando banco...</div>
+      <DashboardLayout title="Editar banco">
+        <div className="text-sm text-text-muted">Carregando banco...</div>
       </DashboardLayout>
     );
   }
 
   return (
-    <DashboardLayout title="Editar Banco">
+    <DashboardLayout title="Editar banco">
       <Breadcrumb
         items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Bancos', href: '/admin/banks' },
-          { label: 'Editar Banco' }
+          { label: 'Início', href: '/' },
+                    { label: 'Bancos', href: '/admin/banks' },
+          { label: 'Editar banco' }
         ]}
       />
 

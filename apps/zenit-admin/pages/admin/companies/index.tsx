@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ListToolbar } from '@/components/ui/ListToolbar';
 import React, { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card } from '@/components/ui/Card';
@@ -22,6 +24,7 @@ interface Company {
 }
 
 export default function CompaniesPage() {
+  const [query, setQuery] = useState('');
   const confirmation = useConfirmation();
   const { addToast } = useToast();
 
@@ -51,8 +54,8 @@ export default function CompaniesPage() {
   async function handleDelete(company: Company) {
     confirmation.confirm(
       {
-        title: 'Confirmar Exclusao',
-        message: `Tem certeza que deseja excluir a empresa "${company.name}"? Esta acao nao pode ser desfeita.`,
+        title: 'Confirmar exclusão',
+        message: `Tem certeza que deseja excluir a empresa "${company.name}"? Esta ação não pode ser desfeita.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         type: 'danger'
@@ -70,100 +73,115 @@ export default function CompaniesPage() {
     );
   }
 
+  const normalizedQuery = query
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const filtered = companies.filter((item) =>
+    [item.name, item.code, item.address]
+      .join(' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+
   return (
     <DashboardLayout title="Empresas">
-      <Breadcrumb
-        items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Empresas' }
-        ]}
-      />
+      <Breadcrumb items={[{ label: 'Início', href: '/' }, { label: 'Empresas' }]} />
 
       <AccessGuard allowedRoles={['ADMIN']}>
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-white">Empresas</h1>
-          <Link href="/admin/companies/new">
-            <Button variant="accent" className="flex items-center gap-2">
-              <Plus size={16} />
-              Nova Empresa
-            </Button>
+        <PageHeader title="Empresas">
+          <Link href="/admin/companies/new" className="admin-button admin-button-primary">
+            <Plus size={16} />
+            Nova empresa
           </Link>
-        </div>
+        </PageHeader>
 
-        <Card>
+        <Card className="p-0">
+          {!loading && !error && (
+            <ListToolbar
+              query={query}
+              onChange={setQuery}
+              placeholder="Buscar empresas"
+              count={filtered.length}
+              label={filtered.length === 1 ? 'empresa' : 'empresas'}
+            />
+          )}
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-3 p-6">
               {[...Array(3)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full rounded bg-[#1e2126]" />
+                <Skeleton key={i} className="h-12 w-full rounded bg-elevated" />
               ))}
             </div>
           ) : error ? (
             <div className="py-10 text-center">
-              <div className="mb-4 text-red-400">{error}</div>
+              <div className="mb-4 text-tone-red">{error}</div>
               <Button variant="outline" onClick={() => void fetchCompanies()}>
-                Tentar Novamente
+                Tentar novamente
               </Button>
             </div>
-          ) : companies.length === 0 ? (
-            <div className="py-10 text-center">
-              <Building2 size={48} className="mx-auto mb-4 text-gray-400" />
-              <p className="mb-4 text-gray-400">Nenhuma empresa cadastrada</p>
-              <Link href="/admin/companies/new">
-                <Button variant="accent" className="inline-flex items-center gap-2">
-                  <Plus size={16} />
-                  Criar Primeira Empresa
-                </Button>
-              </Link>
+          ) : filtered.length === 0 ? (
+            <div className="admin-empty">
+              <Building2 size={32} />
+              <p>Nenhuma empresa encontrada</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+              <table className="admin-table">
+                <caption className="sr-only">Empresas</caption>
+                <thead>
                   <tr>
-                    <th className="w-24 px-4 py-3 text-center">Acoes</th>
-                    <th className="px-4 py-3 text-left">Codigo</th>
+                    <th className="px-4 py-3 text-left">Código</th>
                     <th className="px-4 py-3 text-left">Nome</th>
-                    <th className="px-4 py-3 text-left">Endereco</th>
+                    <th className="px-4 py-3 text-left">Endereço</th>
                     <th className="px-4 py-3 text-left">Criada em</th>
+                    <th className="w-24 px-4 py-3 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {companies.map((company) => (
-                    <tr key={company.id} className="border-b border-gray-700 hover:bg-[#1a1f2b]">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1">
+                  {filtered.map((company) => (
+                    <tr key={company.id} className="border-b border-border hover:bg-elevated">
+                      <td data-label="Código" className="px-4 py-3">
+                        <span className="font-mono font-medium text-accent">
+                          {company.code.toString().padStart(3, '0')}
+                        </span>
+                      </td>
+                      <td data-label="Empresa" className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <Building2 size={16} className="text-tone-blue" />
+                          <Link className="admin-row-title" href={'/admin/companies/' + company.id}>
+                            {company.name}
+                          </Link>
+                        </div>
+                      </td>
+                      <td data-label="Endereço" className="px-4 py-3 text-text">
+                        {company.address || '-'}
+                      </td>
+                      <td data-label="Criada em" className="px-4 py-3 text-text">
+                        {new Date(company.createdAt).toLocaleDateString('pt-BR')}
+                      </td>
+                      <td data-label="Ações" className="px-4 py-3">
+                        <div className="admin-row-actions">
                           <Link
                             href={`/admin/companies/${company.id}`}
-                            className="p-1 text-gray-300 transition-colors hover:text-[#2563eb]"
+                            className="p-1 text-text transition-colors hover:text-accent"
+                            aria-label={'Editar ' + company.name}
                             title="Editar"
                           >
                             <Edit2 size={16} />
                           </Link>
                           <button
                             onClick={() => void handleDelete(company)}
-                            className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                            className="p-1 text-text transition-colors hover:text-tone-red"
+                            aria-label={'Excluir ' + company.name}
                             title="Excluir"
                             disabled={confirmation.loading}
                           >
                             <Trash2 size={16} />
                           </button>
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono font-medium text-[#2563eb]">
-                          {company.code.toString().padStart(3, '0')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <Building2 size={16} className="text-blue-400" />
-                          <span className="font-medium text-white">{company.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-300">{company.address || '-'}</td>
-                      <td className="px-4 py-3 text-gray-300">
-                        {new Date(company.createdAt).toLocaleDateString('pt-BR')}
                       </td>
                     </tr>
                   ))}

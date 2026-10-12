@@ -7,7 +7,6 @@ import {
 } from 'react'
 import { useRouter } from 'next/router'
 import api from '@/lib/api'
-import { useTheme } from '@/contexts/ThemeContext'
 import { SSO_STORAGE_KEYS } from '@zenit/shared-users-core'
 
 interface AppAccess {
@@ -101,7 +100,6 @@ function removeSecureCookie(name: string) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
-  const { changeTheme } = useTheme()
   const [token, setToken] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -135,12 +133,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(storedToken)
         setUser(userData)
 
-        if (response.data.preferences?.colorScheme) {
-          changeTheme(response.data.preferences.colorScheme)
-          localStorage.setItem('selected-theme', response.data.preferences.colorScheme)
-        }
-
-
       }
     } catch (error) {
       safeCleanup()
@@ -155,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password
     })
 
-    const { token: newToken, user: userData, refreshToken: newRefreshToken, preferences } = response.data
+    const { token: newToken, user: userData, refreshToken: newRefreshToken } = response.data
 
     localStorage.setItem(SSO_STORAGE_KEYS.token, newToken)
     localStorage.setItem(SSO_STORAGE_KEYS.refreshToken, newRefreshToken)
@@ -166,11 +158,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setToken(newToken)
     setUser(userData)
-
-    if (preferences?.colorScheme) {
-      changeTheme(preferences.colorScheme)
-      localStorage.setItem('selected-theme', preferences.colorScheme)
-    }
 
     return userData
   }

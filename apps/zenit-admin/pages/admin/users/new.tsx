@@ -6,13 +6,12 @@ import { Breadcrumb } from '@/components/ui/Breadcrumb';
 
 export default function NewUserPage() {
   return (
-    <DashboardLayout title="Novo Usuario">
+    <DashboardLayout title="Novo usuário">
       <Breadcrumb
         items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Usuarios', href: '/admin/users' },
-          { label: 'Novo Usuario' }
+          { label: 'Início', href: '/' },
+                    { label: 'Usuários', href: '/admin/users' },
+          { label: 'Novo usuário' }
         ]}
       />
 

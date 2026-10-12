@@ -1,26 +1,27 @@
-// frontend/components/ui/Input.tsx
-import React from 'react';
-
+import React, { useId } from 'react';
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
 }
-
-export function Input({ label, error, className = '', ...props }: InputProps) {
+export function Input({ label, error, className = '', id, ...props }: InputProps) {
+  const generatedId = useId();
+  const fieldId = id || generatedId;
   return (
-    <div className={`mb-4 ${className}`}>
+    <div className={`admin-field ${className}`}>
       {label && (
-        <label className="block text-sm font-medium mb-1 text-gray-300" htmlFor={props.id}>
+        <label className="admin-label" htmlFor={fieldId}>
           {label}
         </label>
       )}
       <input
-        id={props.id}
-        className="w-full px-2 py-1.5 bg-background border border-gray-700 text-white rounded focus:outline-none focus:ring focus:border-[#2563eb]"
         {...props}
+        id={fieldId}
+        className="admin-input"
+        aria-invalid={Boolean(error) || undefined}
+        aria-describedby={error ? `${fieldId}-error` : props['aria-describedby']}
       />
       {error && (
-        <p className="mt-1 text-sm text-red-400">
+        <p id={`${fieldId}-error`} className="mt-2 text-sm text-tone-red">
           {error}
         </p>
       )}

@@ -6,13 +6,12 @@ import { Breadcrumb } from '@/components/ui/Breadcrumb';
 
 export default function NewCompanyPage() {
   return (
-    <DashboardLayout title="Nova Empresa">
+    <DashboardLayout title="Nova empresa">
       <Breadcrumb
         items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Empresas', href: '/admin/companies' },
-          { label: 'Nova Empresa' }
+          { label: 'Início', href: '/' },
+                    { label: 'Empresas', href: '/admin/companies' },
+          { label: 'Nova empresa' }
         ]}
       />
 

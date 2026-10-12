@@ -1,6 +1,5 @@
 // frontend/contexts/ThemeContext.tsx - VERSÃO COMPLETA
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import api from '@/lib/api';
 
 // ✅ DEFINIÇÕES DE TEMA
 export interface Theme {
@@ -20,6 +19,14 @@ export interface Theme {
 
 // ✅ CATÁLOGO COMPLETO DE TEMAS
 export const AVAILABLE_THEMES: Theme[] = [
+  {
+    key: 'admin', label: 'Zenit Admin', category: 'standard', accessibility: 'high',
+    colors: {
+      primary: '#ba343b', primaryHover: '#a12730', primaryLight: '#ee9398', primaryDark: '#8e242d',
+      primaryGradient: 'linear-gradient(135deg, #ba343b, #8e242d)',
+      primaryShadow: '0 8px 20px rgba(186, 52, 59, 0.12)'
+    }
+  },
   // Standard
   {
     key: 'amber',
@@ -213,13 +220,18 @@ const ThemeContext = createContext<ThemeContextData>({} as ThemeContextData);
 
 // ✅ PROVIDER DO CONTEXTO
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [currentTheme, setCurrentTheme] = useState<string>('amber');
-  const [colorMode, setColorMode] = useState<'dark' | 'light'>('dark');
+  const [currentTheme, setCurrentTheme] = useState<string>('admin');
+  const [colorMode, setColorMode] = useState<'dark' | 'light'>('light');
 
   // ✅ APLICAR TEMA NAS CSS VARIABLES
   const applyTheme = (theme: Theme) => {
     const root = document.documentElement;
     root.style.setProperty('--color-primary', theme.colors.primary);
+    const rgb = theme.colors.primary.match(/[a-f0-9]{2}/gi)!.map(value => parseInt(value, 16));
+    root.style.setProperty('--color-primary-rgb', rgb.join(' '));
+    const luminance = rgb.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+    const lightness = luminance[0] * .2126 + luminance[1] * .7152 + luminance[2] * .0722;
+    root.style.setProperty('--color-on-accent', lightness > .179 ? '24 30 39' : '255 255 255');
     root.style.setProperty('--color-primary-hover', theme.colors.primaryHover);
     root.style.setProperty('--color-primary-light', theme.colors.primaryLight);
     root.style.setProperty('--color-primary-dark', theme.colors.primaryDark);
@@ -229,11 +241,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // ✅ CARREGAR TEMA SALVO E APLICAR
   useEffect(() => {
-    const savedTheme = localStorage.getItem('selected-theme');
+    const savedTheme = localStorage.getItem('zenit-admin-theme');
     if (savedTheme && AVAILABLE_THEMES.find(t => t.key === savedTheme)) {
       setCurrentTheme(savedTheme);
     }
-    const savedMode = localStorage.getItem('color-mode');
+    const savedMode = localStorage.getItem('zenit-admin-color-mode');
     if (savedMode === 'light' || savedMode === 'dark') {
       setColorMode(savedMode);
     }
@@ -249,11 +261,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (colorMode === 'light') {
-      root.classList.add('theme-light');
-    } else {
-      root.classList.remove('theme-light');
-    }
+    root.classList.toggle('theme-light', colorMode === 'light');
+    root.classList.toggle('theme-dark', colorMode === 'dark');
   }, [colorMode]);
 
   // ✅ FUNÇÃO PARA MUDAR TEMA
@@ -261,15 +270,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const theme = AVAILABLE_THEMES.find(t => t.key === themeKey);
     if (theme) {
       setCurrentTheme(themeKey);
-      localStorage.setItem('selected-theme', themeKey);
+      localStorage.setItem('zenit-admin-theme', themeKey);
       applyTheme(theme);
-      api.put('/preferences/color-scheme', { colorScheme: themeKey }).catch(() => {});
     }
   };
 
   const changeColorMode = (mode: 'dark' | 'light') => {
     setColorMode(mode);
-    localStorage.setItem('color-mode', mode);
+    localStorage.setItem('zenit-admin-color-mode', mode);
   };
 
   // ✅ AGRUPAR TEMAS POR CATEGORIA

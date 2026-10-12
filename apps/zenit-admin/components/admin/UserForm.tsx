@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { PageLoader } from '@/components/ui/PageLoader';
 import { useToast } from '@/components/ui/ToastContext';
 import { useConfirmation } from '@/hooks/useConfirmation';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
 import AccountPermissionsManager from '@/components/admin/AccountPermissionsManager';
@@ -18,7 +19,7 @@ import {
 } from '@zenit/shared-users-core';
 
 const checkboxClasses =
-  'h-4 w-4 rounded border-gray-700 bg-[#1e2126] text-accent focus:ring-accent';
+  'h-4 w-4 rounded border-border bg-elevated text-accent focus:ring-accent';
 
 interface User {
   id: number;
@@ -663,8 +664,8 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
   }
 
   return (
-    <>
-      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <div className="max-w-4xl">
+      <div className="admin-form-header">
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
@@ -675,8 +676,8 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
             <ArrowLeft size={16} />
             Voltar
           </Button>
-          <h1 className="text-2xl font-semibold text-white">
-            {mode === 'create' ? 'Novo Usuario' : 'Editar Usuario'}
+          <h1 className="text-2xl font-semibold text-text">
+            {mode === 'create' ? 'Novo usuário' : 'Editar usuário'}
           </h1>
         </div>
 
@@ -702,8 +703,8 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
             {saving
               ? 'Salvando...'
               : mode === 'create'
-                ? 'Criar Usuario'
-                : 'Salvar Alteracoes'}
+                ? 'Criar usuário'
+                : 'Salvar alterações'}
           </Button>
         </div>
       </div>
@@ -711,7 +712,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
       <Card>
         <form id="user-form" onSubmit={handleSubmit} className="space-y-6">
           {companiesError && (
-            <div className="rounded-lg border border-yellow-700/60 bg-yellow-900/20 p-4 text-sm text-yellow-200">
+            <div className="rounded-lg border border-tone-amber/30 bg-tone-amber-soft p-4 text-sm text-tone-amber">
               {companiesError}
             </div>
           )}
@@ -760,19 +761,19 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                 disabled={saving || editingUser?.id === currentUserId} />
               <span>
                 <span className="block font-medium">Administrador do Zenit</span>
-                <span className="block text-sm text-gray-400">
-                  Permite administrar empresas, usuários e serviços no Zenit Admin. Não depende de uma empresa e não libera acesso aos demais aplicativos.
+                <span className="block text-sm text-text-muted">
+                  Administra empresas, usuários e serviços. Os demais aplicativos exigem permissão por empresa.
                 </span>
               </span>
             </label>
-            {editingUser?.id === currentUserId && <p className="mt-2 text-xs text-gray-400">Você não pode remover seu próprio acesso à plataforma.</p>}
+            {editingUser?.id === currentUserId && <p className="mt-2 text-xs text-text-muted">Você não pode remover seu próprio acesso à plataforma.</p>}
           </fieldset>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">Empresas</label>
+            <label className="mb-1 block text-sm font-medium text-text">Empresas</label>
             <div className="space-y-2">
               {companies.length === 0 ? (
-                <div className="rounded-lg border border-gray-700 bg-[#1e2126] p-4 text-sm text-gray-400">
+                <div className="rounded-lg border border-border bg-elevated p-4 text-sm text-text-muted">
                   Nenhuma empresa disponivel para vinculo.
                 </div>
               ) : (
@@ -785,9 +786,9 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                   return (
                     <div
                       key={company.id}
-                      className="space-y-2 rounded-lg border border-gray-700 bg-[#1e2126] p-3"
+                      className="space-y-2 rounded-lg border border-border bg-elevated p-3"
                     >
-                      <label className="flex flex-wrap items-center gap-3 rounded-md border border-gray-600 bg-[#0f1419] px-3 py-2 font-semibold">
+                      <label className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-elevated px-3 py-2 font-semibold">
                         <input
                           type="checkbox"
                           checked={Boolean(config)}
@@ -802,7 +803,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                           disabled={saving}
                           className={checkboxClasses}
                         />
-                        <span className="flex-1 text-sm text-white">{company.name}</span>
+                        <span className="flex-1 text-sm text-text">{company.name}</span>
 
                         {config && (
                           <select
@@ -811,7 +812,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                             onChange={(event) =>
                               updateCompanyRole(company.id, event.target.value)
                             }
-                            className="rounded border border-gray-700 bg-[#1e2126] px-2 py-1 text-white"
+                            className="rounded border border-border bg-elevated px-2 py-1 text-text"
                             disabled={saving}
                           >
                             {allowedRolesForCompany(userRole as any, company).includes('USER') && (
@@ -825,24 +826,24 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                       </label>
 
                       {config && (
-                        <div className="ml-6 mt-2 space-y-2">
-                          <label className="mb-1 block text-sm font-medium text-gray-300">
+                        <div className="sm:ml-6 mt-2 space-y-2">
+                          <label className="mb-1 block text-sm font-medium text-text">
                             Aplicativos permitidos para este usuário
                           </label>
-                          <p className="text-xs text-gray-400">
+                          <p className="text-xs text-text-muted">
                             Apenas aplicativos habilitados para {company.name} aparecem aqui.
                             {userRole === 'ADMIN'
                               ? ' Para alterar essa lista, edite o cadastro da empresa.'
                               : ' Para habilitar outros aplicativos, solicite ao administrador da plataforma.'}
                           </p>
                           {(companyEntitlements[company.id] || []).length === 0 && (
-                            <p className="text-sm text-amber-200">Nenhum aplicativo habilitado para esta empresa.</p>
+                            <p className="text-sm text-tone-amber">Nenhum aplicativo habilitado para esta empresa.</p>
                           )}
                           <div className="flex flex-wrap gap-3">
                             {(companyEntitlements[company.id] || []).map((appKey) => (
                               <label
                                 key={appKey}
-                                className="flex items-center gap-2 text-sm text-gray-300"
+                                className="flex items-center gap-2 text-sm text-text"
                               >
                                 <input
                                   type="checkbox"
@@ -861,8 +862,8 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                       {config &&
                         config.role === 'SUPERUSER' &&
                         canManageOwnershipForCompany(company.id) && (
-                          <div className="ml-6 mt-2 rounded-lg border border-amber-700/50 bg-amber-900/10 p-3">
-                            <label className="flex items-start gap-3 text-sm text-amber-100">
+                          <div className="sm:ml-6 mt-2 rounded-lg border border-tone-amber/30 bg-tone-amber-soft p-3">
+                            <label className="flex items-start gap-3 text-sm text-tone-amber">
                               <input
                                 type="checkbox"
                                 className={checkboxClasses}
@@ -874,7 +875,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                               />
                               <span>
                                 <span className="block font-medium">Company owner</span>
-                                <span className="block text-xs text-amber-200/80">
+                                <span className="block text-xs text-tone-amber">
                                   Libera acoes sensiveis da empresa, como o reset financeiro.
                                 </span>
                               </span>
@@ -886,19 +887,19 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                         config.role === 'SUPERUSER' &&
                         config.isCompanyOwner &&
                         !canManageOwnershipForCompany(company.id) && (
-                          <div className="ml-6 mt-2 rounded-lg border border-amber-700/50 bg-amber-900/10 px-3 py-2 text-sm text-amber-100">
+                          <div className="sm:ml-6 mt-2 rounded-lg border border-tone-amber/30 bg-tone-amber-soft px-3 py-2 text-sm text-tone-amber">
                             Este usuario e company owner desta empresa.
                           </div>
                         )}
 
                       {config && config.role === 'USER' && (
-                        <div className="ml-6 mt-2 space-y-4">
+                        <div className="sm:ml-6 mt-2 space-y-4">
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-300">
+                            <label className="mb-1 block text-sm font-medium text-text">
                               Permissoes de Acesso
                             </label>
-                            <div className="space-y-2 rounded-lg border border-gray-700 bg-[#1a1f2b] p-3">
-                              <label className="flex items-center gap-2 text-sm text-gray-300">
+                            <div className="space-y-2 rounded-lg border border-border bg-elevated p-3">
+                              <label className="flex items-center gap-2 text-sm text-text">
                                 <input
                                   type="checkbox"
                                   className={checkboxClasses}
@@ -914,7 +915,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                                 />
                                 Gerenciar Contas Financeiras
                               </label>
-                              <label className="flex items-center gap-2 text-sm text-gray-300">
+                              <label className="flex items-center gap-2 text-sm text-text">
                                 <input
                                   type="checkbox"
                                   className={checkboxClasses}
@@ -934,7 +935,7 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
                           </div>
 
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-300">
+                            <label className="mb-1 block text-sm font-medium text-text">
                               Permissao as Contas Financeiras
                             </label>
                             <AccountPermissionsManager
@@ -960,6 +961,17 @@ export default function UserForm({ mode, userId, onSuccess, onCancel }: UserForm
           </div>
         </form>
       </Card>
-    </>
+      <ConfirmationModal
+        isOpen={confirmation.isOpen}
+        onClose={confirmation.handleClose}
+        onConfirm={confirmation.handleConfirm}
+        title={confirmation.options.title}
+        message={confirmation.options.message}
+        confirmText={confirmation.options.confirmText}
+        cancelText={confirmation.options.cancelText}
+        type={confirmation.options.type}
+        loading={confirmation.loading}
+      />
+    </div>
   );
 }

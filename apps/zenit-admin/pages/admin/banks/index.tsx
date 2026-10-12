@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { ListToolbar } from '@/components/ui/ListToolbar';
 import React, { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import BankIconPreview from '@/components/admin/BankIconPreview';
@@ -15,6 +17,7 @@ import { AdminBank } from '@/utils/banks';
 import { Edit2, Landmark, Plus, Trash2 } from 'lucide-react';
 
 export default function BanksPage() {
+  const [query, setQuery] = useState('');
   const confirmation = useConfirmation();
   const { addToast } = useToast();
 
@@ -45,8 +48,8 @@ export default function BanksPage() {
   async function handleDelete(bank: AdminBank) {
     confirmation.confirm(
       {
-        title: 'Confirmar Exclusao',
-        message: `Tem certeza que deseja excluir o banco "${bank.name}"? Esta acao nao pode ser desfeita.`,
+        title: 'Confirmar exclusão',
+        message: `Tem certeza que deseja excluir o banco "${bank.name}"? Esta ação não pode ser desfeita.`,
         confirmText: 'Excluir',
         cancelText: 'Cancelar',
         type: 'danger'
@@ -64,110 +67,125 @@ export default function BanksPage() {
     );
   }
 
+  const normalizedQuery = query
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const filtered = banks.filter((item) =>
+    [item.name, item.code]
+      .join(' ')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .includes(normalizedQuery)
+  );
+
   return (
     <DashboardLayout title="Bancos">
-      <Breadcrumb
-        items={[
-          { label: 'Dashboard', href: '/' },
-          { label: 'Administracao' },
-          { label: 'Bancos' }
-        ]}
-      />
+      <Breadcrumb items={[{ label: 'Início', href: '/' }, { label: 'Bancos' }]} />
 
       <AccessGuard allowedRoles={['ADMIN']}>
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-white">Bancos</h1>
-          <Link href="/admin/banks/new">
-            <Button variant="accent" className="flex items-center gap-2">
-              <Plus size={16} />
-              Novo Banco
-            </Button>
+        <PageHeader title="Bancos">
+          <Link href="/admin/banks/new" className="admin-button admin-button-primary">
+            <Plus size={16} />
+            Novo banco
           </Link>
-        </div>
+        </PageHeader>
 
-        <Card>
+        <Card className="p-0">
+          {!loading && !error && (
+            <ListToolbar
+              query={query}
+              onChange={setQuery}
+              placeholder="Buscar bancos"
+              count={filtered.length}
+              label={filtered.length === 1 ? 'banco' : 'bancos'}
+            />
+          )}
           {loading ? (
-            <div className="space-y-3">
+            <div className="space-y-3 p-6">
               {[...Array(4)].map((_, index) => (
-                <Skeleton key={index} className="h-12 w-full rounded bg-[#1e2126]" />
+                <Skeleton key={index} className="h-12 w-full rounded bg-elevated" />
               ))}
             </div>
           ) : error ? (
             <div className="py-10 text-center">
-              <div className="mb-4 text-red-400">{error}</div>
+              <div className="mb-4 text-tone-red">{error}</div>
               <Button variant="outline" onClick={() => void fetchBanks()}>
-                Tentar Novamente
+                Tentar novamente
               </Button>
             </div>
-          ) : banks.length === 0 ? (
-            <div className="py-10 text-center">
-              <Landmark size={48} className="mx-auto mb-4 text-gray-400" />
-              <p className="mb-4 text-gray-400">Nenhum banco cadastrado</p>
-              <Link href="/admin/banks/new">
-                <Button variant="accent" className="inline-flex items-center gap-2">
-                  <Plus size={16} />
-                  Criar Primeiro Banco
-                </Button>
-              </Link>
+          ) : filtered.length === 0 ? (
+            <div className="admin-empty">
+              <Landmark size={32} />
+              <p>Nenhum banco encontrado</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-[#0f1419] text-xs uppercase text-gray-400">
+              <table className="admin-table">
+                <caption className="sr-only">Bancos</caption>
+                <thead>
                   <tr>
-                    <th className="w-24 px-4 py-3 text-center">Acoes</th>
                     <th className="px-4 py-3 text-left">Banco</th>
-                    <th className="px-4 py-3 text-left">Codigo</th>
-                    <th className="px-4 py-3 text-left">Icone</th>
+                    <th className="px-4 py-3 text-left">Código</th>
                     <th className="px-4 py-3 text-left">Ordem</th>
-                    <th className="px-4 py-3 text-left">Cartoes</th>
+                    <th className="px-4 py-3 text-left">Cartões</th>
                     <th className="px-4 py-3 text-left">Status</th>
+                    <th className="w-24 px-4 py-3 text-center">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {banks.map((bank) => (
-                    <tr key={bank.id} className="border-b border-gray-700 hover:bg-[#1a1f2b]">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-center gap-1">
+                  {filtered.map((bank) => (
+                    <tr key={bank.id} className="border-b border-border hover:bg-elevated">
+                      <td data-label="Banco" className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <BankIconPreview iconPath={bank.iconPath} label={bank.name} size="sm" />
+                          <Link className="admin-row-title" href={'/admin/banks/' + bank.id}>
+                            {bank.name}
+                          </Link>
+                        </div>
+                      </td>
+                      <td data-label="Código" className="px-4 py-3">
+                        <span className="font-mono text-accent">{bank.code}</span>
+                      </td>
+                      <td data-label="Ordem" className="px-4 py-3 text-text">
+                        {bank.displayOrder}
+                      </td>
+                      <td data-label="Cartões" className="px-4 py-3 text-text">
+                        {bank.linkedAccountsCount || 0}
+                      </td>
+                      <td data-label="Situação" className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2 py-1 text-xs font-medium ${
+                            bank.isActive
+                              ? 'bg-tone-green-soft text-tone-green'
+                              : 'bg-gray-500/15 text-text'
+                          }`}
+                        >
+                          {bank.isActive ? 'Ativo' : 'Inativo'}
+                        </span>
+                      </td>
+                      <td data-label="Ações" className="px-4 py-3">
+                        <div className="admin-row-actions">
                           <Link
                             href={`/admin/banks/${bank.id}`}
-                            className="p-1 text-gray-300 transition-colors hover:text-[#2563eb]"
+                            className="p-1 text-text transition-colors hover:text-accent"
+                            aria-label={'Editar ' + bank.name}
                             title="Editar"
                           >
                             <Edit2 size={16} />
                           </Link>
                           <button
                             onClick={() => void handleDelete(bank)}
-                            className="p-1 text-gray-300 transition-colors hover:text-red-400"
+                            className="p-1 text-text transition-colors hover:text-tone-red"
+                            aria-label={'Excluir ' + bank.name}
                             title="Excluir"
                             disabled={confirmation.loading}
                           >
                             <Trash2 size={16} />
                           </button>
                         </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <BankIconPreview iconPath={bank.iconPath} label={bank.name} size="sm" />
-                          <span className="font-medium text-white">{bank.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="font-mono text-[#60a5fa]">{bank.code}</span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-300">{bank.iconSlug}</td>
-                      <td className="px-4 py-3 text-gray-300">{bank.displayOrder}</td>
-                      <td className="px-4 py-3 text-gray-300">{bank.linkedAccountsCount || 0}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-2 py-1 text-xs font-medium ${
-                            bank.isActive
-                              ? 'bg-green-500/15 text-green-300'
-                              : 'bg-gray-500/15 text-gray-300'
-                          }`}
-                        >
-                          {bank.isActive ? 'Ativo' : 'Inativo'}
-                        </span>
                       </td>
                     </tr>
                   ))}

@@ -27,10 +27,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ addToast }}>
       {children}
-      <div className="fixed top-4 right-4 space-y-2 z-50">
+      <div className="fixed top-4 right-4 left-4 sm:left-auto sm:max-w-sm space-y-2 z-50">
         {toasts.map((t) => (
           <div
             key={t.id}
+            role={t.type === 'error' ? 'alert' : 'status'}
             className={`px-4 py-2 rounded shadow-md text-white ${
               t.type === 'success' ? 'bg-success' : 'bg-danger'
             }`}

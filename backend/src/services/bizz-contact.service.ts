@@ -33,6 +33,12 @@ const publicFields = {
 } satisfies Prisma.BizzContactSelect;
 
 export default class BizzContactService {
+  static async get(companyId: number, id: string) {
+    const contact = await prisma.bizzContact.findFirst({ where: { id, companyId }, select: publicFields });
+    if (!contact) throw new BizzError(404, 'Cadastro não encontrado nesta empresa.');
+    return contact;
+  }
+
   static async list(companyId: number, filters: z.infer<typeof bizzContactListSchema>) {
     const documentQuery = filters.q.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
     const where: Prisma.BizzContactWhereInput = {

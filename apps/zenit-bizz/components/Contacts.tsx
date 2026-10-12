@@ -1,27 +1,51 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, CheckCircle2, Pencil, Plus, Search, Truck, Users, X } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { useNavigation } from '@/contexts/NavigationContext';
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Pencil,
+  Plus,
+  Search,
+  Truck,
+  Users,
+  X
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
-import { Contact, ContactList } from '@/lib/types';
-import { ContactForm } from './ContactForm';
+import { ContactList } from '@/lib/types';
 
 export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
   const { company } = useAuth();
-  const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('active');
-  const [page, setPage] = useState(1);
+  const router = useRouter();
+  const base = role === 'customer' ? '/clientes' : '/fornecedores';
+  const query = typeof router.query.q === 'string' ? router.query.q.slice(0, 100) : '';
+  const status = ['inactive', 'all'].includes(String(router.query.status))
+    ? String(router.query.status)
+    : 'active';
+  const parsedPage = Number(router.query.page);
+  const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const listQuery = { q: query, status, page: String(page) };
+  const editHref = (id: string) => ({ pathname: `${base}/${id}`, query: listQuery });
+  const updateFilters = (changes: Partial<typeof listQuery>) => {
+    void router.replace({ pathname: base, query: { ...listQuery, ...changes } }, undefined, {
+      shallow: true,
+      scroll: false
+    });
+  };
   const [result, setResult] = useState<ContactList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
-  const [editor, setEditor] = useState<{ contact: Contact | null } | null>(null);
-  const [notice, setNotice] = useState('');
+  const { notice, setNotice } = useNavigation();
   const request = useRef(0);
   const customer = role === 'customer';
   const title = customer ? 'Clientes' : 'Fornecedores';
   const Icon = customer ? Users : Truck;
   useEffect(() => {
-    if (!company) return;
+    if (!company || !router.isReady) return;
     const sequence = ++request.current;
     const controller = new AbortController();
     setLoading(true);
@@ -52,41 +76,28 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
       controller.abort();
       request.current++;
     };
-  }, [company?.id, page, query, revision, role, status]);
-  function saved(contact: Contact) {
-    setEditor(null);
-    setNotice(`${contact.name}: cadastro salvo.`);
-    setRevision((value) => value + 1);
-  }
+  }, [company?.id, page, query, revision, role, status, router.isReady]);
   const pages = Math.max(1, Math.ceil((result?.total ?? 0) / 20));
   return (
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">RELACIONAMENTOS</span>
           <h1>{title}</h1>
-          <p className="subtle">
-            {customer
-              ? 'Pessoas e empresas que fazem parte do seu negócio.'
-              : 'Quem ajuda seu negócio a acontecer.'}
-          </p>
         </div>
-        <button
-          className="button primary"
-          onClick={() => {
-            setNotice('');
-            setEditor({ contact: null });
-          }}
-        >
+        <Link className="button primary" href={editHref('novo')} onClick={() => setNotice('')}>
           <Plus size={19} />
           {customer ? 'Novo cliente' : 'Novo fornecedor'}
-        </button>
+        </Link>
       </div>
       {notice && (
         <div className="notice" role="status">
           <CheckCircle2 size={19} />
           <span>{notice}</span>
-          <button className="icon-button" aria-label="Fechar mensagem" onClick={() => setNotice('')}>
+          <button
+            className="icon-button"
+            aria-label="Fechar mensagem"
+            onClick={() => setNotice('')}
+          >
             <X size={16} />
           </button>
         </div>
@@ -102,8 +113,7 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
               maxLength={100}
               value={query}
               onChange={(e) => {
-                setQuery(e.target.value);
-                setPage(1);
+                updateFilters({ q: e.target.value, page: '1' });
               }}
             />
           </label>
@@ -113,8 +123,7 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
               aria-label="Situação dos cadastros"
               value={status}
               onChange={(e) => {
-                setStatus(e.target.value);
-                setPage(1);
+                updateFilters({ status: e.target.value, page: '1' });
               }}
             >
               <option value="active">Ativos</option>
@@ -142,26 +151,15 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
             <div className="empty-symbol">
               <Icon size={30} strokeWidth={1.5} />
             </div>
-            <h2>
-              {query || status !== 'active'
-                ? 'Nenhum cadastro encontrado'
-                : customer
-                  ? 'Seu próximo bom relacionamento começa aqui'
-                  : 'Seus parceiros de negócio, em um só lugar'}
-            </h2>
-            <p>
-              {query || status !== 'active'
-                ? 'Ajuste a busca ou a situação para encontrar o cadastro.'
-                : `Adicione seu primeiro ${customer ? 'cliente' : 'fornecedor'}. Para começar, basta o nome.`}
-            </p>
+            <h2>{customer ? 'Nenhum cliente encontrado' : 'Nenhum fornecedor encontrado'}</h2>
             {!query && status === 'active' && (
-              <button className="button" onClick={() => setEditor({ contact: null })}>
+              <Link className="button" href={editHref('novo')} onClick={() => setNotice('')}>
                 <Plus size={17} />
                 {customer ? 'Cadastrar cliente' : 'Cadastrar fornecedor'}
-              </button>
+              </Link>
             )}
             {page > 1 && (
-              <button className="button" onClick={() => setPage(1)}>
+              <button className="button" onClick={() => updateFilters({ page: '1' })}>
                 Voltar à primeira página
               </button>
             )}
@@ -188,12 +186,18 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
                         {contact.name[0].toUpperCase()}
                       </span>
                       <span>
-                        <button className="name-button" onClick={() => setEditor({ contact })}>
+                        <Link
+                          className="name-button"
+                          href={editHref(contact.id)}
+                          onClick={() => setNotice('')}
+                        >
                           {contact.name}
-                        </button>
+                        </Link>
                         <small>
                           {contact.document ||
-                            (contact.personType === 'BUSINESS' ? 'Pessoa jurídica' : 'Pessoa física')}
+                            (contact.personType === 'BUSINESS'
+                              ? 'Pessoa jurídica'
+                              : 'Pessoa física')}
                         </small>
                       </span>
                     </td>
@@ -217,13 +221,14 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
                       </span>
                     </td>
                     <td className="row-action">
-                      <button
+                      <Link
                         className="icon-button"
                         aria-label={`Editar ${contact.name}`}
-                        onClick={() => setEditor({ contact })}
+                        href={editHref(contact.id)}
+                        onClick={() => setNotice('')}
                       >
                         <Pencil size={17} />
-                      </button>
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -238,7 +243,7 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
                   className="icon-button"
                   aria-label="Página anterior"
                   disabled={page === 1}
-                  onClick={() => setPage((value) => value - 1)}
+                  onClick={() => updateFilters({ page: String(page - 1) })}
                 >
                   <ArrowLeft size={17} />
                 </button>
@@ -249,7 +254,7 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
                   className="icon-button"
                   aria-label="Próxima página"
                   disabled={page >= pages}
-                  onClick={() => setPage((value) => value + 1)}
+                  onClick={() => updateFilters({ page: String(page + 1) })}
                 >
                   <ArrowRight size={17} />
                 </button>
@@ -258,21 +263,6 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
           </>
         )}
       </section>
-      <p className="page-note">
-        Um mesmo cadastro pode ser cliente e fornecedor. As informações ficam reunidas.
-      </p>
-      {editor && company && (
-        <ContactForm
-          contact={editor.contact}
-          role={role}
-          companyId={company.id}
-          onClose={() => {
-            setEditor(null);
-            setRevision((value) => value + 1);
-          }}
-          onSaved={saved}
-        />
-      )}
     </>
   );
 }

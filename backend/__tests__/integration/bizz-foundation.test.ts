@@ -289,6 +289,19 @@ describe('Bizz foundation and per-user application grants', () => {
       ).toBe(400);
     }
   });
+  it('loads a contact directly only within an authorized company', async () => {
+    const path = `/api/bizz/contacts/${contactId}`;
+    const loaded = await request(app).get(path).set(headers());
+    expect(loaded.status).toBe(200);
+    expect(loaded.body).toMatchObject({ id: contactId, isCustomer: true, isSupplier: true, version: 1 });
+    expect(loaded.body).not.toHaveProperty('companyId');
+    expect(loaded.body).not.toHaveProperty('requestHash');
+    expect((await request(app).get(path).set(headers(token, otherCompanyId))).status).toBe(404);
+    expect((await request(app).get(path).set(headers(deniedToken))).status).toBe(403);
+    expect((await request(app).get(path)).status).toBe(401);
+    expect((await request(app).get(`/api/bizz/contacts/${randomUUID()}`).set(headers())).status).toBe(404);
+    expect((await request(app).get('/api/bizz/contacts/invalid').set(headers())).status).toBe(400);
+  });
   it('detects concurrent edits and supports inactivation without deletion', async () => {
     const saved = await request(app)
       .put(`/api/bizz/contacts/${contactId}`)

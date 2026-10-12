@@ -1,13 +1,24 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ReactNode, useState } from 'react';
-import { Building2, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Truck, Users, X } from 'lucide-react';
+import {
+  Building2,
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Truck,
+  Users,
+  X
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Brand } from './Brand';
+import { useNavigation } from '@/contexts/NavigationContext';
 
 export function Layout({ children }: { children: ReactNode }) {
   const { user, company, companies, selectCompany, logout } = useAuth();
   const router = useRouter();
+  const { request } = useNavigation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const links = [
@@ -17,11 +28,24 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className={`app-shell ${collapsed ? 'collapsed' : ''}`}>
       {mobileOpen && (
-        <button className="nav-backdrop" aria-label="Fechar menu" onClick={() => setMobileOpen(false)} />
+        <button
+          className="nav-backdrop"
+          aria-label="Fechar menu"
+          onClick={() => setMobileOpen(false)}
+        />
       )}
       <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-brand">
-          <Link href="/clientes" aria-label="Zenit Bizz, início">
+          <Link
+            href="/clientes"
+            aria-label="Zenit Bizz, início"
+            onNavigate={(event) => {
+              event.preventDefault();
+              request(() => {
+                void router.push('/clientes');
+              });
+            }}
+          >
             <Brand />
           </Link>
           <button
@@ -38,10 +62,20 @@ export function Layout({ children }: { children: ReactNode }) {
             <Link
               key={href}
               href={href}
-              className={`nav-link ${router.pathname === href ? 'active' : ''}`}
-              aria-current={router.pathname === href ? 'page' : undefined}
+              className={`nav-link ${router.pathname === href || router.pathname.startsWith(`${href}/`) ? 'active' : ''}`}
+              aria-current={
+                router.pathname === href || router.pathname.startsWith(`${href}/`)
+                  ? 'page'
+                  : undefined
+              }
               title={collapsed ? label : undefined}
-              onClick={() => setMobileOpen(false)}
+              onNavigate={(event) => {
+                event.preventDefault();
+                request(() => {
+                  setMobileOpen(false);
+                  void router.push(href);
+                });
+              }}
             >
               <Icon size={20} />
               <span>{label}</span>
@@ -49,9 +83,6 @@ export function Layout({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <p>
-            Uma boa relação é<br />o começo de bons negócios.
-          </p>
           <button
             className="button quiet collapse-button"
             onClick={() => setCollapsed(!collapsed)}
@@ -79,7 +110,10 @@ export function Layout({ children }: { children: ReactNode }) {
                 <select
                   aria-label="Empresa ativa"
                   value={company?.id}
-                  onChange={(e) => selectCompany(Number(e.target.value))}
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    request(() => selectCompany(id));
+                  }}
                 >
                   {companies.map((item) => (
                     <option value={item.id} key={item.id}>
@@ -97,7 +131,12 @@ export function Layout({ children }: { children: ReactNode }) {
               {user?.name.slice(0, 1).toUpperCase()}
             </span>
             <span className="user-name">{user?.name}</span>
-            <button className="icon-button" onClick={logout} aria-label="Sair da conta" title="Sair da conta">
+            <button
+              className="icon-button"
+              onClick={() => request(logout)}
+              aria-label="Sair da conta"
+              title="Sair da conta"
+            >
               <LogOut size={18} />
             </button>
           </div>

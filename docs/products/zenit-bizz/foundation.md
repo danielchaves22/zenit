@@ -46,6 +46,7 @@ Quem gerencia usuários (`ADMIN` ou `SUPERUSER`, conforme seu escopo) escolhe os
 O identificador permanece estável após edição/inativação e poderá ser referenciado nas compras e vendas futuras. Não há relacionamento financeiro implementado nesta versão.
 
 - `GET /api/bizz/contacts`: busca por `q`, papel `customer|supplier|all`, situação `active|inactive|all` e página; 20 registros por página.
+- `GET /api/bizz/contacts/:id`: consulta individual para edição por URL; retorna 404 se o cadastro não pertencer à empresa ativa.
 - `POST /api/bizz/contacts`: criação com `requestKey` UUID. Repetição da mesma tentativa retorna o registro existente; reuso da chave com dados diferentes retorna 409.
 - `PUT /api/bizz/contacts/:id`: edição com a versão lida; alterações concorrentes retornam 409. Inclui inativação e reativação.
 - `GET /api/bizz/session`: contexto da empresa validado pelo backend.
@@ -57,3 +58,5 @@ O servidor determina usuário/empresa e não aceita atribuição desses campos p
 Tema claro, marca laranja `#F97316`, navegação retrátil, adaptação a telas pequenas e formulários com informações complementares recolhíveis. Botões preenchidos usam um tom mais escuro de laranja para legibilidade do texto. Estados vazios correspondem a dados reais; não há indicadores de vendas ou compras ainda não implementados.
 
 Formulários preservam os dados após falha de gravação, confirmam descarte de alterações e impedem submissões simultâneas. A integração financeira será validada numa próxima entrega com compra, compromisso pendente no Cash e retorno da situação ao Bizz.
+
+Clientes e fornecedores usam páginas próprias de cadastro: `/clientes/novo`, `/clientes/:id`, `/fornecedores/novo` e `/fornecedores/:id`. A busca, a situação e a página da listagem ficam na URL e são preservadas no retorno. A navegação com alterações pendentes exige confirmação; modais ficam reservados a confirmações, sem conter o formulário de cadastro.

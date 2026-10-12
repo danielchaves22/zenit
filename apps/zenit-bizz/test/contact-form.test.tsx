@@ -13,10 +13,10 @@ describe('contact form recovery', () => {
     const saved = vi.fn();
     render(<ContactForm contact={null} role="supplier" companyId={23} onClose={vi.fn()} onSaved={saved} />);
     fireEvent.change(screen.getByLabelText(/Nome ou razão social/), { target: { value: 'Flores da Serra' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar cadastro' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await screen.findByRole('alert');
     expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue('Flores da Serra');
-    fireEvent.click(screen.getByRole('button', { name: 'Salvar cadastro' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(saved).toHaveBeenCalled());
     const first = JSON.parse(vi.mocked(api).mock.calls[0][1]!.body as string);
     const second = JSON.parse(vi.mocked(api).mock.calls[1][1]!.body as string);

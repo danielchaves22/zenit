@@ -2,6 +2,7 @@ import type { AppProps } from 'next/app';
 import Head from 'next/head';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AuthGate } from '@/components/AuthGate';
+import { NavigationProvider } from '@/contexts/NavigationContext';
 import '@/styles/globals.css';
 
 export default function App({ Component, pageProps }: AppProps) {
@@ -19,7 +20,9 @@ export default function App({ Component, pageProps }: AppProps) {
       </Head>
       <AuthProvider>
         <AuthGate>
-          <Component {...pageProps} />
+          <NavigationProvider>
+            <Component {...pageProps} />
+          </NavigationProvider>
         </AuthGate>
       </AuthProvider>
     </>

@@ -56,6 +56,12 @@ router.get(
     res.json(await BizzContactService.list(req.user.companyId!, bizzContactListSchema.parse(req.query)))
   )
 );
+router.get(
+  '/contacts/:id',
+  run(async (req, res) =>
+    res.json(await BizzContactService.get(req.user.companyId!, z.string().uuid().parse(req.params.id)))
+  )
+);
 router.post(
   '/contacts',
   run(async (req, res) => {

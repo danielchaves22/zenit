@@ -468,12 +468,6 @@ fieldset {
 .sidebar-bottom {
   margin-top: auto;
 }
-.sidebar-bottom p {
-  margin: 26px 14px;
-  font-size: 12px;
-  color: #7b837e;
-  line-height: 1.7;
-}
 .collapse-button {
   width: 100%;
   justify-content: flex-start;
@@ -553,10 +547,7 @@ fieldset {
   margin-bottom: 30px;
 }
 .page-heading h1 {
-  margin-bottom: 9px;
-}
-.page-heading .eyebrow {
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 .contacts-panel {
   border: 1px solid var(--line);
@@ -612,11 +603,6 @@ fieldset {
 .empty-state h2 {
   font-size: 21px;
 }
-.empty-state p {
-  color: var(--muted);
-  max-width: 400px;
-  line-height: 1.7;
-}
 .empty-state .button {
   margin-top: 10px;
 }
@@ -629,12 +615,6 @@ fieldset {
   color: var(--accent);
   border-radius: 20px;
   margin-bottom: 8px;
-}
-.page-note {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 20px 0;
-  line-height: 1.7;
 }
 .list-state {
   min-height: 250px;
@@ -788,7 +768,7 @@ fieldset {
   align-items: center;
   gap: 9px;
 }
-.contact-dialog {
+.confirmation-dialog {
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -799,21 +779,11 @@ fieldset {
   background: var(--paper);
   box-shadow: 0 25px 90px #25352b25;
 }
-.contact-dialog::backdrop {
+.confirmation-dialog::backdrop {
   background: #18291e66;
   backdrop-filter: blur(2px);
 }
-.dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 25px 28px 22px;
-  border-bottom: 1px solid var(--line);
-}
-.dialog-header .eyebrow {
-  margin-bottom: 5px;
-}
-.dialog-body {
+.contact-form-body {
   padding: 24px 28px;
 }
 .form-grid {
@@ -836,11 +806,11 @@ fieldset {
   gap: 8px;
   font-weight: 400;
 }
-.dialog-body details {
+.contact-form-body details {
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }
-.dialog-body summary {
+.contact-form-body summary {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
@@ -901,7 +871,6 @@ fieldset {
 .collapsed .sidebar-brand .brand-wordmark,
 .collapsed .nav-heading,
 .collapsed .nav-link span,
-.collapsed .sidebar-bottom p,
 .collapsed .collapse-button span {
   display: none;
 }
@@ -1024,9 +993,6 @@ fieldset {
   .page-heading h1 {
     font-size: 28px;
   }
-  .page-heading .subtle {
-    font-size: 13px;
-  }
   .collapsed .sidebar-brand {
     justify-content: space-between;
     padding: 0 14px 36px;
@@ -1039,8 +1005,7 @@ fieldset {
   }
   .collapsed .sidebar-brand .brand-wordmark,
   .collapsed .nav-heading,
-  .collapsed .nav-link span,
-  .collapsed .sidebar-bottom p {
+  .collapsed .nav-link span {
     display: block;
   }
   .collapsed .nav-link {
@@ -1152,16 +1117,13 @@ fieldset {
   .form-grid {
     grid-template-columns: 1fr;
   }
-  .dialog-header {
-    padding: 20px;
-  }
-  .dialog-body {
+  .contact-form-body {
     padding: 20px;
   }
   .dialog-actions {
     padding: 16px 20px;
   }
-  .contact-dialog {
+  .confirmation-dialog {
     width: calc(100% - 20px);
     max-height: calc(100dvh - 20px);
   }
@@ -1177,9 +1139,6 @@ fieldset {
   }
   .user-menu {
     gap: 0;
-  }
-  .page-note {
-    font-size: 11px;
   }
   .role-options {
     gap: 18px;
@@ -1233,5 +1192,27 @@ fieldset {
   *:after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+.contact-editor {
+  max-width: 900px;
+}
+.editor-heading {
+  justify-content: flex-start;
+  gap: 18px;
+}
+.contact-form-panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+@media (max-width: 540px) {
+  .editor-heading > .button {
+    width: auto;
+  }
+  .editor-heading {
+    gap: 16px;
   }
 }

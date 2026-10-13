@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { Prisma } from '@prisma/client';
+import { BizzContactMethodKind, Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import {
   CreateBizzContact,
@@ -8,14 +8,7 @@ import {
 } from '../validators/bizz-contact.validator';
 import { z } from 'zod';
 
-export class BizzError extends Error {
-  constructor(
-    public status: number,
-    message: string
-  ) {
-    super(message);
-  }
-}
+import { BizzError } from './bizz-error';
 const publicFields = {
   id: true,
   name: true,
@@ -37,8 +30,50 @@ const publicFields = {
   neighborhood: true,
   city: true,
   state: true,
-  country: true
+  country: true,
+  methods: {
+    select: { kind: true, value: true, position: true },
+    orderBy: [{ kind: 'asc' }, { position: 'asc' }]
+  }
 } satisfies Prisma.BizzContactSelect;
+
+type ContactRow = Prisma.BizzContactGetPayload<{ select: typeof publicFields }>;
+function present({ methods, ...contact }: ContactRow) {
+  const values = (kind: BizzContactMethodKind, legacy: string | null) => {
+    const items = methods.filter((method) => method.kind === kind).map((method) => method.value);
+    return items.length ? items : legacy ? [legacy] : [];
+  };
+  return {
+    ...contact,
+    phones: values('PHONE', contact.phone),
+    emails: values('EMAIL', contact.email)
+  };
+}
+function methodRows(phones: string[], emails: string[]) {
+  return [
+    ...phones.map((value, position) => ({
+      kind: BizzContactMethodKind.PHONE,
+      value,
+      position
+    })),
+    ...emails.map((value, position) => ({
+      kind: BizzContactMethodKind.EMAIL,
+      value,
+      position
+    }))
+  ];
+}
+// A legacy editor can change its one field without dropping values it cannot display.
+function replaceFirst(values: string[], first: string | null, phone = false) {
+  const next = [...(first ? [first] : []), ...values.slice(1)];
+  const seen = new Set<string>();
+  return next.filter((value) => {
+    const key = phone ? value.replace(/\D/g, '') || value.toLowerCase() : value.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 export default class BizzContactService {
   static async get(companyId: number, id: string) {
@@ -47,7 +82,7 @@ export default class BizzContactService {
       select: publicFields
     });
     if (!contact) throw new BizzError(404, 'Cadastro não encontrado nesta empresa.');
-    return contact;
+    return present(contact);
   }
 
   static async list(companyId: number, filters: z.infer<typeof bizzContactListSchema>) {
@@ -71,6 +106,11 @@ export default class BizzContactService {
               ...['name', 'email', 'phone'].map((field) => ({
                 [field]: { contains: filters.q, mode: 'insensitive' }
               })),
+              {
+                methods: {
+                  some: { value: { contains: filters.q, mode: 'insensitive' } }
+                }
+              },
               ...(documentQuery ? [{ document: { contains: documentQuery } }] : [])
             ]
           }
@@ -89,11 +129,20 @@ export default class BizzContactService {
       ],
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead }
     );
-    return { items, total, page: filters.page, pageSize: 20 };
+    return {
+      items: items.map(present),
+      total,
+      page: filters.page,
+      pageSize: 20
+    };
   }
 
   static async create(companyId: number, userId: number, input: CreateBizzContact) {
-    const { requestKey, ...data } = input;
+    const { requestKey, phones: suppliedPhones, emails: suppliedEmails, ...data } = input;
+    const phones = suppliedPhones ?? (data.phone ? [data.phone] : []);
+    const emails = suppliedEmails ?? (data.email ? [data.email] : []);
+    data.phone = phones[0] ?? null;
+    data.email = emails[0] ?? null;
     // Empty new address fields are equivalent to older requests without an address.
     const addressFields = new Set([
       'postalCode',
@@ -105,9 +154,12 @@ export default class BizzContactService {
       'state',
       'country'
     ]);
-    const hashData = Object.fromEntries(
+    const hashData: Record<string, unknown> = Object.fromEntries(
       Object.entries(data).filter(([key, value]) => !addressFields.has(key) || value != null)
     );
+    // Single-value requests retain the pre-migration hash, including legacy retries.
+    if (phones.length > 1) hashData.phones = phones.slice(1);
+    if (emails.length > 1) hashData.emails = emails.slice(1);
     const requestHash = createHash('sha256').update(JSON.stringify(hashData)).digest('hex');
     const replay = async () => {
       const existing = await prisma.bizzContact.findUnique({
@@ -119,10 +171,12 @@ export default class BizzContactService {
           409,
           'Esta tentativa já foi utilizada. Reabra o cadastro para enviar outros dados.'
         );
-      return prisma.bizzContact.findUniqueOrThrow({
-        where: { id: existing.id },
-        select: publicFields
-      });
+      return present(
+        await prisma.bizzContact.findUniqueOrThrow({
+          where: { id: existing.id },
+          select: publicFields
+        })
+      );
     };
     const existing = await replay();
     if (existing) return { contact: existing, created: false };
@@ -130,6 +184,7 @@ export default class BizzContactService {
       const contact = await prisma.bizzContact.create({
         data: {
           ...data,
+          methods: { create: methodRows(phones, emails) },
           companyId,
           requestKey,
           requestHash,
@@ -138,7 +193,7 @@ export default class BizzContactService {
         },
         select: publicFields
       });
-      return { contact, created: true };
+      return { contact: present(contact), created: true };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         const duplicate = await replay();
@@ -153,24 +208,51 @@ export default class BizzContactService {
   }
 
   static async update(companyId: number, userId: number, id: string, input: UpdateBizzContact) {
-    const { version, ...data } = input;
+    const { version, phones: suppliedPhones, emails: suppliedEmails, ...data } = input;
     try {
       return await prisma.$transaction(async (tx) => {
         const existing = await tx.bizzContact.findFirst({
           where: { id, companyId },
-          select: { id: true }
+          select: publicFields
         });
         if (!existing) throw new BizzError(404, 'Cadastro não encontrado nesta empresa.');
+        const current = present(existing);
+        const phones =
+          suppliedPhones ??
+          (data.phone === undefined
+            ? current.phones
+            : replaceFirst(current.phones, data.phone, true));
+        const emails =
+          suppliedEmails ??
+          (data.email === undefined ? current.emails : replaceFirst(current.emails, data.email));
         const result = await tx.bizzContact.updateMany({
           where: { id, companyId, version },
-          data: { ...data, version: { increment: 1 }, updatedById: userId }
+          data: {
+            ...data,
+            phone: phones[0] ?? null,
+            email: emails[0] ?? null,
+            version: { increment: 1 },
+            updatedById: userId
+          }
         });
         if (!result.count)
           throw new BizzError(
             409,
             'Este cadastro foi alterado por outra pessoa. Feche e abra novamente para conferir a versão atual.'
           );
-        return tx.bizzContact.findUniqueOrThrow({ where: { id }, select: publicFields });
+        // Only after the scoped version check succeeds, replace this contact's methods atomically.
+        await tx.bizzContactMethod.deleteMany({ where: { contactId: id } });
+        const methods = methodRows(phones, emails);
+        if (methods.length)
+          await tx.bizzContactMethod.createMany({
+            data: methods.map((method) => ({ ...method, contactId: id }))
+          });
+        return present(
+          await tx.bizzContact.findUniqueOrThrow({
+            where: { id },
+            select: publicFields
+          })
+        );
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

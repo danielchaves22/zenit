@@ -77,8 +77,18 @@ function Editor({ editing }: { editing: boolean }) {
   );
 }
 export function ContactPage(props: { editing?: boolean }) {
+  const router = useRouter();
   return (
-    <Layout>
+    <Layout
+      breadcrumbs={[
+        { label: 'Relacionamento' },
+        {
+          label: 'Pessoas e empresas',
+          href: { pathname: CONTACTS_PATH, query: contactFilters(router.query) }
+        },
+        { label: props.editing ? 'Editar cadastro' : 'Novo cadastro' }
+      ]}
+    >
       <Editor editing={Boolean(props.editing)} />
     </Layout>
   );

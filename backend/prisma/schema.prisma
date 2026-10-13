@@ -425,6 +425,7 @@ model BizzContact {
   document     String?  @db.VarChar(32)
   email        String?  @db.VarChar(254)
   phone        String?  @db.VarChar(40)
+  methods      BizzContactMethod[]
   postalCode   String?  @db.VarChar(20)
   street       String?  @db.VarChar(160)
   addressNumber String? @db.VarChar(20)
@@ -450,6 +451,23 @@ model BizzContact {
   @@index([companyId, active, name, id])
   @@index([createdById])
   @@index([updatedById])
+}
+
+enum BizzContactMethodKind {
+  PHONE
+  EMAIL
+}
+
+model BizzContactMethod {
+  id        String                @id @default(uuid()) @db.Uuid
+  contactId String                @db.Uuid
+  contact   BizzContact           @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  kind      BizzContactMethodKind
+  value     String                @db.VarChar(254)
+  position  Int
+
+  @@unique([contactId, kind, position])
+  @@unique([contactId, kind, value])
 }
 
 model CompanyGroup {

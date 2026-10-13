@@ -12,16 +12,26 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Brand } from './Brand';
+import { Breadcrumb, BreadcrumbItem } from './Breadcrumb';
 import { useNavigation } from '@/contexts/NavigationContext';
 
-export function Layout({ children }: { children: ReactNode }) {
+export function Layout({
+  children,
+  breadcrumbs
+}: {
+  children: ReactNode;
+  breadcrumbs?: BreadcrumbItem[];
+}) {
   const { user, company, companies, selectCompany, logout } = useAuth();
   const router = useRouter();
   const { request } = useNavigation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const links = [
-    { href: '/pessoas', label: 'Pessoas e empresas', Icon: Users }
+  const groups = [
+    {
+      label: 'Relacionamento',
+      links: [{ href: '/pessoas', label: 'Pessoas e empresas', Icon: Users }]
+    }
   ];
   return (
     <div className={`app-shell ${collapsed ? 'collapsed' : ''}`}>
@@ -54,30 +64,34 @@ export function Layout({ children }: { children: ReactNode }) {
             <X size={20} />
           </button>
         </div>
-        <span className="nav-heading">CADASTROS</span>
         <nav aria-label="Navegação principal">
-          {links.map(({ href, label, Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              className={`nav-link ${router.pathname === href || router.pathname.startsWith(`${href}/`) ? 'active' : ''}`}
-              aria-current={
-                router.pathname === href || router.pathname.startsWith(`${href}/`)
-                  ? 'page'
-                  : undefined
-              }
-              title={collapsed ? label : undefined}
-              onNavigate={(event) => {
-                event.preventDefault();
-                request(() => {
-                  setMobileOpen(false);
-                  void router.push(href);
-                });
-              }}
-            >
-              <Icon size={20} />
-              <span>{label}</span>
-            </Link>
+          {groups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <span className="nav-heading">{group.label.toUpperCase()}</span>
+              {group.links.map(({ href, label, Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`nav-link ${router.pathname === href || router.pathname.startsWith(`${href}/`) ? 'active' : ''}`}
+                  aria-current={
+                    router.pathname === href || router.pathname.startsWith(`${href}/`)
+                      ? 'page'
+                      : undefined
+                  }
+                  title={collapsed ? label : undefined}
+                  onNavigate={(event) => {
+                    event.preventDefault();
+                    request(() => {
+                      setMobileOpen(false);
+                      void router.push(href);
+                    });
+                  }}
+                >
+                  <Icon size={20} />
+                  <span>{label}</span>
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -140,6 +154,7 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className="main-content" key={company?.id}>
+          {breadcrumbs && <Breadcrumb items={breadcrumbs} />}
           {children}
         </main>
       </div>

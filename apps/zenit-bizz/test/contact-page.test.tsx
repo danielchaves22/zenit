@@ -23,7 +23,17 @@ vi.mock('next/router', () => ({ useRouter: () => state.router }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ company: state.company }) }));
 vi.mock('@/contexts/NavigationContext', () => ({ useNavigation: () => state }));
 vi.mock('@/lib/api', () => ({ api: vi.fn() }));
-vi.mock('@/components/Layout', () => ({ Layout: ({ children }: any) => children }));
+vi.mock('@/components/Layout', async () => {
+  const { Breadcrumb } = await import('@/components/Breadcrumb');
+  return {
+    Layout: ({ children, breadcrumbs }: any) => (
+      <>
+        <Breadcrumb items={breadcrumbs} />
+        {children}
+      </>
+    )
+  };
+});
 vi.mock('@/components/ContactForm', () => ({
   ContactForm: ({ contact, companyId, onSaved }: any) => (
     <div>
@@ -43,6 +53,13 @@ describe('contact page', () => {
     vi.mocked(api).mockResolvedValue({ id: 'contact-a', name: 'Flores da Serra' });
     render(<ContactPage editing />);
     await screen.findByText('23: Flores da Serra');
+    expect(screen.getByRole('navigation', { name: 'Navegação estrutural' })).toBeVisible();
+    expect(screen.getByText('Editar cadastro')).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('link', { name: 'Relacionamento' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Pessoas e empresas' })).toHaveAttribute(
+      'href',
+      '/pessoas?q=Flores&role=supplier&personType=BUSINESS&status=inactive&page=2'
+    );
     expect(api).toHaveBeenCalledWith(
       '/bizz/contacts/contact-a',
       expect.objectContaining({ companyId: 23 })

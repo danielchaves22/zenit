@@ -14,6 +14,8 @@ Copy-Item apps/zenit-bizz/.env.example apps/zenit-bizz/.env.local
 
 Confira o `DATABASE_URL` do backend antes de aplicar as migrações ao ambiente local desejado. A nova aplicação exige as migrações `20261007100000_add_bizz_app` e `20261007101000_add_bizz_contacts`.
 
+As versões atuais também exigem `20261013180000_bizz_people_directory` e `20261013210000_bizz_contact_methods`. Aplique as migrações e publique a API compatível antes do frontend.
+
 ```powershell
 npm --workspace backend run prisma:deploy
 npm --workspace backend run dev

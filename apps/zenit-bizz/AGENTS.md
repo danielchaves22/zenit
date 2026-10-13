@@ -15,3 +15,8 @@ Estas regras complementam o `AGENTS.md` da raiz.
 - Pessoas e empresas usam um cadastro único por empresa; cliente e fornecedor são relacionamentos opcionais e não cadastros separados.
 - Prefira páginas próprias para criar e editar cadastros, seguindo o padrão de contas e categorias do Cash. Preserve o contexto da lista no retorno e proteja alterações não salvas.
 - Reserve modais para confirmações e ações curtas. Não use modal ou painel sobreposto como padrão para formulários de cadastro.
+
+## Navegação
+
+- Agrupe pessoas e empresas em **Relacionamento**. Use breadcrumbs acima do título, com a página atual sem link e agrupadores sem destino como texto.
+- Links de retorno à lista devem preservar busca, filtros e paginação e respeitar a proteção de alterações não salvas.

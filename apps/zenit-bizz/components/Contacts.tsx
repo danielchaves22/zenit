@@ -15,7 +15,10 @@ export function Contacts() {
   const listQuery = contactFilters(router.query);
   const { q: query, role, personType, status } = listQuery;
   const page = Number(listQuery.page);
-  const editHref = (id: string) => ({ pathname: `${base}/${id}`, query: listQuery });
+  const editHref = (id: string) => ({
+    pathname: `${base}/${id}`,
+    query: listQuery
+  });
   const updateFilters = (changes: Partial<typeof listQuery>) => {
     void router.replace({ pathname: base, query: { ...listQuery, ...changes } }, undefined, {
       shallow: true,
@@ -111,7 +114,12 @@ export function Contacts() {
             <span>Relacionamento</span>
             <select
               value={role}
-              onChange={(e) => updateFilters({ role: e.target.value as typeof role, page: '1' })}
+              onChange={(e) =>
+                updateFilters({
+                  role: e.target.value as typeof role,
+                  page: '1'
+                })
+              }
             >
               <option value="all">Todos</option>
               <option value="customer">Clientes</option>
@@ -217,7 +225,16 @@ export function Contacts() {
                     </td>
                     <td data-label="Contato">
                       <span>{contact.phone || '—'}</span>
+                      {(contact.phones?.length ?? 0) > 1 && (
+                        <span className="subtle"> (+{contact.phones!.length - 1})</span>
+                      )}
                       <small>{contact.email}</small>
+                      {(contact.emails?.length ?? 0) > 1 && (
+                        <small>
+                          +{contact.emails!.length - 1}{' '}
+                          {contact.emails!.length === 2 ? 'e-mail' : 'e-mails'}
+                        </small>
+                      )}
                     </td>
                     <td data-label="Relacionamento">
                       <span className="role-badge">

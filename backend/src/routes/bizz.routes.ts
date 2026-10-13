@@ -2,7 +2,8 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { AppKey } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
-import BizzContactService, { BizzError } from '../services/bizz-contact.service';
+import BizzContactService from '../services/bizz-contact.service';
+import { BizzError } from '../services/bizz-error';
 import {
   bizzContactListSchema,
   createBizzContactSchema,
@@ -21,7 +22,8 @@ const run =
     void action(req, res).catch((error) => {
       if (error instanceof z.ZodError)
         return res.status(400).json({ error: error.errors[0]?.message || 'Dados inválidos.' });
-      if (error instanceof BizzError) return res.status(error.status).json({ error: error.message });
+      if (error instanceof BizzError)
+        return res.status(error.status).json({ error: error.message });
       return next(error);
     });
   };
@@ -45,7 +47,10 @@ router.use((req, res, next) => {
       if (user.mustChangePassword)
         return res
           .status(403)
-          .json({ error: 'Altere sua senha antes de continuar.', code: 'PASSWORD_CHANGE_REQUIRED' });
+          .json({
+            error: 'Altere sua senha antes de continuar.',
+            code: 'PASSWORD_CHANGE_REQUIRED'
+          });
       return next();
     })
     .catch(next);
@@ -53,13 +58,17 @@ router.use((req, res, next) => {
 router.get(
   '/contacts',
   run(async (req, res) =>
-    res.json(await BizzContactService.list(req.user.companyId!, bizzContactListSchema.parse(req.query)))
+    res.json(
+      await BizzContactService.list(req.user.companyId!, bizzContactListSchema.parse(req.query))
+    )
   )
 );
 router.get(
   '/contacts/:id',
   run(async (req, res) =>
-    res.json(await BizzContactService.get(req.user.companyId!, z.string().uuid().parse(req.params.id)))
+    res.json(
+      await BizzContactService.get(req.user.companyId!, z.string().uuid().parse(req.params.id))
+    )
   )
 );
 router.post(

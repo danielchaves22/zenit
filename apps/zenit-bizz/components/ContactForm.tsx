@@ -4,6 +4,8 @@ import { useNavigation } from '@/contexts/NavigationContext';
 import { api } from '@/lib/api';
 import { Contact } from '@/lib/types';
 import { Relationship } from '@/lib/contact-filters';
+import { RelationshipSelect } from './RelationshipSelect';
+import { ContactValues } from './ContactValues';
 
 type Draft = Pick<
   Contact,
@@ -12,8 +14,6 @@ type Draft = Pick<
   | 'isCustomer'
   | 'isSupplier'
   | 'document'
-  | 'email'
-  | 'phone'
   | 'postalCode'
   | 'street'
   | 'addressNumber'
@@ -24,7 +24,11 @@ type Draft = Pick<
   | 'country'
   | 'notes'
   | 'active'
->;
+> & { phones: string[]; emails: string[] };
+function initialValues(values: string[] | undefined, legacy: string | null | undefined) {
+  const current = values ?? (legacy ? [legacy] : []);
+  return current.length ? current : [''];
+}
 export function ContactForm({
   contact,
   role = 'all',
@@ -46,8 +50,8 @@ export function ContactForm({
     isCustomer: contact?.isCustomer ?? (role === 'customer' || role === 'both'),
     isSupplier: contact?.isSupplier ?? (role === 'supplier' || role === 'both'),
     document: contact?.document ?? '',
-    email: contact?.email ?? '',
-    phone: contact?.phone ?? '',
+    emails: initialValues(contact?.emails, contact?.email),
+    phones: initialValues(contact?.phones, contact?.phone),
     postalCode: contact?.postalCode ?? '',
     street: contact?.street ?? '',
     addressNumber: contact?.addressNumber ?? '',
@@ -97,6 +101,8 @@ export function ContactForm({
           method: contact ? 'PUT' : 'POST',
           body: JSON.stringify({
             ...draft,
+            phones: draft.phones.map((value) => value.trim()).filter(Boolean),
+            emails: draft.emails.map((value) => value.trim()).filter(Boolean),
             ...(contact ? { version: contact.version } : { requestKey: requestKey.current })
           })
         }
@@ -171,66 +177,32 @@ export function ContactForm({
                   />
                 </label>
               </div>
-              <fieldset className="role-field">
-                <legend>
-                  Relacionamento <span className="subtle">(opcional)</span>
-                </legend>
-                <div className="role-options">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={draft.isCustomer}
-                      onChange={(e) => update('isCustomer', e.target.checked)}
-                    />{' '}
-                    Cliente
-                  </label>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={draft.isSupplier}
-                      onChange={(e) => update('isSupplier', e.target.checked)}
-                    />{' '}
-                    Fornecedor
-                  </label>
-                </div>
-              </fieldset>
+              <RelationshipSelect value={draft} onChange={update} disabled={busy} />
               <div className="form-grid">
-                <label>
-                  Telefone
-                  <input
-                    type="tel"
-                    autoComplete="tel"
-                    maxLength={40}
-                    value={draft.phone ?? ''}
-                    onChange={(e) => update('phone', e.target.value)}
-                    placeholder="(00) 00000-0000"
-                  />
-                </label>
-                <label>
-                  E-mail
-                  <input
-                    type="email"
-                    autoComplete="email"
-                    maxLength={254}
-                    value={draft.email ?? ''}
-                    onChange={(e) => update('email', e.target.value)}
-                    placeholder="contato@empresa.com.br"
-                  />
-                </label>
+                <ContactValues
+                  kind="phone"
+                  values={draft.phones}
+                  onChange={(values) => update('phones', values)}
+                />
+                <ContactValues
+                  kind="email"
+                  values={draft.emails}
+                  onChange={(values) => update('emails', values)}
+                />
               </div>
               <details
                 open={Boolean(
                   contact &&
-                    [
-                      contact.postalCode,
-                      contact.street,
-                      contact.addressNumber,
-                      contact.complement,
-                      contact.neighborhood,
-                      contact.city,
-                      contact.state,
-                      contact.country
-                    ].some(Boolean)
+                  [
+                    contact.postalCode,
+                    contact.street,
+                    contact.addressNumber,
+                    contact.complement,
+                    contact.neighborhood,
+                    contact.city,
+                    contact.state,
+                    contact.country
+                  ].some(Boolean)
                 )}
               >
                 <summary>
@@ -333,7 +305,8 @@ export function ContactForm({
                     onChange={(e) => update('active', e.target.checked)}
                   />
                   <span>
-                    Cadastro ativo<small>Ao inativar, o histórico é preservado.</small>
+                    Cadastro ativo
+                    <small>Ao inativar, o histórico é preservado.</small>
                   </span>
                 </label>
               )}

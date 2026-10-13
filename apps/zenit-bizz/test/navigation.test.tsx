@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { NavigationProvider, useNavigation } from '@/contexts/NavigationContext';
+import { RouterContext } from 'next/dist/shared/lib/router-context.shared-runtime';
+import { Breadcrumb } from '@/components/Breadcrumb';
 const mock = vi.hoisted(() => ({
   listeners: new Map<string, (...args: any[]) => void>(),
   pop: vi.fn(),
@@ -30,6 +32,41 @@ beforeEach(() => {
   window.history.replaceState({ key: 'list' }, '', '/');
 });
 describe('unsaved navigation', () => {
+  it('protects breadcrumb navigation and preserves the filtered destination after discard', () => {
+    const destination = {
+      pathname: '/pessoas',
+      query: {
+        q: 'Flores',
+        role: 'supplier',
+        personType: 'BUSINESS',
+        status: 'inactive',
+        page: '2'
+      }
+    };
+    render(
+      <RouterContext.Provider value={{ push: mock.push, prefetch: vi.fn(), isReady: true } as any}>
+        <NavigationProvider>
+          <Breadcrumb
+            items={[
+              { label: 'Relacionamento' },
+              { label: 'Pessoas e empresas', href: destination },
+              { label: 'Editar cadastro' }
+            ]}
+          />
+          <Form leave={vi.fn()} />
+        </NavigationProvider>
+      </RouterContext.Provider>
+    );
+    const link = screen.getByRole('link', { name: 'Pessoas e empresas' });
+    fireEvent.click(link);
+    expect(mock.push).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    expect(mock.push).not.toHaveBeenCalled();
+    fireEvent.click(link);
+    fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+    expect(mock.push).toHaveBeenCalledExactlyOnceWith(destination);
+  });
   it('allows the approved Back when Next consumes the restoring pop after reload', () => {
     const go = vi.spyOn(window.history, 'go').mockImplementation(() => {});
     render(

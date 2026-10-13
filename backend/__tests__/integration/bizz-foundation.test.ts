@@ -38,18 +38,29 @@ describe('Bizz foundation and per-user application grants', () => {
     const max = await prisma.company.aggregate({ _max: { code: true } });
     companyId = (
       await prisma.company.create({
-        data: { name: 'Floricultura Bizz Test', code: (max._max.code ?? 0) + 1 }
+        data: {
+          name: 'Floricultura Bizz Test',
+          code: (max._max.code ?? 0) + 1
+        }
       })
     ).id;
     otherCompanyId = (
       await prisma.company.create({
-        data: { name: 'Outra Empresa Bizz Test', code: (max._max.code ?? 0) + 2 }
+        data: {
+          name: 'Outra Empresa Bizz Test',
+          code: (max._max.code ?? 0) + 2
+        }
       })
     ).id;
     const hash = await bcrypt.hash(password, 4);
     userId = (
       await prisma.user.create({
-        data: { name: 'Operador Bizz', email, password: hash, mustChangePassword: false }
+        data: {
+          name: 'Operador Bizz',
+          email,
+          password: hash,
+          mustChangePassword: false
+        }
       })
     ).id;
     deniedId = (
@@ -107,10 +118,18 @@ describe('Bizz foundation and per-user application grants', () => {
   afterAll(async () => {
     const companies = [companyId, otherCompanyId].filter(Boolean);
     const users = [userId, deniedId, foreignId].filter(Boolean);
-    await prisma.bizzContact.deleteMany({ where: { companyId: { in: companies } } });
-    await prisma.userAppGrant.deleteMany({ where: { companyId: { in: companies } } });
-    await prisma.companyAppEntitlement.deleteMany({ where: { companyId: { in: companies } } });
-    await prisma.userCompany.deleteMany({ where: { companyId: { in: companies } } });
+    await prisma.bizzContact.deleteMany({
+      where: { companyId: { in: companies } }
+    });
+    await prisma.userAppGrant.deleteMany({
+      where: { companyId: { in: companies } }
+    });
+    await prisma.companyAppEntitlement.deleteMany({
+      where: { companyId: { in: companies } }
+    });
+    await prisma.userCompany.deleteMany({
+      where: { companyId: { in: companies } }
+    });
     await prisma.user.deleteMany({ where: { id: { in: users } } });
     await prisma.company.deleteMany({ where: { id: { in: companies } } });
     await prisma.$disconnect();
@@ -217,24 +236,27 @@ describe('Bizz foundation and per-user application grants', () => {
       .send({ grants: [{ appKey: 'zenit-bizz', granted: false }] });
   });
   it('requires first-access password change and verifies the current password', async () => {
-    await prisma.user.update({ where: { id: userId }, data: { mustChangePassword: true } });
+    await prisma.user.update({
+      where: { id: userId },
+      data: { mustChangePassword: true }
+    });
     expect((await request(app).get('/api/bizz/contacts').set(headers())).body.code).toBe(
       'PASSWORD_CHANGE_REQUIRED'
     );
     expect(
       (
-        await request(app)
-          .put('/api/auth/password')
-          .set(headers())
-          .send({ currentPassword: 'incorrect', newPassword: 'Bizz-New-Password-43' })
+        await request(app).put('/api/auth/password').set(headers()).send({
+          currentPassword: 'incorrect',
+          newPassword: 'Bizz-New-Password-43'
+        })
       ).status
     ).toBe(400);
     expect(
       (
-        await request(app)
-          .put('/api/auth/password')
-          .set(headers())
-          .send({ currentPassword: password, newPassword: 'Bizz-New-Password-43' })
+        await request(app).put('/api/auth/password').set(headers()).send({
+          currentPassword: password,
+          newPassword: 'Bizz-New-Password-43'
+        })
       ).status
     ).toBe(200);
     expect(
@@ -382,7 +404,11 @@ describe('Bizz foundation and per-user application grants', () => {
         await request(app)
           .post('/api/bizz/contacts')
           .set(headers())
-          .send({ ...body, document: '12345678000190', requestKey: randomUUID() })
+          .send({
+            ...body,
+            document: '12345678000190',
+            requestKey: randomUUID()
+          })
       ).status
     ).toBe(409);
     expect(
@@ -519,5 +545,170 @@ describe('Bizz foundation and per-user application grants', () => {
     expect(
       (await request(app).get('/api/bizz/contacts?personType=invalid').set(headers())).status
     ).toBe(400);
+  });
+  it('persists multiple contact values, searches the additional ones and isolates them by company', async () => {
+    const phones = ['(11) 90000-0001', '(11) 90000-0002'];
+    const body = draft({
+      name: 'Múltiplos contatos',
+      requestKey: randomUUID(),
+      phones,
+      emails: [' Primeiro@Example.test ', 'compras@example.test']
+    });
+    const created = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      phone: '(11) 90000-0001',
+      email: 'primeiro@example.test',
+      phones,
+      emails: ['primeiro@example.test', 'compras@example.test']
+    });
+    expect(created.body).not.toHaveProperty('methods');
+    const path = `/api/bizz/contacts/${created.body.id}`;
+    expect((await request(app).get(path).set(headers())).body.phones).toEqual(phones);
+    const replay = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    expect(replay.status).toBe(200);
+    expect(replay.body.id).toBe(created.body.id);
+    expect(
+      (
+        await request(app)
+          .post('/api/bizz/contacts')
+          .set(headers())
+          .send({
+            ...body,
+            emails: ['primeiro@example.test', 'outro@example.test']
+          })
+      ).status
+    ).toBe(409);
+    for (const q of ['COMPRAS@EXAMPLE', '90000-0002']) {
+      const found = await request(app).get('/api/bizz/contacts').query({ q }).set(headers());
+      expect(found.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id]);
+      expect(
+        (
+          await request(app)
+            .get('/api/bizz/contacts')
+            .query({ q })
+            .set(headers(token, otherCompanyId))
+        ).body.total
+      ).toBe(0);
+    }
+    expect(
+      (
+        await request(app)
+          .put(path)
+          .set(headers(token, otherCompanyId))
+          .send(draft({ version: 1, phones: [], emails: [] }))
+      ).status
+    ).toBe(404);
+    const changed = await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          version: 1,
+          phones: ['(11) 90000-0002'],
+          emails: ['compras@example.test']
+        })
+      );
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({
+      phone: '(11) 90000-0002',
+      phones: ['(11) 90000-0002'],
+      email: 'compras@example.test',
+      version: 2
+    });
+    expect(
+      (
+        await request(app)
+          .put(path)
+          .set(headers())
+          .send(draft({ version: 1, phones: [], emails: [] }))
+      ).status
+    ).toBe(409);
+    expect((await request(app).get(path).set(headers())).body.phones).toEqual(['(11) 90000-0002']);
+    const cleared = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 2, phones: [], emails: [] }));
+    expect(cleared.body).toMatchObject({
+      phone: null,
+      email: null,
+      phones: [],
+      emails: []
+    });
+    expect(
+      await prisma.bizzContactMethod.count({
+        where: { contactId: created.body.id }
+      })
+    ).toBe(0);
+  });
+  it('preserves additional values during legacy updates and accepts equivalent single-value retries', async () => {
+    const body = draft({
+      requestKey: randomUUID(),
+      phone: '11912345678',
+      email: 'legacy@example.test'
+    });
+    const created = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    const replay = await request(app)
+      .post('/api/bizz/contacts')
+      .set(headers())
+      .send({ ...body, phones: [body.phone], emails: [body.email] });
+    expect(replay.status).toBe(200);
+    expect(replay.body.id).toBe(created.body.id);
+    const path = `/api/bizz/contacts/${created.body.id}`;
+    await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          version: 1,
+          phones: ['11912345678', '11912345679'],
+          emails: ['legacy@example.test', 'extra@example.test']
+        })
+      )
+      .expect(200);
+    const legacy = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 2, phone: '11912345680', email: 'novo@example.test' }));
+    expect(legacy.status).toBe(200);
+    expect(legacy.body).toMatchObject({
+      phones: ['11912345680', '11912345679'],
+      emails: ['novo@example.test', 'extra@example.test']
+    });
+    const { phone, email, ...withoutValues } = draft({ version: 3 });
+    const omitted = await request(app).put(path).set(headers()).send(withoutValues);
+    expect(omitted.status).toBe(200);
+    expect(omitted.body.phones).toEqual(legacy.body.phones);
+    expect(omitted.body.emails).toEqual(legacy.body.emails);
+  });
+  it('rejects invalid, duplicate and excessive contact values without altering the saved contact', async () => {
+    for (const values of [
+      { emails: ['invalid'] },
+      { emails: ['A@example.test', 'a@example.test'] },
+      { phones: ['(11) 91234-5678', '11912345678'] },
+      { phones: [''] },
+      { phones: ['1'.repeat(41)] },
+      { emails: Array.from({ length: 21 }, (_, i) => `p${i}@example.test`) }
+    ]) {
+      const result = await request(app)
+        .post('/api/bizz/contacts')
+        .set(headers())
+        .send(draft({ requestKey: randomUUID(), ...values }));
+      expect(result.status).toBe(400);
+    }
+    const created = await request(app)
+      .post('/api/bizz/contacts')
+      .set(headers())
+      .send(draft({ requestKey: randomUUID(), emails: ['valid@example.test'] }));
+    const path = `/api/bizz/contacts/${created.body.id}`;
+    await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 1, emails: ['invalid'] }))
+      .expect(400);
+    expect((await request(app).get(path).set(headers())).body).toMatchObject({
+      version: 1,
+      emails: ['valid@example.test']
+    });
   });
 });

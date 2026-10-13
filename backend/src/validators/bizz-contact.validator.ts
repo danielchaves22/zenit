@@ -7,6 +7,27 @@ const optionalText = (max: number) =>
     .max(max)
     .nullish()
     .transform((value) => value || null);
+const emailValue = z.string().trim().email('Informe um e-mail válido.').max(254).toLowerCase();
+const phoneValue = z.string().trim().min(1, 'Informe o telefone.').max(40);
+const contactValues = (schema: z.ZodType<string>, kind: 'phone' | 'email') =>
+  z
+    .array(schema)
+    .max(20, 'Cadastre no máximo 20 telefones ou 20 e-mails.')
+    .superRefine((values, ctx) => {
+      const seen = new Set<string>();
+      values.forEach((value, index) => {
+        const key = kind === 'phone' ? value.replace(/\D/g, '') || value.toLowerCase() : value;
+        if (seen.has(key))
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [index],
+            message:
+              kind === 'phone' ? 'Este telefone está repetido.' : 'Este e-mail está repetido.'
+          });
+        seen.add(key);
+      });
+    })
+    .optional();
 const contactFields = {
   name: z.string().trim().min(1, 'Informe o nome.').max(160),
   personType: z.enum(['PERSON', 'BUSINESS']),
@@ -29,13 +50,20 @@ const contactFields = {
   neighborhood: optionalText(100).optional(),
   city: optionalText(100).optional(),
   state: optionalText(60).optional(),
-  country: optionalText(60).optional()
+  country: optionalText(60).optional(),
+  phones: contactValues(phoneValue, 'phone'),
+  emails: contactValues(emailValue, 'email')
 };
 export const createBizzContactSchema = z
   .object({ ...contactFields, requestKey: z.string().uuid() })
   .strict();
 export const updateBizzContactSchema = z
-  .object({ ...contactFields, version: z.number().int().positive() })
+  .object({
+    ...contactFields,
+    email: contactFields.email.optional(),
+    phone: contactFields.phone.optional(),
+    version: z.number().int().positive()
+  })
   .strict();
 export const bizzContactListSchema = z
   .object({

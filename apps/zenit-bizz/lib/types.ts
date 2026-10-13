@@ -27,6 +27,8 @@ export interface Contact {
   document: string | null;
   email: string | null;
   phone: string | null;
+  phones?: string[];
+  emails?: string[];
   postalCode: string | null;
   street: string | null;
   addressNumber: string | null;
@@ -49,6 +51,8 @@ export interface ContactList {
 }
 export function allowedCompanies(user: User) {
   return user.companies.filter((company) =>
-    user.appAccessByCompany?.[company.id]?.some((access) => access.appKey === 'zenit-bizz' && access.allowed)
+    user.appAccessByCompany?.[company.id]?.some(
+      (access) => access.appKey === 'zenit-bizz' && access.allowed
+    )
   );
 }

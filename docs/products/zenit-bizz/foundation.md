@@ -47,6 +47,10 @@ O endereço é composto por CEP, logradouro, número, complemento, bairro, cidad
 
 O identificador permanece estável após edição/inativação e poderá ser referenciado nas compras e vendas futuras. Não há relacionamento financeiro implementado nesta versão.
 
+Telefones e e-mails são listas ordenadas (`phones` e `emails`), com até 20 valores de cada tipo. Linhas vazias do formulário não são enviadas. O servidor valida cada valor e rejeita repetições no mesmo cadastro (e-mail sem distinção de maiúsculas; telefone ignorando a pontuação). A busca considera também os valores adicionais.
+
+`BizzContactMethod` armazena os valores vinculados ao cadastro; a empresa é resolvida pelo cadastro pai. A gravação das listas e da versão ocorre na mesma transação. Os campos legados `phone` e `email` continuam refletindo o primeiro valor. Listas explícitas substituem os respectivos valores; listas vazias os removem. Uma edição legada que envie apenas o campo singular substitui ou remove o primeiro valor, preservando os adicionais. Omissão de ambos os formatos preserva os valores na edição. Se os dois formatos forem enviados, prevalece a lista.
+
 - `GET /api/bizz/contacts`: busca por `q`, relacionamento `customer|supplier|both|none|all`, tipo `personType=PERSON|BUSINESS|all`, situação `active|inactive|all` e página; 20 registros por página. Os filtros de cliente e fornecedor incluem quem tem ambos os relacionamentos.
 - `GET /api/bizz/contacts/:id`: consulta individual para edição por URL; retorna 404 se o cadastro não pertencer à empresa ativa.
 - `POST /api/bizz/contacts`: criação com `requestKey` UUID. Repetição da mesma tentativa retorna o registro existente; reuso da chave com dados diferentes retorna 409.
@@ -64,3 +68,5 @@ Formulários preservam os dados após falha de gravação, confirmam descarte de
 Lista unificada em `/pessoas`, criação em `/pessoas/novo` e edição em `/pessoas/:id`. Busca, relacionamento, tipo de pessoa, situação e página ficam na URL e são preservados no retorno. Os filtros de relacionamento e tipo preenchem valores iniciais de novos cadastros, sem sobrescrever os de registros existentes. As antigas URLs de clientes e fornecedores redirecionam para essas páginas, mantendo seu contexto. A navegação com alterações pendentes exige confirmação; modais ficam reservados a confirmações, sem conter o formulário de cadastro.
 
 Antes de executar esta versão, aplique a migração `20261013180000_bizz_people_directory`. Ela adiciona campos opcionais de endereço e remove somente a restrição de relacionamento obrigatório; não remove nem recria registros. A API mantém o contrato anterior de cliente/fornecedor, inclusive a repetição de requisições de criação sem endereço.
+
+A migração `20261013210000_bizz_contact_methods` cria as listas de telefones/e-mails a partir dos campos existentes, mantendo os dados legados. Publique a migração e a API compatível antes do novo frontend. O relacionamento usa um dropdown com caixas de seleção; telefones e e-mails têm ações de adicionar/remover linhas, sem criar cadastros separados.

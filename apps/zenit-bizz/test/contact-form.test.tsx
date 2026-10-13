@@ -11,10 +11,16 @@ describe('contact form recovery', () => {
     vi.mocked(api).mockResolvedValue({ id: 'saved' });
     const saved = vi.fn();
     render(<ContactForm contact={null} companyId={23} onClose={vi.fn()} onSaved={saved} />);
-    fireEvent.change(screen.getByLabelText(/Nome ou razão social/), { target: { value: 'Ana' } });
+    fireEvent.change(screen.getByLabelText(/Nome ou razão social/), {
+      target: { value: 'Ana' }
+    });
     fireEvent.click(screen.getByText('Endereço'));
-    fireEvent.change(screen.getByLabelText('Logradouro'), { target: { value: 'Rua das Flores' } });
-    fireEvent.change(screen.getByLabelText('Cidade'), { target: { value: 'Campinas' } });
+    fireEvent.change(screen.getByLabelText('Logradouro'), {
+      target: { value: 'Rua das Flores' }
+    });
+    fireEvent.change(screen.getByLabelText('Cidade'), {
+      target: { value: 'Campinas' }
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(saved).toHaveBeenCalled());
     expect(JSON.parse(vi.mocked(api).mock.calls[0][1]!.body as string)).toMatchObject({
@@ -45,6 +51,7 @@ describe('contact form recovery', () => {
         onSaved={vi.fn()}
       />
     );
+    fireEvent.click(screen.getByRole('button', { name: /Relacionamento/ }));
     expect(screen.getByLabelText('Fornecedor')).not.toBeChecked();
     expect(screen.getByLabelText('Cliente')).not.toBeChecked();
     expect(screen.getByLabelText('Tipo de pessoa')).toHaveValue('PERSON');
@@ -60,6 +67,7 @@ describe('contact form recovery', () => {
         onSaved={vi.fn()}
       />
     );
+    fireEvent.click(screen.getByRole('button', { name: /Relacionamento/ }));
     expect(screen.getByLabelText('Cliente')).toBeChecked();
     expect(screen.getByLabelText('Fornecedor')).toBeChecked();
     expect(screen.getByLabelText('Tipo de pessoa')).toHaveValue('BUSINESS');
@@ -99,10 +107,86 @@ describe('contact form recovery', () => {
     render(
       <ContactForm contact={null} role="customer" companyId={1} onClose={close} onSaved={vi.fn()} />
     );
-    fireEvent.change(screen.getByLabelText(/Nome ou razão social/), { target: { value: 'Maria' } });
+    fireEvent.change(screen.getByLabelText(/Nome ou razão social/), {
+      target: { value: 'Maria' }
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(close).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
     expect(screen.getByLabelText(/Nome ou razão social/)).toHaveValue('Maria');
+  });
+  it('selects both relationships, closes with Escape and restores focus without losing the selection', () => {
+    render(<ContactForm contact={null} companyId={23} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const trigger = screen.getByRole('button', { name: /Relacionamento/ });
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    expect(screen.getByLabelText('Cliente')).toHaveFocus();
+    fireEvent.click(screen.getByLabelText('Cliente'));
+    fireEvent.click(screen.getByLabelText('Fornecedor'));
+    fireEvent.keyDown(screen.getByLabelText('Fornecedor'), { key: 'Escape' });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveTextContent('Cliente, Fornecedor');
+    fireEvent.click(trigger);
+    expect(screen.getByLabelText('Cliente')).toBeChecked();
+    expect(screen.getByLabelText('Fornecedor')).toBeChecked();
+    fireEvent.pointerDown(document.body);
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+  it('adds and removes contact values and submits every filled row while preserving data after failure', async () => {
+    vi.mocked(api).mockRejectedValue(new Error('Conexão interrompida.'));
+    render(<ContactForm contact={null} companyId={23} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText(/Nome ou razão social/), {
+      target: { value: 'Ana' }
+    });
+    fireEvent.change(screen.getByLabelText('Telefone 1'), {
+      target: { value: '11999990001' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar telefone' }));
+    expect(screen.getByLabelText('Telefone 2')).toHaveFocus();
+    fireEvent.change(screen.getByLabelText('Telefone 2'), {
+      target: { value: '11999990002' }
+    });
+    fireEvent.change(screen.getByLabelText('E-mail 1'), {
+      target: { value: 'ana@example.test' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar e-mail' }));
+    fireEvent.change(screen.getByLabelText('E-mail 2'), {
+      target: { value: 'outro@example.test' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar e-mail' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await screen.findByRole('alert');
+    expect(JSON.parse(vi.mocked(api).mock.calls[0][1]!.body as string)).toMatchObject({
+      phones: ['11999990001', '11999990002'],
+      emails: ['ana@example.test', 'outro@example.test']
+    });
+    expect(screen.getByLabelText('Telefone 2')).toHaveValue('11999990002');
+    fireEvent.click(screen.getByRole('button', { name: 'Remover telefone 1' }));
+    expect(screen.getByLabelText('Telefone 1')).toHaveValue('11999990002');
+    expect(screen.getByLabelText('Telefone 1')).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.getByRole('heading', { name: 'Descartar alterações?' })).toBeInTheDocument();
+  });
+  it('loads legacy values and submits empty lists when the last values are removed', async () => {
+    vi.mocked(api).mockResolvedValue({ id: 'saved' });
+    const contact = {
+      id: 'saved',
+      name: 'Ana',
+      email: 'ana@example.test',
+      phone: '11999990001',
+      version: 2
+    } as Contact;
+    render(<ContactForm contact={contact} companyId={23} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText('Telefone 1')).toHaveValue(contact.phone);
+    expect(screen.getByLabelText('E-mail 1')).toHaveValue(contact.email);
+    fireEvent.click(screen.getByRole('button', { name: 'Remover telefone 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remover e-mail 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(api).toHaveBeenCalled());
+    expect(JSON.parse(vi.mocked(api).mock.calls[0][1]!.body as string)).toMatchObject({
+      phones: [],
+      emails: [],
+      version: 2
+    });
   });
 });

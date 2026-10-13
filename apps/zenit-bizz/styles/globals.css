@@ -438,6 +438,7 @@ fieldset {
   width: 162px;
 }
 .nav-heading {
+  display: block;
   font-size: 9px;
   letter-spacing: 1.5px;
   font-weight: 700;
@@ -467,6 +468,9 @@ fieldset {
 }
 .sidebar-bottom {
   margin-top: auto;
+}
+.nav-group + .nav-group {
+  margin-top: 26px;
 }
 .collapse-button {
   width: 100%;
@@ -548,6 +552,47 @@ fieldset {
 }
 .page-heading h1 {
   margin-bottom: 0;
+}
+.breadcrumb {
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.breadcrumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+}
+.breadcrumb li > svg {
+  flex-shrink: 0;
+}
+.breadcrumb a,
+.breadcrumb li > span {
+  overflow-wrap: anywhere;
+}
+.breadcrumb a {
+  padding: 6px 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.breadcrumb a:hover {
+  color: var(--accent);
+}
+.breadcrumb [aria-current='page'] {
+  color: var(--ink);
+  font-weight: 500;
 }
 .contacts-panel {
   border: 1px solid var(--line);
@@ -791,20 +836,76 @@ fieldset {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-.role-field legend {
-  margin-bottom: 10px;
+.field-label,
+.contact-values legend {
+  display: block;
+  margin-bottom: 7px;
   font-weight: 500;
 }
-.role-options {
-  display: flex;
-  gap: 25px;
-  margin-bottom: 6px;
+.relationship-select {
+  position: relative;
 }
-.role-options label {
+.select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  text-align: left;
+}
+.select-trigger svg {
+  flex-shrink: 0;
+}
+.select-options {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: 0 8px 20px #26352d1a;
+}
+.select-options label {
   flex-direction: row;
   align-items: center;
+  min-height: 44px;
   gap: 8px;
+  padding: 8px;
+  border-radius: 5px;
   font-weight: 400;
+  cursor: pointer;
+}
+.select-options label:hover,
+.select-options label:focus-within {
+  background: var(--soft);
+}
+.contact-value-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.contact-value-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.remove-contact-value {
+  width: 44px;
+  height: 44px;
+}
+.add-contact-value {
+  margin-top: 6px;
+  padding-inline: 0;
+  font-size: 13px;
 }
 .contact-form-body details {
   border-top: 1px solid var(--line);
@@ -1143,9 +1244,6 @@ fieldset {
   .user-menu {
     gap: 0;
   }
-  .role-options {
-    gap: 18px;
-  }
   .dialog-actions > .button {
     flex: 1;
   }
@@ -1184,9 +1282,6 @@ fieldset {
   select,
   textarea {
     font-size: 16px;
-  }
-  .role-options label {
-    min-height: 44px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

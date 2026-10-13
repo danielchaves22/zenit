@@ -15,7 +15,7 @@ Monorepositório do backend compartilhado, do Zenit Cash e dos sites institucion
 | Diretório             | Responsabilidade                                                       |
 | --------------------- | ---------------------------------------------------------------------- |
 | apps/zenit-cash       | Frontend Next.js com Pages Router                                      |
-| apps/zenit-bizz       | Gestão de pequenos negócios: login, clientes e fornecedores           |
+| apps/zenit-bizz       | Pessoas e empresas, produtos, serviços e compras integradas ao Cash    |
 | backend               | API Node/Express, autenticação, regras financeiras e Prisma/PostgreSQL |
 | packages              | Contratos e código compartilhados                                      |
 | sites/zenitapp-public | Site institucional estático; documentação gerada em docs/              |

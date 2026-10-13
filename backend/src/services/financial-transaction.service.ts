@@ -1687,6 +1687,10 @@ export default class FinancialTransactionService {
       throw new Error(`Transaction ${originalTxn.id} does not belong to company ${companyId}`);
     }
 
+    if (originalTxn.bizzPurchaseId) {
+      await this.validateBizzPurchaseUpdateTx(tx, originalTxn, data);
+    }
+
     if (originalTxn.archivedAt) {
       throw new Error('Transacoes arquivadas precisam ser desarquivadas antes da exclusao');
     }
@@ -1794,6 +1798,14 @@ export default class FinancialTransactionService {
       `;
     }
 
+    if (originalTxn.bizzPurchaseId && originalTxn.status === 'PENDING' && data.status === 'COMPLETED') {
+      const payingAccountId = data.fromAccountId ?? originalTxn.fromAccountId;
+      const payingAccount = await tx.financialAccount.findUniqueOrThrow({ where: { id: payingAccountId! } });
+      if (!payingAccount.isActive || payingAccount.companyId !== companyId || payingAccount.type === 'CREDIT_CARD' || payingAccount.isSystemManaged)
+        throw new Error('Selecione uma conta de pagamento ativa desta empresa.');
+      await this.validateBusinessRules({ type: 'EXPENSE', fromAccountId: payingAccountId }, parseDecimal(data.amount ?? originalTxn.amount), [payingAccount]);
+    }
+
     if (originalTxn.status === 'COMPLETED' && !originalTxn.isExternalCreditCardSettlement) {
       await this.reverseAccountBalancesAtomic(tx, {
         type: originalTxn.type,
@@ -1813,6 +1825,10 @@ export default class FinancialTransactionService {
     });
 
     const updatedData: Prisma.FinancialTransactionUpdateInput = {};
+
+    if (originalTxn.bizzPurchaseId && data.status === TransactionStatus.COMPLETED) {
+      updatedData.paidAmount = parseDecimal(data.amount ?? originalTxn.amount);
+    }
 
     if (data.description !== undefined) updatedData.description = data.description;
     if (data.amount !== undefined) updatedData.amount = parseDecimal(data.amount);
@@ -1900,6 +1916,9 @@ export default class FinancialTransactionService {
     if (originalTxn.companyId !== companyId) {
       throw new Error(`Transaction ${originalTxn.id} does not belong to company ${companyId}`);
     }
+    if (originalTxn.bizzPurchaseId) {
+      throw new Error('Esta parcela pertence a uma compra do Bizz. Cancele a compra pelo Bizz.');
+    }
 
     const linkedRefundCount = await tx.financialTransaction.count({
       where: { refundOfTransactionId: originalTxn.id }
@@ -1978,6 +1997,57 @@ export default class FinancialTransactionService {
       tx,
       paymentLinkedInvoiceIds
     );
+  }
+
+  // Both Cash and Bizz use this guard and the same balance mutation path.
+  private static async validateBizzPurchaseUpdateTx(
+    tx: Prisma.TransactionClient,
+    original: FinancialTransaction,
+    data: Partial<{
+      description: string;
+      amount: number | string;
+      date: Date;
+      type: TransactionType;
+      status: TransactionStatus;
+      fromAccountId: number | null;
+      toAccountId: number | null;
+      installmentNumber: number | null;
+      totalInstallments: number | null;
+      effectiveDate: Date | null;
+    }>
+  ) {
+    for (const field of ['description', 'type', 'toAccountId', 'installmentNumber', 'totalInstallments'] as const) {
+      if (data[field] !== undefined && data[field] !== original[field])
+        throw new Error('Os dados comerciais desta parcela são definidos pela compra no Bizz.');
+    }
+    if (data.date && data.date.toISOString().slice(0, 10) !== original.date.toISOString().slice(0, 10))
+      throw new Error('A data desta parcela é definida pela compra no Bizz.');
+    const paying = original.status === 'PENDING' && data.status === 'COMPLETED';
+    if (data.status && data.status !== original.status && !paying)
+      throw new Error('Cancele a compra pelo Bizz. Pagamentos registrados não podem ser reabertos por esta operação.');
+    if (data.amount !== undefined && !parseDecimal(data.amount).eq(original.amount) && !paying)
+      throw new Error('O valor da parcela é definido pela compra. Ajustes de valor são permitidos na quitação.');
+    if (original.status !== 'PENDING' && (
+      (data.fromAccountId !== undefined && data.fromAccountId !== original.fromAccountId) ||
+      (data.effectiveDate !== undefined && data.effectiveDate?.toISOString().slice(0, 10) !== original.effectiveDate?.toISOString().slice(0, 10))
+    )) throw new Error('Os dados de um pagamento registrado não podem ser alterados por esta operação.');
+    const accountId = data.fromAccountId === undefined ? original.fromAccountId : data.fromAccountId;
+    const account = accountId ? await tx.financialAccount.findFirst({ where: { id: accountId, companyId: original.companyId, isActive: true, isSystemManaged: false, type: { not: 'CREDIT_CARD' } } }) : null;
+    if (!account) throw new Error('Selecione uma conta de pagamento ativa desta empresa.');
+    if (paying) {
+      const amount = parseDecimal(data.amount ?? original.amount);
+      if (amount.lte(0) || amount.gte('1000000000000')) throw new Error('Informe um valor de pagamento válido.');
+      if (!data.effectiveDate || Number.isNaN(data.effectiveDate.getTime())) throw new Error('Informe a data do pagamento.');
+    }
+  }
+
+  static async settleBizzPurchaseTransactionTx(
+    tx: Prisma.TransactionClient,
+    original: FinancialTransaction,
+    data: { amount: string; effectiveDate: Date; fromAccountId: number }
+  ) {
+    if (!original.bizzPurchaseId || original.status !== 'PENDING') throw new Error('Parcela indisponível para pagamento.');
+    return this.updateSingleTransactionRecordTx(tx, original, { ...data, status: 'COMPLETED' }, original.companyId);
   }
 
   /**
@@ -2171,6 +2241,7 @@ export default class FinancialTransactionService {
   }
 
   private static assertPendingArchivableTransaction(transaction: {
+    bizzPurchaseId?: string | null;
     archivedAt?: Date | null;
     status: TransactionStatus;
     type: TransactionType;
@@ -2179,6 +2250,7 @@ export default class FinancialTransactionService {
     creditCardInvoiceId?: number | null;
     isCreditCardInvoicePayment?: boolean | null;
   }): void {
+    if (transaction.bizzPurchaseId) throw new Error('Esta parcela pertence a uma compra do Bizz e não pode ser arquivada.');
     if (transaction.status !== TransactionStatus.PENDING) {
       throw new Error('Apenas transacoes pendentes podem ser arquivadas');
     }

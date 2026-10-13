@@ -61,7 +61,7 @@ O servidor determina usuário/empresa e não aceita atribuição desses campos p
 
 ## Produtos e serviços
 
-O catálogo em **Cadastros → Produtos e serviços** usa `/produtos-servicos`, `/produtos-servicos/novo` e `/produtos-servicos/:id`. Cada `BizzCatalogItem` pertence a uma empresa e registra nome, tipo `PRODUCT|SERVICE`, unidade, utilização em compra (`canPurchase`), venda (`canSell`) ou ambas, preço de venda de referência e situação. Nome e unidade são obrigatórios; pelo menos uma utilização precisa estar marcada. A unidade é texto com sugestões, sem conversões automáticas. Custos efetivos, compras, vendas e estoque são etapas posteriores.
+O catálogo em **Cadastros → Produtos e serviços** usa `/produtos-servicos`, `/produtos-servicos/novo` e `/produtos-servicos/:id`. Cada `BizzCatalogItem` pertence a uma empresa e registra nome, tipo `PRODUCT|SERVICE`, unidade, utilização em compra (`canPurchase`), venda (`canSell`) ou ambas, preço de venda de referência e situação. Nome e unidade são obrigatórios; pelo menos uma utilização precisa estar marcada. A unidade é texto com sugestões, sem conversões automáticas. Compras registram seus próprios preços efetivos; vendas e estoque são etapas posteriores.
 
 O preço de referência é opcional, em reais, e aceita zero. É armazenado como `DECIMAL(14,2)` e transmitido em `salePrice` como string decimal canônica (`"1234.50"`) ou `null`. O formulário aceita vírgula decimal e agrupamento brasileiro (`1.234,50`). Valores negativos, mais de duas casas decimais e valores acima de `999999999999.99` são recusados. Alterar utilização não apaga um preço já informado. O preço é uma referência para operações futuras.
 
@@ -76,10 +76,30 @@ Os mesmos controles de acesso ao Bizz e de troca obrigatória de senha protegem 
 
 Tema claro, marca laranja `#F97316`, navegação retrátil, adaptação a telas pequenas e formulários com informações complementares recolhíveis. Botões preenchidos usam um tom mais escuro de laranja para legibilidade do texto. Estados vazios correspondem a dados reais; não há indicadores de vendas ou compras ainda não implementados.
 
-Formulários preservam os dados após falha de gravação, confirmam descarte de alterações e impedem submissões simultâneas. A integração financeira será validada numa próxima entrega com compra, compromisso pendente no Cash e retorno da situação ao Bizz.
+Formulários preservam os dados após falha de gravação, confirmam descarte de alterações e impedem submissões simultâneas. Compras e parcelas usam a integração financeira descrita abaixo; o estado publicado depende da aplicação da migração e do deploy da API e do frontend.
 
 Lista unificada em `/pessoas`, criação em `/pessoas/novo` e edição em `/pessoas/:id`. Busca, relacionamento, tipo de pessoa, situação e página ficam na URL e são preservados no retorno. Os filtros de relacionamento e tipo preenchem valores iniciais de novos cadastros, sem sobrescrever os de registros existentes. As antigas URLs de clientes e fornecedores redirecionam para essas páginas, mantendo seu contexto. A navegação com alterações pendentes exige confirmação; modais ficam reservados a confirmações, sem conter o formulário de cadastro.
 
 Antes de executar esta versão, aplique a migração `20261013180000_bizz_people_directory`. Ela adiciona campos opcionais de endereço e remove somente a restrição de relacionamento obrigatório; não remove nem recria registros. A API mantém o contrato anterior de cliente/fornecedor, inclusive a repetição de requisições de criação sem endereço.
 
 A migração `20261013210000_bizz_contact_methods` cria as listas de telefones/e-mails a partir dos campos existentes, mantendo os dados legados. Publique a migração e a API compatível antes do novo frontend. O relacionamento usa um dropdown com caixas de seleção; telefones e e-mails têm ações de adicionar/remover linhas, sem criar cadastros separados.
+
+## Compras e integração financeira
+
+**Operação → Compras** usa `/compras`, `/compras/nova` e `/compras/:id`. A lista mantém busca por fornecedor/número, situação e página na URL. A criação usa página própria e proteção de alterações não salvas. O pagamento de uma parcela e o cancelamento usam confirmações curtas.
+
+Uma compra confirmada registra fornecedor ativo, data, itens ativos disponíveis para compra, quantidades (até três casas), preços unitários (duas casas) e observação opcional. Nome do fornecedor, nome/unidade dos itens e valores são preservados como retratos comerciais da operação. O backend calcula os totais com Decimal, arredondando cada item para centavos antes de somar; o navegador apresenta a mesma prévia com aritmética inteira.
+
+Há de uma a 60 parcelas mensais. O Cash distribui centavos, destinando o resíduo à última parcela, e limita o dia ao último dia de cada mês. Conta prevista e primeiro vencimento são obrigatórios; categoria de despesa é opcional. Contas de cartão e contas gerenciadas pelo sistema não são aceitas nesta etapa.
+
+A confirmação e a criação das parcelas pendentes acontecem na mesma transação do banco. `FinancialTransaction.bizzPurchaseId` vincula os próprios lançamentos financeiros; o Bizz não mantém uma cópia independente de seus estados. `originalAmount` preserva o compromisso original, enquanto `amount` e `paidAmount` representam o valor quitado. O total comercial permanece intacto quando há diferença no pagamento. Não há pagamento parcial: confirmar um valor diferente quita integralmente a parcela.
+
+As rotas continuam em `/api/bizz/*`: `GET /purchases/options`, `GET/POST /purchases`, `GET /purchases/:id`, `POST /purchases/:id/installments/:transactionId/settle` e `POST /purchases/:id/cancel`. O acesso efetivo ao Bizz, a empresa ativa e a troca obrigatória de senha continuam obrigatórios. A empresa precisa ter Cash habilitado para criar, pagar ou cancelar. O usuário não precisa receber acesso à interface Cash: essas ações limitadas às compras respeitam o papel da associação à empresa e os acessos às contas já existentes. Usuários comuns precisam de acesso explícito tanto à conta prevista quanto à conta de pagamento. A seleção não retorna saldos; nomes de contas sem acesso não são expostos na consulta da compra.
+
+Criação usa `requestKey` por empresa e comparação do conteúdo. Pagamento usa chave por compra, recibo de repetição/autor e `expectedUpdatedAt`. A parcela é bloqueada e relida antes da baixa; repetir a mesma tentativa não movimenta novamente o saldo. Alterações concorrentes exigem atualização. Efeitos de cache são publicados após o commit. A baixa utiliza o serviço financeiro comum, incluindo bloqueio de contas e validação de saldo negativo.
+
+O Cash pode quitar essas mesmas parcelas, e a consulta/ação Atualizar no Bizz mostra o resultado atual. Campos comerciais não podem ser editados pela transação avulsa. Exclusão, arquivamento, reabertura e alteração do valor de uma parcela já paga são bloqueados. Uma compra inteiramente pendente pode ser cancelada pelo Bizz, cancelando todas as parcelas sem apagar o histórico. Após pagamento, cancelamento/estorno não faz parte desta entrega.
+
+Esta primeira versão confirma a compra diretamente; não inclui rascunho, edição de compra confirmada, recebimento/estoque, cartão, devoluções, baixa parcial ou quitação em lote. Correções de compras ainda não pagas usam cancelamento e novo registro. Resets financeiros que tentem excluir lançamentos vinculados são impedidos pelas relações de integridade; não removê-las para contornar o histórico comercial.
+
+Antes de executar, aplique `20261014130000_bizz_purchases` e publique a API antes do frontend. A migração adiciona as tabelas comerciais, recibos de repetição e uma coluna opcional nos lançamentos; não altera compras ou lançamentos existentes. Testes de integração devem usar exclusivamente uma base de teste dedicada.

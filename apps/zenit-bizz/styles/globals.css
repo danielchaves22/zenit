@@ -1321,6 +1321,293 @@ fieldset {
 .contact-editor {
   max-width: 900px;
 }
+
+.purchase-editor {
+  max-width: 1120px;
+}
+.purchase-section {
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
+}
+.purchase-section h2,
+.purchase-section-panel h2,
+.purchase-notes h2 {
+  font-size: 18px;
+  margin-bottom: 18px;
+}
+.purchase-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.purchase-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(90px, 0.8fr) minmax(110px, 1fr) minmax(
+      100px,
+      1fr
+    ) 36px;
+  align-items: end;
+  gap: 12px;
+}
+.purchase-line label small {
+  font-size: 11px;
+  font-weight: 400;
+}
+.purchase-line-total {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 70px;
+  justify-content: space-between;
+  padding-bottom: 10px;
+}
+.purchase-line-total span {
+  font-size: 13px;
+}
+.purchase-line-total strong,
+.purchase-total-row strong {
+  font-variant-numeric: tabular-nums;
+}
+.purchase-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+.purchase-total-row strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 23px;
+}
+.purchase-lookup {
+  position: relative;
+  min-width: 0;
+}
+.purchase-lookup > label {
+  margin-bottom: 8px;
+}
+.purchase-lookup-popup {
+  position: absolute;
+  z-index: 6;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px #26352d22;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.purchase-lookup-popup ul {
+  list-style: none;
+  padding: 4px;
+  margin: 0;
+}
+.purchase-lookup-popup li {
+  padding: 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.purchase-lookup-popup li:hover,
+.purchase-lookup-popup li[aria-selected='true'] {
+  background: var(--soft);
+}
+.purchase-lookup-popup small {
+  display: block;
+  color: var(--muted);
+}
+.purchase-lookup-popup p {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.installment-preview {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  max-height: 280px;
+  overflow: auto;
+}
+.purchase-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.purchase-table th {
+  text-align: left;
+  font-weight: 500;
+  background: #fafbf8;
+  color: var(--muted);
+}
+.purchase-table th,
+.purchase-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.purchase-table tr:last-child td {
+  border-bottom: 0;
+}
+.purchase-table small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+.purchase-toolbar {
+  grid-template-columns: minmax(180px, 1fr) auto;
+}
+.purchase-toolbar .search-field {
+  grid-column: auto;
+}
+.purchase-status {
+  font-weight: 500;
+}
+.purchase-status.overdue {
+  color: var(--accent);
+}
+.purchase-summary {
+  padding: 24px;
+  margin-bottom: 24px;
+}
+.purchase-summary dl {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 24px;
+  margin: 0;
+}
+.purchase-summary dt {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.purchase-summary dd {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.purchase-section-panel {
+  margin-bottom: 24px;
+}
+.purchase-section-panel > h2 {
+  padding: 24px 24px 0;
+}
+.purchase-panel-heading {
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.purchase-panel-heading h2 {
+  margin: 0;
+}
+.purchase-access-note {
+  padding: 0 24px 18px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.purchase-notes {
+  padding: 24px;
+}
+.purchase-notes p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.purchase-bottom-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+.purchase-editor > form.contact-form-panel {
+  overflow: visible;
+}
+@media (max-width: 1100px) {
+  .purchase-line {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 36px;
+  }
+  .purchase-line > .purchase-lookup {
+    grid-column: 1 / -1;
+  }
+  .purchase-summary dl {
+    grid-template-columns: 1fr 1fr;
+  }
+  .purchase-table th,
+  .purchase-table td {
+    padding: 14px 12px;
+  }
+}
+@media (max-width: 650px) {
+  .purchase-line {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .purchase-line > .icon-button {
+    justify-self: end;
+    width: 44px;
+    height: 44px;
+  }
+  .purchase-line-total {
+    min-height: 58px;
+  }
+  .purchase-summary dl {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .purchase-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .purchase-section-panel .purchase-table,
+  .purchase-list,
+  .purchase-section-panel .purchase-table tbody,
+  .purchase-list tbody,
+  .purchase-section-panel .purchase-table tr,
+  .purchase-list tr,
+  .purchase-section-panel .purchase-table td,
+  .purchase-list td {
+    display: block;
+    width: 100%;
+  }
+  .purchase-section-panel .purchase-table thead,
+  .purchase-list thead {
+    display: none;
+  }
+  .purchase-section-panel .purchase-table tr,
+  .purchase-list tr {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .purchase-section-panel .purchase-table td,
+  .purchase-list td {
+    border: 0;
+    padding: 6px 0;
+  }
+  .purchase-table td[data-label] {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .purchase-table td[data-label]:before {
+    content: attr(data-label) ':';
+    color: var(--muted);
+    min-width: 90px;
+  }
+  .purchase-panel-heading {
+    padding: 18px 20px;
+    flex-wrap: wrap;
+  }
+  .purchase-total-row {
+    align-items: flex-start;
+  }
+  .installment-preview .purchase-table th,
+  .installment-preview .purchase-table td {
+    padding: 12px 8px;
+    font-size: 12px;
+  }
+}
 .editor-heading {
   justify-content: flex-start;
   gap: 18px;

@@ -334,6 +334,8 @@ model User {
   bizzContactsUpdated   BizzContact[] @relation("BizzContactUpdater")
   bizzCatalogItemsCreated BizzCatalogItem[] @relation("BizzCatalogItemCreator")
   bizzCatalogItemsUpdated BizzCatalogItem[] @relation("BizzCatalogItemUpdater")
+  bizzPurchases BizzPurchase[]
+  bizzPurchasePayments BizzPurchasePayment[]
   preference             UserPreference?
   createdProcesses       Process[]            @relation("ProcessCreatedBy")
   updatedProcesses       Process[]            @relation("ProcessUpdatedBy")
@@ -366,6 +368,7 @@ model Company {
   name                String
   bizzContacts        BizzContact[]
   bizzCatalogItems    BizzCatalogItem[]
+  bizzPurchases       BizzPurchase[]
   address             String?
   code                Int                   @unique
   timeZone            String?
@@ -418,6 +421,7 @@ model Company {
 }
 
 model BizzContact {
+  purchases    BizzPurchase[]
   id           String   @id @default(uuid()) @db.Uuid
   companyId    Int
   company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
@@ -479,6 +483,7 @@ enum BizzCatalogItemKind {
 }
 
 model BizzCatalogItem {
+  purchaseItems BizzPurchaseItem[]
   id           String   @id @default(uuid()) @db.Uuid
   companyId    Int
   company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
@@ -503,6 +508,64 @@ model BizzCatalogItem {
   @@index([companyId, active, name, id])
   @@index([createdById])
   @@index([updatedById])
+}
+
+model BizzPurchase {
+  id String @id @default(uuid()) @db.Uuid
+  number Int @unique @default(autoincrement())
+  companyId Int
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  supplierId String @db.Uuid
+  supplier BizzContact @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplierName String @db.VarChar(160)
+  date DateTime @db.Date
+  total Decimal @db.Decimal(14, 2)
+  notes String? @db.VarChar(2000)
+  canceledAt DateTime?
+  requestKey String @db.Uuid
+  requestHash String @db.VarChar(64)
+  createdById Int
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  items BizzPurchaseItem[]
+  transactions FinancialTransaction[]
+  payments BizzPurchasePayment[]
+  @@unique([companyId, requestKey])
+  @@index([companyId, date, number])
+  @@index([supplierId])
+  @@index([createdById])
+}
+
+model BizzPurchaseItem {
+  id String @id @default(uuid()) @db.Uuid
+  purchaseId String @db.Uuid
+  purchase BizzPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  catalogItemId String @db.Uuid
+  catalogItem BizzCatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  name String @db.VarChar(160)
+  unit String @db.VarChar(40)
+  quantity Decimal @db.Decimal(14, 3)
+  unitPrice Decimal @db.Decimal(14, 2)
+  total Decimal @db.Decimal(14, 2)
+  position Int
+  @@unique([purchaseId, position])
+  @@index([catalogItemId])
+}
+
+// Receipt for retries and actor audit; payment state always comes from FinancialTransaction.
+model BizzPurchasePayment {
+  id String @id @default(uuid()) @db.Uuid
+  purchaseId String @db.Uuid
+  purchase BizzPurchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  transactionId Int @unique
+  transaction FinancialTransaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
+  requestKey String @db.Uuid
+  requestHash String @db.VarChar(64)
+  createdById Int
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  @@unique([purchaseId, requestKey])
+  @@index([createdById])
 }
 
 model CompanyGroup {
@@ -668,6 +731,9 @@ model FinancialCategory {
 }
 
 model FinancialTransaction {
+  bizzPurchaseId String? @db.Uuid
+  bizzPurchase BizzPurchase? @relation(fields: [bizzPurchaseId], references: [id], onDelete: Restrict)
+  bizzPayment BizzPurchasePayment?
   id              Int                  @id @default(autoincrement())
   description     String
   amount          Decimal              @db.Decimal(15, 2)
@@ -737,6 +803,7 @@ model FinancialTransaction {
   @@index([date])
   @@index([companyId, date], map: "idx_ft_company_date")
   @@index([purchaseGroupId])
+  @@index([bizzPurchaseId])
   @@index([installmentPlanId])
   @@index([creditCardInvoiceId])
   @@index([companyId, creditCardInvoiceId], map: "idx_ft_company_invoice")

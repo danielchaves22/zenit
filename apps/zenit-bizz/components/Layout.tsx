@@ -6,6 +6,7 @@ import {
   LogOut,
   Menu,
   Package,
+  ShoppingBag,
   PanelLeftClose,
   PanelLeftOpen,
   Users,
@@ -29,6 +30,10 @@ export function Layout({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const groups = [
+    {
+      label: 'Operação',
+      links: [{ href: '/compras', label: 'Compras', Icon: ShoppingBag }]
+    },
     {
       label: 'Relacionamento',
       links: [{ href: '/pessoas', label: 'Pessoas e empresas', Icon: Users }]

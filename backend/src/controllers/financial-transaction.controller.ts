@@ -466,6 +466,10 @@ export async function deleteTransaction(req: Request, res: Response) {
       return res.status(403).json({ error: 'Acesso negado' });
     }
 
+    if (existingTransaction.bizzPurchaseId) {
+      return res.status(400).json({ error: 'Esta parcela pertence a uma compra do Bizz. Cancele a compra pelo Bizz.' });
+    }
+
     const scope =
       req.query.scope === 'purchase'
         ? 'PURCHASE'

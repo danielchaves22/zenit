@@ -2,32 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useNavigation } from '@/contexts/NavigationContext';
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  Pencil,
-  Plus,
-  Search,
-  Truck,
-  Users,
-  X
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Pencil, Plus, Search, Users, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { ContactList } from '@/lib/types';
+import { contactFilters, CONTACTS_PATH } from '@/lib/contact-filters';
 
-export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
+export function Contacts() {
   const { company } = useAuth();
   const router = useRouter();
-  const base = role === 'customer' ? '/clientes' : '/fornecedores';
-  const query = typeof router.query.q === 'string' ? router.query.q.slice(0, 100) : '';
-  const status = ['inactive', 'all'].includes(String(router.query.status))
-    ? String(router.query.status)
-    : 'active';
-  const parsedPage = Number(router.query.page);
-  const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
-  const listQuery = { q: query, status, page: String(page) };
+  const base = CONTACTS_PATH;
+  const listQuery = contactFilters(router.query);
+  const { q: query, role, personType, status } = listQuery;
+  const page = Number(listQuery.page);
   const editHref = (id: string) => ({ pathname: `${base}/${id}`, query: listQuery });
   const updateFilters = (changes: Partial<typeof listQuery>) => {
     void router.replace({ pathname: base, query: { ...listQuery, ...changes } }, undefined, {
@@ -41,9 +28,6 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
   const [revision, setRevision] = useState(0);
   const { notice, setNotice } = useNavigation();
   const request = useRef(0);
-  const customer = role === 'customer';
-  const title = customer ? 'Clientes' : 'Fornecedores';
-  const Icon = customer ? Users : Truck;
   useEffect(() => {
     if (!company || !router.isReady) return;
     const sequence = ++request.current;
@@ -53,7 +37,13 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
     setResult(null);
     const timeout = window.setTimeout(
       () => {
-        const params = new URLSearchParams({ role, q: query, status, page: String(page) });
+        const params = new URLSearchParams({
+          role,
+          personType,
+          q: query,
+          status,
+          page: String(page)
+        });
         void api<ContactList>(`/bizz/contacts?${params}`, {
           companyId: company.id,
           signal: controller.signal
@@ -76,17 +66,17 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
       controller.abort();
       request.current++;
     };
-  }, [company?.id, page, query, revision, role, status, router.isReady]);
+  }, [company?.id, page, query, revision, role, personType, status, router.isReady]);
   const pages = Math.max(1, Math.ceil((result?.total ?? 0) / 20));
   return (
     <>
       <div className="page-heading">
         <div>
-          <h1>{title}</h1>
+          <h1>Pessoas e empresas</h1>
         </div>
         <Link className="button primary" href={editHref('novo')} onClick={() => setNotice('')}>
           <Plus size={19} />
-          {customer ? 'Novo cliente' : 'Novo fornecedor'}
+          Novo cadastro
         </Link>
       </div>
       {notice && (
@@ -102,20 +92,44 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
           </button>
         </div>
       )}
-      <section className="contacts-panel" aria-label={`Lista de ${title.toLowerCase()}`}>
+      <section className="contacts-panel" aria-label="Lista de pessoas e empresas">
         <div className="list-toolbar">
           <label className="search-field">
             <Search size={19} />
             <input
               aria-label="Pesquisar cadastros"
               type="search"
-              placeholder="Buscar por nome, documento ou contato"
+              placeholder="Pesquisar cadastros"
               maxLength={100}
               value={query}
               onChange={(e) => {
                 updateFilters({ q: e.target.value, page: '1' });
               }}
             />
+          </label>
+          <label className="status-filter">
+            <span>Relacionamento</span>
+            <select
+              value={role}
+              onChange={(e) => updateFilters({ role: e.target.value as typeof role, page: '1' })}
+            >
+              <option value="all">Todos</option>
+              <option value="customer">Clientes</option>
+              <option value="supplier">Fornecedores</option>
+              <option value="both">Cliente e fornecedor</option>
+              <option value="none">Sem relacionamento</option>
+            </select>
+          </label>
+          <label className="status-filter">
+            <span>Tipo de pessoa</span>
+            <select
+              value={personType}
+              onChange={(e) => updateFilters({ personType: e.target.value, page: '1' })}
+            >
+              <option value="all">Todos</option>
+              <option value="PERSON">Pessoa física</option>
+              <option value="BUSINESS">Pessoa jurídica</option>
+            </select>
           </label>
           <label className="status-filter">
             <span>Situação</span>
@@ -149,13 +163,13 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
         ) : !result?.items.length ? (
           <div className="empty-state">
             <div className="empty-symbol">
-              <Icon size={30} strokeWidth={1.5} />
+              <Users size={30} strokeWidth={1.5} />
             </div>
-            <h2>{customer ? 'Nenhum cliente encontrado' : 'Nenhum fornecedor encontrado'}</h2>
+            <h2>Nenhum cadastro encontrado</h2>
             {!query && status === 'active' && (
               <Link className="button" href={editHref('novo')} onClick={() => setNotice('')}>
                 <Plus size={17} />
-                {customer ? 'Cadastrar cliente' : 'Cadastrar fornecedor'}
+                Novo cadastro
               </Link>
             )}
             {page > 1 && (
@@ -211,7 +225,9 @@ export function Contacts({ role }: { role: 'customer' | 'supplier' }) {
                           ? 'Cliente e fornecedor'
                           : contact.isCustomer
                             ? 'Cliente'
-                            : 'Fornecedor'}
+                            : contact.isSupplier
+                              ? 'Fornecedor'
+                              : 'Sem relacionamento'}
                       </span>
                     </td>
                     <td data-label="Situação">

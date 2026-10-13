@@ -1,4 +1,4 @@
-import { ContactPage } from '@/components/ContactPage';
+import { LegacyContactRedirect } from '@/components/LegacyContactRedirect';
 export default function EditCustomer() {
-  return <ContactPage role="customer" editing />;
+  return <LegacyContactRedirect role="customer" editing />;
 }

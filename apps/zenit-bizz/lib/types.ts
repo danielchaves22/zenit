@@ -27,6 +27,14 @@ export interface Contact {
   document: string | null;
   email: string | null;
   phone: string | null;
+  postalCode: string | null;
+  street: string | null;
+  addressNumber: string | null;
+  complement: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
   notes: string | null;
   active: boolean;
   version: number;

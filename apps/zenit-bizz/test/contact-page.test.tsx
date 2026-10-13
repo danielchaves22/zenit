@@ -6,7 +6,14 @@ const state = vi.hoisted(() => ({
   company: { id: 23 },
   router: {
     isReady: true,
-    query: { id: 'contact-a', q: 'Flores', status: 'inactive', page: '2' },
+    query: {
+      id: 'contact-a',
+      q: 'Flores',
+      status: 'inactive',
+      page: '2',
+      role: 'supplier',
+      personType: 'BUSINESS'
+    },
     push: vi.fn()
   },
   complete: vi.fn((action: () => void) => action()),
@@ -34,7 +41,7 @@ beforeEach(() => {
 describe('contact page', () => {
   it('loads an edit URL with the active company', async () => {
     vi.mocked(api).mockResolvedValue({ id: 'contact-a', name: 'Flores da Serra' });
-    render(<ContactPage role="supplier" editing />);
+    render(<ContactPage editing />);
     await screen.findByText('23: Flores da Serra');
     expect(api).toHaveBeenCalledWith(
       '/bizz/contacts/contact-a',
@@ -43,8 +50,14 @@ describe('contact page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     expect(state.complete).toHaveBeenCalled();
     expect(state.router.push).toHaveBeenCalledWith({
-      pathname: '/fornecedores',
-      query: { q: 'Flores', status: 'inactive', page: '2' }
+      pathname: '/pessoas',
+      query: {
+        q: 'Flores',
+        status: 'inactive',
+        page: '2',
+        role: 'supplier',
+        personType: 'BUSINESS'
+      }
     });
     expect(state.setNotice).toHaveBeenCalledWith('Flores da Serra: cadastro salvo.');
   });
@@ -58,10 +71,10 @@ describe('contact page', () => {
           })
       )
       .mockResolvedValueOnce({ id: 'contact-a', name: 'Outro cadastro' });
-    const view = render(<ContactPage role="customer" editing />);
+    const view = render(<ContactPage editing />);
     const signal = vi.mocked(api).mock.calls[0][1]?.signal;
     state.company = { id: 24 };
-    view.rerender(<ContactPage role="customer" editing />);
+    view.rerender(<ContactPage editing />);
     await screen.findByText('24: Outro cadastro');
     resolveFirst({ id: 'contact-a', name: 'Empresa anterior' });
     await waitFor(() => expect(signal?.aborted).toBe(true));
@@ -69,14 +82,14 @@ describe('contact page', () => {
   });
   it('offers recovery without opening a form for a missing contact', async () => {
     vi.mocked(api).mockRejectedValue(new Error('Cadastro não encontrado nesta empresa.'));
-    render(<ContactPage role="customer" editing />);
+    render(<ContactPage editing />);
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Cadastro não encontrado nesta empresa.'
     );
     expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Voltar' })).toHaveAttribute(
       'href',
-      '/clientes?q=Flores&status=inactive&page=2'
+      '/pessoas?q=Flores&role=supplier&personType=BUSINESS&status=inactive&page=2'
     );
   });
 });

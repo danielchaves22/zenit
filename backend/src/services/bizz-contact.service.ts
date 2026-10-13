@@ -29,12 +29,23 @@ const publicFields = {
   active: true,
   version: true,
   createdAt: true,
-  updatedAt: true
+  updatedAt: true,
+  postalCode: true,
+  street: true,
+  addressNumber: true,
+  complement: true,
+  neighborhood: true,
+  city: true,
+  state: true,
+  country: true
 } satisfies Prisma.BizzContactSelect;
 
 export default class BizzContactService {
   static async get(companyId: number, id: string) {
-    const contact = await prisma.bizzContact.findFirst({ where: { id, companyId }, select: publicFields });
+    const contact = await prisma.bizzContact.findFirst({
+      where: { id, companyId },
+      select: publicFields
+    });
     if (!contact) throw new BizzError(404, 'Cadastro não encontrado nesta empresa.');
     return contact;
   }
@@ -44,11 +55,16 @@ export default class BizzContactService {
     const where: Prisma.BizzContactWhereInput = {
       companyId,
       ...(filters.status === 'all' ? {} : { active: filters.status === 'active' }),
+      ...(filters.personType === 'all' ? {} : { personType: filters.personType }),
       ...(filters.role === 'customer'
         ? { isCustomer: true }
         : filters.role === 'supplier'
           ? { isSupplier: true }
-          : {}),
+          : filters.role === 'both'
+            ? { isCustomer: true, isSupplier: true }
+            : filters.role === 'none'
+              ? { isCustomer: false, isSupplier: false }
+              : {}),
       ...(filters.q
         ? {
             OR: [
@@ -78,7 +94,21 @@ export default class BizzContactService {
 
   static async create(companyId: number, userId: number, input: CreateBizzContact) {
     const { requestKey, ...data } = input;
-    const requestHash = createHash('sha256').update(JSON.stringify(data)).digest('hex');
+    // Empty new address fields are equivalent to older requests without an address.
+    const addressFields = new Set([
+      'postalCode',
+      'street',
+      'addressNumber',
+      'complement',
+      'neighborhood',
+      'city',
+      'state',
+      'country'
+    ]);
+    const hashData = Object.fromEntries(
+      Object.entries(data).filter(([key, value]) => !addressFields.has(key) || value != null)
+    );
+    const requestHash = createHash('sha256').update(JSON.stringify(hashData)).digest('hex');
     const replay = async () => {
       const existing = await prisma.bizzContact.findUnique({
         where: { companyId_requestKey: { companyId, requestKey } }
@@ -89,13 +119,23 @@ export default class BizzContactService {
           409,
           'Esta tentativa já foi utilizada. Reabra o cadastro para enviar outros dados.'
         );
-      return prisma.bizzContact.findUniqueOrThrow({ where: { id: existing.id }, select: publicFields });
+      return prisma.bizzContact.findUniqueOrThrow({
+        where: { id: existing.id },
+        select: publicFields
+      });
     };
     const existing = await replay();
     if (existing) return { contact: existing, created: false };
     try {
       const contact = await prisma.bizzContact.create({
-        data: { ...data, companyId, requestKey, requestHash, createdById: userId, updatedById: userId },
+        data: {
+          ...data,
+          companyId,
+          requestKey,
+          requestHash,
+          createdById: userId,
+          updatedById: userId
+        },
         select: publicFields
       });
       return { contact, created: true };
@@ -116,7 +156,10 @@ export default class BizzContactService {
     const { version, ...data } = input;
     try {
       return await prisma.$transaction(async (tx) => {
-        const existing = await tx.bizzContact.findFirst({ where: { id, companyId }, select: { id: true } });
+        const existing = await tx.bizzContact.findFirst({
+          where: { id, companyId },
+          select: { id: true }
+        });
         if (!existing) throw new BizzError(404, 'Cadastro não encontrado nesta empresa.');
         const result = await tx.bizzContact.updateMany({
           where: { id, companyId, version },

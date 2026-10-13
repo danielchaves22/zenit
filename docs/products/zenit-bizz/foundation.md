@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-10-08
+last_reviewed: 2026-10-13
 summary: Fundação do Bizz, acesso por usuário e empresa, cadastros e limites da primeira versão.
 tags:
   - zenit-bizz
@@ -41,11 +41,13 @@ Quem gerencia usuários (`ADMIN` ou `SUPERUSER`, conforme seu escopo) escolhe os
 
 ## Cadastro único
 
-`BizzContact` pertence à empresa e admite os papéis de cliente e fornecedor simultaneamente. O nome e ao menos um papel são obrigatórios. Pessoa física/jurídica, documento, telefone, e-mail e observações complementam o cadastro. Documentos informados são normalizados e únicos dentro da empresa; ausência de documento é permitida. Isso não representa validação cadastral perante órgãos oficiais.
+`BizzContact` pertence à empresa e reúne pessoas físicas e jurídicas na lista **Pessoas e empresas**. Cliente e fornecedor são relacionamentos opcionais e podem coexistir; um cadastro sem relacionamento também pode ser salvo. Nome é obrigatório. Documento, telefone, e-mail, endereço e observações são opcionais. Documentos informados são normalizados e únicos dentro da empresa; ausência de documento é permitida. Isso não representa validação cadastral perante órgãos oficiais.
+
+O endereço é composto por CEP, logradouro, número, complemento, bairro, cidade, estado/região e país. Não há consulta externa de CEP. Campos de endereço omitidos na edição preservam seus valores; texto vazio ou `null` os limpa. Os identificadores e relacionamentos dos registros existentes permanecem os mesmos. Não há catálogo de produtos/serviços ou papéis personalizados nesta etapa.
 
 O identificador permanece estável após edição/inativação e poderá ser referenciado nas compras e vendas futuras. Não há relacionamento financeiro implementado nesta versão.
 
-- `GET /api/bizz/contacts`: busca por `q`, papel `customer|supplier|all`, situação `active|inactive|all` e página; 20 registros por página.
+- `GET /api/bizz/contacts`: busca por `q`, relacionamento `customer|supplier|both|none|all`, tipo `personType=PERSON|BUSINESS|all`, situação `active|inactive|all` e página; 20 registros por página. Os filtros de cliente e fornecedor incluem quem tem ambos os relacionamentos.
 - `GET /api/bizz/contacts/:id`: consulta individual para edição por URL; retorna 404 se o cadastro não pertencer à empresa ativa.
 - `POST /api/bizz/contacts`: criação com `requestKey` UUID. Repetição da mesma tentativa retorna o registro existente; reuso da chave com dados diferentes retorna 409.
 - `PUT /api/bizz/contacts/:id`: edição com a versão lida; alterações concorrentes retornam 409. Inclui inativação e reativação.
@@ -59,4 +61,6 @@ Tema claro, marca laranja `#F97316`, navegação retrátil, adaptação a telas 
 
 Formulários preservam os dados após falha de gravação, confirmam descarte de alterações e impedem submissões simultâneas. A integração financeira será validada numa próxima entrega com compra, compromisso pendente no Cash e retorno da situação ao Bizz.
 
-Clientes e fornecedores usam páginas próprias de cadastro: `/clientes/novo`, `/clientes/:id`, `/fornecedores/novo` e `/fornecedores/:id`. A busca, a situação e a página da listagem ficam na URL e são preservadas no retorno. A navegação com alterações pendentes exige confirmação; modais ficam reservados a confirmações, sem conter o formulário de cadastro.
+Lista unificada em `/pessoas`, criação em `/pessoas/novo` e edição em `/pessoas/:id`. Busca, relacionamento, tipo de pessoa, situação e página ficam na URL e são preservados no retorno. Os filtros de relacionamento e tipo preenchem valores iniciais de novos cadastros, sem sobrescrever os de registros existentes. As antigas URLs de clientes e fornecedores redirecionam para essas páginas, mantendo seu contexto. A navegação com alterações pendentes exige confirmação; modais ficam reservados a confirmações, sem conter o formulário de cadastro.
+
+Antes de executar esta versão, aplique a migração `20261013180000_bizz_people_directory`. Ela adiciona campos opcionais de endereço e remove somente a restrição de relacionamento obrigatório; não remove nem recria registros. A API mantém o contrato anterior de cliente/fornecedor, inclusive a repetição de requisições de criação sem endereço.

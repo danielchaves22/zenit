@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { AppKey, PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import app from '../../src/app';
@@ -8,7 +8,11 @@ import { generateToken } from '../../src/utils/jwt';
 
 const prisma = new PrismaClient();
 describe('Bizz foundation and per-user application grants', () => {
-  let companyId: number, otherCompanyId: number, userId: number, deniedId: number, foreignId: number;
+  let companyId: number,
+    otherCompanyId: number,
+    userId: number,
+    deniedId: number,
+    foreignId: number;
   let token: string, deniedToken: string, foreignToken: string, contactId: string;
   const suffix = randomUUID();
   const password = 'Bizz-Test-Initial-42';
@@ -83,7 +87,9 @@ describe('Bizz foundation and per-user application grants', () => {
         { appKey: AppKey.ZENIT_CASH, enabled: true },
         { appKey: AppKey.ZENIT_ADMIN, enabled: true }
       ]);
-    await AppAccessService.setUserGrants(userId, companyId, [{ appKey: AppKey.ZENIT_BIZZ, granted: true }]);
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_BIZZ, granted: true }
+    ]);
     await AppAccessService.setUserGrants(userId, otherCompanyId, [
       { appKey: AppKey.ZENIT_BIZZ, granted: true }
     ]);
@@ -128,9 +134,13 @@ describe('Bizz foundation and per-user application grants', () => {
     expect(denied.status).toBe(403);
   });
   it('denies an ADMIN without a Bizz grant, missing identity and foreign memberships', async () => {
-    expect((await request(app).get('/api/bizz/session').set(headers(deniedToken))).status).toBe(403);
+    expect((await request(app).get('/api/bizz/session').set(headers(deniedToken))).status).toBe(
+      403
+    );
     expect((await request(app).get('/api/bizz/session')).status).toBe(401);
-    expect((await request(app).get('/api/bizz/session').set(headers(foreignToken))).status).toBe(403);
+    expect((await request(app).get('/api/bizz/session').set(headers(foreignToken))).status).toBe(
+      403
+    );
   });
   it('does not let a Cash grant enter Bizz or a Bizz grant enter Cash/admin routes', async () => {
     expect(
@@ -156,7 +166,14 @@ describe('Bizz foundation and per-user application grants', () => {
     ]) {
       expect((await request(app).get(path).set(headers())).status).toBe(403);
     }
-    expect((await request(app).post('/api/cash/bootstrap/select-company').set(headers()).send({ companyId })).status).toBe(403);
+    expect(
+      (
+        await request(app)
+          .post('/api/cash/bootstrap/select-company')
+          .set(headers())
+          .send({ companyId })
+      ).status
+    ).toBe(403);
     expect(
       (
         await request(app)
@@ -166,12 +183,20 @@ describe('Bizz foundation and per-user application grants', () => {
     ).toBe(403);
   });
   it('applies company disablement and individual revocation on the next request', async () => {
-    await AppAccessService.setCompanyEntitlements(companyId, [{ appKey: AppKey.ZENIT_BIZZ, enabled: false }]);
+    await AppAccessService.setCompanyEntitlements(companyId, [
+      { appKey: AppKey.ZENIT_BIZZ, enabled: false }
+    ]);
     expect((await request(app).get('/api/bizz/session').set(headers())).status).toBe(403);
-    await AppAccessService.setCompanyEntitlements(companyId, [{ appKey: AppKey.ZENIT_BIZZ, enabled: true }]);
-    await AppAccessService.setUserGrants(userId, companyId, [{ appKey: AppKey.ZENIT_BIZZ, granted: false }]);
+    await AppAccessService.setCompanyEntitlements(companyId, [
+      { appKey: AppKey.ZENIT_BIZZ, enabled: true }
+    ]);
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_BIZZ, granted: false }
+    ]);
     expect((await request(app).get('/api/bizz/session').set(headers())).status).toBe(403);
-    await AppAccessService.setUserGrants(userId, companyId, [{ appKey: AppKey.ZENIT_BIZZ, granted: true }]);
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_BIZZ, granted: true }
+    ]);
   });
   it('lets an existing administrator grant and revoke Bizz through the existing API', async () => {
     const admin = headers(deniedToken, companyId, 'zenit-admin');
@@ -183,7 +208,9 @@ describe('Bizz foundation and per-user application grants', () => {
           .send({ grants: [{ appKey: 'zenit-bizz', granted: true }] })
       ).status
     ).toBe(200);
-    expect((await request(app).get('/api/bizz/session').set(headers(deniedToken))).status).toBe(200);
+    expect((await request(app).get('/api/bizz/session').set(headers(deniedToken))).status).toBe(
+      200
+    );
     await request(app)
       .put(`/api/app-access/users/${deniedId}/grants`)
       .set(admin)
@@ -210,7 +237,9 @@ describe('Bizz foundation and per-user application grants', () => {
           .send({ currentPassword: password, newPassword: 'Bizz-New-Password-43' })
       ).status
     ).toBe(200);
-    expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).mustChangePassword).toBe(false);
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: userId } })).mustChangePassword
+    ).toBe(false);
   });
   it('does not grant Bizz implicitly when creating default application grants', async () => {
     const defaults = await AppAccessService.buildDefaultGrantsForCompanies([companyId]);
@@ -227,7 +256,9 @@ describe('Bizz foundation and per-user application grants', () => {
         appGrants: [{ companyId: otherCompanyId, appKey: 'zenit-bizz', granted: true }]
       });
     expect(own.status).toBe(403);
-    await AppAccessService.setUserGrants(userId, companyId, [{ appKey: AppKey.ZENIT_CASH, granted: true }]);
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_CASH, granted: true }
+    ]);
     const cross = await request(app)
       .put(`/api/users/${userId}`)
       .set(headers(token, companyId, 'zenit-cash'))
@@ -236,8 +267,12 @@ describe('Bizz foundation and per-user application grants', () => {
         appGrants: [{ companyId: otherCompanyId, appKey: 'zenit-bizz', granted: true }]
       });
     expect(cross.status).toBe(403);
-    expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).name).toBe('Operador Bizz');
-    await AppAccessService.setUserGrants(userId, companyId, [{ appKey: AppKey.ZENIT_CASH, granted: false }]);
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: userId } })).name).toBe(
+      'Operador Bizz'
+    );
+    await AppAccessService.setUserGrants(userId, companyId, [
+      { appKey: AppKey.ZENIT_CASH, granted: false }
+    ]);
   });
   it('creates exactly one record for concurrent repeated requests', async () => {
     const body = draft({ requestKey: randomUUID() });
@@ -273,12 +308,8 @@ describe('Bizz foundation and per-user application grants', () => {
       ).status
     ).toBe(404);
   });
-  it('rejects tenant injection, an empty name and a contact without a role', async () => {
-    for (const data of [
-      { companyId: otherCompanyId },
-      { name: '   ' },
-      { isCustomer: false, isSupplier: false }
-    ]) {
+  it('rejects tenant injection and an empty name', async () => {
+    for (const data of [{ companyId: otherCompanyId }, { name: '   ' }]) {
       expect(
         (
           await request(app)
@@ -293,13 +324,20 @@ describe('Bizz foundation and per-user application grants', () => {
     const path = `/api/bizz/contacts/${contactId}`;
     const loaded = await request(app).get(path).set(headers());
     expect(loaded.status).toBe(200);
-    expect(loaded.body).toMatchObject({ id: contactId, isCustomer: true, isSupplier: true, version: 1 });
+    expect(loaded.body).toMatchObject({
+      id: contactId,
+      isCustomer: true,
+      isSupplier: true,
+      version: 1
+    });
     expect(loaded.body).not.toHaveProperty('companyId');
     expect(loaded.body).not.toHaveProperty('requestHash');
     expect((await request(app).get(path).set(headers(token, otherCompanyId))).status).toBe(404);
     expect((await request(app).get(path).set(headers(deniedToken))).status).toBe(403);
     expect((await request(app).get(path)).status).toBe(401);
-    expect((await request(app).get(`/api/bizz/contacts/${randomUUID()}`).set(headers())).status).toBe(404);
+    expect(
+      (await request(app).get(`/api/bizz/contacts/${randomUUID()}`).set(headers())).status
+    ).toBe(404);
     expect((await request(app).get('/api/bizz/contacts/invalid').set(headers())).status).toBe(400);
   });
   it('detects concurrent edits and supports inactivation without deletion', async () => {
@@ -318,7 +356,9 @@ describe('Bizz foundation and per-user application grants', () => {
       ).status
     ).toBe(409);
     expect((await request(app).get('/api/bizz/contacts').set(headers())).body.total).toBe(0);
-    expect((await request(app).get('/api/bizz/contacts?status=inactive').set(headers())).body.total).toBe(1);
+    expect(
+      (await request(app).get('/api/bizz/contacts?status=inactive').set(headers())).body.total
+    ).toBe(1);
   });
   it('normalizes duplicate documents within a company and allows them in another', async () => {
     const body = draft({ document: '12.345.678/0001-90' });
@@ -353,5 +393,131 @@ describe('Bizz foundation and per-user application grants', () => {
           .send({ ...body, requestKey: randomUUID() })
       ).status
     ).toBe(201);
+  });
+  it('creates an unclassified person and changes relationships without replacing its identity or address', async () => {
+    const body = draft({
+      name: 'Pessoa sem relacionamento',
+      personType: 'PERSON',
+      isCustomer: false,
+      isSupplier: false,
+      street: 'Rua das Flores',
+      city: 'Campinas',
+      requestKey: randomUUID()
+    });
+    const created = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      isCustomer: false,
+      isSupplier: false,
+      street: 'Rua das Flores',
+      city: 'Campinas'
+    });
+    const path = `/api/bizz/contacts/${created.body.id}`;
+    const filtered = await request(app)
+      .get('/api/bizz/contacts?role=none&personType=PERSON')
+      .set(headers());
+    expect(filtered.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id]);
+    expect(
+      (await request(app).get('/api/bizz/contacts?role=none&personType=BUSINESS').set(headers()))
+        .body.total
+    ).toBe(0);
+    expect(
+      (await request(app).get('/api/bizz/contacts?role=none').set(headers(token, otherCompanyId)))
+        .body.total
+    ).toBe(0);
+    // Older clients do not send address fields: updates must preserve them.
+    const changed = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ name: body.name, personType: 'PERSON', version: 1 }));
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({
+      id: created.body.id,
+      version: 2,
+      isCustomer: true,
+      isSupplier: true,
+      street: 'Rua das Flores',
+      city: 'Campinas'
+    });
+    const both = await request(app)
+      .get('/api/bizz/contacts?role=both&personType=PERSON')
+      .set(headers());
+    expect(both.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id]);
+    const cleared = await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          name: body.name,
+          personType: 'PERSON',
+          version: 2,
+          isCustomer: false,
+          isSupplier: false,
+          street: '',
+          city: null
+        })
+      );
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toMatchObject({
+      id: created.body.id,
+      isCustomer: false,
+      isSupplier: false,
+      street: null,
+      city: null
+    });
+  });
+  it('preserves legacy idempotency when new empty address fields are sent', async () => {
+    const data = {
+      name: 'Cadastro legado',
+      personType: 'BUSINESS',
+      isCustomer: false,
+      isSupplier: true,
+      document: null,
+      email: null,
+      phone: null,
+      notes: null,
+      active: true
+    };
+    const requestKey = randomUUID();
+    const legacy = await prisma.bizzContact.create({
+      data: {
+        ...data,
+        requestKey,
+        requestHash: createHash('sha256').update(JSON.stringify(data)).digest('hex'),
+        companyId,
+        createdById: userId,
+        updatedById: userId
+      }
+    });
+    const replay = await request(app)
+      .post('/api/bizz/contacts')
+      .set(headers())
+      .send({ ...data, requestKey, street: '', city: null });
+    expect(replay.status).toBe(200);
+    expect(replay.body.id).toBe(legacy.id);
+    expect(
+      (
+        await request(app)
+          .post('/api/bizz/contacts')
+          .set(headers())
+          .send({ ...data, requestKey, street: 'Outro endereço' })
+      ).status
+    ).toBe(409);
+  });
+  it('validates address lengths and relationship filters', async () => {
+    expect(
+      (
+        await request(app)
+          .post('/api/bizz/contacts')
+          .set(headers())
+          .send(draft({ requestKey: randomUUID(), street: 'x'.repeat(161) }))
+      ).status
+    ).toBe(400);
+    expect((await request(app).get('/api/bizz/contacts?role=invalid').set(headers())).status).toBe(
+      400
+    );
+    expect(
+      (await request(app).get('/api/bizz/contacts?personType=invalid').set(headers())).status
+    ).toBe(400);
   });
 });

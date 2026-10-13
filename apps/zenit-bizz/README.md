@@ -1,6 +1,6 @@
 # Zenit Bizz
 
-Aplicação de gestão de pequenos negócios. Esta primeira versão contém login com a conta Zenit, troca de senha no primeiro acesso, seleção de empresa, clientes e fornecedores. Um contato pode exercer os dois papéis.
+Aplicação de gestão de pequenos negócios. Inclui login com a conta Zenit, troca de senha no primeiro acesso, seleção de empresa e cadastro de pessoas e empresas. Cliente e fornecedor são relacionamentos opcionais e podem coexistir no mesmo cadastro.
 
 ## Desenvolvimento
 
@@ -50,7 +50,8 @@ O comando de integração usa a base de teste e a recria conforme o mecanismo do
 
 ## Limites desta versão
 
-- Usuários com acesso efetivo ao Bizz podem consultar e manter clientes/fornecedores da empresa ativa. Permissões mais granulares de operação serão definidas com os próximos fluxos.
+- Usuários com acesso efetivo ao Bizz podem consultar e manter pessoas e empresas da empresa ativa, com relacionamentos opcionais de cliente e fornecedor. Permissões mais granulares de operação serão definidas com os próximos fluxos.
+- A lista unificada usa `/pessoas`, com filtros por relacionamento, tipo de pessoa e situação; endereços são opcionais. As URLs anteriores de clientes/fornecedores são redirecionadas, preservando filtros e o ID do cadastro.
 - Cadastro, edição, pesquisa, paginação, inativação e reativação estão disponíveis. Não há exclusão definitiva na interface/API.
 - A identidade é compartilhada; login automático entre domínios diferentes não foi implementado.
 - Compras, vendas, produção, estoque e geração de compromissos no Cash são etapas posteriores.

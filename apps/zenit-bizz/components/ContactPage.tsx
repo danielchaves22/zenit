@@ -7,8 +7,9 @@ import { api } from '@/lib/api';
 import { Contact } from '@/lib/types';
 import { ContactForm } from './ContactForm';
 import { Layout } from './Layout';
+import { contactFilters, CONTACTS_PATH } from '@/lib/contact-filters';
 
-function Editor({ role, editing }: { role: 'customer' | 'supplier'; editing: boolean }) {
+function Editor({ editing }: { editing: boolean }) {
   const router = useRouter();
   const { company } = useAuth();
   const { complete, setNotice } = useNavigation();
@@ -17,12 +18,8 @@ function Editor({ role, editing }: { role: 'customer' | 'supplier'; editing: boo
   const [revision, setRevision] = useState(0);
   const id = typeof router.query.id === 'string' ? router.query.id : '';
   const key = `${company?.id}:${id}`;
-  const base = role === 'customer' ? '/clientes' : '/fornecedores';
-  const listQuery = Object.fromEntries(
-    ['q', 'status', 'page'].flatMap((name) =>
-      typeof router.query[name] === 'string' ? [[name, router.query[name]]] : []
-    )
-  );
+  const base = CONTACTS_PATH;
+  const listQuery = contactFilters(router.query);
   const back = () => {
     void router.push({ pathname: base, query: listQuery });
   };
@@ -68,7 +65,8 @@ function Editor({ role, editing }: { role: 'customer' | 'supplier'; editing: boo
     <ContactForm
       key={key}
       contact={editing ? loaded!.contact : null}
-      role={role}
+      role={listQuery.role}
+      personType={listQuery.personType === 'BUSINESS' ? 'BUSINESS' : 'PERSON'}
       companyId={company.id}
       onClose={back}
       onSaved={(contact) => {
@@ -78,10 +76,10 @@ function Editor({ role, editing }: { role: 'customer' | 'supplier'; editing: boo
     />
   );
 }
-export function ContactPage(props: { role: 'customer' | 'supplier'; editing?: boolean }) {
+export function ContactPage(props: { editing?: boolean }) {
   return (
     <Layout>
-      <Editor role={props.role} editing={Boolean(props.editing)} />
+      <Editor editing={Boolean(props.editing)} />
     </Layout>
   );
 }

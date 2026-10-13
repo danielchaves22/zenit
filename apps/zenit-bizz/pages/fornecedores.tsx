@@ -1,9 +1,4 @@
-import { Contacts } from '@/components/Contacts';
-import { Layout } from '@/components/Layout';
+import { LegacyContactRedirect } from '@/components/LegacyContactRedirect';
 export default function Suppliers() {
-  return (
-    <Layout>
-      <Contacts role="supplier" />
-    </Layout>
-  );
+  return <LegacyContactRedirect role="supplier" />;
 }

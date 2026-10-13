@@ -3,6 +3,7 @@ import { ArrowLeft, Check } from 'lucide-react';
 import { useNavigation } from '@/contexts/NavigationContext';
 import { api } from '@/lib/api';
 import { Contact } from '@/lib/types';
+import { Relationship } from '@/lib/contact-filters';
 
 type Draft = Pick<
   Contact,
@@ -13,30 +14,48 @@ type Draft = Pick<
   | 'document'
   | 'email'
   | 'phone'
+  | 'postalCode'
+  | 'street'
+  | 'addressNumber'
+  | 'complement'
+  | 'neighborhood'
+  | 'city'
+  | 'state'
+  | 'country'
   | 'notes'
   | 'active'
 >;
 export function ContactForm({
   contact,
-  role,
+  role = 'all',
+  personType = 'PERSON',
   companyId,
   onClose,
   onSaved
 }: {
   contact: Contact | null;
-  role: 'customer' | 'supplier';
+  role?: Relationship;
+  personType?: 'PERSON' | 'BUSINESS';
   companyId: number;
   onClose: () => void;
   onSaved: (contact: Contact) => void;
 }) {
   const initial: Draft = {
     name: contact?.name ?? '',
-    personType: contact?.personType ?? 'PERSON',
-    isCustomer: contact?.isCustomer ?? role === 'customer',
-    isSupplier: contact?.isSupplier ?? role === 'supplier',
+    personType: contact?.personType ?? personType,
+    isCustomer: contact?.isCustomer ?? (role === 'customer' || role === 'both'),
+    isSupplier: contact?.isSupplier ?? (role === 'supplier' || role === 'both'),
     document: contact?.document ?? '',
     email: contact?.email ?? '',
     phone: contact?.phone ?? '',
+    postalCode: contact?.postalCode ?? '',
+    street: contact?.street ?? '',
+    addressNumber: contact?.addressNumber ?? '',
+    complement: contact?.complement ?? '',
+    neighborhood: contact?.neighborhood ?? '',
+    city: contact?.city ?? '',
+    state: contact?.state ?? '',
+    country: contact?.country ?? '',
     notes: contact?.notes ?? '',
     active: contact?.active ?? true
   };
@@ -67,10 +86,6 @@ export function ContactForm({
   async function save(event: FormEvent) {
     event.preventDefault();
     if (saving.current) return;
-    if (!draft.isCustomer && !draft.isSupplier) {
-      setError('Selecione cliente, fornecedor ou ambos.');
-      return;
-    }
     saving.current = true;
     setBusy(true);
     setError('');
@@ -98,11 +113,7 @@ export function ContactForm({
       setBusy(false);
     }
   }
-  const title = contact
-    ? 'Editar cadastro'
-    : role === 'customer'
-      ? 'Novo cliente'
-      : 'Novo fornecedor';
+  const title = contact ? 'Editar cadastro' : 'Novo cadastro';
   return (
     <div className="contact-editor">
       <div className="page-heading editor-heading">
@@ -140,9 +151,29 @@ export function ContactForm({
                   onChange={(e) => update('name', e.target.value)}
                 />
               </label>
+              <div className="form-grid">
+                <label>
+                  Tipo de pessoa
+                  <select
+                    value={draft.personType}
+                    onChange={(e) => update('personType', e.target.value as Draft['personType'])}
+                  >
+                    <option value="PERSON">Pessoa física</option>
+                    <option value="BUSINESS">Pessoa jurídica</option>
+                  </select>
+                </label>
+                <label>
+                  {draft.personType === 'PERSON' ? 'CPF' : 'CNPJ'}
+                  <input
+                    maxLength={32}
+                    value={draft.document ?? ''}
+                    onChange={(e) => update('document', e.target.value)}
+                  />
+                </label>
+              </div>
               <fieldset className="role-field">
                 <legend>
-                  Este cadastro é <span className="required">*</span>
+                  Relacionamento <span className="subtle">(opcional)</span>
                 </legend>
                 <div className="role-options">
                   <label>
@@ -189,35 +220,100 @@ export function ContactForm({
               </div>
               <details
                 open={Boolean(
-                  contact?.document || contact?.notes || contact?.personType === 'BUSINESS'
+                  contact &&
+                    [
+                      contact.postalCode,
+                      contact.street,
+                      contact.addressNumber,
+                      contact.complement,
+                      contact.neighborhood,
+                      contact.city,
+                      contact.state,
+                      contact.country
+                    ].some(Boolean)
                 )}
               >
                 <summary>
-                  Mais informações <span className="subtle">(opcional)</span>
+                  Endereço <span className="subtle">(opcional)</span>
                 </summary>
-                <div className="stack details-content">
-                  <div className="form-grid">
-                    <label>
-                      Tipo de pessoa
-                      <select
-                        value={draft.personType}
-                        onChange={(e) =>
-                          update('personType', e.target.value as Draft['personType'])
-                        }
-                      >
-                        <option value="PERSON">Pessoa física</option>
-                        <option value="BUSINESS">Pessoa jurídica</option>
-                      </select>
-                    </label>
-                    <label>
-                      CPF ou CNPJ
-                      <input
-                        maxLength={32}
-                        value={draft.document ?? ''}
-                        onChange={(e) => update('document', e.target.value)}
-                      />
-                    </label>
-                  </div>
+                <div className="form-grid details-content">
+                  <label>
+                    CEP
+                    <input
+                      autoComplete="postal-code"
+                      maxLength={20}
+                      value={draft.postalCode ?? ''}
+                      onChange={(e) => update('postalCode', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    País
+                    <input
+                      autoComplete="country-name"
+                      maxLength={60}
+                      value={draft.country ?? ''}
+                      onChange={(e) => update('country', e.target.value)}
+                    />
+                  </label>
+                  <label className="full-width">
+                    Logradouro
+                    <input
+                      autoComplete="address-line1"
+                      maxLength={160}
+                      value={draft.street ?? ''}
+                      onChange={(e) => update('street', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Número
+                    <input
+                      maxLength={20}
+                      value={draft.addressNumber ?? ''}
+                      onChange={(e) => update('addressNumber', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Complemento
+                    <input
+                      autoComplete="address-line2"
+                      maxLength={100}
+                      value={draft.complement ?? ''}
+                      onChange={(e) => update('complement', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Bairro
+                    <input
+                      maxLength={100}
+                      value={draft.neighborhood ?? ''}
+                      onChange={(e) => update('neighborhood', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Cidade
+                    <input
+                      autoComplete="address-level2"
+                      maxLength={100}
+                      value={draft.city ?? ''}
+                      onChange={(e) => update('city', e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Estado / região
+                    <input
+                      autoComplete="address-level1"
+                      maxLength={60}
+                      value={draft.state ?? ''}
+                      onChange={(e) => update('state', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </details>
+              <details open={Boolean(contact?.notes)}>
+                <summary>
+                  Observações <span className="subtle">(opcional)</span>
+                </summary>
+                <div className="details-content">
                   <label>
                     Observações
                     <textarea

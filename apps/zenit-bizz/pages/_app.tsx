@@ -12,7 +12,7 @@ export default function App({ Component, pageProps }: AppProps) {
         <title>Zenit Bizz</title>
         <meta
           name="description"
-          content="Clientes e fornecedores organizados para o dia a dia do seu negócio."
+          content="Zenit Bizz — gestão comercial e operacional."
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#F97316" />

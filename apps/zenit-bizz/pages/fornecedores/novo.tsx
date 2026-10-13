@@ -1,4 +1,4 @@
-import { ContactPage } from '@/components/ContactPage';
+import { LegacyContactRedirect } from '@/components/LegacyContactRedirect';
 export default function NewSupplier() {
-  return <ContactPage role="supplier" />;
+  return <LegacyContactRedirect role="supplier" creating />;
 }

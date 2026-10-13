@@ -7,7 +7,6 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  Truck,
   Users,
   X
 } from 'lucide-react';
@@ -22,8 +21,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const links = [
-    { href: '/clientes', label: 'Clientes', Icon: Users },
-    { href: '/fornecedores', label: 'Fornecedores', Icon: Truck }
+    { href: '/pessoas', label: 'Pessoas e empresas', Icon: Users }
   ];
   return (
     <div className={`app-shell ${collapsed ? 'collapsed' : ''}`}>
@@ -37,12 +35,12 @@ export function Layout({ children }: { children: ReactNode }) {
       <aside className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-brand">
           <Link
-            href="/clientes"
+            href="/pessoas"
             aria-label="Zenit Bizz, início"
             onNavigate={(event) => {
               event.preventDefault();
               request(() => {
-                void router.push('/clientes');
+                void router.push('/pessoas');
               });
             }}
           >
@@ -56,7 +54,7 @@ export function Layout({ children }: { children: ReactNode }) {
             <X size={20} />
           </button>
         </div>
-        <span className="nav-heading">RELACIONAMENTOS</span>
+        <span className="nav-heading">CADASTROS</span>
         <nav aria-label="Navegação principal">
           {links.map(({ href, label, Icon }) => (
             <Link

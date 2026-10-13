@@ -5,6 +5,7 @@ import {
   Building2,
   LogOut,
   Menu,
+  Package,
   PanelLeftClose,
   PanelLeftOpen,
   Users,
@@ -31,6 +32,10 @@ export function Layout({
     {
       label: 'Relacionamento',
       links: [{ href: '/pessoas', label: 'Pessoas e empresas', Icon: Users }]
+    },
+    {
+      label: 'Cadastros',
+      links: [{ href: '/produtos-servicos', label: 'Produtos e serviços', Icon: Package }]
     }
   ];
   return (

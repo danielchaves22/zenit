@@ -3,7 +3,13 @@ import { AppKey } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
 import BizzContactService from '../services/bizz-contact.service';
+import BizzCatalogService from '../services/bizz-catalog.service';
 import { BizzError } from '../services/bizz-error';
+import {
+  bizzCatalogListSchema,
+  createBizzCatalogSchema,
+  updateBizzCatalogSchema
+} from '../validators/bizz-catalog.validator';
 import {
   bizzContactListSchema,
   createBizzContactSchema,
@@ -95,5 +101,45 @@ router.put(
       )
     );
   })
+);
+router.get(
+  '/catalog',
+  run(async (req, res) =>
+    res.json(
+      await BizzCatalogService.list(req.user.companyId!, bizzCatalogListSchema.parse(req.query))
+    )
+  )
+);
+router.get(
+  '/catalog/:id',
+  run(async (req, res) =>
+    res.json(
+      await BizzCatalogService.get(req.user.companyId!, z.string().uuid().parse(req.params.id))
+    )
+  )
+);
+router.post(
+  '/catalog',
+  run(async (req, res) => {
+    const result = await BizzCatalogService.create(
+      req.user.companyId!,
+      req.user.userId,
+      createBizzCatalogSchema.parse(req.body)
+    );
+    return res.status(result.created ? 201 : 200).json(result.item);
+  })
+);
+router.put(
+  '/catalog/:id',
+  run(async (req, res) =>
+    res.json(
+      await BizzCatalogService.update(
+        req.user.companyId!,
+        req.user.userId,
+        z.string().uuid().parse(req.params.id),
+        updateBizzCatalogSchema.parse(req.body)
+      )
+    )
+  )
 );
 export default router;

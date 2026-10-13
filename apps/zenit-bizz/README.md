@@ -2,6 +2,8 @@
 
 Aplicação de gestão de pequenos negócios. Inclui login com a conta Zenit, troca de senha no primeiro acesso, seleção de empresa e cadastro de pessoas e empresas. Cliente e fornecedor são relacionamentos opcionais e podem coexistir no mesmo cadastro.
 
+Em **Cadastros → Produtos e serviços**, mantém nome, tipo, unidade, utilização em compra/venda, preço de venda opcional e situação. A lista permite busca, filtros, paginação, criação, edição e inativação, com páginas próprias e breadcrumbs.
+
 ## Desenvolvimento
 
 Na raiz do monorepo, com Node 22 e npm 10 ou superior:
@@ -14,7 +16,7 @@ Copy-Item apps/zenit-bizz/.env.example apps/zenit-bizz/.env.local
 
 Confira o `DATABASE_URL` do backend antes de aplicar as migrações ao ambiente local desejado. A nova aplicação exige as migrações `20261007100000_add_bizz_app` e `20261007101000_add_bizz_contacts`.
 
-As versões atuais também exigem `20261013180000_bizz_people_directory` e `20261013210000_bizz_contact_methods`. Aplique as migrações e publique a API compatível antes do frontend.
+As versões atuais também exigem `20261013180000_bizz_people_directory`, `20261013210000_bizz_contact_methods` e `20261014100000_bizz_catalog`. Aplique as migrações e publique a API compatível antes do frontend.
 
 ```powershell
 npm --workspace backend run prisma:deploy
@@ -46,6 +48,7 @@ Mais detalhes: [acesso e cadastros](../../docs/products/zenit-bizz/foundation.md
 npm run test:zenit-bizz
 npm run build:zenit-bizz
 node backend/scripts/run-jest.js integration --runInBand --runTestsByPath __tests__/integration/bizz-foundation.test.ts
+node backend/scripts/run-jest.js integration --runInBand --runTestsByPath __tests__/integration/bizz-catalog.test.ts
 ```
 
 O comando de integração usa a base de teste e a recria conforme o mecanismo do backend. Consulte o [guia de testes](../../docs/operations/testing/backend-local-integration-testing-guide.md) antes de executá-lo. Para compartilhar o ambiente com outras validações, use `TEST_DATABASE_URL` apontando para um banco/esquema de teste isolado.

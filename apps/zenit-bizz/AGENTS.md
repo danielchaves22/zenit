@@ -13,6 +13,7 @@ Estas regras complementam o `AGENTS.md` da raiz.
 ## Cadastros
 
 - Pessoas e empresas usam um cadastro único por empresa; cliente e fornecedor são relacionamentos opcionais e não cadastros separados.
+- Produtos e serviços ficam em **Cadastros**, com tipo, unidade, utilização em compra/venda e preço de referência opcional. Preserve a precisão decimal dos preços.
 - Prefira páginas próprias para criar e editar cadastros, seguindo o padrão de contas e categorias do Cash. Preserve o contexto da lista no retorno e proteja alterações não salvas.
 - Reserve modais para confirmações e ações curtas. Não use modal ou painel sobreposto como padrão para formulários de cadastro.
 

@@ -800,6 +800,27 @@ fieldset {
   padding-left: 0;
   padding-right: 12px;
 }
+.catalog-table th:first-child {
+  width: 29%;
+}
+.catalog-table th:nth-child(2) {
+  width: 13%;
+}
+.catalog-table th:nth-child(3) {
+  width: 17%;
+}
+.catalog-table th:nth-child(4) {
+  width: 18%;
+}
+.catalog-table th:nth-child(5) {
+  width: 15%;
+}
+.catalog-table th:last-child {
+  width: 8%;
+}
+.catalog-price {
+  font-variant-numeric: tabular-nums;
+}
 .list-footer {
   padding: 14px 24px;
   display: flex;
@@ -1188,6 +1209,10 @@ fieldset {
     padding: 5px 0;
   }
   .contacts-table td.contact-name {
+    padding-right: 38px;
+    margin-bottom: 10px;
+  }
+  .catalog-table td.catalog-name {
     padding-right: 38px;
     margin-bottom: 10px;
   }

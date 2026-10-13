@@ -332,6 +332,8 @@ model User {
   appGrants             UserAppGrant[]
   bizzContactsCreated   BizzContact[] @relation("BizzContactCreator")
   bizzContactsUpdated   BizzContact[] @relation("BizzContactUpdater")
+  bizzCatalogItemsCreated BizzCatalogItem[] @relation("BizzCatalogItemCreator")
+  bizzCatalogItemsUpdated BizzCatalogItem[] @relation("BizzCatalogItemUpdater")
   preference             UserPreference?
   createdProcesses       Process[]            @relation("ProcessCreatedBy")
   updatedProcesses       Process[]            @relation("ProcessUpdatedBy")
@@ -363,6 +365,7 @@ model Company {
   id                  Int                   @id @default(autoincrement())
   name                String
   bizzContacts        BizzContact[]
+  bizzCatalogItems    BizzCatalogItem[]
   address             String?
   code                Int                   @unique
   timeZone            String?
@@ -468,6 +471,38 @@ model BizzContactMethod {
 
   @@unique([contactId, kind, position])
   @@unique([contactId, kind, value])
+}
+
+enum BizzCatalogItemKind {
+  PRODUCT
+  SERVICE
+}
+
+model BizzCatalogItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  companyId    Int
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name         String   @db.VarChar(160)
+  kind         BizzCatalogItemKind
+  unit         String   @db.VarChar(40)
+  canPurchase  Boolean
+  canSell      Boolean
+  salePrice    Decimal? @db.Decimal(14, 2)
+  active       Boolean  @default(true)
+  version      Int      @default(1)
+  requestKey   String   @db.Uuid
+  requestHash  String   @db.VarChar(64)
+  createdById  Int
+  createdBy    User     @relation("BizzCatalogItemCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedById  Int
+  updatedBy    User     @relation("BizzCatalogItemUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([companyId, requestKey])
+  @@index([companyId, active, name, id])
+  @@index([createdById])
+  @@index([updatedById])
 }
 
 model CompanyGroup {

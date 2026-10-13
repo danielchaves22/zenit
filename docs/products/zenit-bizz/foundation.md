@@ -43,7 +43,7 @@ Quem gerencia usuários (`ADMIN` ou `SUPERUSER`, conforme seu escopo) escolhe os
 
 `BizzContact` pertence à empresa e reúne pessoas físicas e jurídicas na lista **Pessoas e empresas**. Cliente e fornecedor são relacionamentos opcionais e podem coexistir; um cadastro sem relacionamento também pode ser salvo. Nome é obrigatório. Documento, telefone, e-mail, endereço e observações são opcionais. Documentos informados são normalizados e únicos dentro da empresa; ausência de documento é permitida. Isso não representa validação cadastral perante órgãos oficiais.
 
-O endereço é composto por CEP, logradouro, número, complemento, bairro, cidade, estado/região e país. Não há consulta externa de CEP. Campos de endereço omitidos na edição preservam seus valores; texto vazio ou `null` os limpa. Os identificadores e relacionamentos dos registros existentes permanecem os mesmos. Não há catálogo de produtos/serviços ou papéis personalizados nesta etapa.
+O endereço é composto por CEP, logradouro, número, complemento, bairro, cidade, estado/região e país. Não há consulta externa de CEP. Campos de endereço omitidos na edição preservam seus valores; texto vazio ou `null` os limpa. Os identificadores e relacionamentos dos registros existentes permanecem os mesmos. Papéis personalizados são uma etapa posterior.
 
 O identificador permanece estável após edição/inativação e poderá ser referenciado nas compras e vendas futuras. Não há relacionamento financeiro implementado nesta versão.
 
@@ -58,6 +58,19 @@ Telefones e e-mails são listas ordenadas (`phones` e `emails`), com até 20 val
 - `GET /api/bizz/session`: contexto da empresa validado pelo backend.
 
 O servidor determina usuário/empresa e não aceita atribuição desses campos pelo formulário. Todas as consultas e atualizações são limitadas à empresa ativa. São preservados autor da criação, autor da última alteração, datas e versão; isso não é um histórico completo de revisões.
+
+## Produtos e serviços
+
+O catálogo em **Cadastros → Produtos e serviços** usa `/produtos-servicos`, `/produtos-servicos/novo` e `/produtos-servicos/:id`. Cada `BizzCatalogItem` pertence a uma empresa e registra nome, tipo `PRODUCT|SERVICE`, unidade, utilização em compra (`canPurchase`), venda (`canSell`) ou ambas, preço de venda de referência e situação. Nome e unidade são obrigatórios; pelo menos uma utilização precisa estar marcada. A unidade é texto com sugestões, sem conversões automáticas. Custos efetivos, compras, vendas e estoque são etapas posteriores.
+
+O preço de referência é opcional, em reais, e aceita zero. É armazenado como `DECIMAL(14,2)` e transmitido em `salePrice` como string decimal canônica (`"1234.50"`) ou `null`. O formulário aceita vírgula decimal e agrupamento brasileiro (`1.234,50`). Valores negativos, mais de duas casas decimais e valores acima de `999999999999.99` são recusados. Alterar utilização não apaga um preço já informado. O preço é uma referência para operações futuras.
+
+- `GET /api/bizz/catalog`: busca por nome (`q`), `kind=PRODUCT|SERVICE|all`, `usage=purchase|sale|both|all`, `status=active|inactive|all` e página. Compra/venda incluem os itens com ambas as utilizações. Cada página tem 20 registros ordenados por nome e ID.
+- `GET /api/bizz/catalog/:id`: consulta para edição, limitada à empresa ativa.
+- `POST /api/bizz/catalog`: criação com `requestKey` UUID; repetir os mesmos dados não duplica o registro, inclusive em requisições simultâneas.
+- `PUT /api/bizz/catalog/:id`: edição com `version`; uma edição concorrente retorna 409. Inativação/reativação preservam o ID; não há exclusão definitiva na interface/API.
+
+Os mesmos controles de acesso ao Bizz e de troca obrigatória de senha protegem o catálogo. Empresa e autores são determinados pelo servidor. A migração `20261014100000_bizz_catalog` adiciona uma tabela própria e não altera cadastros existentes. Publique a migração e a API antes do frontend.
 
 ## Interface
 

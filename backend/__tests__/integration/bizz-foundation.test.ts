@@ -157,9 +157,9 @@ describe('Bizz foundation and per-user application grants', () => {
       403
     );
     expect((await request(app).get('/api/bizz/session')).status).toBe(401);
-    expect((await request(app).get('/api/bizz/session').set(headers(foreignToken))).status).toBe(
-      403
-    );
+    expect(
+      (await request(app).get('/api/bizz/session').set(headers(foreignToken))).status
+    ).toBe(403);
   });
   it('does not let a Cash grant enter Bizz or a Bizz grant enter Cash/admin routes', async () => {
     expect(
@@ -319,7 +319,8 @@ describe('Bizz foundation and per-user application grants', () => {
       expect(response.body.items.map((item: { id: string }) => item.id)).toEqual([contactId]);
     }
     expect(
-      (await request(app).get('/api/bizz/contacts').set(headers(token, otherCompanyId))).body.total
+      (await request(app).get('/api/bizz/contacts').set(headers(token, otherCompanyId))).body
+        .total
     ).toBe(0);
     expect(
       (
@@ -360,7 +361,9 @@ describe('Bizz foundation and per-user application grants', () => {
     expect(
       (await request(app).get(`/api/bizz/contacts/${randomUUID()}`).set(headers())).status
     ).toBe(404);
-    expect((await request(app).get('/api/bizz/contacts/invalid').set(headers())).status).toBe(400);
+    expect((await request(app).get('/api/bizz/contacts/invalid').set(headers())).status).toBe(
+      400
+    );
   });
   it('detects concurrent edits and supports inactivation without deletion', async () => {
     const saved = await request(app)
@@ -428,6 +431,7 @@ describe('Bizz foundation and per-user application grants', () => {
       isSupplier: false,
       street: 'Rua das Flores',
       city: 'Campinas',
+      state: 'SP',
       requestKey: randomUUID()
     });
     const created = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
@@ -442,14 +446,22 @@ describe('Bizz foundation and per-user application grants', () => {
     const filtered = await request(app)
       .get('/api/bizz/contacts?role=none&personType=PERSON')
       .set(headers());
-    expect(filtered.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id]);
+    expect(filtered.body.items.map((item: { id: string }) => item.id)).toEqual([
+      created.body.id
+    ]);
     expect(
-      (await request(app).get('/api/bizz/contacts?role=none&personType=BUSINESS').set(headers()))
-        .body.total
+      (
+        await request(app)
+          .get('/api/bizz/contacts?role=none&personType=BUSINESS')
+          .set(headers())
+      ).body.total
     ).toBe(0);
     expect(
-      (await request(app).get('/api/bizz/contacts?role=none').set(headers(token, otherCompanyId)))
-        .body.total
+      (
+        await request(app)
+          .get('/api/bizz/contacts?role=none')
+          .set(headers(token, otherCompanyId))
+      ).body.total
     ).toBe(0);
     // Older clients do not send address fields: updates must preserve them.
     const changed = await request(app)
@@ -539,9 +551,9 @@ describe('Bizz foundation and per-user application grants', () => {
           .send(draft({ requestKey: randomUUID(), street: 'x'.repeat(161) }))
       ).status
     ).toBe(400);
-    expect((await request(app).get('/api/bizz/contacts?role=invalid').set(headers())).status).toBe(
-      400
-    );
+    expect(
+      (await request(app).get('/api/bizz/contacts?role=invalid').set(headers())).status
+    ).toBe(400);
     expect(
       (await request(app).get('/api/bizz/contacts?personType=invalid').set(headers())).status
     ).toBe(400);
@@ -581,7 +593,9 @@ describe('Bizz foundation and per-user application grants', () => {
     ).toBe(409);
     for (const q of ['COMPRAS@EXAMPLE', '90000-0002']) {
       const found = await request(app).get('/api/bizz/contacts').query({ q }).set(headers());
-      expect(found.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id]);
+      expect(found.body.items.map((item: { id: string }) => item.id)).toEqual([
+        created.body.id
+      ]);
       expect(
         (
           await request(app)
@@ -624,7 +638,9 @@ describe('Bizz foundation and per-user application grants', () => {
           .send(draft({ version: 1, phones: [], emails: [] }))
       ).status
     ).toBe(409);
-    expect((await request(app).get(path).set(headers())).body.phones).toEqual(['(11) 90000-0002']);
+    expect((await request(app).get(path).set(headers())).body.phones).toEqual([
+      '(11) 90000-0002'
+    ]);
     const cleared = await request(app)
       .put(path)
       .set(headers())
@@ -710,5 +726,328 @@ describe('Bizz foundation and per-user application grants', () => {
       version: 1,
       emails: ['valid@example.test']
     });
+  });
+  it('serves the reference catalog only with effective Bizz access', async () => {
+    const states = await request(app).get('/api/bizz/geography/states').set(headers());
+    expect(states.status).toBe(200);
+    expect(states.body).toHaveLength(27);
+    const cities = await request(app)
+      .get('/api/bizz/geography/states/SP/cities')
+      .set(headers());
+    expect(cities.body).toContainEqual({ code: '3509502', name: 'Campinas', stateCode: 'SP' });
+    expect(cities.body.every((city: { stateCode: string }) => city.stateCode === 'SP')).toBe(
+      true
+    );
+    expect(
+      (await request(app).get('/api/bizz/geography/states/XX/cities').set(headers())).status
+    ).toBe(400);
+    expect(
+      (await request(app).get('/api/bizz/geography/states').set(headers(deniedToken))).status
+    ).toBe(403);
+    expect((await request(app).get('/api/bizz/geography/states')).status).toBe(401);
+  });
+  it('persists the official city code, replays safely, rejects mismatches and clears a replaced city', async () => {
+    const body = {
+      ...draft(),
+      requestKey: randomUUID(),
+      location: { stateCode: 'SP', cityCode: '3509502' },
+      emails: ['loja@example.test', 'financeiro@example.test'],
+      phones: ['1134567890', '11976543210'],
+      document: '00.000.000/E08G-12'
+    };
+    const created = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    expect(created.status).toBe(201);
+    const path = `/api/bizz/contacts/${created.body.id}`;
+    expect(created.body).toMatchObject({
+      city: 'Campinas',
+      state: 'SP',
+      country: 'Brasil',
+      cityIbgeCode: '3509502',
+      location: body.location,
+      document: '00000000E08G12'
+    });
+    expect((await request(app).get(path).set(headers())).body.emails).toEqual(body.emails);
+    const byPhone = await request(app)
+      .get('/api/bizz/contacts')
+      .query({ q: '(11) 97654-3210' })
+      .set(headers());
+    expect(byPhone.body.items.map((item: { id: string }) => item.id)).toEqual([
+      created.body.id
+    ]);
+    const replay = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    expect(replay.status).toBe(200);
+    expect(replay.body.id).toBe(created.body.id);
+    const invalid = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 1, location: { stateCode: 'RJ', cityCode: '3509502' } }));
+    expect(invalid.status).toBe(400);
+    expect((await request(app).get(path).set(headers())).body).toMatchObject({
+      version: 1,
+      cityIbgeCode: '3509502',
+      emails: body.emails
+    });
+    const cleared = await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          version: 1,
+          location: { stateCode: 'RJ', cityCode: null },
+          emails: body.emails
+        })
+      );
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toMatchObject({
+      state: 'RJ',
+      city: null,
+      cityIbgeCode: null,
+      location: { stateCode: 'RJ', cityCode: null },
+      emails: body.emails
+    });
+    expect((await request(app).get(path).set(headers(token, otherCompanyId))).status).toBe(404);
+  });
+  it('preserves an unmatched legacy address during unrelated edits and replaces it only through selection', async () => {
+    const record = await prisma.bizzContact.create({
+      data: {
+        name: 'Endereço antigo',
+        companyId,
+        createdById: userId,
+        updatedById: userId,
+        requestKey: randomUUID(),
+        requestHash: 'legacy',
+        city: 'Localidade antiga',
+        state: 'Estado antigo',
+        country: 'Brasil'
+      }
+    });
+    const path = `/api/bizz/contacts/${record.id}`;
+    const loaded = await request(app).get(path).set(headers());
+    expect(loaded.body.location).toBeNull();
+    const edited = await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          name: record.name,
+          version: 1,
+          city: record.city,
+          state: record.state,
+          country: record.country
+        })
+      );
+    expect(edited.status).toBe(200);
+    expect(edited.body).toMatchObject({
+      city: record.city,
+      state: record.state,
+      location: null
+    });
+    const corrected = await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          name: record.name,
+          version: 2,
+          location: { stateCode: 'SP', cityCode: '3509502' }
+        })
+      );
+    expect(corrected.status).toBe(200);
+    expect(corrected.body).toMatchObject({ city: 'Campinas', cityIbgeCode: '3509502' });
+    expect(
+      (
+        await request(app)
+          .post('/api/bizz/contacts')
+          .set(headers())
+          .send(draft({ requestKey: randomUUID(), city: 'Inventada', state: 'SP' }))
+      ).status
+    ).toBe(400);
+  });
+  it('stores multiple addresses atomically, replays without duplicates and keeps stable IDs when changing the primary', async () => {
+    const delivery = {
+      label: 'Entrega',
+      street: 'Rua das Rosas',
+      addressNumber: '12',
+      location: { stateCode: 'SP', cityCode: '3509502' }
+    };
+    const billing = {
+      label: 'Cobrança',
+      street: 'Rua Central',
+      location: { stateCode: 'RJ', cityCode: '3304557' }
+    };
+    const body = draft({ requestKey: randomUUID(), addresses: [delivery, billing] });
+    const created = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    expect(created.status).toBe(201);
+    expect(created.body.addresses).toHaveLength(2);
+    expect(created.body).toMatchObject({
+      street: delivery.street,
+      city: 'Campinas',
+      state: 'SP'
+    });
+    const [first, second] = created.body.addresses;
+    expect(first).toMatchObject({ label: 'Entrega', city: 'Campinas' });
+    expect(second).toMatchObject({ label: 'Cobrança', city: 'Rio de Janeiro' });
+    const replay = await request(app).post('/api/bizz/contacts').set(headers()).send(body);
+    expect(replay.status).toBe(200);
+    expect(replay.body.addresses).toEqual(created.body.addresses);
+    const path = `/api/bizz/contacts/${created.body.id}`;
+    const reordered = await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          version: 1,
+          addresses: [
+            { ...billing, id: second.id },
+            { ...delivery, id: first.id }
+          ]
+        })
+      );
+    expect(reordered.status).toBe(200);
+    expect(reordered.body).toMatchObject({
+      street: billing.street,
+      city: 'Rio de Janeiro',
+      state: 'RJ'
+    });
+    expect(reordered.body.addresses.map((value: { id: string }) => value.id)).toEqual([
+      second.id,
+      first.id
+    ]);
+    const stale = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 1, addresses: [] }));
+    expect(stale.status).toBe(409);
+    expect((await request(app).get(path).set(headers())).body.addresses).toHaveLength(2);
+    // Legacy clients edit the primary only and retain the other address.
+    const legacy = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 2, street: 'Rua Alterada' }));
+    expect(legacy.status).toBe(200);
+    expect(legacy.body.addresses).toHaveLength(2);
+    expect(legacy.body.addresses[0]).toMatchObject({
+      id: second.id,
+      street: 'Rua Alterada',
+      label: 'Cobrança'
+    });
+    expect(legacy.body.addresses[1]).toMatchObject({ id: first.id, street: delivery.street });
+    const removed = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 3, addresses: [{ ...delivery, id: first.id, label: null }] }));
+    expect(removed.status).toBe(200);
+    expect(removed.body.addresses).toHaveLength(1);
+    expect(removed.body.addresses[0]).toMatchObject({ id: first.id, label: null });
+    expect(removed.body.street).toBe(delivery.street);
+    const cleared = await request(app)
+      .put(path)
+      .set(headers())
+      .send(draft({ version: 4, addresses: [] }));
+    expect(cleared.status).toBe(200);
+    expect(cleared.body).toMatchObject({
+      addresses: [],
+      city: null,
+      state: null,
+      country: null,
+      street: null,
+      cityIbgeCode: null
+    });
+    expect((await request(app).get(path).set(headers())).body.addresses).toEqual([]);
+    expect(
+      await prisma.bizzContactAddress.count({ where: { contactId: created.body.id } })
+    ).toBe(0);
+  });
+  it('rejects invalid and foreign address IDs without changing saved records', async () => {
+    const address = {
+      label: 'Comercial',
+      street: 'Rua Principal',
+      location: { stateCode: 'SP', cityCode: '3509502' }
+    };
+    const created = await request(app)
+      .post('/api/bizz/contacts')
+      .set(headers())
+      .send(draft({ requestKey: randomUUID(), addresses: [address] }));
+    expect(created.status).toBe(201);
+    const id = created.body.addresses[0].id;
+    const foreign = await request(app)
+      .post('/api/bizz/contacts')
+      .set(headers(token, otherCompanyId))
+      .send(draft({ requestKey: randomUUID(), addresses: [address] }));
+    const otherRecord = await request(app)
+      .post('/api/bizz/contacts')
+      .set(headers())
+      .send(draft({ requestKey: randomUUID(), addresses: [address] }));
+    for (const addresses of [
+      [{ ...address, id: foreign.body.addresses[0].id }],
+      [{ ...address, id: otherRecord.body.addresses[0].id }],
+      [{ ...address, id: randomUUID() }],
+      [
+        { ...address, id },
+        { ...address, id }
+      ],
+      [{ ...address, id, location: { stateCode: 'RJ', cityCode: '3509502' } }],
+      [{ label: 'Sem endereço' }],
+      Array.from({ length: 21 }, () => address)
+    ]) {
+      const failed = await request(app)
+        .put(`/api/bizz/contacts/${created.body.id}`)
+        .set(headers())
+        .send(draft({ version: 1, addresses }));
+      expect(failed.status).toBe(400);
+      expect(
+        (await request(app).get(`/api/bizz/contacts/${created.body.id}`).set(headers())).body
+      ).toMatchObject({ version: 1, addresses: [{ id, street: address.street }] });
+    }
+    expect(
+      (
+        await request(app)
+          .put(`/api/bizz/contacts/${created.body.id}`)
+          .set(headers(token, otherCompanyId))
+          .send(draft({ version: 1, addresses: [] }))
+      ).status
+    ).toBe(404);
+  });
+  it('keeps an unresolved legacy address while adding a new one and saving through the new format', async () => {
+    const record = await prisma.bizzContact.create({
+      data: {
+        name: 'Cadastro antigo com endereço',
+        companyId,
+        createdById: userId,
+        updatedById: userId,
+        requestKey: randomUUID(),
+        requestHash: 'legacy',
+        city: 'Localidade antiga',
+        state: 'Estado antigo',
+        country: 'Brasil'
+      }
+    });
+    const path = `/api/bizz/contacts/${record.id}`;
+    const loaded = await request(app).get(path).set(headers());
+    const { cityIbgeCode: _code, location: _location, ...old } = loaded.body.addresses[0];
+    expect(loaded.body.addresses[0].location).toBeNull();
+    const added = await request(app)
+      .put(path)
+      .set(headers())
+      .send(
+        draft({
+          version: 1,
+          addresses: [
+            old,
+            { street: 'Rua Nova', location: { stateCode: 'SP', cityCode: '3509502' } }
+          ]
+        })
+      );
+    expect(added.status).toBe(200);
+    expect(added.body.addresses).toHaveLength(2);
+    expect(added.body.addresses[0]).toMatchObject({
+      id: old.id,
+      city: record.city,
+      state: record.state,
+      country: record.country,
+      location: null
+    });
+    expect(added.body.addresses[1]).toMatchObject({ street: 'Rua Nova', city: 'Campinas' });
+    expect(await prisma.bizzContactAddress.count({ where: { contactId: record.id } })).toBe(2);
   });
 });

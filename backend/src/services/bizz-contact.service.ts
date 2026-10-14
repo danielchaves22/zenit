@@ -7,6 +7,14 @@ import {
   bizzContactListSchema
 } from '../validators/bizz-contact.validator';
 import { z } from 'zod';
+import GeographyService from './geography.service';
+import {
+  addressFields,
+  addressSelect,
+  prepareAddresses,
+  presentAddresses,
+  saveAddresses
+} from './bizz-contact-addresses';
 
 import { BizzError } from './bizz-error';
 const publicFields = {
@@ -29,8 +37,10 @@ const publicFields = {
   complement: true,
   neighborhood: true,
   city: true,
+  cityIbgeCode: true,
   state: true,
   country: true,
+  addresses: { select: addressSelect, orderBy: { position: 'asc' } },
   methods: {
     select: { kind: true, value: true, position: true },
     orderBy: [{ kind: 'asc' }, { position: 'asc' }]
@@ -40,11 +50,15 @@ const publicFields = {
 type ContactRow = Prisma.BizzContactGetPayload<{ select: typeof publicFields }>;
 function present({ methods, ...contact }: ContactRow) {
   const values = (kind: BizzContactMethodKind, legacy: string | null) => {
-    const items = methods.filter((method) => method.kind === kind).map((method) => method.value);
+    const items = methods
+      .filter((method) => method.kind === kind)
+      .map((method) => method.value);
     return items.length ? items : legacy ? [legacy] : [];
   };
   return {
     ...contact,
+    addresses: presentAddresses(contact),
+    location: GeographyService.match(contact),
     phones: values('PHONE', contact.phone),
     emails: values('EMAIL', contact.email)
   };
@@ -87,6 +101,7 @@ export default class BizzContactService {
 
   static async list(companyId: number, filters: z.infer<typeof bizzContactListSchema>) {
     const documentQuery = filters.q.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const phoneQuery = /^[+\d\s().-]+$/.test(filters.q) ? filters.q.replace(/\D/g, '') : '';
     const where: Prisma.BizzContactWhereInput = {
       companyId,
       ...(filters.status === 'all' ? {} : { active: filters.status === 'active' }),
@@ -111,6 +126,19 @@ export default class BizzContactService {
                   some: { value: { contains: filters.q, mode: 'insensitive' } }
                 }
               },
+              ...(phoneQuery && phoneQuery !== filters.q
+                ? [
+                    { phone: { contains: phoneQuery } },
+                    {
+                      methods: {
+                        some: {
+                          kind: BizzContactMethodKind.PHONE,
+                          value: { contains: phoneQuery }
+                        }
+                      }
+                    }
+                  ]
+                : []),
               ...(documentQuery ? [{ document: { contains: documentQuery } }] : [])
             ]
           }
@@ -138,13 +166,20 @@ export default class BizzContactService {
   }
 
   static async create(companyId: number, userId: number, input: CreateBizzContact) {
-    const { requestKey, phones: suppliedPhones, emails: suppliedEmails, ...data } = input;
+    const {
+      requestKey,
+      phones: suppliedPhones,
+      emails: suppliedEmails,
+      location,
+      addresses: suppliedAddresses,
+      ...data
+    } = input;
     const phones = suppliedPhones ?? (data.phone ? [data.phone] : []);
     const emails = suppliedEmails ?? (data.email ? [data.email] : []);
     data.phone = phones[0] ?? null;
     data.email = emails[0] ?? null;
     // Empty new address fields are equivalent to older requests without an address.
-    const addressFields = new Set([
+    const legacyAddressFields = new Set([
       'postalCode',
       'street',
       'addressNumber',
@@ -155,11 +190,15 @@ export default class BizzContactService {
       'country'
     ]);
     const hashData: Record<string, unknown> = Object.fromEntries(
-      Object.entries(data).filter(([key, value]) => !addressFields.has(key) || value != null)
+      Object.entries(data).filter(
+        ([key, value]) => !legacyAddressFields.has(key) || value != null
+      )
     );
     // Single-value requests retain the pre-migration hash, including legacy retries.
     if (phones.length > 1) hashData.phones = phones.slice(1);
     if (emails.length > 1) hashData.emails = emails.slice(1);
+    if (location !== undefined) hashData.location = location;
+    if (suppliedAddresses !== undefined) hashData.addresses = suppliedAddresses;
     const requestHash = createHash('sha256').update(JSON.stringify(hashData)).digest('hex');
     const replay = async () => {
       const existing = await prisma.bizzContact.findUnique({
@@ -180,10 +219,13 @@ export default class BizzContactService {
     };
     const existing = await replay();
     if (existing) return { contact: existing, created: false };
+    const addresses = prepareAddresses(suppliedAddresses, data, location);
     try {
       const contact = await prisma.bizzContact.create({
         data: {
           ...data,
+          ...addressFields(addresses[0]),
+          addresses: { create: addresses },
           methods: { create: methodRows(phones, emails) },
           companyId,
           requestKey,
@@ -208,7 +250,14 @@ export default class BizzContactService {
   }
 
   static async update(companyId: number, userId: number, id: string, input: UpdateBizzContact) {
-    const { version, phones: suppliedPhones, emails: suppliedEmails, ...data } = input;
+    const {
+      version,
+      phones: suppliedPhones,
+      emails: suppliedEmails,
+      location,
+      addresses: suppliedAddresses,
+      ...data
+    } = input;
     try {
       return await prisma.$transaction(async (tx) => {
         const existing = await tx.bizzContact.findFirst({
@@ -217,6 +266,7 @@ export default class BizzContactService {
         });
         if (!existing) throw new BizzError(404, 'Cadastro não encontrado nesta empresa.');
         const current = present(existing);
+        const addresses = prepareAddresses(suppliedAddresses, data, location, existing);
         const phones =
           suppliedPhones ??
           (data.phone === undefined
@@ -224,11 +274,14 @@ export default class BizzContactService {
             : replaceFirst(current.phones, data.phone, true));
         const emails =
           suppliedEmails ??
-          (data.email === undefined ? current.emails : replaceFirst(current.emails, data.email));
+          (data.email === undefined
+            ? current.emails
+            : replaceFirst(current.emails, data.email));
         const result = await tx.bizzContact.updateMany({
           where: { id, companyId, version },
           data: {
             ...data,
+            ...addressFields(addresses[0]),
             phone: phones[0] ?? null,
             email: emails[0] ?? null,
             version: { increment: 1 },
@@ -241,6 +294,7 @@ export default class BizzContactService {
             'Este cadastro foi alterado por outra pessoa. Feche e abra novamente para conferir a versão atual.'
           );
         // Only after the scoped version check succeeds, replace this contact's methods atomically.
+        await saveAddresses(tx, id, addresses, existing.addresses);
         await tx.bizzContactMethod.deleteMany({ where: { contactId: id } });
         const methods = methodRows(phones, emails);
         if (methods.length)

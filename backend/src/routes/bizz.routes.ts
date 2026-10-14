@@ -3,6 +3,7 @@ import { AppKey, Prisma } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
 import BizzContactService from '../services/bizz-contact.service';
+import GeographyService from '../services/geography.service';
 import BizzCatalogService from '../services/bizz-catalog.service';
 import BizzPurchaseService from '../services/bizz-purchase.service';
 import {
@@ -71,6 +72,11 @@ router.use((req, res, next) => {
       return next();
     })
     .catch(next);
+});
+router.get('/geography/states', (_req, res) => res.json(GeographyService.states()));
+router.get('/geography/states/:uf/cities', (req, res) => {
+  const cities = GeographyService.cities(req.params.uf);
+  return cities ? res.json(cities) : res.status(400).json({ error: 'Selecione um estado válido.' });
 });
 router.get(
   '/contacts',

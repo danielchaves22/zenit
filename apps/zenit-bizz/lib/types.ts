@@ -29,6 +29,30 @@ export interface Contact {
   phone: string | null;
   phones?: string[];
   emails?: string[];
+  addresses?: ContactAddress[];
+  postalCode: string | null;
+  street: string | null;
+  addressNumber: string | null;
+  complement: string | null;
+  neighborhood: string | null;
+  city: string | null;
+  cityIbgeCode?: string | null;
+  location?: BrazilLocation | null;
+  state: string | null;
+  country: string | null;
+  notes: string | null;
+  active: boolean;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface BrazilLocation {
+  stateCode: string | null;
+  cityCode: string | null;
+}
+export interface ContactAddress {
+  id?: string;
+  label: string | null;
   postalCode: string | null;
   street: string | null;
   addressNumber: string | null;
@@ -37,11 +61,17 @@ export interface Contact {
   city: string | null;
   state: string | null;
   country: string | null;
-  notes: string | null;
-  active: boolean;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
+  location: BrazilLocation | null;
+}
+export interface GeographyState {
+  id: number;
+  code: string;
+  name: string;
+}
+export interface GeographyCity {
+  code: string;
+  name: string;
+  stateCode: string;
 }
 export interface ContactList {
   items: Contact[];

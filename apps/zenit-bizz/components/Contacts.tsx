@@ -2,11 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useNavigation } from '@/contexts/NavigationContext';
-import { ArrowLeft, ArrowRight, CheckCircle2, Pencil, Plus, Search, Users, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Pencil,
+  Plus,
+  Search,
+  Users,
+  X
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import { ContactList } from '@/lib/types';
 import { contactFilters, CONTACTS_PATH } from '@/lib/contact-filters';
+import { formatContactValue } from '@/lib/contact-masks';
 
 export function Contacts() {
   const { company } = useAuth();
@@ -56,7 +66,9 @@ export function Contacts() {
           })
           .catch((e) => {
             if (!controller.signal.aborted && sequence === request.current)
-              setError(e instanceof Error ? e.message : 'Não foi possível carregar os cadastros.');
+              setError(
+                e instanceof Error ? e.message : 'Não foi possível carregar os cadastros.'
+              );
           })
           .finally(() => {
             if (!controller.signal.aborted && sequence === request.current) setLoading(false);
@@ -216,7 +228,11 @@ export function Contacts() {
                           {contact.name}
                         </Link>
                         <small>
-                          {contact.document ||
+                          {(contact.document &&
+                            formatContactValue(
+                              contact.document,
+                              contact.personType === 'BUSINESS' ? 'cnpj' : 'cpf'
+                            )) ||
                             (contact.personType === 'BUSINESS'
                               ? 'Pessoa jurídica'
                               : 'Pessoa física')}
@@ -224,7 +240,9 @@ export function Contacts() {
                       </span>
                     </td>
                     <td data-label="Contato">
-                      <span>{contact.phone || '—'}</span>
+                      <span>
+                        {contact.phone ? formatContactValue(contact.phone, 'phone') : '—'}
+                      </span>
                       {(contact.phones?.length ?? 0) > 1 && (
                         <span className="subtle"> (+{contact.phones!.length - 1})</span>
                       )}

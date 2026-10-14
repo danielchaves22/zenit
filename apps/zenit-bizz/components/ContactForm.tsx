@@ -3,28 +3,17 @@ import { ArrowLeft, Check } from 'lucide-react';
 import { useNavigation } from '@/contexts/NavigationContext';
 import { api } from '@/lib/api';
 import { Contact } from '@/lib/types';
+import { AddressDraft, addressPayload, initialAddresses } from '@/lib/contact-addresses';
 import { Relationship } from '@/lib/contact-filters';
 import { RelationshipSelect } from './RelationshipSelect';
 import { ContactValues } from './ContactValues';
+import { MaskedContactInput } from './MaskedContactInput';
+import { ContactAddresses } from './ContactAddresses';
 
 type Draft = Pick<
   Contact,
-  | 'name'
-  | 'personType'
-  | 'isCustomer'
-  | 'isSupplier'
-  | 'document'
-  | 'postalCode'
-  | 'street'
-  | 'addressNumber'
-  | 'complement'
-  | 'neighborhood'
-  | 'city'
-  | 'state'
-  | 'country'
-  | 'notes'
-  | 'active'
-> & { phones: string[]; emails: string[] };
+  'name' | 'personType' | 'isCustomer' | 'isSupplier' | 'document' | 'notes' | 'active'
+> & { phones: string[]; emails: string[]; addresses: AddressDraft[] };
 function initialValues(values: string[] | undefined, legacy: string | null | undefined) {
   const current = values ?? (legacy ? [legacy] : []);
   return current.length ? current : [''];
@@ -52,14 +41,7 @@ export function ContactForm({
     document: contact?.document ?? '',
     emails: initialValues(contact?.emails, contact?.email),
     phones: initialValues(contact?.phones, contact?.phone),
-    postalCode: contact?.postalCode ?? '',
-    street: contact?.street ?? '',
-    addressNumber: contact?.addressNumber ?? '',
-    complement: contact?.complement ?? '',
-    neighborhood: contact?.neighborhood ?? '',
-    city: contact?.city ?? '',
-    state: contact?.state ?? '',
-    country: contact?.country ?? '',
+    addresses: initialAddresses(contact),
     notes: contact?.notes ?? '',
     active: contact?.active ?? true
   };
@@ -101,6 +83,7 @@ export function ContactForm({
           method: contact ? 'PUT' : 'POST',
           body: JSON.stringify({
             ...draft,
+            addresses: draft.addresses.map(addressPayload),
             phones: draft.phones.map((value) => value.trim()).filter(Boolean),
             emails: draft.emails.map((value) => value.trim()).filter(Boolean),
             ...(contact ? { version: contact.version } : { requestKey: requestKey.current })
@@ -162,7 +145,9 @@ export function ContactForm({
                   Tipo de pessoa
                   <select
                     value={draft.personType}
-                    onChange={(e) => update('personType', e.target.value as Draft['personType'])}
+                    onChange={(e) =>
+                      update('personType', e.target.value as Draft['personType'])
+                    }
                   >
                     <option value="PERSON">Pessoa física</option>
                     <option value="BUSINESS">Pessoa jurídica</option>
@@ -170,10 +155,12 @@ export function ContactForm({
                 </label>
                 <label>
                   {draft.personType === 'PERSON' ? 'CPF' : 'CNPJ'}
-                  <input
+                  <MaskedContactInput
                     maxLength={32}
+                    mask={draft.personType === 'PERSON' ? 'cpf' : 'cnpj'}
+                    inputMode={draft.personType === 'PERSON' ? 'numeric' : 'text'}
                     value={draft.document ?? ''}
-                    onChange={(e) => update('document', e.target.value)}
+                    onChange={(value) => update('document', value)}
                   />
                 </label>
               </div>
@@ -190,97 +177,12 @@ export function ContactForm({
                   onChange={(values) => update('emails', values)}
                 />
               </div>
-              <details
-                open={Boolean(
-                  contact &&
-                  [
-                    contact.postalCode,
-                    contact.street,
-                    contact.addressNumber,
-                    contact.complement,
-                    contact.neighborhood,
-                    contact.city,
-                    contact.state,
-                    contact.country
-                  ].some(Boolean)
-                )}
-              >
-                <summary>
-                  Endereço <span className="subtle">(opcional)</span>
-                </summary>
-                <div className="form-grid details-content">
-                  <label>
-                    CEP
-                    <input
-                      autoComplete="postal-code"
-                      maxLength={20}
-                      value={draft.postalCode ?? ''}
-                      onChange={(e) => update('postalCode', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    País
-                    <input
-                      autoComplete="country-name"
-                      maxLength={60}
-                      value={draft.country ?? ''}
-                      onChange={(e) => update('country', e.target.value)}
-                    />
-                  </label>
-                  <label className="full-width">
-                    Logradouro
-                    <input
-                      autoComplete="address-line1"
-                      maxLength={160}
-                      value={draft.street ?? ''}
-                      onChange={(e) => update('street', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Número
-                    <input
-                      maxLength={20}
-                      value={draft.addressNumber ?? ''}
-                      onChange={(e) => update('addressNumber', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Complemento
-                    <input
-                      autoComplete="address-line2"
-                      maxLength={100}
-                      value={draft.complement ?? ''}
-                      onChange={(e) => update('complement', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Bairro
-                    <input
-                      maxLength={100}
-                      value={draft.neighborhood ?? ''}
-                      onChange={(e) => update('neighborhood', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Cidade
-                    <input
-                      autoComplete="address-level2"
-                      maxLength={100}
-                      value={draft.city ?? ''}
-                      onChange={(e) => update('city', e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Estado / região
-                    <input
-                      autoComplete="address-level1"
-                      maxLength={60}
-                      value={draft.state ?? ''}
-                      onChange={(e) => update('state', e.target.value)}
-                    />
-                  </label>
-                </div>
-              </details>
+              <ContactAddresses
+                values={draft.addresses}
+                onChange={(values) => update('addresses', values)}
+                companyId={companyId}
+                disabled={busy}
+              />
               <details open={Boolean(contact?.notes)}>
                 <summary>
                   Observações <span className="subtle">(opcional)</span>

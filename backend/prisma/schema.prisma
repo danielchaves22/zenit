@@ -433,12 +433,14 @@ model BizzContact {
   email        String?  @db.VarChar(254)
   phone        String?  @db.VarChar(40)
   methods      BizzContactMethod[]
+  addresses    BizzContactAddress[]
   postalCode   String?  @db.VarChar(20)
   street       String?  @db.VarChar(160)
   addressNumber String? @db.VarChar(20)
   complement   String?  @db.VarChar(100)
   neighborhood String?  @db.VarChar(100)
   city         String?  @db.VarChar(100)
+  cityIbgeCode String?  @db.VarChar(7)
   state        String?  @db.VarChar(60)
   country      String?  @db.VarChar(60)
   notes        String?  @db.VarChar(2000)
@@ -463,6 +465,25 @@ model BizzContact {
 enum BizzContactMethodKind {
   PHONE
   EMAIL
+}
+
+model BizzContactAddress {
+  id            String      @id @default(uuid()) @db.Uuid
+  contactId     String      @db.Uuid
+  contact       BizzContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  label         String?     @db.VarChar(60)
+  position      Int
+  postalCode    String?     @db.VarChar(20)
+  street        String?     @db.VarChar(160)
+  addressNumber String?     @db.VarChar(20)
+  complement    String?     @db.VarChar(100)
+  neighborhood  String?     @db.VarChar(100)
+  city          String?     @db.VarChar(100)
+  cityIbgeCode  String?     @db.VarChar(7)
+  state         String?     @db.VarChar(60)
+  country       String?     @db.VarChar(60)
+
+  @@unique([contactId, position])
 }
 
 model BizzContactMethod {

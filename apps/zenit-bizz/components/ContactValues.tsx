@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
 import { Plus, X } from 'lucide-react';
+import { MaskedContactInput } from './MaskedContactInput';
 
 export function ContactValues({
   kind,
@@ -29,20 +30,38 @@ export function ContactValues({
             <label className="sr-only" htmlFor={`${id}-${index}`}>
               {phone ? 'Telefone' : 'E-mail'} {index + 1}
             </label>
-            <input
-              id={`${id}-${index}`}
-              ref={(element) => {
-                inputs.current[index] = element;
-              }}
-              type={phone ? 'tel' : 'email'}
-              autoComplete={index === 0 ? (phone ? 'tel' : 'email') : 'off'}
-              maxLength={phone ? 40 : 254}
-              value={value}
-              placeholder={phone ? '(00) 00000-0000' : 'contato@empresa.com.br'}
-              onChange={(event) =>
-                onChange(values.map((item, at) => (at === index ? event.target.value : item)))
-              }
-            />
+            {phone ? (
+              <MaskedContactInput
+                id={`${id}-${index}`}
+                ref={(element) => {
+                  inputs.current[index] = element;
+                }}
+                type="tel"
+                mask="phone"
+                autoComplete={index === 0 ? 'tel' : 'off'}
+                maxLength={40}
+                value={value}
+                placeholder="(00) 00000-0000"
+                onChange={(next) =>
+                  onChange(values.map((item, at) => (at === index ? next : item)))
+                }
+              />
+            ) : (
+              <input
+                id={`${id}-${index}`}
+                ref={(element) => {
+                  inputs.current[index] = element;
+                }}
+                type="email"
+                autoComplete={index === 0 ? 'email' : 'off'}
+                maxLength={254}
+                value={value}
+                placeholder="contato@empresa.com.br"
+                onChange={(event) =>
+                  onChange(values.map((item, at) => (at === index ? event.target.value : item)))
+                }
+              />
+            )}
             <button
               type="button"
               className="icon-button remove-contact-value"
@@ -61,7 +80,7 @@ export function ContactValues({
       </div>
       <button
         type="button"
-        className="button quiet add-contact-value"
+        className="button add-contact-value"
         disabled={values.length >= 20}
         onClick={() => {
           focusIndex.current = values.length;

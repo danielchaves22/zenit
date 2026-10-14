@@ -924,14 +924,81 @@ fieldset {
   height: 44px;
 }
 .add-contact-value {
-  margin-top: 6px;
-  padding-inline: 0;
+  margin-top: 10px;
   font-size: 13px;
 }
+.city-select { position: relative; min-width: 0; }
+.city-select .select-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.city-options {
+  position: absolute;
+  z-index: 6;
+  top: 100%;
+  inset-inline: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: 0 8px 20px #26352d1a;
+}
+.city-options ul { max-height: 240px; overflow-y: auto; list-style: none; padding: 0; margin: 8px 0 0; }
+.city-options li { padding: 10px; min-height: 44px; cursor: pointer; border-radius: 5px; }
+.city-options li[data-active='true'], .city-options li:hover { background: var(--soft); }
+.city-options li[aria-selected='true'] { font-weight: 600; }
+.city-options p { padding: 10px; margin: 0; }
+.location-error { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.contact-value-row input { min-width: 0; }
+.remove-contact-value { flex-shrink: 0; }
 .contact-form-body details {
   border-top: 1px solid var(--line);
   padding-top: 16px;
 }
+.contact-addresses {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.contact-addresses h2 {
+  font-size: 15px;
+  margin: 0 0 14px;
+}
+.address-list {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.contact-form-body .address-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0;
+  min-width: 0;
+}
+.address-card > summary {
+  padding: 14px 16px;
+  overflow-wrap: anywhere;
+}
+.address-primary {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--soft);
+  font-size: 12px;
+  font-weight: 500;
+}
+.address-card-body {
+  padding: 4px 16px 16px;
+}
+.address-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.address-remove-confirm {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.address-remove-confirm p { margin: 0; }
 .contact-form-body summary {
   cursor: pointer;
   font-size: 13px;

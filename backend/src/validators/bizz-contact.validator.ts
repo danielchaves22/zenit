@@ -28,6 +28,37 @@ const contactValues = (schema: z.ZodType<string>, kind: 'phone' | 'email') =>
       });
     })
     .optional();
+const locationSchema = z
+  .object({
+    stateCode: z
+      .string()
+      .regex(/^[A-Z]{2}$/)
+      .nullable(),
+    cityCode: z
+      .string()
+      .regex(/^\d{7}$/)
+      .nullable()
+  })
+  .strict();
+const addressFields = {
+  postalCode: optionalText(20).optional(),
+  street: optionalText(160).optional(),
+  addressNumber: optionalText(20).optional(),
+  complement: optionalText(100).optional(),
+  neighborhood: optionalText(100).optional(),
+  city: optionalText(100).optional(),
+  state: optionalText(60).optional(),
+  country: optionalText(60).optional(),
+  location: locationSchema.optional()
+};
+const addressSchema = z
+  .object({
+    ...addressFields,
+    id: z.string().uuid().optional(),
+    label: optionalText(60).optional()
+  })
+  .strict();
+export type BizzContactAddressInput = z.infer<typeof addressSchema>;
 const contactFields = {
   name: z.string().trim().min(1, 'Informe o nome.').max(160),
   personType: z.enum(['PERSON', 'BUSINESS']),
@@ -43,14 +74,19 @@ const contactFields = {
   phone: optionalText(40),
   notes: optionalText(2000),
   active: z.boolean().default(true),
-  postalCode: optionalText(20).optional(),
-  street: optionalText(160).optional(),
-  addressNumber: optionalText(20).optional(),
-  complement: optionalText(100).optional(),
-  neighborhood: optionalText(100).optional(),
-  city: optionalText(100).optional(),
-  state: optionalText(60).optional(),
-  country: optionalText(60).optional(),
+  ...addressFields,
+  addresses: z
+    .array(addressSchema)
+    .max(20, 'Cadastre no máximo 20 endereços.')
+    .superRefine((values, ctx) => {
+      const ids = values.map((value) => value.id).filter(Boolean);
+      if (new Set(ids).size !== ids.length)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Um endereço foi enviado mais de uma vez.'
+        });
+    })
+    .optional(),
   phones: contactValues(phoneValue, 'phone'),
   emails: contactValues(emailValue, 'email')
 };

@@ -43,11 +43,33 @@ Quem gerencia usuários (`ADMIN` ou `SUPERUSER`, conforme seu escopo) escolhe os
 
 `BizzContact` pertence à empresa e reúne pessoas físicas e jurídicas na lista **Pessoas e empresas**. Cliente e fornecedor são relacionamentos opcionais e podem coexistir; um cadastro sem relacionamento também pode ser salvo. Nome é obrigatório. Documento, telefone, e-mail, endereço e observações são opcionais. Documentos informados são normalizados e únicos dentro da empresa; ausência de documento é permitida. Isso não representa validação cadastral perante órgãos oficiais.
 
-O endereço é composto por CEP, logradouro, número, complemento, bairro, cidade, estado/região e país. Não há consulta externa de CEP. Campos de endereço omitidos na edição preservam seus valores; texto vazio ou `null` os limpa. Os identificadores e relacionamentos dos registros existentes permanecem os mesmos. Papéis personalizados são uma etapa posterior.
+O endereço é composto por CEP, logradouro, número, complemento, bairro, cidade, estado e país. Nesta etapa, novos endereços atendem ao Brasil: estado e cidade são selecionados do catálogo descrito abaixo. Não há consulta externa de CEP. Campos de endereço omitidos na edição preservam seus valores. Os identificadores e relacionamentos dos registros existentes permanecem os mesmos. Papéis personalizados são uma etapa posterior.
 
-O identificador permanece estável após edição/inativação e poderá ser referenciado nas compras e vendas futuras. Não há relacionamento financeiro implementado nesta versão.
+### Múltiplos endereços
+
+Pessoas e empresas podem ter até 20 endereços, com identificação opcional (por exemplo, Entrega ou Cobrança). A inclusão e edição acontecem na própria página do cadastro, em blocos recolhíveis. O primeiro endereço da lista é o principal; a ação **Definir como principal** altera a ordem sem trocar os IDs dos endereços. Remover o principal promove o próximo endereço. A remoção de um endereço preenchido exige confirmação e só é gravada ao salvar o cadastro. A proteção de alterações não salvas inclui todos os endereços.
+
+`BizzContactAddress` guarda os endereços vinculados ao cadastro, com índice único por cadastro e posição. A empresa é determinada pelo cadastro pai. `addresses` é uma lista ordenada no `POST/PUT /api/bizz/contacts`: cada item contém identificação (`label`), os campos de endereço e `location`; itens existentes enviam seu `id`, novos itens o omitem. IDs de outro cadastro ou empresa, IDs repetidos, endereços vazios e cidades incompatíveis com o estado são rejeitados. As alterações da lista e da versão do cadastro são atômicas. `addresses: []` remove todos os endereços; omitir a lista mantém compatibilidade com o formato anterior.
+
+Os campos de endereço na raiz de `BizzContact` continuam refletindo o principal. Uma edição legada altera somente esse endereço, preservando os adicionais; omitir todos os campos de endereço os preserva. A lista explícita prevalece sobre os campos legados. A migração `20261015120000_bizz_contact_addresses` copia o endereço atual para o primeiro item sem remover nem corrigir os textos antigos. Endereços sem correspondência no IBGE continuam editáveis em outros campos e podem ser corrigidos por seleção. Publique as migrações e a API antes do frontend.
+
+O identificador permanece estável após edição/inativação e é referenciado pelas compras. A integração financeira está descrita na seção de compras abaixo.
 
 Telefones e e-mails são listas ordenadas (`phones` e `emails`), com até 20 valores de cada tipo. Linhas vazias do formulário não são enviadas. O servidor valida cada valor e rejeita repetições no mesmo cadastro (e-mail sem distinção de maiúsculas; telefone ignorando a pontuação). A busca considera também os valores adicionais.
+
+CPF, CNPJ (inclusive alfanumérico) e telefones brasileiros têm máscaras no formulário. A pontuação é de apresentação; documentos permanecem normalizados na API. Telefones internacionais ou com ramal já cadastrados não são truncados. Adicionar/remover e-mails mantém os demais valores e a ordem dos contatos.
+
+### Estados e municípios
+
+`GeographyService` é um serviço de referência global do backend, independente de empresa e aplicação. Usa uma cópia versionada da [API de localidades do IBGE](https://servicodados.ibge.gov.br/api/docs/localidades), em `backend/src/data/brazil-geography.json`: 27 estados e 5.571 municípios na consulta de 13/10/2026. Não chama o IBGE durante a operação do usuário e não duplica o catálogo por empresa. O Admin não precisa de uma tela de manutenção manual nesta etapa; uma futura rotina de atualização pertence à administração da plataforma.
+
+As rotas autenticadas `GET /api/bizz/geography/states` e `GET /api/bizz/geography/states/:uf/cities` expõem o serviço respeitando o acesso efetivo ao Bizz. Novos consumidores podem reutilizar o serviço sob suas próprias regras de acesso, sem ampliar as permissões do Bizz.
+
+O formulário envia `location: { stateCode, cityCode }`, com código UF e código IBGE do município; ambos aceitam `null`. O backend valida a combinação e grava os nomes oficiais e `cityIbgeCode`. Mudar o estado limpa a cidade. Textos digitados na busca apenas filtram as opções; não criam localidades. Não há seleção de outros países nesta versão.
+
+Endereços legados são associados apenas quando a combinação de país, estado e nome da cidade tem correspondência inequívoca. Os textos antigos não são alterados pela migração. Um registro sem correspondência mantém o endereço durante edições de outros campos; a interface apresenta esse endereço para correção por seleção. Chamadas legadas que alterem cidade/estado precisam informar uma combinação reconhecida. Repetições de criação continuam verificando o conteúdo original antes de normalizar os nomes.
+
+A migração aditiva `20261015100000_bizz_contact_geography` acrescenta o código opcional do município. Aplique a migração e publique a API antes do frontend. Para atualizar o catálogo, execute na raiz `node backend/scripts/update-brazil-geography.cjs`, revise o diff e a procedência, execute os testes de geografia e publique o backend. O script só consulta os endpoints públicos do IBGE e atualiza o arquivo versionado; não acessa o banco. Remoções ou substituições de códigos exigem avaliar os cadastros existentes antes da publicação.
 
 `BizzContactMethod` armazena os valores vinculados ao cadastro; a empresa é resolvida pelo cadastro pai. A gravação das listas e da versão ocorre na mesma transação. Os campos legados `phone` e `email` continuam refletindo o primeiro valor. Listas explícitas substituem os respectivos valores; listas vazias os removem. Uma edição legada que envie apenas o campo singular substitui ou remove o primeiro valor, preservando os adicionais. Omissão de ambos os formatos preserva os valores na edição. Se os dois formatos forem enviados, prevalece a lista.
 

@@ -35,6 +35,7 @@ export const mainNavigation: NavigationItem[] = [
       { label: 'Novo cartão', href: '/financial/credit-cards/new' },
     ],
   },
+  { id: 'categories', label: 'Categorias', href: '/financial/categories', icon: Tags, permission: 'FINANCIAL_CATEGORIES' },
   {
     id: 'planning', label: 'Planejamento', href: '/financial/budgets?view=overview', icon: PiggyBank,
     children: [
@@ -56,7 +57,6 @@ export const mainNavigation: NavigationItem[] = [
 ];
 
 export const settingsNavigation: NavigationItem[] = [
-  { id: 'categories', label: 'Categorias', href: '/financial/categories', icon: Tags, permission: 'FINANCIAL_CATEGORIES' },
   { id: 'users', label: 'Usuários', href: '/admin/users', icon: Users, adminOnly: true },
   { id: 'settings', label: 'Configurações', href: '/admin/settings', icon: Settings2, adminOnly: true },
   { id: 'operations', label: 'Operações', href: '/admin/operations', icon: Activity, adminOnly: true },

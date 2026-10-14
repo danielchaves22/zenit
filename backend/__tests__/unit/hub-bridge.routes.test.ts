@@ -1,6 +1,8 @@
 jest.mock('../../src/services/whatsapp-integration.service', () => ({ __esModule: true, default: {
   getHubBinding: jest.fn(), dispatchForHub: jest.fn(), queryForHub: jest.fn(), disconnectBinding: jest.fn()
 } }));
+jest.mock('../../src/services/hub-workspace.service', () => ({ __esModule: true, default: { list: jest.fn(), select: jest.fn() } }));
+import Workspaces from '../../src/services/hub-workspace.service';
 import express from 'express';
 import request from 'supertest';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -19,7 +21,8 @@ function signed(body: Record<string, unknown>, time = String(Date.now())) {
   return { send, raw, nonce, signature, time };
 }
 describe('Cash first-party Hub bridge', () => {
-  beforeEach(() => { jest.resetAllMocks(); process.env.CASH_HUB_SHARED_SECRET = secret; });
+  beforeEach(() => { jest.resetAllMocks(); process.env.CASH_HUB_SHARED_SECRET = secret;
+    jest.mocked(Workspaces.list).mockResolvedValue({ connected: false, workspace: null, workspaces: [] }); });
   afterAll(() => { delete process.env.CASH_HUB_SHARED_SECRET; });
   it('fails closed without a configured secret or valid signature', async () => {
     delete process.env.CASH_HUB_SHARED_SECRET;
@@ -30,7 +33,7 @@ describe('Cash first-party Hub bridge', () => {
   it('requires fresh signed bytes and rejects replay and injected identity', async () => {
     jest.mocked(Service.getHubBinding).mockResolvedValue(null);
     const r = signed({ operation: 'status', sender: '5544999990000' });
-    expect((await r.send()).body).toEqual({ connected: false });
+    expect((await r.send()).body).toEqual({ connected: false, workspace: null, workspaces: [] });
     expect((await r.send()).status).toBe(409);
     expect((await signed({ operation: 'status', sender: '5544999990000' }, String(Date.now() - 120000)).send()).status).toBe(401);
     expect((await signed({ operation: 'status', sender: '5544999990000', userId: 1, companyId: 1, role: 'ADMIN' }).send()).status).toBe(400);
@@ -66,9 +69,21 @@ describe('Cash first-party Hub bridge', () => {
     expect((await signed(body).send()).status).toBe(403);
     expect(Service.queryForHub).not.toHaveBeenCalled();
     jest.mocked(Service.getHubBinding).mockResolvedValue({ binding: { userId: 7 } } as any);
-    jest.mocked(Service.queryForHub).mockResolvedValue({ data: { ok: true, total: '10.00' } });
-    expect((await signed(body).send()).body).toEqual({ data: { ok: true, total: '10.00' } });
-    expect(Service.queryForHub).toHaveBeenCalledWith(body.sender, body.tool, body.args);
+    const result = { data: { ok: true, total: '10.00' }, workspace: { id: 3, name: 'Pessoal', personal: true, reference: '1:3' } };
+    jest.mocked(Service.queryForHub).mockResolvedValue(result);
+    expect((await signed(body).send()).body).toEqual(result);
+    expect(Service.queryForHub).toHaveBeenCalledWith(body.sender, body.tool, body.args, undefined);
     expect((await signed({ ...body, tool: 'confirm_pending_action' }).send()).status).toBe(400);
+  });
+  it('passes an explicit workspace selector to authorization and query, never identity overrides', async () => {
+    jest.mocked(Service.getHubBinding).mockResolvedValue({ binding: { userId: 7 } } as any);
+    const body = { operation: 'query', sender: '5544999990000', tool: 'get_financial_overview', args: {}, workspaceId: 12 };
+    expect((await signed(body).send()).status).toBe(200);
+    expect(Service.getHubBinding).toHaveBeenCalledWith(body.sender, 12);
+    expect(Service.queryForHub).toHaveBeenCalledWith(body.sender, body.tool, {}, 12);
+    for (const workspaceId of [0, -1, '12', 1.2]) expect((await signed({ ...body, workspaceId }).send()).status).toBe(400);
+    expect((await signed({ ...body, userId: 8 }).send()).status).toBe(400);
+    jest.mocked(Workspaces.select).mockRejectedValue(new Error('forbidden'));
+    expect((await signed({ operation: 'select_workspace', sender: body.sender, workspaceId: 99 }).send()).status).toBe(422);
   });
 });

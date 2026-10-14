@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma';
+import HubWorkspaceService from './hub-workspace.service';
 import {
   AppKey,
   AssistantMessageRole,
@@ -332,28 +333,24 @@ async function recordMessageLog(params: {
 export default class WhatsAppIntegrationService {
   // The first-party Hub authenticates the channel. Cash resolves the verified
   // binding and current permissions; no user/company/role supplied by Hub is trusted.
-  static async getHubBinding(waId: string) {
-    const binding = await prisma.whatsAppUserBinding.findUnique({ where: { waId } });
-    if (!binding) return null;
-    const context = await UserService.getUserCompanyContext(binding.userId, binding.activeCompanyId);
-    if (!context || !await AppAccessService.hasEffectiveAccess(binding.userId, binding.activeCompanyId, AppKey.ZENIT_WHATSAPP) ||
-        !await AppAccessService.hasEffectiveAccess(binding.userId, binding.activeCompanyId, AppKey.ZENIT_CASH)) return null;
-    return { binding, role: context.role };
+  static async getHubBinding(waId: string, workspaceId?: number) {
+    return HubWorkspaceService.authorizeCash(waId, workspaceId);
   }
 
-  static async queryForHub(waId: string, tool: string, args: Record<string, unknown>) {
+  static async queryForHub(waId: string, tool: string, args: Record<string, unknown>, workspaceId?: number) {
     if (!HUB_READ_TOOLS.has(tool)) throw new Error('Operacao de leitura nao permitida.');
-    const current = await this.getHubBinding(waId);
+    const current = await this.getHubBinding(waId, workspaceId);
     if (!current) throw new Error('Conexao Cash ausente ou sem permissao.');
     const { binding, role } = current;
     const context = await ensureBindingCompanyContext({ bindingId: binding.id, companyId: binding.activeCompanyId, userId: binding.userId });
-    return ToolExecutorService.executeTool(tool, args, {
+    const result = await ToolExecutorService.executeTool(tool, args, {
       sessionId: context.assistantSessionId, turnId: 0, userId: binding.userId,
       companyId: binding.activeCompanyId, role, mode: 'OPERATOR'
     });
+    return { ...result, workspace: await HubWorkspaceService.description(binding) };
   }
 
-  static async dispatchForHub(params: { waId: string; messageId: string; text: string; buttonId?: string; audio?: { mediaId: string } }) {
+  static async dispatchForHub(params: { waId: string; messageId: string; text: string; buttonId?: string; audio?: { mediaId: string }; workspaceId?: number }) {
     if (params.audio && (params.text.trim() || params.buttonId !== undefined || !/^\d{1,128}$/.test(params.audio.mediaId))) {
       throw new Error('Mensagem de audio invalida.');
     }
@@ -371,23 +368,39 @@ export default class WhatsAppIntegrationService {
       ...(params.audio ? { payload: { type: 'audio', audio: { id: params.audio.mediaId } } } : {})
     } });
     const replies: HubCashReply[] = [];
+    let resultWorkspace: Awaited<ReturnType<typeof HubWorkspaceService.description>> | undefined;
     try {
       await hubReplies.run(replies, async () => {
         if (!params.audio) {
           const consumed = await this.consumeBindingChallenge({ text: params.text, waId: params.waId, incomingMessageId: params.messageId });
           if (consumed.consumed) return;
         }
-        const current = await this.getHubBinding(params.waId);
+        let workspaceId = params.workspaceId;
+        if (params.buttonId) {
+          const button = parsePendingActionButton(params.buttonId) || parseCategoryChoice(params.buttonId);
+          const owner = await prisma.whatsAppUserBinding.findUnique({ where: { waId: params.waId } });
+          const action = button && owner ? await prisma.assistantPendingAction.findFirst({
+            where: { id: button.pendingActionId, userId: owner.userId, status: 'PENDING',
+              type: 'CREATE_TRANSACTION_DRAFT', updatedAt: new Date(button.revision) }, select: { companyId: true }
+          }) : null;
+          if (!action) { replies.push({ text: 'Este botão expirou ou não pertence ao seu usuário. Peça uma nova revisão do rascunho.' }); return; }
+          // A button always belongs to its draft, even when the active workspace changed.
+          workspaceId = action.companyId;
+        }
+        const current = await this.getHubBinding(params.waId, workspaceId);
         if (!current) {
           replies.push({ text: 'Conecte sua conta pelo QR Code no perfil do Cash. Se ela ja estiver conectada, confira suas permissoes no Cash.' });
           return;
         }
+        const workspace = await HubWorkspaceService.description(current.binding);
         await this.processBoundMessage({ binding: current.binding, incomingMessageId: params.messageId,
           interactiveReplyId: params.buttonId, text: params.text, waId: params.waId, audio: params.audio });
+        for (const reply of replies) reply.text = `Cash · ${workspace.name}\n\n${reply.text}`;
+        resultWorkspace = workspace;
       });
       await prisma.whatsAppMessageLog.update({ where: { id: receipt.id }, data: { status: 'hub_completed',
         payload: { hubReplies: replies, ...(params.audio ? { type: 'audio', audio: { id: params.audio.mediaId } } : {}) } } });
-      return { replies };
+      return { replies, ...(resultWorkspace ? { workspace: resultWorkspace } : {}) };
     } catch (error) {
       await prisma.whatsAppMessageLog.update({ where: { id: receipt.id }, data: { status: 'hub_uncertain' } });
       throw error;

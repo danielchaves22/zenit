@@ -3,7 +3,8 @@ jest.mock('../../src/lib/prisma', () => ({ __esModule: true, default: {
   whatsAppMessageLog: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   whatsAppUserBinding: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
   whatsAppBindingCompanyContext: { findUnique: jest.fn(), update: jest.fn() },
-  assistantPendingAction: { findFirst: jest.fn() }
+  assistantPendingAction: { findFirst: jest.fn() },
+  company: { findUniqueOrThrow: jest.fn() }
 } }));
 jest.mock('../../src/services/assistant-orchestrator.service', () => ({ __esModule: true, default: { processTurn: jest.fn() } }));
 jest.mock('../../src/services/assistant-message.service', () => ({ __esModule: true, default: { createMessage: jest.fn() } }));
@@ -62,7 +63,8 @@ describe('WhatsApp native feedback and decisions', () => {
     jest.mocked(Users.getUserCompanyContext).mockResolvedValue({ role: 'ADMIN' } as any);
     jest.mocked(AppAccess.hasEffectiveAccess).mockResolvedValue(true);
     jest.mocked(Orchestrator.processTurn).mockResolvedValue({ message: 'Despesa registrada.', pendingAction: action } as any);
-    db.assistantPendingAction.findFirst.mockResolvedValue({ id: action.id });
+    db.assistantPendingAction.findFirst.mockResolvedValue({ id: action.id, companyId: 3 });
+    db.company.findUniqueOrThrow.mockImplementation(async ({ where }: any) => ({ id: where.id, name: `Workspace ${where.id}`, isPersonalWorkspace: where.id === 3 }));
     jest.mocked(PendingActions.confirmTransactionDraft).mockResolvedValue({ pendingAction: { ...action, status: 'CONFIRMED' } } as any);
     jest.mocked(PendingActions.cancelPendingAction).mockResolvedValue({ ...action, status: 'CANCELED' });
     jest.mocked(Audio.transcribe).mockResolvedValue({ text: 'Na verdade foram 45 reais na conta Itaú.',
@@ -188,6 +190,25 @@ describe('WhatsApp native feedback and decisions', () => {
   it('rejects write tools on the Hub query boundary', async () => {
     await expect(WhatsAppIntegrationService.queryForHub(binding.waId, 'confirm_pending_action', { pendingActionId: 42 })).rejects.toThrow('nao permitida');
     expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+  it('pins a draft button to its original authorized workspace after switching', async () => {
+    db.whatsAppUserBinding.findUnique.mockResolvedValue({ ...binding, activeCompanyId: 9 });
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId,
+      messageId: 'wamid.pinned', text: '', workspaceId: 9, buttonId: buildPendingActionButtons(action)[0].id });
+    expect(PendingActions.confirmTransactionDraft).toHaveBeenCalledWith(expect.objectContaining({ companyId: 3, userId: binding.userId }));
+    expect(result.replies[0].text).toContain('Cash · Workspace 3');
+    expect(result).toMatchObject({ workspace: { id: 3 } });
+    expect(db.whatsAppUserBinding.update).not.toHaveBeenCalled();
+  });
+  it('never executes an old button when access to its original workspace was revoked', async () => {
+    db.whatsAppUserBinding.findUnique.mockResolvedValue({ ...binding, activeCompanyId: 9 });
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    jest.mocked(Users.getUserCompanyContext).mockImplementation(async (_user, company) => company === 3 ? null as any : { role: 'ADMIN' } as any);
+    await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId,
+      messageId: 'wamid.revoked', text: '', buttonId: buildPendingActionButtons(action)[0].id });
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
   });
 
   it('shows typing before processing, then sends a factual draft with both buttons', async () => {

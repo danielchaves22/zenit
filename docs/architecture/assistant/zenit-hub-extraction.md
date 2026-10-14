@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-10-07
+last_reviewed: 2026-10-14
 summary: Contrato autenticado, responsabilidades e compatibilidade do canal WhatsApp.
 ---
 
@@ -19,12 +19,15 @@ O Hub passa a coordenar o canal WhatsApp e conecta outras aplicações. Esta mud
 
 Operações:
 
-- `status`: informa se o remetente tem vínculo validado e acesso vigente.
+- `status` e `workspaces`: informam o workspace ativo e os workspaces autorizados, com acessos ao Cash e Bizz separados. `connected` indica acesso ao Cash no contexto ativo.
+- `select_workspace`: seleciona um `workspaceId` autorizado para as próximas mensagens. Seleção inválida é recusada, sem fallback para outra empresa.
 - `message`: executa o fluxo existente, incluindo QR Code, áudio, correção de rascunhos e confirmação de lançamento. Retorna textos, botões ou listas para o Hub enviar. O Cash não envia outra resposta para a Meta neste caminho.
 - `query`: apenas a lista explícita de consultas financeiras para consolidação com outros domínios. Não aceita ferramentas de escrita.
 - `disconnect`: remove o vínculo do remetente.
 
-O Hub não informa ID de usuário, empresa ou papel. O Cash resolve tudo pelo vínculo existente, valida acesso ao canal e ao Cash, e conserva verificações de contas financeiras nas operações. A ponte é de primeira parte; o segredo confere confiança para atestar o remetente do canal, por isso deve ser isolado e nunca exposto a clientes ou modelos. HTTPS é obrigatório fora do desenvolvimento local.
+O Hub não informa ID de usuário ou papel. Em `message` e `query`, `workspaceId` é um seletor opcional para compatibilidade; o Hub atualizado o fixa no início da solicitação. O Cash resolve a identidade pelo vínculo existente, revalida a associação à empresa, acesso ao canal e ao Cash, e conserva verificações de contas financeiras. O seletor não concede acesso. Respostas financeiras incluem o workspace efetivo; mensagens exibem `Cash · Nome`. A ponte é de primeira parte; o segredo confere confiança para atestar o remetente do canal, por isso deve ser isolado e nunca exposto a clientes ou modelos. HTTPS é obrigatório fora do desenvolvimento local.
+
+Os botões localizam o rascunho pelo usuário do vínculo, ID e revisão, e autorizam novamente seu workspace original, independentemente da seleção atual. A execução continua exigindo sessão, empresa e revisão coincidentes. Trocar workspace não move nem confirma um rascunho. O vínculo já possui sessões por empresa; não há migração Prisma. O Hub separa também seu histórico e fixa o workspace nas assinaturas do resumo diário. Veja [Workspaces](https://github.com/danielchaves22/zenit-hub/blob/master/docs/WORKSPACES.md). Para esta evolução, publique primeiro o backend compartilhado e depois o Hub com a migração 7. A seleção reconhece acesso ao Bizz, mas não cria suas ferramentas comerciais.
 
 No caminho atual, o Hub baixa e transcreve o áudio uma única vez, com contexto neutro, antes de selecionar Cash, Day ou Calendar. O Cash recebe texto transcrito com o mesmo remetente e ID da mensagem. Voz e texto seguem as mesmas autorizações e confirmações. Veja a [arquitetura do Hub](https://github.com/danielchaves22/zenit-hub/blob/master/docs/ARQUITETURA.md).
 

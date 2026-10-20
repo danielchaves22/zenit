@@ -36,19 +36,19 @@ describe('contact location selection', () => {
   it('clears the city when changing the state, filters by name and supports Escape and selection by keyboard', async () => {
     vi.mocked(api).mockImplementation(
       async (path) =>
-        (path.endsWith('/states')
-          ? states
-          : path.includes('/SP/')
-            ? [campinas]
-            : [rio]) as never
+        (path.endsWith('/states') ? states : path.includes('/SP/') ? [campinas] : [rio]) as never
     );
     render(<Field />);
     await screen.findByText('Campinas');
     fireEvent.click(screen.getByRole('combobox', { name: 'Cidade' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Buscar cidade' }), { target: { value: 'inexistente' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Buscar cidade' }), {
+      target: { value: 'inexistente' }
+    });
     fireEvent.keyDown(screen.getByRole('combobox', { name: 'Buscar cidade' }), { key: 'Enter' });
     expect(screen.getByText('Nenhuma cidade encontrada.')).toBeInTheDocument();
-    expect(screen.getByText(JSON.stringify({ stateCode: 'SP', cityCode: campinas.code }))).toBeInTheDocument();
+    expect(
+      screen.getByText(JSON.stringify({ stateCode: 'SP', cityCode: campinas.code }))
+    ).toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole('combobox', { name: 'Buscar cidade' }), { key: 'Escape' });
     fireEvent.change(screen.getByLabelText('Estado'), { target: { value: 'RJ' } });
     expect(screen.getByRole('status')).toHaveTextContent('"cityCode":null');
@@ -94,21 +94,13 @@ describe('contact location selection', () => {
     const view = render(
       <ContactLocation {...props} value={{ stateCode: 'SP', cityCode: campinas.code }} />
     );
-    view.rerender(
-      <ContactLocation {...props} value={{ stateCode: 'RJ', cityCode: rio.code }} />
-    );
+    view.rerender(<ContactLocation {...props} value={{ stateCode: 'RJ', cityCode: rio.code }} />);
     await screen.findByText('Rio de Janeiro');
     await act(async () => resolveSP([campinas]));
-    expect(screen.getByRole('combobox', { name: 'Cidade' })).toHaveTextContent(
-      'Rio de Janeiro'
-    );
+    expect(screen.getByRole('combobox', { name: 'Cidade' })).toHaveTextContent('Rio de Janeiro');
     fail = true;
     view.rerender(
-      <ContactLocation
-        {...props}
-        companyId={24}
-        value={{ stateCode: 'RJ', cityCode: rio.code }}
-      />
+      <ContactLocation {...props} companyId={24} value={{ stateCode: 'RJ', cityCode: rio.code }} />
     );
     await screen.findByRole('alert');
     expect(screen.getByRole('combobox', { name: 'Cidade' })).toBeDisabled();
@@ -138,10 +130,10 @@ describe('contact location selection', () => {
       active: true
     } as Contact;
     render(<ContactForm contact={contact} companyId={23} onClose={close} onSaved={vi.fn()} />);
-    await screen.findByText('Campinas');
-    expect(screen.getByLabelText('E-mail 1')).toHaveValue(contact.emails![0]);
-    expect(screen.getByLabelText('E-mail 2')).toHaveValue(contact.emails![1]);
-    expect(screen.getByLabelText('Telefone 1')).toHaveValue('(11) 3456-7890');
+    expect(screen.getByText(/Campinas/)).toBeVisible();
+    expect(screen.getByText(contact.emails![0])).toBeVisible();
+    expect(screen.getByText(contact.emails![1])).toBeVisible();
+    expect(screen.getByText('(11) 3456-7890')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(close).toHaveBeenCalledOnce();
   });

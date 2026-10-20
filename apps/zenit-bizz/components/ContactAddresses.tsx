@@ -1,94 +1,125 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { useId, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
+import {
+  InlineEditor,
+  PendingRowChange,
+  RowAction,
+  usePendingRow
+} from '@zenit/product-attributes';
 import { AddressDraft, emptyAddress, hasAddressData } from '@/lib/contact-addresses';
+import { formatContactValue } from '@/lib/contact-masks';
 import { ContactLocation } from './ContactLocation';
 import { PostalCodeField } from './PostalCodeField';
 
-function AddressCard({
-  address,
-  index,
+export function ContactAddresses({
+  values,
+  onChange,
   companyId,
   disabled,
-  added,
-  update,
-  remove,
-  makePrimary
+  onPendingChange
 }: {
-  address: AddressDraft;
-  index: number;
+  values: AddressDraft[];
+  onChange: (change: (current: AddressDraft[]) => AddressDraft[]) => void;
   companyId: number;
   disabled: boolean;
-  added: boolean;
-  update: (change: (current: AddressDraft) => AddressDraft) => void;
-  remove: () => void;
-  makePrimary: () => void;
+  onPendingChange?: PendingRowChange;
 }) {
-  const [open, setOpen] = useState(index === 0 || added);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const summary = useRef<HTMLElement>(null);
-  const removal = useRef<HTMLButtonElement>(null);
-  const wasConfirming = useRef(false);
-  useEffect(() => {
-    if (!confirmRemove && wasConfirming.current) removal.current?.focus();
-    wasConfirming.current = confirmRemove;
-  }, [confirmRemove]);
-  const change = <K extends keyof AddressDraft>(key: K, value: AddressDraft[K]) =>
+  const id = useId();
+  const add = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLElement>(null);
+  const [editing, setEditing] = useState<AddressDraft | null>(null);
+  const [primary, setPrimary] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  usePendingRow('addresses', editing !== null, onPendingChange);
+  function update(next: (current: AddressDraft) => AddressDraft) {
+    setEditing((current) => (current ? next(current) : null));
+  }
+  function change<K extends keyof AddressDraft>(key: K, value: AddressDraft[K]) {
     update((current) => ({ ...current, [key]: value }));
-  return (
-    <details
-      className="address-card"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+  }
+  function finish() {
+    setEditing(null);
+    setError('');
+    requestAnimationFrame(() => add.current?.focus());
+  }
+  function confirm() {
+    if (!editing) return;
+    if (!hasAddressData({ ...editing, country: '' })) {
+      setError('Informe os dados do endereço.');
+      return;
+    }
+    onChange((current) => {
+      const next = current.some((a) => a.key === editing.key)
+        ? current.map((a) => (a.key === editing.key ? editing : a))
+        : [...current, editing];
+      return primary ? [editing, ...next.filter((a) => a.key !== editing.key)] : next;
+    });
+    finish();
+  }
+  const index = editing ? values.findIndex((a) => a.key === editing.key) : -1;
+  const editor = editing && (
+    <fieldset
+      className="inline-address-editor"
+      disabled={disabled}
+      aria-label={`Endereço ${index < 0 ? values.length + 1 : index + 1}`}
     >
-      <summary ref={summary}>
-        <span>{address.label || `Endereço ${index + 1}`}</span>
-        {index === 0 && <span className="address-primary">Principal</span>}
-      </summary>
-      <fieldset
-        className="address-card-body"
-        aria-label={`Endereço ${index + 1}`}
-        disabled={disabled}
-      >
+      <InlineEditor label="endereço" confirm={confirm} cancel={finish}>
         <div className="form-grid">
           <label className="full-width">
             Identificação
             <input
-              autoFocus={added}
+              autoFocus
               maxLength={60}
               placeholder="Ex.: Entrega, cobrança"
-              value={address.label ?? ''}
-              onChange={(event) => change('label', event.target.value)}
+              value={editing.label ?? ''}
+              onChange={(e) => change('label', e.target.value)}
             />
           </label>
           <PostalCodeField
-            address={address}
+            address={editing}
             update={update}
             companyId={companyId}
             disabled={disabled}
           />
           <ContactLocation
-            value={address.location}
-            onChange={(value) => change('location', value)}
-            contact={address}
+            value={editing.location}
+            onChange={(value) => {
+              update((current) => ({
+                ...current,
+                location: value,
+                city: '',
+                state: value.stateCode ?? '',
+                country: 'Brasil'
+              }));
+            }}
+            contact={editing}
             companyId={companyId}
             disabled={disabled}
-            enabled={open}
+            enabled
+            onResolved={(city, state) =>
+              update((current) =>
+                current.city === city && current.state === state
+                  ? current
+                  : { ...current, city, state, country: 'Brasil' }
+              )
+            }
           />
           <label className="full-width">
             Logradouro
             <input
               autoComplete="address-line1"
               maxLength={160}
-              value={address.street ?? ''}
-              onChange={(event) => change('street', event.target.value)}
+              value={editing.street ?? ''}
+              onChange={(e) => change('street', e.target.value)}
             />
           </label>
           <label>
             Número
             <input
               maxLength={20}
-              value={address.addressNumber ?? ''}
-              onChange={(event) => change('addressNumber', event.target.value)}
+              value={editing.addressNumber ?? ''}
+              onChange={(e) => change('addressNumber', e.target.value)}
             />
           </label>
           <label>
@@ -96,121 +127,130 @@ function AddressCard({
             <input
               autoComplete="address-line2"
               maxLength={100}
-              value={address.complement ?? ''}
-              onChange={(event) => change('complement', event.target.value)}
+              value={editing.complement ?? ''}
+              onChange={(e) => change('complement', e.target.value)}
             />
           </label>
           <label>
             Bairro
             <input
               maxLength={100}
-              value={address.neighborhood ?? ''}
-              onChange={(event) => change('neighborhood', event.target.value)}
+              value={editing.neighborhood ?? ''}
+              onChange={(e) => change('neighborhood', e.target.value)}
             />
           </label>
         </div>
-        {confirmRemove ? (
-          <div className="address-remove-confirm" role="alert">
-            <p>Remover este endereço?</p>
-            <div className="address-actions">
-              <button
-                type="button"
-                className="button"
-                autoFocus
-                onClick={() => setConfirmRemove(false)}
-              >
-                Manter endereço
-              </button>
-              <button type="button" className="button danger" onClick={remove}>
-                Confirmar remoção
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="address-actions">
-            {index > 0 && (
-              <button
-                type="button"
-                className="button"
-                onClick={() => {
-                  makePrimary();
-                  summary.current?.focus();
-                }}
-              >
-                Definir como principal
-              </button>
-            )}
-            <button
-              type="button"
-              className="button quiet"
-              ref={removal}
-              aria-label={`Remover endereço ${index + 1}`}
-              onClick={() => (hasAddressData(address) ? setConfirmRemove(true) : remove())}
-            >
-              <Trash2 size={16} aria-hidden="true" /> Remover
-            </button>
-          </div>
+        {values.length > 0 && index !== 0 && (
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={primary}
+              onChange={(e) => setPrimary(e.target.checked)}
+            />{' '}
+            Endereço principal
+          </label>
         )}
-      </fieldset>
-    </details>
+        {error && <p role="alert">{error}</p>}
+      </InlineEditor>
+    </fieldset>
   );
-}
-
-export function ContactAddresses({
-  values,
-  onChange,
-  companyId,
-  disabled
-}: {
-  values: AddressDraft[];
-  onChange: (change: (current: AddressDraft[]) => AddressDraft[]) => void;
-  companyId: number;
-  disabled: boolean;
-}) {
-  const id = useId();
-  const [added, setAdded] = useState('');
-  const add = useRef<HTMLButtonElement>(null);
   return (
-    <section className="contact-addresses" aria-labelledby={id}>
+    <section ref={root} className="contact-addresses" aria-labelledby={id}>
       <h2 id={id}>
         Endereços <span className="subtle">(opcional)</span>
       </h2>
       <div className="address-list">
-        {values.map((address, index) => (
-          <AddressCard
-            key={address.key}
-            address={address}
-            index={index}
-            companyId={companyId}
-            disabled={disabled}
-            added={added === address.key}
-            update={(next) =>
-              onChange((current) =>
-                current.map((value) => (value.key === address.key ? next(value) : value))
-              )
-            }
-            remove={() => {
-              onChange((current) => current.filter((value) => value.key !== address.key));
-              add.current?.focus();
-            }}
-            makePrimary={() =>
-              onChange((current) => [
-                ...current.filter((value) => value.key === address.key),
-                ...current.filter((value) => value.key !== address.key)
-              ])
-            }
-          />
-        ))}
+        {values.map((address, at) =>
+          address.key === editing?.key ? (
+            <div key={address.key}>{editor}</div>
+          ) : (
+            <div key={address.key}>
+              <div className="inline-value-row">
+                <div className="inline-row-content">
+                  <strong>{address.label || `Endereço ${at + 1}`}</strong>
+                  {at === 0 && <span className="address-primary">Principal</span>}
+                  <small>
+                    {[address.street, address.addressNumber, address.complement]
+                      .filter(Boolean)
+                      .join(', ')}
+                  </small>
+                  <small>
+                    {[
+                      address.neighborhood,
+                      address.city,
+                      address.state || address.location?.stateCode,
+                      address.postalCode ? formatContactValue(address.postalCode, 'cep') : null
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </small>
+                </div>
+                <div className="inline-row-actions">
+                  <RowAction
+                    action="edit"
+                    label={`Editar endereço ${at + 1}`}
+                    disabled={disabled || !!editing || !!removing}
+                    onClick={() => {
+                      setEditing(structuredClone(address));
+                      setPrimary(at === 0);
+                    }}
+                  />
+                  <RowAction
+                    action="remove"
+                    label={`Remover endereço ${at + 1}`}
+                    disabled={disabled || !!editing || !!removing}
+                    onClick={() => setRemoving(address.key)}
+                  />
+                </div>
+              </div>
+              {removing === address.key && (
+                <div className="address-remove-confirm" role="alert">
+                  <p>Remover este endereço?</p>
+                  <div className="address-actions">
+                    <button
+                      type="button"
+                      className="button"
+                      autoFocus
+                      onClick={() => {
+                        setRemoving(null);
+                        requestAnimationFrame(() =>
+                          root.current
+                            ?.querySelector<HTMLButtonElement>(
+                              `[aria-label="Remover endereço ${at + 1}"]`
+                            )
+                            ?.focus()
+                        );
+                      }}
+                    >
+                      Manter endereço
+                    </button>
+                    <button
+                      type="button"
+                      className="button danger"
+                      onClick={() => {
+                        onChange((current) => current.filter((a) => a.key !== address.key));
+                        setRemoving(null);
+                        requestAnimationFrame(() => add.current?.focus());
+                      }}
+                    >
+                      Confirmar remoção
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        )}
+        {editing && index < 0 && editor}
       </div>
       <button
         type="button"
         ref={add}
         className="button"
-        disabled={disabled || values.length >= 20}
+        disabled={disabled || !!editing || !!removing || values.length >= 20}
         onClick={() => {
-          const next = emptyAddress();
-          setAdded(next.key);
-          onChange((current) => [...current, next]);
+          setEditing(emptyAddress());
+          setPrimary(values.length === 0);
         }}
       >
         <Plus size={16} aria-hidden="true" /> Adicionar endereço

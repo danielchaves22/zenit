@@ -36,9 +36,7 @@ const contact = {
 function writes() {
   return vi
     .mocked(api)
-    .mock.calls.filter(
-      ([, options]) => options?.method === 'PUT' || options?.method === 'POST'
-    );
+    .mock.calls.filter(([, options]) => options?.method === 'PUT' || options?.method === 'POST');
 }
 beforeEach(() => {
   vi.resetAllMocks();
@@ -60,11 +58,13 @@ describe('multiple contact addresses', () => {
     expect(card.getByLabelText('Identificação')).toHaveFocus();
     fireEvent.change(card.getByLabelText('Identificação'), { target: { value: 'Comercial' } });
     fireEvent.change(card.getByLabelText('Logradouro'), { target: { value: 'Rua A' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar endereço' }));
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar endereço' }));
     card = within(screen.getByRole('group', { name: 'Endereço 2' }));
     expect(card.getByLabelText('Identificação')).toHaveFocus();
     fireEvent.change(card.getByLabelText('Identificação'), { target: { value: 'Entrega' } });
     fireEvent.change(card.getByLabelText('Logradouro'), { target: { value: 'Rua B' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar endereço' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await screen.findByText('Conexão interrompida.');
     const payload = JSON.parse(writes()[0][1]!.body as string);
@@ -73,36 +73,34 @@ describe('multiple contact addresses', () => {
       { label: 'Entrega', street: 'Rua B' }
     ]);
     expect(payload.addresses.every((value: object) => !('key' in value))).toBe(true);
-    expect(
-      within(screen.getByRole('group', { name: 'Endereço 1' })).getByLabelText('Logradouro')
-    ).toHaveValue('Rua A');
-    expect(card.getByLabelText('Logradouro')).toHaveValue('Rua B');
+    expect(screen.getByText('Rua A')).toBeVisible();
+    expect(screen.getByText('Rua B')).toBeVisible();
   });
   it('changes the primary without losing IDs, confirms removal and submits no addresses when all are removed', async () => {
     const saved = vi.fn();
     render(<ContactForm contact={contact} companyId={23} onSaved={saved} onClose={vi.fn()} />);
-    fireEvent.click(screen.getByText('Entrega', { selector: 'summary span' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Definir como principal' }));
-    expect(
-      within(screen.getByRole('group', { name: 'Endereço 1' })).getByLabelText('Identificação')
-    ).toHaveValue('Entrega');
+    fireEvent.click(screen.getByRole('button', { name: 'Editar endereço 2' }));
+    fireEvent.click(screen.getByLabelText('Endereço principal'));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar endereço' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await screen.findByText('Conexão interrompida.');
     expect(
-      JSON.parse(writes()[0][1]!.body as string).addresses.map(
-        (value: ContactAddress) => value.id
-      )
+      JSON.parse(writes()[0][1]!.body as string).addresses.map((value: ContactAddress) => value.id)
     ).toEqual([second.id, first.id]);
     fireEvent.click(screen.getByRole('button', { name: 'Remover endereço 1' }));
     expect(screen.getByRole('button', { name: 'Manter endereço' })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Manter endereço' }));
-    expect(screen.getByRole('button', { name: 'Remover endereço 1' })).toHaveFocus();
-    expect(screen.getByRole('group', { name: 'Endereço 1' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Remover endereço 1' })).toHaveFocus()
+    );
+    expect(screen.getByText('Entrega')).toBeVisible();
     for (let remaining = 2; remaining > 0; remaining--) {
       fireEvent.click(screen.getByRole('button', { name: 'Remover endereço 1' }));
       fireEvent.click(screen.getByRole('button', { name: 'Confirmar remoção' }));
     }
-    expect(screen.getByRole('button', { name: 'Adicionar endereço' })).toHaveFocus();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Adicionar endereço' })).toHaveFocus()
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(writes()).toHaveLength(2));
     expect(JSON.parse(writes()[1][1]!.body as string).addresses).toEqual([]);
@@ -110,10 +108,10 @@ describe('multiple contact addresses', () => {
   it('does not mark a loaded record dirty and protects changes to additional addresses', async () => {
     const close = vi.fn();
     render(<ContactForm contact={contact} companyId={23} onSaved={vi.fn()} onClose={close} />);
-    await screen.findByText('Campinas');
+    expect(screen.getAllByText(/Campinas/)).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(close).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByText('Entrega', { selector: 'summary span' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Editar endereço 2' }));
     fireEvent.change(
       within(screen.getByRole('group', { name: 'Endereço 2' })).getByLabelText('Logradouro'),
       { target: { value: 'Rua Alterada' } }
@@ -121,7 +119,6 @@ describe('multiple contact addresses', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.getByRole('heading', { name: 'Descartar alterações?' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
-    fireEvent.click(screen.getByText('Entrega', { selector: 'summary span' }));
     expect(
       within(screen.getByRole('group', { name: 'Endereço 2' })).getByLabelText('Logradouro')
     ).toHaveValue('Rua Alterada');

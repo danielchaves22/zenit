@@ -33,6 +33,7 @@ describe('contact form recovery', () => {
     fireEvent.keyDown(screen.getByRole('combobox', { name: 'Buscar cidade' }), {
       key: 'Enter'
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar endereço' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(saved).toHaveBeenCalled());
     expect(
@@ -44,9 +45,7 @@ describe('contact form recovery', () => {
       name: 'Ana',
       isCustomer: false,
       isSupplier: false,
-      addresses: [
-        { street: 'Rua das Flores', location: { stateCode: 'SP', cityCode: '3509502' } }
-      ]
+      addresses: [{ street: 'Rua das Flores', location: { stateCode: 'SP', cityCode: '3509502' } }]
     });
   });
   it('preserves an existing relationship even when opened from another filter', () => {
@@ -123,13 +122,7 @@ describe('contact form recovery', () => {
   it('asks before discarding an unsaved contact', async () => {
     const close = vi.fn();
     render(
-      <ContactForm
-        contact={null}
-        role="customer"
-        companyId={1}
-        onClose={close}
-        onSaved={vi.fn()}
-      />
+      <ContactForm contact={null} role="customer" companyId={1} onClose={close} onSaved={vi.fn()} />
     );
     fireEvent.change(screen.getByLabelText(/Nome ou razão social/), {
       target: { value: 'Maria' }
@@ -162,32 +155,37 @@ describe('contact form recovery', () => {
     fireEvent.change(screen.getByLabelText(/Nome ou razão social/), {
       target: { value: 'Ana' }
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar telefone' }));
     fireEvent.change(screen.getByLabelText('Telefone 1'), {
       target: { value: '11999990001' }
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar telefone' }));
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar telefone' }));
     expect(screen.getByLabelText('Telefone 2')).toHaveFocus();
     fireEvent.change(screen.getByLabelText('Telefone 2'), {
       target: { value: '11999990002' }
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar telefone' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar e-mail' }));
     fireEvent.change(screen.getByLabelText('E-mail 1'), {
       target: { value: 'ana@example.test' }
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e-mail' }));
     fireEvent.click(screen.getByRole('button', { name: 'Adicionar e-mail' }));
     fireEvent.change(screen.getByLabelText('E-mail 2'), {
       target: { value: 'outro@example.test' }
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar e-mail' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar e-mail' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await screen.findByRole('alert');
     expect(JSON.parse(vi.mocked(api).mock.calls[0][1]!.body as string)).toMatchObject({
       phones: ['11999990001', '11999990002'],
       emails: ['ana@example.test', 'outro@example.test']
     });
-    expect(screen.getByLabelText('Telefone 2')).toHaveValue('(11) 99999-0002');
+    expect(screen.getByText('(11) 99999-0002')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Remover telefone 1' }));
-    expect(screen.getByLabelText('Telefone 1')).toHaveValue('(11) 99999-0002');
-    expect(screen.getByLabelText('Telefone 1')).toHaveFocus();
+    expect(screen.getByText('(11) 99999-0002')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Adicionar telefone' })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.getByRole('heading', { name: 'Descartar alterações?' })).toBeInTheDocument();
   });
@@ -200,11 +198,9 @@ describe('contact form recovery', () => {
       phone: '11999990001',
       version: 2
     } as Contact;
-    render(
-      <ContactForm contact={contact} companyId={23} onClose={vi.fn()} onSaved={vi.fn()} />
-    );
-    expect(screen.getByLabelText('Telefone 1')).toHaveValue('(11) 99999-0001');
-    expect(screen.getByLabelText('E-mail 1')).toHaveValue(contact.email);
+    render(<ContactForm contact={contact} companyId={23} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByText('(11) 99999-0001')).toBeVisible();
+    expect(screen.getByText(contact.email!)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Remover telefone 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remover e-mail 1' }));
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));

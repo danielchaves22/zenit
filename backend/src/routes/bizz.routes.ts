@@ -4,6 +4,7 @@ import { z } from 'zod';
 import prisma from '../lib/prisma';
 import BizzContactService from '../services/bizz-contact.service';
 import GeographyService from '../services/geography.service';
+import PostalCodeService from '../services/postal-code.service';
 import BizzCatalogService from '../services/bizz-catalog.service';
 import BizzPurchaseService from '../services/bizz-purchase.service';
 import {
@@ -78,6 +79,10 @@ router.get('/geography/states/:uf/cities', (req, res) => {
   const cities = GeographyService.cities(req.params.uf);
   return cities ? res.json(cities) : res.status(400).json({ error: 'Selecione um estado válido.' });
 });
+router.get(
+  '/geography/postal-codes/:cep',
+  run(async (req, res) => res.json(await PostalCodeService.lookup(req.params.cep)))
+);
 router.get(
   '/contacts',
   run(async (req, res) =>

@@ -179,7 +179,9 @@ export function ContactForm({
               </div>
               <ContactAddresses
                 values={draft.addresses}
-                onChange={(values) => update('addresses', values)}
+                onChange={(change) =>
+                  setDraft((current) => ({ ...current, addresses: change(current.addresses) }))
+                }
                 companyId={companyId}
                 disabled={busy}
               />

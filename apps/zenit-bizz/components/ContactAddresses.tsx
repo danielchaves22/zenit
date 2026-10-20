@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { AddressDraft, emptyAddress, hasAddressData } from '@/lib/contact-addresses';
 import { ContactLocation } from './ContactLocation';
+import { PostalCodeField } from './PostalCodeField';
 
 function AddressCard({
   address,
@@ -18,7 +19,7 @@ function AddressCard({
   companyId: number;
   disabled: boolean;
   added: boolean;
-  update: (value: AddressDraft) => void;
+  update: (change: (current: AddressDraft) => AddressDraft) => void;
   remove: () => void;
   makePrimary: () => void;
 }) {
@@ -32,7 +33,7 @@ function AddressCard({
     wasConfirming.current = confirmRemove;
   }, [confirmRemove]);
   const change = <K extends keyof AddressDraft>(key: K, value: AddressDraft[K]) =>
-    update({ ...address, [key]: value });
+    update((current) => ({ ...current, [key]: value }));
   return (
     <details
       className="address-card"
@@ -59,15 +60,12 @@ function AddressCard({
               onChange={(event) => change('label', event.target.value)}
             />
           </label>
-          <label>
-            CEP
-            <input
-              autoComplete="postal-code"
-              maxLength={20}
-              value={address.postalCode ?? ''}
-              onChange={(event) => change('postalCode', event.target.value)}
-            />
-          </label>
+          <PostalCodeField
+            address={address}
+            update={update}
+            companyId={companyId}
+            disabled={disabled}
+          />
           <ContactLocation
             value={address.location}
             onChange={(value) => change('location', value)}
@@ -165,7 +163,7 @@ export function ContactAddresses({
   disabled
 }: {
   values: AddressDraft[];
-  onChange: (values: AddressDraft[]) => void;
+  onChange: (change: (current: AddressDraft[]) => AddressDraft[]) => void;
   companyId: number;
   disabled: boolean;
 }) {
@@ -187,14 +185,19 @@ export function ContactAddresses({
             disabled={disabled}
             added={added === address.key}
             update={(next) =>
-              onChange(values.map((value) => (value.key === address.key ? next : value)))
+              onChange((current) =>
+                current.map((value) => (value.key === address.key ? next(value) : value))
+              )
             }
             remove={() => {
-              onChange(values.filter((value) => value.key !== address.key));
+              onChange((current) => current.filter((value) => value.key !== address.key));
               add.current?.focus();
             }}
             makePrimary={() =>
-              onChange([address, ...values.filter((value) => value.key !== address.key)])
+              onChange((current) => [
+                ...current.filter((value) => value.key === address.key),
+                ...current.filter((value) => value.key !== address.key)
+              ])
             }
           />
         ))}
@@ -207,7 +210,7 @@ export function ContactAddresses({
         onClick={() => {
           const next = emptyAddress();
           setAdded(next.key);
-          onChange([...values, next]);
+          onChange((current) => [...current, next]);
         }}
       >
         <Plus size={16} aria-hidden="true" /> Adicionar endereço

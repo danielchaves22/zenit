@@ -5,6 +5,8 @@ import bcrypt from 'bcrypt';
 import app from '../../src/app';
 import AppAccessService from '../../src/services/app-access.service';
 import { generateToken } from '../../src/utils/jwt';
+import PostalCodeService from '../../src/services/postal-code.service';
+import { BizzError } from '../../src/services/bizz-error';
 
 const prisma = new PrismaClient();
 describe('Bizz foundation and per-user application grants', () => {
@@ -726,6 +728,27 @@ describe('Bizz foundation and per-user application grants', () => {
       version: 1,
       emails: ['valid@example.test']
     });
+  });
+  it('protects CEP lookups with effective Bizz access and returns lookup failures safely', async () => {
+    const address = { postalCode: '01001000', street: 'Praça da Sé', neighborhood: 'Sé',
+      location: { stateCode: 'SP', cityCode: '3550308' } };
+    const lookup = jest.spyOn(PostalCodeService, 'lookup').mockResolvedValue(address);
+    const path = '/api/bizz/geography/postal-codes/01001000';
+    try {
+      expect((await request(app).get(path)).status).toBe(401);
+      expect((await request(app).get(path).set(headers(deniedToken))).status).toBe(403);
+      expect((await request(app).get(path).set(headers(foreignToken))).status).toBe(403);
+      expect((await request(app).get(path).set(headers(token, companyId, 'zenit-cash'))).status).toBe(403);
+      expect(lookup).not.toHaveBeenCalled();
+      const found = await request(app).get(path).set(headers());
+      expect(found.status).toBe(200);
+      expect(found.body).toEqual(address);
+      expect(lookup).toHaveBeenCalledWith('01001000');
+      lookup.mockRejectedValueOnce(new BizzError(404, 'CEP não encontrado.'));
+      const missing = await request(app).get(path).set(headers());
+      expect(missing.status).toBe(404);
+      expect(missing.body).toEqual({ error: 'CEP não encontrado.' });
+    } finally { lookup.mockRestore(); }
   });
   it('serves the reference catalog only with effective Bizz access', async () => {
     const states = await request(app).get('/api/bizz/geography/states').set(headers());

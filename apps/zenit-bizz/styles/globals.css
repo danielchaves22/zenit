@@ -858,6 +858,7 @@ fieldset {
   gap: 16px;
 }
 .field-label,
+.postal-code-field > label,
 .contact-values legend {
   display: block;
   margin-bottom: 7px;

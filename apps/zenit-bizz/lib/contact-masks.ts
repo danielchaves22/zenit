@@ -1,6 +1,6 @@
-export type ContactMask = 'cpf' | 'cnpj' | 'phone';
+export type ContactMask = 'cpf' | 'cnpj' | 'phone' | 'cep';
 export function normalizeContactValue(value: string, mask: ContactMask) {
-  if (mask === 'cpf') return value.replace(/\D/g, '');
+  if (mask === 'cpf' || mask === 'cep') return value.replace(/\D/g, '');
   if (mask === 'cnpj') return value.replace(/[^a-z0-9]/gi, '').toUpperCase();
   // Preserve existing international numbers/extensions rather than silently shortening them.
   const digits = value.replace(/\D/g, '');
@@ -20,6 +20,8 @@ function groups(value: string, sizes: number[], separators: string[]) {
 }
 export function formatContactValue(value: string, mask: ContactMask) {
   const raw = normalizeContactValue(value, mask);
+  if (mask === 'cep')
+    return raw.length <= 8 ? groups(raw, [5, 3], ['-']) : value;
   if (mask === 'cpf')
     return raw.length <= 11 ? groups(raw, [3, 3, 3, 2], ['.', '.', '-']) : value;
   if (mask === 'cnpj')

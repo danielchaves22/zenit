@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-10-13
+last_reviewed: 2026-10-19
 summary: Fundação do Bizz, acesso por usuário e empresa, cadastros e limites da primeira versão.
 tags:
   - zenit-bizz
@@ -64,6 +64,10 @@ CPF, CNPJ (inclusive alfanumérico) e telefones brasileiros têm máscaras no fo
 `GeographyService` é um serviço de referência global do backend, independente de empresa e aplicação. Usa uma cópia versionada da [API de localidades do IBGE](https://servicodados.ibge.gov.br/api/docs/localidades), em `backend/src/data/brazil-geography.json`: 27 estados e 5.571 municípios na consulta de 13/10/2026. Não chama o IBGE durante a operação do usuário e não duplica o catálogo por empresa. O Admin não precisa de uma tela de manutenção manual nesta etapa; uma futura rotina de atualização pertence à administração da plataforma.
 
 As rotas autenticadas `GET /api/bizz/geography/states` e `GET /api/bizz/geography/states/:uf/cities` expõem o serviço respeitando o acesso efetivo ao Bizz. Novos consumidores podem reutilizar o serviço sob suas próprias regras de acesso, sem ampliar as permissões do Bizz.
+
+`GET /api/bizz/geography/postal-codes/:cep` consulta o [ViaCEP](https://viacep.com.br/) no backend, sob as mesmas regras de acesso ao Bizz. Aceita CEP brasileiro com oito dígitos, com ou sem hífen, e retorna `postalCode`, `street`, `neighborhood` e `location: { stateCode, cityCode }`. O CEP da resposta precisa corresponder ao solicitado e a combinação UF/código IBGE deve existir no catálogo local. A consulta tem limite de cinco segundos e cache em memória de até 500 resultados válidos por uma hora. CEP inválido retorna 400; inexistente, 404; falha do provedor ou dados incompatíveis, 503. Não exige chave, variável de ambiente ou migração.
+
+Ao editar um CEP completo, o formulário consulta após uma pausa de 400 ms e preenche logradouro, bairro, estado e cidade. Todos permanecem ajustáveis. Abrir um cadastro existente não dispara consulta nem altera seus dados. Número, complemento e identificação permanecem intactos; respostas sem logradouro/bairro não apagam esses campos. Correções feitas durante a consulta são preservadas, assim como os endereços adicionais. Consultas antigas são descartadas ao mudar CEP/empresa, remover o endereço ou iniciar a gravação. Falhas permitem nova tentativa e preenchimento manual, sem bloquear o salvamento.
 
 O formulário envia `location: { stateCode, cityCode }`, com código UF e código IBGE do município; ambos aceitam `null`. O backend valida a combinação e grava os nomes oficiais e `cityIbgeCode`. Mudar o estado limpa a cidade. Textos digitados na busca apenas filtram as opções; não criam localidades. Não há seleção de outros países nesta versão.
 

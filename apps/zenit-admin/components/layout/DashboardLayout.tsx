@@ -5,6 +5,7 @@ import { ChevronDown, LogOut, Menu, Moon, ShieldCheck, Sun, UserRound } from 'lu
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { Sidebar } from './Sidebar';
+import { useFormNavigation } from '@/contexts/FormNavigationContext';
 
 export function DashboardLayout({
   children,
@@ -14,6 +15,7 @@ export function DashboardLayout({
   title?: string;
 }) {
   const { logout, userName, user, hasCurrentAppAccess } = useAuth();
+  const { request } = useFormNavigation();
   const { colorMode, changeColorMode } = useTheme();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
@@ -141,7 +143,7 @@ export function DashboardLayout({
                     <UserRound size={17} />
                     Meu perfil
                   </Link>
-                  <button onClick={logout}>
+                  <button onClick={() => request(logout)}>
                     <LogOut size={17} />
                     Sair
                   </button>

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
 import { BizzError } from './bizz-error';
+import { productValuesInclude, saveProductAttributes } from './product-attribute.service';
 import {
   CreateBizzCatalog,
   UpdateBizzCatalog,
@@ -10,6 +11,7 @@ import {
 } from '../validators/bizz-catalog.validator';
 
 const publicFields = {
+  attributes: { include: productValuesInclude },
   id: true,
   name: true,
   kind: true,
@@ -23,7 +25,11 @@ const publicFields = {
   updatedAt: true
 } satisfies Prisma.BizzCatalogItemSelect;
 type Item = Prisma.BizzCatalogItemGetPayload<{ select: typeof publicFields }>;
-const present = (item: Item) => ({ ...item, salePrice: item.salePrice?.toFixed(2) ?? null });
+const present = (item: Item) => ({
+  ...item,
+  salePrice: item.salePrice?.toFixed(2) ?? null,
+  attributes: item.attributes.map((v) => ({ ...v, numberValue: v.numberValue?.toString() ?? null }))
+});
 
 export default class BizzCatalogService {
   static async get(companyId: number, id: string) {
@@ -66,8 +72,11 @@ export default class BizzCatalogService {
   }
 
   static async create(companyId: number, userId: number, input: CreateBizzCatalog) {
-    const { requestKey, ...data } = input;
-    const requestHash = createHash('sha256').update(JSON.stringify(data)).digest('hex');
+    const { requestKey, attributes, ...data } = input;
+    // Preserve request hashes from clients predating optional characteristics.
+    const requestHash = createHash('sha256')
+      .update(JSON.stringify(attributes?.length ? { ...data, attributes } : data))
+      .digest('hex');
     const replay = async () => {
       const existing = await prisma.bizzCatalogItem.findUnique({
         where: { companyId_requestKey: { companyId, requestKey } }
@@ -88,16 +97,23 @@ export default class BizzCatalogService {
     const existing = await replay();
     if (existing) return { item: existing, created: false };
     try {
-      const item = await prisma.bizzCatalogItem.create({
-        data: {
-          ...data,
-          companyId,
-          requestKey,
-          requestHash,
-          createdById: userId,
-          updatedById: userId
-        },
-        select: publicFields
+      const item = await prisma.$transaction(async (tx) => {
+        const created = await tx.bizzCatalogItem.create({
+          data: {
+            ...data,
+            companyId,
+            requestKey,
+            requestHash,
+            createdById: userId,
+            updatedById: userId
+          },
+          select: { id: true }
+        });
+        await saveProductAttributes(tx, companyId, created.id, data.kind, attributes);
+        return tx.bizzCatalogItem.findUniqueOrThrow({
+          where: { id: created.id },
+          select: publicFields
+        });
       });
       return { item: present(item), created: true };
     } catch (error) {
@@ -110,7 +126,7 @@ export default class BizzCatalogService {
   }
 
   static async update(companyId: number, userId: number, id: string, input: UpdateBizzCatalog) {
-    const { version, ...data } = input;
+    const { version, attributes, ...data } = input;
     return prisma.$transaction(async (tx) => {
       const existing = await tx.bizzCatalogItem.findFirst({
         where: { id, companyId },
@@ -126,6 +142,7 @@ export default class BizzCatalogService {
           409,
           'Este cadastro foi alterado por outra pessoa. Feche e abra novamente para conferir a versão atual.'
         );
+      await saveProductAttributes(tx, companyId, id, data.kind, attributes);
       return present(
         await tx.bizzCatalogItem.findUniqueOrThrow({ where: { id }, select: publicFields })
       );

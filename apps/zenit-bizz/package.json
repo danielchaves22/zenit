@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@zenit/product-attributes": "*",
     "@zenit/shared-users-core": "*",
     "lucide-react": "^0.510.0",
     "next": "^15.3.1",

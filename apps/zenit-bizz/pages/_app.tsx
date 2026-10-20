@@ -4,6 +4,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { AuthGate } from '@/components/AuthGate';
 import { NavigationProvider } from '@/contexts/NavigationContext';
 import '@/styles/globals.css';
+import '@zenit/product-attributes/src/styles.css';
 
 export default function App({ Component, pageProps }: AppProps) {
   return (

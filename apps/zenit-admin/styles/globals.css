@@ -4,6 +4,14 @@
 @tailwind utilities;
 
 :root {
+  --attr-text: var(--color-text);
+  --attr-muted: var(--color-text-secondary);
+  --attr-surface: var(--color-bg-secondary);
+  --attr-input: var(--color-bg);
+  --attr-border: rgb(var(--color-border-rgb));
+  --attr-primary: var(--color-primary);
+  --attr-on-primary: #fff;
+  --attr-error: rgb(var(--tone-red));
   --color-primary: #ba343b;
   --color-primary-rgb: 186 52 59;
   --color-primary-hover: #a12730;

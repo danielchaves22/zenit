@@ -1,5 +1,7 @@
 // frontend/pages/_app.tsx - COM THEME PROVIDER
 import '@/styles/globals.css'
+import '@zenit/product-attributes/src/styles.css';
+import { FormNavigationProvider } from '@/contexts/FormNavigationContext';
 import { AppProps } from 'next/app'
 import Head from 'next/head'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
@@ -35,7 +37,7 @@ export default function App(props: AppProps) {
       <AuthProvider>
         <ToastProvider>
           <PageTransition />
-          <AppContent {...props} />
+          <FormNavigationProvider><AppContent {...props} /></FormNavigationProvider>
         </ToastProvider>
       </AuthProvider>
     </ThemeProvider>

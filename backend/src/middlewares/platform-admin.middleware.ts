@@ -23,7 +23,7 @@ export async function platformAdminMiddleware(req: Request, res: Response, next:
       || (req.method === 'GET' && path === '/financial/accounts');
     const platformScoped = /^\/companies(?:\/\d+(?:\/financial-structure)?)?$/.test(path)
       || /^\/users(?:\/\d+)?$/.test(path)
-      || /^\/admin\/(?:banks(?:\/.*)?|companies\/\d+\/openai(?:\/test)?)$/.test(path)
+      || /^\/admin\/(?:banks(?:\/.*)?|product-attributes(?:\/.*)?|companies\/\d+\/openai(?:\/test)?)$/.test(path)
       || /^\/app-access\/(?:catalog|company\/\d+\/entitlements)$/.test(path)
       || path === '/preferences' || path === '/preferences/color-scheme';
 

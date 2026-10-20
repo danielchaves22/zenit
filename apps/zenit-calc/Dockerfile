@@ -15,6 +15,7 @@ COPY apps/zenit-calc/package.json ./apps/zenit-calc/package.json
 COPY apps/zenit-cash/package.json ./apps/zenit-cash/package.json
 COPY backend/package.json ./backend/package.json
 COPY packages/shared-users-core/package.json ./packages/shared-users-core/package.json
+COPY packages/product-attributes/package.json ./packages/product-attributes/package.json
 RUN npm ci
 
 # Copy source and build only zenit-calc workspace.

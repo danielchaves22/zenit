@@ -1,4 +1,23 @@
+.product-attributes { border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+.product-attributes > summary { cursor: pointer; font-weight: 600; }
+.product-attributes-body { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-top: 20px; }
+.product-attributes-body > .inline-row-fields { width: 100%; }
+.inline-row-content > .address-primary { margin-left: 8px; }
+.inline-address-editor .check-label { display: flex; flex-direction: row; align-items: center; gap: 8px; margin-top: 16px; }
+.attribute-picker { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; width: 100%; max-width: 600px; padding: 18px; background: var(--canvas); border-radius: 8px; }
+.attribute-picker > label { width: 100%; }
+@media (max-width: 420px) {
+  .product-attributes { padding: 14px; }
+}
 :root {
+  --attr-text: var(--ink);
+  --attr-muted: var(--muted);
+  --attr-surface: var(--paper);
+  --attr-input: var(--canvas);
+  --attr-border: var(--line);
+  --attr-primary: var(--accent);
+  --attr-on-primary: #fff;
+  --attr-error: var(--danger);
   color-scheme: light;
   --brand: #f97316;
   --accent: #c2410c;
@@ -603,7 +622,7 @@ fieldset {
 .list-toolbar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) 190px 160px 115px;
-  align-items: end;
+  align-items: flex-end;
   gap: 16px;
   padding: 22px 24px;
   border-bottom: 1px solid var(--line);
@@ -1414,7 +1433,7 @@ fieldset {
       100px,
       1fr
     ) 36px;
-  align-items: end;
+  align-items: flex-end;
   gap: 12px;
 }
 .purchase-line label small {

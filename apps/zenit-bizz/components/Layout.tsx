@@ -6,6 +6,7 @@ import {
   LogOut,
   Menu,
   Package,
+  Tags,
   ShoppingBag,
   PanelLeftClose,
   PanelLeftOpen,
@@ -40,7 +41,10 @@ export function Layout({
     },
     {
       label: 'Cadastros',
-      links: [{ href: '/produtos-servicos', label: 'Produtos e serviços', Icon: Package }]
+      links: [
+        { href: '/produtos-servicos', label: 'Produtos e serviços', Icon: Package },
+        { href: '/caracteristicas', label: 'Características', Icon: Tags }
+      ]
     }
   ];
   return (

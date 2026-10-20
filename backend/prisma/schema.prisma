@@ -315,6 +315,8 @@ enum WhatsAppMessageKind {
 }
 
 model User {
+  productAttributesCreated ProductAttribute[] @relation("ProductAttributeCreator")
+  productAttributesUpdated ProductAttribute[] @relation("ProductAttributeUpdater")
   id                  Int                   @id @default(autoincrement())
   email               String                @unique
   password            String
@@ -364,6 +366,8 @@ model User {
 }
 
 model Company {
+  productAttributes ProductAttribute[]
+  productAttributeOptions ProductAttributeOption[]
   id                  Int                   @id @default(autoincrement())
   name                String
   bizzContacts        BizzContact[]
@@ -503,7 +507,73 @@ enum BizzCatalogItemKind {
   SERVICE
 }
 
+enum ProductAttributeType {
+  SELECT
+  TEXT
+  NUMBER
+}
+
+model ProductAttribute {
+  id String @id @default(uuid()) @db.Uuid
+  companyId Int?
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name String @db.VarChar(100)
+  nameKey String @db.VarChar(100)
+  description String @db.VarChar(500)
+  type ProductAttributeType
+  unit String @db.VarChar(20)
+  active Boolean @default(true)
+  version Int @default(1)
+  requestKey String @db.Uuid
+  requestHash String @db.VarChar(64)
+  createdById Int
+  createdBy User @relation("ProductAttributeCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedById Int
+  updatedBy User @relation("ProductAttributeUpdater", fields: [updatedById], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  options ProductAttributeOption[]
+  values ProductAttributeValue[]
+  // Global uniqueness (companyId IS NULL) is enforced by partial indexes in SQL.
+  @@unique([companyId, nameKey])
+  @@unique([companyId, requestKey])
+  @@index([companyId, active, name, id])
+  @@index([createdById])
+  @@index([updatedById])
+}
+
+model ProductAttributeOption {
+  id String @id @default(uuid()) @db.Uuid
+  attributeId String @db.Uuid
+  attribute ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+  companyId Int?
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  label String @db.VarChar(100)
+  labelKey String @db.VarChar(100)
+  active Boolean @default(true)
+  updatedAt DateTime @updatedAt
+  values ProductAttributeValue[]
+  @@unique([id, attributeId])
+  @@unique([attributeId, companyId, labelKey])
+  @@index([companyId])
+}
+
+model ProductAttributeValue {
+  itemId String @db.Uuid
+  item BizzCatalogItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  attributeId String @db.Uuid
+  attribute ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Restrict)
+  optionId String? @db.Uuid
+  option ProductAttributeOption? @relation(fields: [optionId, attributeId], references: [id, attributeId], onDelete: Restrict)
+  textValue String? @db.VarChar(500)
+  numberValue Decimal? @db.Decimal(18, 6)
+  @@id([itemId, attributeId])
+  @@index([attributeId])
+  @@index([optionId, attributeId])
+}
+
 model BizzCatalogItem {
+  attributes ProductAttributeValue[]
   purchaseItems BizzPurchaseItem[]
   id           String   @id @default(uuid()) @db.Uuid
   companyId    Int

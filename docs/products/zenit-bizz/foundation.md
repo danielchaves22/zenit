@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-10-19
+last_reviewed: 2026-10-20
 summary: Fundação do Bizz, acesso por usuário e empresa, cadastros e limites da primeira versão.
 tags:
   - zenit-bizz
@@ -109,6 +109,24 @@ Lista unificada em `/pessoas`, criação em `/pessoas/novo` e edição em `/pess
 Antes de executar esta versão, aplique a migração `20261013180000_bizz_people_directory`. Ela adiciona campos opcionais de endereço e remove somente a restrição de relacionamento obrigatório; não remove nem recria registros. A API mantém o contrato anterior de cliente/fornecedor, inclusive a repetição de requisições de criação sem endereço.
 
 A migração `20261013210000_bizz_contact_methods` cria as listas de telefones/e-mails a partir dos campos existentes, mantendo os dados legados. Publique a migração e a API compatível antes do novo frontend. O relacionamento usa um dropdown com caixas de seleção; telefones e e-mails têm ações de adicionar/remover linhas, sem criar cadastros separados.
+
+## Características de produtos
+
+O Zenit Admin mantém características globais em **Características**; o Bizz apresenta as globais e as da empresa em **Cadastros → Características**. Os formulários usam páginas próprias e preservam busca, origem, situação e página no retorno. Há proteção para alterações não salvas. As características não são obrigatórias no cadastro de um produto.
+
+Cada característica possui nome, descrição opcional, tipo e situação. Os tipos são lista de valores, texto e número; números admitem unidade opcional e até 12 dígitos inteiros e seis casas decimais. Tipo e unidade ficam definidos na criação pela interface. A API impede sua mudança depois de haver opções ou produtos vinculados.
+
+`ProductAttribute.companyId = null` identifica uma definição global. Definições locais pertencem à empresa ativa, revalidada no backend. Em uma lista global, `ProductAttributeOption.companyId = null` identifica valores globais; a empresa pode acrescentar opções próprias sem alterar as globais nem expor suas opções a outras empresas. O Admin consulta e altera somente as definições e opções globais. O cadastro local acompanha a permissão efetiva de acesso ao Bizz, como os demais cadastros; não cria um novo papel de administração.
+
+As rotas são `GET/POST /api/admin/product-attributes`, `GET/PUT /api/admin/product-attributes/:id`, com acesso exclusivo ao administrador global, e as equivalentes `/api/bizz/attributes` para a empresa. `PUT /api/bizz/attributes/:id/options` altera apenas as opções da empresa em uma característica global. O cliente envia a revisão recebida na leitura; a API rejeita alterações concorrentes da mesma empresa. Alterações de outra empresa não invalidam essa revisão. A versão da definição protege a edição global ou local.
+
+Produtos usam `attributes`, uma lista opcional de até 50 entradas com `attributeId` e exatamente um de `optionId`, `textValue` ou `numberValue`. A API valida o tipo, a empresa e o vínculo entre opção e característica. Ausência do campo na edição preserva vínculos existentes; `[]` remove todos. A atualização do produto e dos vínculos é atômica. Os preços monetários mantêm seu contrato decimal anterior. Serviços não recebem características nesta etapa.
+
+Cada característica aparece uma única vez no produto, com um único valor. Telefones, e-mails, endereços, opções de características e características atribuídas ao produto são apresentados em linhas de leitura. Adicionar ou editar abre os campos na própria página; o check confirma a linha e o cancelamento preserva o valor anterior. O botão Salvar grava o cadastro completo e fica indisponível enquanto houver uma linha em edição. Essas edições também participam da proteção contra saída sem salvar.
+
+Inativar uma característica ou opção impede novas atribuições e preserva valores já utilizados. Opções persistidas são inativadas explicitamente, sem exclusão pela omissão em um formulário; renomear um valor usado com outro significado é bloqueado. Não são geradas variantes, combinações, estoque ou novos itens automaticamente, e as compras existentes não são alteradas.
+
+Antes de disponibilizar os frontends, aplique a migração aditiva `20261020150000_product_attributes` e publique a API compatível. A migração cria três tabelas, índices parciais para unicidade dos registros globais e integridade de opções; não preenche características em produtos antigos nem cria um catálogo global inicial. O pacote `@zenit/product-attributes` compartilha o formulário, a listagem e os contratos de apresentação entre Admin e Bizz.
 
 ## Compras e integração financeira
 

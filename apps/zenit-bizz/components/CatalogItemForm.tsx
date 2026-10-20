@@ -1,8 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Check } from 'lucide-react';
 import { useNavigation } from '@/contexts/NavigationContext';
+import { ProductAttributes } from './ProductAttributes';
 import { api } from '@/lib/api';
 import { CatalogItem, CatalogKind, parseSalePrice } from '@/lib/catalog';
+import { usePendingRows } from '@zenit/product-attributes';
 
 export function CatalogItemForm({
   item,
@@ -33,20 +35,22 @@ export function CatalogItemForm({
         ? 'both'
         : usage,
     price: item?.salePrice?.replace('.', ',') ?? '',
-    active: item?.active ?? true
+    active: item?.active ?? true,
+    attributes: item?.attributes ?? []
   }));
   const original = useRef(JSON.stringify(draft));
   const requestKey = useRef('');
   const saving = useRef(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const { pending, change: onPendingChange } = usePendingRows();
   const [priceError, setPriceError] = useState('');
   const priceInput = useRef<HTMLInputElement>(null);
   const { protect, request } = useNavigation();
   useEffect(() => {
     requestKey.current = crypto.randomUUID();
   }, []);
-  const dirty = JSON.stringify(draft) !== original.current;
+  const dirty = pending || JSON.stringify(draft) !== original.current;
   useEffect(() => {
     protect(dirty, busy);
     return () => protect(false, false);
@@ -55,7 +59,7 @@ export function CatalogItemForm({
     setDraft((current) => ({ ...current, [field]: value }));
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (saving.current) return;
+    if (saving.current || pending) return;
     let salePrice: string | null;
     try {
       salePrice = parseSalePrice(draft.price);
@@ -80,6 +84,12 @@ export function CatalogItemForm({
           canSell: draft.usage !== 'purchase',
           salePrice,
           active: draft.active,
+          attributes: draft.attributes.map(({ attributeId, optionId, textValue, numberValue }) => ({
+            attributeId,
+            optionId,
+            textValue,
+            numberValue
+          })),
           ...(item ? { version: item.version } : { requestKey: requestKey.current })
         })
       });
@@ -126,6 +136,7 @@ export function CatalogItemForm({
                 Tipo
                 <select
                   value={draft.kind}
+                  disabled={pending}
                   onChange={(event) => {
                     const next = event.target.value as CatalogKind;
                     setDraft((current) => ({
@@ -209,6 +220,15 @@ export function CatalogItemForm({
                 )}
               </label>
             </div>
+            {(draft.kind === 'PRODUCT' || draft.attributes.length > 0) && (
+              <ProductAttributes
+                companyId={companyId}
+                values={draft.attributes}
+                service={draft.kind === 'SERVICE'}
+                change={(attributes) => update('attributes', attributes)}
+                onPendingChange={onPendingChange}
+              />
+            )}
             {item && (
               <label className="active-field">
                 <input
@@ -228,6 +248,9 @@ export function CatalogItemForm({
             )}
           </fieldset>
           <div className="dialog-actions">
+            {pending && (
+              <p className="inline-row-pending">Confirme ou cancele a edição em andamento.</p>
+            )}
             <button
               type="button"
               className="button"
@@ -236,7 +259,7 @@ export function CatalogItemForm({
             >
               Cancelar
             </button>
-            <button className="button primary" disabled={busy}>
+            <button className="button primary" disabled={busy || pending}>
               <Check size={18} />
               {busy ? 'Salvando…' : 'Salvar'}
             </button>

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import { productAttributeValuesSchema } from './product-attribute.validator';
 
 const fields = {
+  attributes: productAttributeValuesSchema.optional(),
   name: z.string().trim().min(1, 'Informe o nome.').max(160),
   kind: z.enum(['PRODUCT', 'SERVICE']),
   unit: z.string().trim().min(1, 'Informe a unidade.').max(40),

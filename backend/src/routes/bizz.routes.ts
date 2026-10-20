@@ -6,6 +6,7 @@ import BizzContactService from '../services/bizz-contact.service';
 import GeographyService from '../services/geography.service';
 import PostalCodeService from '../services/postal-code.service';
 import BizzCatalogService from '../services/bizz-catalog.service';
+import { productAttributeRoutes } from './product-attribute.routes';
 import BizzPurchaseService from '../services/bizz-purchase.service';
 import {
   bizzPurchaseListSchema,
@@ -74,6 +75,7 @@ router.use((req, res, next) => {
     })
     .catch(next);
 });
+router.use('/attributes', productAttributeRoutes(false));
 router.get('/geography/states', (_req, res) => res.json(GeographyService.states()));
 router.get('/geography/states/:uf/cities', (req, res) => {
   const cities = GeographyService.cities(req.params.uf);

@@ -1,6 +1,8 @@
+import type { AttributeValue } from '@zenit/product-attributes';
 export const CATALOG_PATH = '/produtos-servicos';
 export type CatalogKind = 'PRODUCT' | 'SERVICE';
 export interface CatalogItem {
+  attributes?: AttributeValue[];
   id: string;
   name: string;
   kind: CatalogKind;

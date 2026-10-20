@@ -6,6 +6,7 @@ import {
   Building2,
   Home,
   Landmark,
+  Tags,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -25,7 +26,8 @@ const links = [
   { href: '/', label: 'Início', icon: Home },
   { href: '/admin/companies', label: 'Empresas', icon: Building2 },
   { href: '/admin/users', label: 'Usuários', icon: Users },
-  { href: '/admin/banks', label: 'Bancos', icon: Landmark }
+  { href: '/admin/banks', label: 'Bancos', icon: Landmark },
+  { href: '/admin/product-attributes', label: 'Características', icon: Tags }
 ];
 export function Sidebar({ collapsed, onToggle, mobileOpen, onClose }: SidebarProps) {
   const router = useRouter();

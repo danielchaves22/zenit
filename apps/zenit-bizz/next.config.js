@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 module.exports = {
   reactStrictMode: true,
-  transpilePackages: ['@zenit/shared-users-core'],
+  transpilePackages: ['@zenit/shared-users-core', '@zenit/product-attributes'],
   async rewrites() {
     return [
       {

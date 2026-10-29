@@ -529,13 +529,17 @@ function AccountsPageInner() {
                           <Receipt size={16} />
                         </Link>
                         {['CHECKING', 'SAVINGS'].includes(account.type) && account.purpose !== 'BUDGET' && (
-                          <Link
+                          <><Link
                             href={`/financial/accounts/${account.id}/reconciliation`}
                             className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-text hover:border-blue-500 hover:text-tone-blue"
                             title={`Conciliar ${account.name}`}
                           >
                             <Scale size={14} /> Conciliar
-                          </Link>
+                          </Link><Link
+                            href={`/financial/accounts/${account.id}/reconciliation-v2`}
+                            className="inline-flex items-center gap-1 rounded border border-tone-blue/30 px-2 py-1 text-xs text-tone-blue hover:bg-tone-blue-soft"
+                            title={`Experimentar nova conciliação de ${account.name}`}
+                          >Nova conciliação <span className="text-[10px]">Beta</span></Link></>
                         )}
                         <Link
                           href={`/financial/accounts/${account.id}`}

@@ -10,6 +10,11 @@ export interface BankCandidate {
   feedbackToken?: string;
 }
 export type BankAssessment = 'CANDIDATES' | 'POSSIBLE_MISSING' | 'INCOMPLETE';
+export type BankDiagnosis = 'READY' | 'AMBIGUOUS' | 'AMOUNT_DIFFERENCE' | 'DATE_DIFFERENCE' | 'SETTLEMENT' | 'GROUPED' | 'MISSING' | 'INCOMPLETE';
+export interface BankDiagnostics {
+  cutoffDate: string | null; fileName: string | null; statementClosing: string | null; cashClosing: string | null; difference: string | null;
+  pendingStatementNet: string; unmatchedCashNet: string | null; ignoredNet: string; warnings: string[];
+}
 export type BankConfidenceLevel = NonNullable<BankCandidate['confidence']>['level'];
 export interface BankLinkChange {
   items: BankItem[];
@@ -18,6 +23,8 @@ export interface BankLinkChange {
   groups: Array<{ id: number; itemIds: number[]; transactionIds: number[] }>;
 }
 export interface BankSearchResult {
+  diagnosis?: BankDiagnosis;
+  searchWindowDays?: number;
   itemId: number;
   candidates: BankCandidate[];
   cacheId?: number;

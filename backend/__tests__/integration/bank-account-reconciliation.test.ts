@@ -55,6 +55,93 @@ describe('Bank reconciliation persisted workflow', () => {
     await prisma.$disconnect();
   });
 
+  it('shares imports, links and undo across experiences while versioning batch review', async () => {
+    await importRows([['22/08/2026', '-20.00', 'guided', 'Padaria']]);
+    const transaction = await createExisting('20.00');
+    const ids = await importedIds();
+    const candidate = (await Service.candidates(context, month, ids, false, 'guided')).candidates[0];
+    const batch = [{ itemId: ids[0], transaction: candidate.transactions[0], feedbackToken: candidate.feedbackToken! }];
+    await expect(Service.confirmBatch(context, month, batch)).rejects.toThrow('sugestão mudou');
+    const confirmed = await Service.confirmBatch(context, month, batch, 'guided');
+    expect((await Service.load(context, month)).summary.confirmed).toBe(1);
+    expect((await Service.scanMissing(context, month, 0, 'guided')).rows).toEqual([]);
+    await Service.undo(context, month, confirmed.change.groups[0].id, 'Conferir pela versão atual');
+    expect((await Service.scanMissing(context, month, 0, 'guided')).rows[0].item.id).toBe(ids[0]);
+    const classicBatch = await reviewBatch();
+    await Service.confirmBatch(context, month, classicBatch);
+    expect((await Service.load(context, month)).summary.confirmed).toBe(1);
+    expect(await prisma.bankStatementItem.count({ where: { accountId } })).toBe(1);
+    expect((await prisma.financialTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).amount.toFixed(2)).toBe('20.00');
+    expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } })).balance.toFixed(2)).toBe('1000.00');
+  });
+  it('distinguishes a value discrepancy from a missing entry and expands only guided discovery', async () => {
+    await importRows([['22/08/2026', '-20.00', 'guided', 'Padaria']]);
+    const mismatch = await createExisting('21.00');
+    const ids = await importedIds();
+    expect((await Service.candidates(context, month, ids)).assessment).toBe('POSSIBLE_MISSING');
+    expect(await Service.candidates(context, month, ids, false, 'guided')).toMatchObject({ assessment: 'CANDIDATES', diagnosis: 'AMOUNT_DIFFERENCE' });
+    await prisma.financialTransaction.delete({ where: { id: mismatch.id } });
+    const distant = await createExisting('20.00', { effectiveDate: new Date('2026-08-10') });
+    expect((await Service.candidates(context, month, ids)).candidates).toHaveLength(0);
+    const result = await Service.candidates(context, month, ids, false, 'guided');
+    expect(result.diagnosis).toBe('DATE_DIFFERENCE');
+    expect(result.candidates[0].transactions[0].id).toBe(distant.id);
+    expect(result.candidates[0].confidence?.level).toBe('MEDIUM_LOW');
+    await Service.confirm(context, month, { itemIds: ids, transactions: result.candidates[0].transactions, feedbackToken: result.candidates[0].feedbackToken });
+    expect((await Service.load(context, month)).summary.confirmed).toBe(1);
+  });
+  it('compares balances at the statement cutoff, reversing later entries and balance adjustments', async () => {
+    await importRows([['22/08/2026', '-20.00', 'guided', 'Padaria']]);
+    expect(await Service.diagnostics(context, month)).toMatchObject({ statementClosing: null, cashClosing: null, difference: null });
+    await prisma.bankStatementImport.updateMany({ where: { accountId }, data: { metadata: { balanceDate: '2026-08-31', closingBalance: '1100.00' } } });
+    await createExisting('100.00', { effectiveDate: new Date('2026-09-02') });
+    await createExisting('20.00', { type: 'INCOME', fromAccountId: null, toAccountId: accountId, entryKind: 'BALANCE_ADJUSTMENT', effectiveDate: null, date: new Date('2026-09-03') });
+    await prisma.financialAccount.update({ where: { id: accountId }, data: { balance: '920.00' } });
+    expect(await Service.diagnostics(context, month)).toMatchObject({ cutoffDate: '2026-08-31', statementClosing: '1100.00', cashClosing: '1000.00', difference: '100.00', pendingStatementNet: '-20.00' });
+    const conflict = await prisma.bankStatementImport.create({ data: { accountId, fileHash: `conflict-${accountId}`, fileName: 'conflicting.ofx', fileData: Buffer.from('test'),
+      bank: 'NUBANK', format: 'OFX', importedForMonth: month, createdBy: userId, metadata: { balanceDate: '2026-08-31', closingBalance: '1200.00' } } });
+    expect(await Service.diagnostics(context, month)).toMatchObject({ statementClosing: null, cashClosing: null, difference: null });
+    await prisma.bankStatementImport.delete({ where: { id: conflict.id } });
+    await prisma.bankStatementImport.updateMany({ where: { accountId }, data: { metadata: { balanceDate: '2026-09-30', closingBalance: '1100.00' } } });
+    expect(await Service.diagnostics(context, month)).toMatchObject({ statementClosing: null, cashClosing: null, difference: null });
+  });
+  it('marks bounded guided grouping incomplete without exposing an unbounded candidate pool', async () => {
+    await importRows([['22/08/2026', '-200.00', 'guided', 'Padaria']]);
+    for (let i = 0; i < 25; i++) await createExisting('50.00');
+    const result = await Service.candidates(context, month, await importedIds(), false, 'guided');
+    expect(result).toMatchObject({ diagnosis: 'INCOMPLETE', limited: true, assessment: 'INCOMPLETE' });
+    expect(result.candidates).toHaveLength(10);
+    expect(result.candidates.every(candidate => candidate.confidence?.level !== 'HIGH')).toBe(true);
+  });
+  it('keeps diagnostics hidden for restricted transfers and refuses cross-account guided requests', async () => {
+    await importRows([['22/08/2026', '-20.00', 'guided', 'Padaria']]);
+    await prisma.bankStatementImport.updateMany({ where: { accountId }, data: { metadata: { balanceDate: '2026-08-31', closingBalance: '1000.00' } } });
+    await createExisting('20.00', { type: 'TRANSFER', toAccountId: otherAccountId, categoryId: null });
+    await prisma.userFinancialAccountAccess.create({ data: { userId, financialAccountId: accountId, companyId, grantedBy: userId } });
+    const limited = { ...context, role: 'USER' };
+    expect(await Service.diagnostics(limited, month)).toMatchObject({ cashClosing: null, difference: null, unmatchedCashNet: null });
+    expect((await Service.candidates(limited, month, await importedIds(), false, 'guided')).diagnosis).toBe('INCOMPLETE');
+    await expect(Service.diagnostics({ ...context, companyId: companyId + 1 }, month)).rejects.toThrow('Acesso negado');
+  });
+  it('routes the guided experience through shared writes and validates its manual amount filter', async () => {
+    const app = express(); app.use(express.json());
+    app.use((req, _res, next) => { req.user = { companyId, userId, role: 'ADMIN' } as typeof req.user; next(); });
+    app.use('/financial', financialRoutes);
+    const path = `/financial/accounts/${accountId}/reconciliation-v2/${month}`;
+    const upload = nubankCsv([['22/08/2026', '-20.00', 'guided', 'Padaria']]).toString('base64');
+    expect((await request(app).post(`${path}/imports`).send({ fileBase64: upload, fileName: 'guided.csv', accountId: otherAccountId })).status).toBe(200);
+    const transaction = await createExisting('20.00');
+    await createExisting('99.00', { description: 'Outro' });
+    expect((await request(app).get(`${path}/transactions?amount=20.00`)).body.items.map((t: { id: number }) => t.id)).toEqual([transaction.id]);
+    expect((await request(app).get(`${path}/transactions?amount=invalid`)).status).toBe(400);
+    expect((await request(app).get(`${path}/diagnostics`)).status).toBe(200);
+    const ids = await importedIds();
+    const response = await request(app).post(`${path}/suggestions/batch`).send({ itemIds: ids, useAi: false });
+    expect(response.body.results[0].diagnosis).toBe('READY');
+    const candidate = response.body.results[0].candidates[0];
+    expect((await request(app).post(`${path}/confirm/batch`).send({ matches: [{ itemId: ids[0], transaction: candidate.transactions[0], feedbackToken: candidate.feedbackToken }] })).body.confirmed).toBe(1);
+    expect((await request(app).get(path.replace('reconciliation-v2', 'reconciliation'))).body.summary.confirmed).toBe(1);
+  });
   it('ignores statement evidence without creating financial records or AI feedback, and can complete the month', async () => {
     await importRows([['22/08/2026', '-20.00', 'ignored', 'Movimento fora do controle']]);
     const [itemId] = await importedIds();

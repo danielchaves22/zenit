@@ -7,8 +7,8 @@ import type { BankContext } from './bank-reconciliation.service';
 // A purpose-specific key prevents a suggestion receipt from being used as an authentication token.
 const key = createHmac('sha256', JWT_SECRET).update('bank-reconciliation-feedback').digest();
 const audience = 'bank-reconciliation-feedback';
-export function signBankFeedback(context: BankContext, month: string, candidate: BankCandidate): string {
-  const feedback = { ruleVersion: BANK_MATCH_RULE_VERSION, key: candidate.key, source: candidate.source, model: candidate.model,
+export function signBankFeedback(context: BankContext, month: string, candidate: BankCandidate, ruleVersion = BANK_MATCH_RULE_VERSION): string {
+  const feedback = { ruleVersion, key: candidate.key, source: candidate.source, model: candidate.model,
     reason: candidate.reason, confidence: candidate.confidence, score: candidate.score, presentedAt: new Date().toISOString() };
   return jwt.sign({ context, month, feedback }, key, { algorithm: 'HS256', audience, expiresIn: '24h' });
 }

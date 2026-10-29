@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
-import { BankAssessment, BankConfidenceLevel, BankItem, BankLinkChange, BankSearchResult } from '@/lib/bank-reconciliation';
+import { BankAssessment, BankConfidenceLevel, BankDiagnosis, BankItem, BankLinkChange, BankSearchResult } from '@/lib/bank-reconciliation';
 import { BankSearchDependency, bankSearchAffected, bankSearchDependency, updateBankSearchResult } from '@/lib/bank-reconciliation-changes';
 import { BankRowSearch } from './useBankRuleSearch';
 
-export type BankComputedFilter = 'MISSING' | BankConfidenceLevel;
-interface IndexedRow { item: BankItem; dependency: BankSearchDependency; assessment?: BankAssessment; confidence?: BankConfidenceLevel }
-const matches = (row: IndexedRow, filter: BankComputedFilter) => filter === 'MISSING' ? row.assessment === 'POSSIBLE_MISSING' : row.confidence === filter;
+export type BankComputedFilter = 'MISSING' | BankConfidenceLevel | BankDiagnosis;
+interface IndexedRow { item: BankItem; dependency: BankSearchDependency; assessment?: BankAssessment; confidence?: BankConfidenceLevel; diagnosis?: BankDiagnosis }
+const matches = (row: IndexedRow, filter: BankComputedFilter) => filter === 'MISSING' ? row.assessment === 'POSSIBLE_MISSING' : row.confidence === filter || row.diagnosis === filter;
 const queuedRow = (): BankRowSearch => ({ status: 'queued', updatedAt: 0, signature: '' });
 
 // Keep compact search dependencies for scanned items, at most 100 full results, and the month cursor.
@@ -42,7 +42,7 @@ export function useBankFilteredSearch(base: string, page: number, filter: BankCo
     const dependency = bankSearchDependency(result);
     // Divergent alternatives other than the first cannot change membership or confidence.
     dependency.candidates = dependency.candidates.filter((candidate, position) => !position || candidate.exact);
-    index.current.set(item.id, { item, dependency, assessment: result.error ? 'INCOMPLETE' : result.assessment, confidence: result.candidates[0]?.confidence?.level });
+    index.current.set(item.id, { item, dependency, assessment: result.error ? 'INCOMPLETE' : result.assessment, confidence: result.candidates[0]?.confidence?.level, diagnosis: result.diagnosis });
     cache.current.set(item.id, { status: result.error ? 'error' : 'done', result, refined, updatedAt: Date.now(), signature: '' });
     pending.current.delete(item.id);
   }, []);

@@ -7,7 +7,7 @@ audience: product
 visibility: internal
 status: active
 owner: product
-last_reviewed: 2026-09-07
+last_reviewed: 2026-10-29
 summary: Conciliacao mensal de contas Nubank e Bradesco com OFX/CSV, confirmacao humana e historico persistente.
 tags:
   - cash
@@ -206,6 +206,49 @@ saírem desse cache. O total analisado e buscas incompletas ficam visíveis. Sai
 filtro pausa a busca; confirmações preservam o cursor e atualizam os itens afetados.
 Atualizar explicitamente, importar, reiniciar ou desfazer reinicia a varredura.
 Buscar manualmente e registrar faltante continuam disponíveis.
+
+## Transição para a nova conciliação
+
+A rota de interface `/financial/accounts/:id/reconciliation-v2` e a API
+`/financial/accounts/:id/reconciliation-v2/:month` coexistem com as rotas atuais.
+Não há novas tabelas nem cópia de sessões: a chave continua sendo conta/mês.
+Importação, vínculos, liquidação, criação de faltantes, ignorar/restaurar, auditoria,
+desfazer e concluir/reabrir usam as mesmas operações e verificações de acesso.
+
+`BankReconciliationSession` concentra os comandos compartilhados. A apresentação
+atual e `BankGuidedQueue` são selecionadas por wrappers independentes. A busca
+usa a estratégia `classic` por padrão; somente as rotas novas escolhem `guided`.
+Os recibos assinados usam `bank-guided-v1` na nova estratégia. A confirmação em lote
+revalida com essa mesma estratégia e rejeita recibos de outra versão. Confirmações
+individuais e manuais continuam exigindo versões atuais, soma exata e exclusividade.
+
+A estratégia nova filtra valores divergentes sem evidência na descrição ou histórico,
+ordena diferenças de valor pela proximidade e acrescenta somas de quatro lançamentos
+entre até 25 próximos. O conjunto intermediário é limitado a 1.000 candidatos por
+movimento/grupo; atingir esse limite com alternativas restantes marca a busca como
+incompleta e impede confiança alta. A ampliação para 31 dias usa somente candidatos individuais
+de valor exato com descrição relevante ou histórico e ocorre quando não permanece
+correspondência exata nos sete dias próximos. Limites de busca e permissões mantêm
+o diagnóstico incompleto. Normalização de texto bancário auxilia descoberta, mas
+não estabelece equivalência para confiança alta. O motor clássico é preservado.
+
+O diagnóstico separa `READY`, `AMBIGUOUS`, `AMOUNT_DIFFERENCE`, `DATE_DIFFERENCE`,
+`SETTLEMENT`, `GROUPED`, `MISSING` e `INCOMPLETE`. Uma alternativa relevante com
+valor diferente não é classificada como lançamento faltante. Os filtros percorrem
+o mês com o cursor existente. A nova interface consulta IA somente por clique em
+casos de média baixa/baixa; a versão atual conserva sua política de chamada.
+
+`GET /diagnostics` usa uma leitura consistente para reconstruir o saldo no fim do
+dia informado no arquivo: saldo atual menos os movimentos liquidados posteriores,
+incluindo ajustes e movimentos internos. Escolhe a data de saldo mais recente dentro
+do mês e recusa saldos conflitantes nessa data. Ausência de referência ou lançamentos
+restritos impede os valores que dependem dessas informações. Trata-se de reconstrução
+com o cadastro atual, não de um snapshot contábil imutável. A conclusão do mês ainda
+depende dos vínculos, não do resultado dessa comparação.
+
+Para retirar a versão antiga, tornar a rota nova padrão, redirecionar acessos antigos
+preservando conta/mês e retirar a apresentação e a estratégia clássicas depois da
+validação funcional. Preservar o núcleo de operações e os registros compartilhados.
 
 ## IA e feedback
 

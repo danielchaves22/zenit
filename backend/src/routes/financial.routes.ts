@@ -209,7 +209,8 @@ import financialAccountMovementRoutes from './financial-account-movement-report.
 import {
   loadBankReconciliation, previewBankStatement, importBankStatement, suggestBankCandidates, suggestBankCandidatesBatch,
   confirmBankMatch, confirmBankBatch, rejectBankMatch, createBankTransaction, undoBankMatch, updateBankMonthStatus,
-  getBankAudit, getBankTransactions, resetBankReconciliation, scanMissingBankItems, updateBankStatementIgnore
+  getBankAudit, getBankTransactions, resetBankReconciliation, scanMissingBankItems, updateBankStatementIgnore,
+  getGuidedBankDiagnostics, getGuidedBankTransactions, suggestGuidedBankCandidates, suggestGuidedBankCandidatesBatch, scanGuidedBankItems, confirmGuidedBankBatch
 } from '../controllers/bank-reconciliation.controller';
 import rateLimit from 'express-rate-limit';
 
@@ -258,6 +259,19 @@ bankRouter.post('/undo', undoBankMatch);
 bankRouter.post('/status', updateBankMonthStatus);
 bankRouter.get('/audit', getBankAudit);
 router.use('/accounts/:id/reconciliation/:month', bankRouter);
+
+// Both experiences use the same account/month, import, links and financial commands.
+const guidedBankRouter = Router({ mergeParams: true });
+guidedBankRouter.use(requireFeaturePermission('FINANCIAL_ACCOUNTS'), requireAccountAccess());
+guidedBankRouter.get('/diagnostics', getGuidedBankDiagnostics);
+guidedBankRouter.get('/transactions', getGuidedBankTransactions);
+guidedBankRouter.post('/suggestions', bankSuggestionLimit, suggestGuidedBankCandidates);
+guidedBankRouter.post('/suggestions/batch', (req, res, next) => (req.body?.useAi === false ? bankRuleSuggestionLimit : bankSuggestionLimit)(req, res, next), suggestGuidedBankCandidatesBatch);
+guidedBankRouter.get('/missing', bankRuleSuggestionLimit, scanGuidedBankItems);
+guidedBankRouter.get('/scan', bankRuleSuggestionLimit, scanGuidedBankItems);
+guidedBankRouter.post('/confirm/batch', confirmGuidedBankBatch);
+guidedBankRouter.use(bankRouter);
+router.use('/accounts/:id/reconciliation-v2/:month', guidedBankRouter);
 
 router.get('/defaults', getCompanyDefaults);
 router.get('/banks', requireFeaturePermission('FINANCIAL_ACCOUNTS'), listFinancialBanks);

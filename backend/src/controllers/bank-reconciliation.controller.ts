@@ -50,3 +50,23 @@ export const getBankAudit = endpoint((c, m, req) => Service.audit(c, m, paging.p
 export const getBankTransactions = endpoint((c, m, req) => { const q = z.object({ page: z.coerce.number().int().min(1).default(1), search: z.string().max(120).default(''),
   days: z.coerce.number().int().min(0).max(366).default(0), unmatched: z.enum(['true', 'false']).default('true') }).parse(req.query);
   return Service.transactions(c, m, q.search, q.page, q.days, q.unmatched === 'true'); });
+
+// The guided routes share persisted operations; only discovery and its review receipts are versioned.
+export const getGuidedBankDiagnostics = endpoint((c, m) => Service.diagnostics(c, m));
+export const suggestGuidedBankCandidates = endpoint((c, m, req) => {
+  const input = z.object({ itemIds, useAi: z.boolean().default(false) }).parse(req.body);
+  return Service.candidates(c, m, input.itemIds, input.useAi, 'guided');
+});
+export const suggestGuidedBankCandidatesBatch = endpoint((c, m, req) => {
+  const input = z.object({ itemIds: z.array(id).min(1).max(5).refine(ids => new Set(ids).size === ids.length, 'Itens repetidos.'), useAi: z.boolean().default(false) }).parse(req.body);
+  return Service.candidatesBatch(c, m, input.itemIds, input.useAi, 'guided');
+});
+export const scanGuidedBankItems = endpoint((c, m, req) => Service.scanMissing(c, m, z.coerce.number().int().min(0).default(0).parse(req.query.afterId), 'guided'));
+export const confirmGuidedBankBatch = endpoint((c, m, req) => Service.confirmBatch(c, m, z.object({ matches: z.array(z.object({
+  itemId: id, transaction: z.object({ id, version: z.string().datetime() }), feedbackToken: z.string().min(1).max(12000)
+})).min(1).max(50) }).parse(req.body).matches, 'guided'));
+export const getGuidedBankTransactions = endpoint((c, m, req) => {
+  const q = z.object({ page: z.coerce.number().int().min(1).default(1), search: z.string().max(120).default(''),
+    days: z.coerce.number().int().min(0).max(366).default(0), amount: z.string().regex(/^\d{1,12}(\.\d{1,2})?$/).optional() }).parse(req.query);
+  return Service.transactions(c, m, q.search, q.page, q.days, true, q.amount);
+});

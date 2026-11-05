@@ -11,6 +11,7 @@ import {
 import crypto from 'crypto';
 import WhatsAppAudioService from './whatsapp-audio.service';
 import { WhatsAppAudioError } from '../utils/whatsapp-audio';
+import { formatWhatsAppActionError } from '../utils/whatsapp-action-error';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import ToolExecutorService from './tool-executor.service';
 import AssistantOrchestratorService from './assistant-orchestrator.service';
@@ -939,7 +940,7 @@ export default class WhatsAppIntegrationService {
         pendingActionId: record.id,
         error: error instanceof Error ? error.message : String(error)
       });
-      return { message: 'Não foi possível concluir esta ação. Consulte o rascunho atualizado antes de tentar novamente.' };
+      return { message: formatWhatsAppActionError(error, record.summary) };
     }
 
     const message = choice ? `Categoria escolhida: ${action.summary.category?.name}. Revise o rascunho antes de confirmar.` : button.decision === 'confirm'

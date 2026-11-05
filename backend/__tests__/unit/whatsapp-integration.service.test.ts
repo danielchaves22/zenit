@@ -254,6 +254,43 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(Cloud.sendTextMessage).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('não está mais válido') }));
   });
 
+  it.each(['direct', 'hub'])('returns the actual insufficient-balance reason through %s without canceling the draft', async (channel) => {
+    const record = { id: action.id, companyId: 3, status: 'PENDING', summary: action.summary };
+    db.assistantPendingAction.findFirst.mockResolvedValue(record);
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    jest.mocked(PendingActions.confirmTransactionDraft).mockRejectedValue(
+      new Error('Insufficient balance. Available: 1494.82, Required: 1500.00')
+    );
+    let reply: string;
+    if (channel === 'hub') {
+      const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId,
+        messageId: 'wamid.balance', text: '', buttonId: buildPendingActionButtons(action)[0].id });
+      reply = result.replies[0].text;
+      expect(Cloud.sendTextMessage).not.toHaveBeenCalled();
+    } else {
+      await clickButton(0);
+      reply = jest.mocked(Cloud.sendTextMessage).mock.calls[0][0].text;
+    }
+    const prefix = channel === 'hub' ? 'Cash · Workspace 3\n\n' : '';
+    expect(reply).toBe(`${prefix}Saldo insuficiente na conta Nubank Daniel. Disponível: R$ 1.494,82. Valor do lançamento: R$ 1.500,00.\n\nNenhum lançamento foi gravado. O rascunho foi mantido. Confira o saldo cadastrado ou escolha outra conta antes de confirmar novamente.`);
+    expect(PendingActions.confirmTransactionDraft).toHaveBeenCalledTimes(1);
+    expect(PendingActions.cancelPendingAction).not.toHaveBeenCalled();
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+    expect(Messages.createMessage).not.toHaveBeenCalled();
+    expect(record.status).toBe('PENDING');
+  });
+
+  it('keeps technical failure details out of the Hub reply', async () => {
+    db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    jest.mocked(PendingActions.confirmTransactionDraft).mockRejectedValue(new Error('private SQL query and credentials'));
+    const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId,
+      messageId: 'wamid.failure', text: '', buttonId: buildPendingActionButtons(action)[0].id });
+    expect(result.replies[0].text).toContain('falha interna');
+    expect(result.replies[0].text).not.toContain('private SQL');
+    expect(result.replies[0].text).not.toContain('rascunho atualizado');
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+  });
+
   it('does not interpret an unknown button title as a confirmation', async () => {
     await webhook({ type: 'interactive', interactive: { button_reply: { id: 'unknown', title: 'Confirmar' } } });
     expect(Orchestrator.processTurn).not.toHaveBeenCalled();

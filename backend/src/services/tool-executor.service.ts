@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma';
+import { draftCutoff, draftToolAllowed, WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
 import {
   AccountType,
   AssistantMode,
@@ -138,6 +139,7 @@ const CATEGORY_ICON_HINTS: Array<{
 ];
 
 export type AssistantToolExecutionContext = {
+  whatsappDraft?: WhatsAppDraftScope;
   sessionId: number;
   turnId: number;
   userId: number;
@@ -1020,6 +1022,7 @@ export default class ToolExecutorService {
     argumentsJson: Record<string, unknown>,
     context: AssistantToolExecutionContext
   ): Promise<ToolExecutionResult> {
+    if (!draftToolAllowed(toolName, context.whatsappDraft)) throw new Error('Esta ação não corresponde à escolha feita no WhatsApp.');
     switch (toolName) {
       case 'create_transaction_draft':
         return this.createTransactionDraft(argumentsJson, context);
@@ -1065,6 +1068,16 @@ export default class ToolExecutorService {
     context: AssistantToolExecutionContext,
     pendingActionId?: number | null
   ) {
+    if (context.whatsappDraft) {
+      const { id, revision } = context.whatsappDraft;
+      if (!id || (pendingActionId && pendingActionId !== id)) throw new Error('Não há rascunho ativo para esta solicitação.');
+      const record = await prisma.assistantPendingAction.findFirst({ where: {
+        id, userId: context.userId, companyId: context.companyId, sessionId: context.sessionId, status: 'PENDING',
+        type: 'CREATE_TRANSACTION_DRAFT', updatedAt: { equals: new Date(revision!), gt: draftCutoff() }
+      } });
+      if (!record) throw new Error('O rascunho mudou ou expirou. Peça o resumo atualizado.');
+      return record;
+    }
     if (pendingActionId) {
       return PendingActionService.getOwnedPendingActionOrThrow({
         pendingActionId,
@@ -1292,6 +1305,7 @@ export default class ToolExecutorService {
     }
 
     const pendingAction = await PendingActionService.createTransactionDraftAction({
+      whatsapp: !!context.whatsappDraft,
       sessionId: context.sessionId,
       turnId: context.turnId,
       userId: context.userId,
@@ -1316,9 +1330,11 @@ export default class ToolExecutorService {
     context: AssistantToolExecutionContext
   ): Promise<ToolExecutionResult> {
     const args = getPendingActionArgsSchema.parse(rawArguments);
-    const pendingAction = args.pendingActionId
+    if (context.whatsappDraft && !context.whatsappDraft.id) return { data: { ok: false, pendingAction: null } };
+    const targetId = context.whatsappDraft ? (await this.resolvePendingActionRecord(context, args.pendingActionId)).id : args.pendingActionId;
+    const pendingAction = targetId
       ? await PendingActionService.getPendingAction({
-          pendingActionId: args.pendingActionId,
+          pendingActionId: targetId,
           userId: context.userId,
           companyId: context.companyId
         })
@@ -1410,6 +1426,7 @@ export default class ToolExecutorService {
     }
 
     const pendingAction = await PendingActionService.updateTransactionDraftAction({
+      whatsapp: !!context.whatsappDraft,
       pendingActionId: record.id,
       expectedUpdatedAt: record.updatedAt,
       sessionId: context.sessionId,
@@ -1871,12 +1888,14 @@ export default class ToolExecutorService {
     context: AssistantToolExecutionContext
   ): Promise<ToolExecutionResult> {
     const args = cancelPendingActionArgsSchema.parse(rawArguments);
-    const pendingActionId =
+    const pinned = context.whatsappDraft ? await this.resolvePendingActionRecord(context, args.pendingActionId) : null;
+    const pendingActionId = pinned?.id ??
       args.pendingActionId ??
       (
         await this.resolvePendingActionRecord(context, null)
       ).id;
     const pendingAction = await PendingActionService.cancelPendingAction({
+      ...(pinned ? { expectedUpdatedAt: pinned.updatedAt, sessionId: context.sessionId, whatsapp: true } : {}),
       pendingActionId,
       userId: context.userId,
       companyId: context.companyId

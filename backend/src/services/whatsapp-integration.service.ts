@@ -9,6 +9,8 @@ import {
   WhatsAppMessageKind
 } from '@prisma/client';
 import crypto from 'crypto';
+import WhatsAppDraftService from './whatsapp-draft.service';
+import { expiredDraftMessage, parseDraftIntentButton } from '../utils/whatsapp-draft-lifecycle';
 import WhatsAppAudioService from './whatsapp-audio.service';
 import { WhatsAppAudioError } from '../utils/whatsapp-audio';
 import { formatWhatsAppActionError } from '../utils/whatsapp-action-error';
@@ -378,11 +380,11 @@ export default class WhatsAppIntegrationService {
         }
         let workspaceId = params.workspaceId;
         if (params.buttonId) {
-          const button = parsePendingActionButton(params.buttonId) || parseCategoryChoice(params.buttonId);
+          const button = parsePendingActionButton(params.buttonId) || parseCategoryChoice(params.buttonId) || parseDraftIntentButton(params.buttonId);
           const owner = await prisma.whatsAppUserBinding.findUnique({ where: { waId: params.waId } });
           const action = button && owner ? await prisma.assistantPendingAction.findFirst({
-            where: { id: button.pendingActionId, userId: owner.userId, status: 'PENDING',
-              type: 'CREATE_TRANSACTION_DRAFT', updatedAt: new Date(button.revision) }, select: { companyId: true }
+            where: { id: button.pendingActionId, userId: owner.userId,
+              type: 'CREATE_TRANSACTION_DRAFT' }, select: { companyId: true }
           }) : null;
           if (!action) { replies.push({ text: 'Este botão expirou ou não pertence ao seu usuário. Peça uma nova revisão do rascunho.' }); return; }
           // A button always belongs to its draft, even when the active workspace changed.
@@ -907,6 +909,14 @@ export default class WhatsAppIntegrationService {
     const button = choice ? { ...choice, decision: 'category' as const } : parsePendingActionButton(params.buttonId);
     const invalid = { message: 'Este botão ou item de lista não está mais válido. Peça o resumo atualizado do rascunho para escolher, confirmar ou cancelar.' };
     if (!button) return invalid;
+    const { record: latest } = await WhatsAppDraftService.current(params);
+    if (!latest || latest.id !== button.pendingActionId) {
+      const expired = await prisma.assistantPendingAction.findFirst({ where: {
+        id: button.pendingActionId, sessionId: params.sessionId, companyId: params.companyId, userId: params.userId,
+        type: 'CREATE_TRANSACTION_DRAFT', status: 'EXPIRED'
+      }, select: { id: true } });
+      return expired ? { message: expiredDraftMessage } : invalid;
+    }
     const record = await prisma.assistantPendingAction.findFirst({
       where: {
         id: button.pendingActionId,
@@ -925,6 +935,7 @@ export default class WhatsAppIntegrationService {
       sessionId: params.sessionId,
       userId: params.userId,
       companyId: params.companyId,
+      whatsapp: true,
       expectedUpdatedAt: new Date(button.revision),
       role: params.role
     };
@@ -1029,7 +1040,9 @@ export default class WhatsAppIntegrationService {
       role: userContext.role
     };
     let audioTelemetry: { model: string; bytes: number; latencyMs: number } | undefined;
-    const response = await this.withTypingIndicator(params.incomingMessageId, async () => {
+    const response = await this.withTypingIndicator(params.incomingMessageId, async (): Promise<{
+      message: string; pendingAction?: PendingAction | null; buttons?: WhatsAppReplyButton[]; telemetry?: object
+    } | null> => {
       let text = params.text;
       if (params.audio) {
         try {
@@ -1066,11 +1079,16 @@ export default class WhatsAppIntegrationService {
           return null;
         }
       }
-      return params.interactiveReplyId !== undefined
-        ? this.processButtonDecision({ ...turnContext, buttonId: params.interactiveReplyId })
-        : AssistantOrchestratorService.processTurn({
-            ...turnContext, message: text!, requireConfirmationButton: true, onEvent: () => undefined
-          });
+      const intentButton = params.interactiveReplyId && parseDraftIntentButton(params.interactiveReplyId);
+      if (params.interactiveReplyId !== undefined && !intentButton) {
+        return this.processButtonDecision({ ...turnContext, buttonId: params.interactiveReplyId });
+      }
+      const route = await WhatsAppDraftService.route(turnContext, text ?? '', intentButton || undefined);
+      if ('reply' in route) return { ...route.reply, pendingAction: null };
+      return AssistantOrchestratorService.processTurn({
+        ...turnContext, message: route.text, requireConfirmationButton: true, whatsappDraft: route.scope,
+        freshDraftContext: route.fresh, onEvent: () => undefined
+      });
     });
     if (!response) return { audio: { outcome: 'failed' } };
 
@@ -1094,7 +1112,9 @@ export default class WhatsAppIntegrationService {
       userId: params.binding.userId,
       waId: params.waId
     };
-    if (response.pendingAction?.status === 'PENDING' && response.pendingAction.summary.categoryOptions?.length) {
+    if (response.buttons) {
+      await this.sendOutboundMessage({ ...outboundContext, text: response.message, buttons: response.buttons });
+    } else if (response.pendingAction?.status === 'PENDING' && response.pendingAction.summary.categoryOptions?.length) {
       const summary = response.pendingAction.summary;
       const amount = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(summary.amount);
       await this.sendOutboundMessage({ ...outboundContext,

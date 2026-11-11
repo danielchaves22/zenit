@@ -1,3 +1,4 @@
+import { draftToolAllowed, WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
 import { AssistantMode } from '@prisma/client';
 import { z } from 'zod';
 import { DEFAULT_OPENAI_MODEL, LEGACY_OPENAI_MODEL_FALLBACK, resolveOpenAiModel, shouldRetryWithLegacyOpenAiModel, getOpenAiReasoningEffort, getOpenAiResponsesOptions } from '../constants/openai';
@@ -149,11 +150,14 @@ function buildSystemPrompt(todayDate: string, requireConfirmationButton = false)
   ].join(' ');
 }
 
-function buildConversationInput(messages: ConversationMessage[], todayDate: string, requireConfirmationButton = false) {
+function buildConversationInput(messages: ConversationMessage[], todayDate: string, requireConfirmationButton = false, scope?: WhatsAppDraftScope) {
   const items = [
     {
       role: 'system',
-      content: [{ type: 'input_text', text: buildSystemPrompt(todayDate, requireConfirmationButton) }]
+      content: [{ type: 'input_text', text: [buildSystemPrompt(todayDate, requireConfirmationButton),
+        scope?.mode === 'new' ? 'O usuário está iniciando um lançamento independente. Use apenas os dados deste novo pedido. Não copie dados do rascunho anterior.' : '',
+        scope?.mode === 'edit' ? 'O usuário escolheu corrigir o rascunho atual. Consulte get_pending_action e atualize apenas os campos informados. Não crie outro rascunho.' : ''
+      ].filter(Boolean).join('\n') }]
     }
   ];
 
@@ -217,14 +221,15 @@ export default class LlmRuntimeService {
       return result;
     };
     const tools = ToolRegistryService.getToolsForMode(AssistantMode.OPERATOR)
-      .filter(tool => !params.context.requireConfirmationButton || tool.name !== 'confirm_pending_action');
+      .filter(tool => (!params.context.requireConfirmationButton || tool.name !== 'confirm_pending_action') &&
+        draftToolAllowed(tool.name, params.context.whatsappDraft));
 
     const performInitialRequest = async (model: string) =>
       request({
         apiKey: credential.apiKey,
         model,
         body: {
-          input: buildConversationInput(params.conversation, todayDate, params.context.requireConfirmationButton),
+          input: buildConversationInput(params.conversation, todayDate, params.context.requireConfirmationButton, params.context.whatsappDraft),
           tools
         }
       });

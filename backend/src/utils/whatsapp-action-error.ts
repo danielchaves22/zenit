@@ -1,4 +1,5 @@
 import { draftTransactionSummarySchema } from '@zenit/assistant-contracts';
+import { expiredDraftMessage } from './whatsapp-draft-lifecycle';
 import { formatCurrency } from './money';
 
 // Only known business validations can be shown to the user. Database/provider
@@ -34,6 +35,13 @@ const publicFinancialMessages = new Set([
 
 export function formatWhatsAppActionError(error: unknown, summary?: unknown): string {
   const message = error instanceof Error ? error.message : '';
+  if (message === 'WhatsApp draft expired') return expiredDraftMessage;
+  if (message === 'A data informada direciona esta compra para uma fatura ja fechada. Escolha a fatura aberta atual ou altere a data da compra.') {
+    const draft = draftTransactionSummarySchema.safeParse(summary);
+    const date = draft.success && /^(\d{4})-(\d{2})-(\d{2})(?:T|$)/.exec(draft.data.date);
+    const purchase = date ? `A compra de ${date[3]}/${date[2]}/${date[1]}` : 'Esta compra';
+    return `${purchase} cai em uma fatura já fechada. Nenhum lançamento foi gravado. Se a data estiver correta, registre a compra no Cash e escolha a fatura aberta. Se a data estiver errada, corrija o rascunho aqui.`;
+  }
   const insufficientBalance = /^Insufficient balance(?: for transfer)?\. Available: (-?\d+\.\d{2}), Required: (\d+\.\d{2})$/.exec(message);
   if (insufficientBalance) {
     const draft = draftTransactionSummarySchema.safeParse(summary);

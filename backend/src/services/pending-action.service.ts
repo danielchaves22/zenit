@@ -1,4 +1,6 @@
+import { isDeepStrictEqual } from 'node:util';
 import prisma from '../lib/prisma';
+import { draftCutoff } from '../utils/whatsapp-draft-lifecycle';
 import { AssistantPendingActionStatus, AssistantPendingActionType, Role } from '@prisma/client';
 import { DraftTransactionSummary, PendingAction, pendingActionSchema } from '@zenit/assistant-contracts';
 import { z } from 'zod';
@@ -25,7 +27,15 @@ const draftTransactionPayloadSchema = z.object({
 
 export type DraftTransactionPayload = z.infer<typeof draftTransactionPayloadSchema>;
 
+function revisionGuard(revision: Date | undefined, whatsapp?: boolean) {
+  if (!whatsapp) return revision;
+  const cutoff = draftCutoff();
+  if (revision && revision <= cutoff) throw new Error('WhatsApp draft expired');
+  return { equals: revision, gt: cutoff };
+}
+
 type DecisionContext = {
+  whatsapp?: boolean;
   sessionId?: number;
   expectedUpdatedAt?: Date;
 };
@@ -68,6 +78,7 @@ export default class PendingActionService {
   static async createTransactionDraftAction(params: {
     sessionId: number;
     turnId: number;
+    whatsapp?: boolean;
     userId: number;
     companyId: number;
     summary: DraftTransactionSummary;
@@ -75,8 +86,7 @@ export default class PendingActionService {
   }): Promise<PendingAction> {
     const parsedPayload = draftTransactionPayloadSchema.parse(params.payload);
 
-    const record = await prisma.assistantPendingAction.create({
-      data: {
+    const data = {
         sessionId: params.sessionId,
         turnId: params.turnId,
         userId: params.userId,
@@ -85,8 +95,15 @@ export default class PendingActionService {
         status: AssistantPendingActionStatus.PENDING,
         summary: params.summary,
         payload: parsedPayload
-      }
-    });
+    };
+    const record = params.whatsapp ? await prisma.$transaction(async tx => {
+      // Two simultaneous messages cannot create two live drafts for the same WhatsApp session.
+      await tx.$queryRaw`SELECT id FROM "AssistantSession" WHERE id = ${params.sessionId} FOR UPDATE`;
+      const pending = await tx.assistantPendingAction.findFirst({ where: { sessionId: params.sessionId,
+        userId: params.userId, companyId: params.companyId, type: data.type, status: 'PENDING' }, select: { id: true } });
+      if (pending) throw new Error('Já existe um rascunho. Peça o resumo atualizado antes de continuar.');
+      return tx.assistantPendingAction.create({ data });
+    }) : await prisma.assistantPendingAction.create({ data });
 
     return assistantPendingActionToContract(record);
   }
@@ -145,6 +162,7 @@ export default class PendingActionService {
     summary: DraftTransactionSummary;
     payload: DraftTransactionPayload;
     expectedUpdatedAt?: Date;
+    whatsapp?: boolean;
     sessionId?: number;
   }): Promise<PendingAction> {
     const pendingAction = await this.getOwnedPendingActionOrThrow({
@@ -163,11 +181,18 @@ export default class PendingActionService {
 
     const parsedPayload = draftTransactionPayloadSchema.parse(params.payload);
 
+    if (params.whatsapp && isDeepStrictEqual(pendingAction.payload, JSON.parse(JSON.stringify(parsedPayload))) &&
+        isDeepStrictEqual(pendingAction.summary, JSON.parse(JSON.stringify(params.summary)))) {
+      const current = await prisma.assistantPendingAction.findFirstOrThrow({ where: { id: params.pendingActionId,
+        sessionId: params.sessionId, userId: params.userId, companyId: params.companyId, status: 'PENDING',
+        updatedAt: revisionGuard(params.expectedUpdatedAt ?? pendingAction.updatedAt, true) } });
+      return assistantPendingActionToContract(current);
+    }
     const updated = await prisma.assistantPendingAction.update({
       where: {
         id: params.pendingActionId,
         status: AssistantPendingActionStatus.PENDING,
-        updatedAt: params.expectedUpdatedAt ?? pendingAction.updatedAt,
+        updatedAt: revisionGuard(params.expectedUpdatedAt ?? pendingAction.updatedAt, params.whatsapp),
         sessionId: params.sessionId
       },
       data: {
@@ -183,7 +208,7 @@ export default class PendingActionService {
 
   static async selectTransactionCategory(params: {
     pendingActionId: number; userId: number; companyId: number; sessionId: number;
-    expectedUpdatedAt: Date; categoryId: number;
+    expectedUpdatedAt: Date; categoryId: number; whatsapp?: boolean;
   }): Promise<PendingAction> {
     const record = await this.getOwnedPendingActionOrThrow(params);
     if (record.sessionId !== params.sessionId || record.updatedAt.getTime() !== params.expectedUpdatedAt.getTime()) {
@@ -219,7 +244,7 @@ export default class PendingActionService {
         userId: params.userId,
         companyId: params.companyId,
         sessionId: params.sessionId,
-        updatedAt: params.expectedUpdatedAt,
+        updatedAt: revisionGuard(params.expectedUpdatedAt, params.whatsapp),
         status: AssistantPendingActionStatus.PENDING
       },
       data: {
@@ -286,7 +311,7 @@ export default class PendingActionService {
           companyId: params.companyId,
           sessionId: params.sessionId,
           status: AssistantPendingActionStatus.PENDING,
-          updatedAt: params.expectedUpdatedAt ?? pendingAction.updatedAt
+          updatedAt: revisionGuard(params.expectedUpdatedAt ?? pendingAction.updatedAt, params.whatsapp)
         },
         data: { status: AssistantPendingActionStatus.CONFIRMED }
       });

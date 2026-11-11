@@ -20,6 +20,16 @@ describe('WhatsApp Cash validation errors', () => {
     expect(formatWhatsAppActionError(new Error(error))).toContain(expected);
   });
 
+  it('explains a closed invoice without asking the user to falsify the purchase date', () => {
+    const err = new Error('A data informada direciona esta compra para uma fatura ja fechada. Escolha a fatura aberta atual ou altere a data da compra.');
+    const result = formatWhatsAppActionError(err, { description: 'Compra', amount: 99, date: '2026-11-10',
+      type: 'EXPENSE', status: 'COMPLETED' });
+    expect(result).toContain('A compra de 10/11/2026 cai em uma fatura já fechada');
+    expect(result).toContain('Nenhum lançamento foi gravado');
+    expect(result).toContain('no Cash e escolha a fatura aberta');
+    expect(formatWhatsAppActionError(err)).toContain('Esta compra cai em uma fatura já fechada');
+  });
+
   it('preserves the exact public message already emitted in Portuguese by Cash', () => {
     const message = 'Cartão de crédito sem fechamento e vencimento configurados';
     expect(formatWhatsAppActionError(new Error(message))).toBe(message);

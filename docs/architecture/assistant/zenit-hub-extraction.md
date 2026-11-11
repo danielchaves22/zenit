@@ -50,3 +50,9 @@ A seleção fica vinculada ao usuário, empresa, sessão, rascunho e revisão. O
 Publique primeiro o suporte a listas do Hub e depois o Cash. O webhook direto do Cash também suporta listas; não é necessário criar template nem mudar configurações na Meta para essa resposta a uma mensagem do usuário.
 
 Para ativar, publique a ponte, configure e teste o Hub, e só então troque o webhook na Meta. Preserve o número e o prefixo do QR Code. Não configure os dois backends para processar a mesma mensagem simultaneamente. Em rollback, restaure o callback anterior. Veja o README do repositório `zenit-hub` para o procedimento completo.
+
+## Validade dos rascunhos financeiros no WhatsApp
+
+Cada usuário mantém no máximo um rascunho ativo por área de trabalho. Ele expira 30 minutos após a criação ou a última edição efetiva, inclusive se a conversa continuar. Reabrir o resumo e responder à pergunta sobre a intenção não renovam o prazo. O Cash verifica a validade no próximo acesso e novamente ao aplicar a edição ou a confirmação; não há tarefa agendada.
+
+Com um rascunho ativo, uma mensagem como “80 reais, Nubank” oferece **Novo lançamento** ou **Corrigir anterior**. A escolha recupera a mensagem original (ou sua transcrição); o usuário não precisa repeti-la. Iniciar outro lançamento descarta o rascunho anterior sem gravá-lo e limpa seu contexto. Uma correção preserva os campos não alterados. Botões de escolha são de uso único e vinculados à pessoa, área, sessão e revisão. Para gravar, continua sendo obrigatório tocar em **Confirmar** no resumo válido.

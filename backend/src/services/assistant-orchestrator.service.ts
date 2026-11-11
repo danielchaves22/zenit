@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma';
+import type { WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
 import { AssistantMessageRole, AssistantMode, AssistantTurnStatus } from '@prisma/client';
 import { AssistantAction, AssistantCard, AssistantStreamEvent, AssistantTurnResponse, PendingAction } from '@zenit/assistant-contracts';
 import AssistantMessageService from './assistant-message.service';
@@ -74,6 +75,8 @@ export default class AssistantOrchestratorService {
     role: any;
     message: string;
     requireConfirmationButton?: boolean;
+    whatsappDraft?: WhatsAppDraftScope;
+    freshDraftContext?: boolean;
     onEvent: (event: AssistantStreamEvent) => Promise<void> | void;
   }): Promise<AssistantTurnResponse> {
     await AssistantSessionService.getOwnedSessionOrThrow({
@@ -99,6 +102,7 @@ export default class AssistantOrchestratorService {
         userId: params.userId,
         companyId: params.companyId,
         role: AssistantMessageRole.USER,
+        ...(params.freshDraftContext ? { content: { whatsappDraftStart: true } } : {}),
         text: params.message
       });
 
@@ -111,7 +115,7 @@ export default class AssistantOrchestratorService {
         params.onEvent
       );
 
-      const conversation = await AssistantMessageService.listConversationContext(params.sessionId);
+      const conversation = await AssistantMessageService.listConversationContext(params.sessionId, 12, !!params.whatsappDraft);
       const llmResult = await LlmRuntimeService.runOperatorTurn({
         context: {
           sessionId: params.sessionId,
@@ -120,6 +124,7 @@ export default class AssistantOrchestratorService {
           companyId: params.companyId,
           role: params.role,
           mode: AssistantMode.OPERATOR,
+          whatsappDraft: params.whatsappDraft,
           requireConfirmationButton: params.requireConfirmationButton
         },
         conversation

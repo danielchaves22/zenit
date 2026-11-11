@@ -9,6 +9,8 @@ import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 import AppAccessService from '../../src/services/app-access.service';
 import OpenAiIntegrationService from '../../src/services/openai-integration.service';
+import WhatsAppDraftService from '../../src/services/whatsapp-draft.service';
+import { parseDraftIntentButton, WHATSAPP_DRAFT_TTL } from '../../src/utils/whatsapp-draft-lifecycle';
 import PendingActionService from '../../src/services/pending-action.service';
 import FinancialTransactionService from '../../src/services/financial-transaction.service';
 import WhatsAppIntegrationService from '../../src/services/whatsapp-integration.service';
@@ -197,6 +199,87 @@ describe('Assistant runtime', () => {
     return { pendingActionId: action.id, sessionId: session.id, userId, companyId,
       role: 'ADMIN' as const, expectedUpdatedAt: new Date(action.updatedAt) };
   }
+
+  it.each(['new', 'edit'] as const)('resolves ambiguous voice/text once without mixing the drafts (%s)', async mode => {
+    const owner = await createDecisionDraft();
+    const text = 'Mil cento e oitenta e cinco e cinquenta e quatro, cartão de crédito Ana, Nubank';
+    const ask = async (message: string) => {
+      const result = await WhatsAppDraftService.route(owner, message);
+      if (!('reply' in result) || !result.reply.buttons) throw new Error('Expected a choice');
+      expect(result.reply.buttons.map(b => b.title)).toEqual(['Novo lançamento', 'Corrigir anterior']);
+      return parseDraftIntentButton(result.reply.buttons[mode === 'new' ? 0 : 1].id)!;
+    };
+    const first = await ask('80, Nubank');
+    const latest = await ask(text);
+    const read = () => prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: owner.pendingActionId } });
+    expect((await read()).updatedAt).toEqual(owner.expectedUpdatedAt);
+    expect((await read()).status).toBe('PENDING');
+    expect(await WhatsAppDraftService.route(owner, '', first)).toHaveProperty('reply');
+    expect(await WhatsAppDraftService.route({ ...owner, userId: userId + 100000 }, '', latest)).toHaveProperty('reply');
+    const results = await Promise.all([1, 2].map(() => WhatsAppDraftService.route(owner, '', latest)));
+    expect(results.filter(r => 'reply' in r)).toHaveLength(1);
+    const route = results.find(r => 'scope' in r)!;
+    if (!('scope' in route)) throw new Error('Expected a single winner');
+    expect(route).toMatchObject({ text, fresh: mode === 'new', scope: { mode } });
+    expect((await read()).status).toBe(mode === 'new' ? 'CANCELED' : 'PENDING');
+    const turn = await prisma.assistantTurn.create({ data: { sessionId: owner.sessionId, userId, companyId } });
+    const context = { ...owner, turnId: turn.id, mode: 'OPERATOR' as const, requireConfirmationButton: true, whatsappDraft: route.scope };
+    const otherTool = mode === 'edit' ? 'create_transaction_draft' : 'update_transaction_draft';
+    await expect(ToolExecutorService.executeTool(otherTool, {}, context)).rejects.toThrow('escolha');
+    const action = mode === 'edit' ? (await ToolExecutorService.executeTool('update_transaction_draft', { amount: 1185.54 }, context)).pendingAction :
+      (await ToolExecutorService.executeTool('create_transaction_draft', { amount: 1185.54, description: 'Outra compra', type: 'EXPENSE',
+        categoryId: (await prisma.financialCategory.findFirstOrThrow({ where: { companyId, type: 'EXPENSE' } })).id }, context)).pendingAction;
+    expect(action?.summary.amount).toBe(1185.54);
+    if (mode === 'new') expect(action?.id).not.toBe(owner.pendingActionId);
+    else expect(action).toMatchObject({ id: owner.pendingActionId, summary: { description: 'Compra por WhatsApp' } });
+    await expect(PendingActionService.confirmTransactionDraft({ ...owner, whatsapp: true })).rejects.toThrow();
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+  });
+
+  it('delivers both choices through Hub and starts the chosen new request without the old history', async () => {
+    const owner = await createDecisionDraft();
+    const apps = [AppKey.ZENIT_CASH, AppKey.ZENIT_WHATSAPP];
+    await AppAccessService.setCompanyEntitlements(companyId, apps.map(appKey => ({ appKey, enabled: true })));
+    await AppAccessService.setUserGrants(userId, companyId, apps.map(appKey => ({ appKey, granted: true })));
+    const waId = '5500000000111';
+    const binding = await prisma.whatsAppUserBinding.create({ data: { userId, activeCompanyId: companyId, waId, phoneNumber: '+' + waId } });
+    await prisma.whatsAppBindingCompanyContext.create({ data: { bindingId: binding.id, companyId, assistantSessionId: owner.sessionId } });
+    await prisma.assistantMessage.create({ data: { sessionId: owner.sessionId, userId, companyId, role: 'USER', sequence: 1, text: 'Compra anterior de ontem' } });
+    const send = (messageId: string, text: string, buttonId?: string) => WhatsAppIntegrationService.dispatchForHub({ waId, messageId, text, buttonId });
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ output_text: '{"mode":"OPERATOR","message":"Qual é a descrição?"}' })));
+    const prompt = (await send('draft.ambiguous', '80 no Nubank')).replies[0];
+    expect(prompt.buttons?.map(b => b.title)).toEqual(['Novo lançamento', 'Corrigir anterior']);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const button = prompt.buttons![0].id;
+    await send('draft.choose', 'Novo lançamento', button);
+    const input = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string).input;
+    expect(input.filter((i: any) => i.role === 'user').map((i: any) => i.content[0].text)).toEqual(['80 no Nubank']);
+    const replay = (await send('draft.choose.again', '', button)).replies[0];
+    expect(replay.buttons).toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+  });
+
+  it('counts inactivity from the last actual edit and refuses confirmation at exactly thirty minutes', async () => {
+    const owner = await createDecisionDraft();
+    const initial = owner.expectedUpdatedAt.getTime();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(initial + WHATSAPP_DRAFT_TTL - 1);
+    const data = await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: owner.pendingActionId } });
+    const draft = { ...owner, whatsapp: true, summary: data.summary as any, payload: data.payload as any };
+    const noop = await PendingActionService.updateTransactionDraftAction(draft);
+    expect(new Date(noop.updatedAt).getTime()).toBe(initial);
+    const edited = await PendingActionService.updateTransactionDraftAction({ ...draft, summary: { ...draft.summary, amount: 50 },
+      payload: { ...draft.payload, amount: 50 } });
+    const revision = new Date(edited.updatedAt);
+    now.mockReturnValue(revision.getTime() + WHATSAPP_DRAFT_TTL - 1);
+    expect(await WhatsAppDraftService.route(owner, 'Reenvie o rascunho')).toHaveProperty('scope.mode', 'review');
+    now.mockReturnValue(revision.getTime() + WHATSAPP_DRAFT_TTL);
+    await expect(PendingActionService.confirmTransactionDraft({ ...owner, expectedUpdatedAt: revision, whatsapp: true })).rejects.toThrow('expired');
+    const next = await WhatsAppDraftService.route(owner, '80, Nubank');
+    expect(next).toMatchObject({ fresh: true, text: '80, Nubank' });
+    expect(await prisma.assistantPendingAction.findUnique({ where: { id: owner.pendingActionId } })).toHaveProperty('status', 'EXPIRED');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+  });
 
   async function categoryChoiceFixture() {
     const session = await prisma.assistantSession.create({ data: { userId, companyId } });

@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma';
+import { draftCutoff } from '../utils/whatsapp-draft-lifecycle';
 import { AssistantMessageRole, AssistantMode, Prisma } from '@prisma/client';
 
 
@@ -40,10 +41,16 @@ export default class AssistantMessageService {
 
   static async listConversationContext(
     sessionId: number,
-    limit = 12
+    limit = 12,
+    whatsappDraft = false
   ): Promise<ConversationMessage[]> {
+    const closed = whatsappDraft && await prisma.assistantPendingAction.findFirst({
+      where: { sessionId, type: 'CREATE_TRANSACTION_DRAFT', status: { in: ['EXPIRED', 'CANCELED', 'CONFIRMED'] } },
+      orderBy: { updatedAt: 'desc' }, select: { updatedAt: true }
+    });
+    const since = new Date(Math.max(draftCutoff().getTime(), closed ? closed.updatedAt.getTime() : 0));
     const messages = await prisma.assistantMessage.findMany({
-      where: { sessionId },
+      where: { sessionId, ...(whatsappDraft ? { createdAt: { gte: since } } : {}) },
       include: {
         turn: {
           select: {
@@ -57,7 +64,9 @@ export default class AssistantMessageService {
       take: limit
     });
 
-    return messages
+    const start = whatsappDraft ? messages.findIndex(m => m.role === AssistantMessageRole.USER && m.content &&
+      typeof m.content === 'object' && !Array.isArray(m.content) && m.content.whatsappDraftStart === true) : -1;
+    return (start >= 0 ? messages.slice(0, start + 1) : messages)
       .reverse()
       .map((message) => ({
         id: message.id,

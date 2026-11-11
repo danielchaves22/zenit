@@ -3,7 +3,7 @@ jest.mock('../../src/lib/prisma', () => ({ __esModule: true, default: {
   whatsAppMessageLog: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   whatsAppUserBinding: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), update: jest.fn() },
   whatsAppBindingCompanyContext: { findUnique: jest.fn(), update: jest.fn() },
-  assistantPendingAction: { findFirst: jest.fn() },
+  assistantPendingAction: { findFirst: jest.fn(), updateMany: jest.fn() },
   company: { findUniqueOrThrow: jest.fn() }
 } }));
 jest.mock('../../src/services/assistant-orchestrator.service', () => ({ __esModule: true, default: { processTurn: jest.fn() } }));
@@ -49,7 +49,9 @@ function clickButton(index: number, title = 'ignored') {
 }
 
 describe('WhatsApp native feedback and decisions', () => {
+  let simulateActiveDraft: boolean;
   beforeEach(() => {
+    simulateActiveDraft = false;
     jest.resetAllMocks();
     jest.mocked(Cloud.verifySignature).mockReturnValue(true);
     jest.mocked(Cloud.sendTypingIndicator).mockResolvedValue();
@@ -63,7 +65,11 @@ describe('WhatsApp native feedback and decisions', () => {
     jest.mocked(Users.getUserCompanyContext).mockResolvedValue({ role: 'ADMIN' } as any);
     jest.mocked(AppAccess.hasEffectiveAccess).mockResolvedValue(true);
     jest.mocked(Orchestrator.processTurn).mockResolvedValue({ message: 'Despesa registrada.', pendingAction: action } as any);
-    db.assistantPendingAction.findFirst.mockResolvedValue({ id: action.id, companyId: 3 });
+    db.assistantPendingAction.updateMany.mockResolvedValue({ count: 1 });
+    db.assistantPendingAction.findFirst.mockImplementation(async ({ where, orderBy }: any) => {
+      if (orderBy && !simulateActiveDraft) return null;
+      return where.status === 'EXPIRED' ? null : { id: action.id, companyId: 3, updatedAt: new Date(action.updatedAt) };
+    });
     db.company.findUniqueOrThrow.mockImplementation(async ({ where }: any) => ({ id: where.id, name: `Workspace ${where.id}`, isPersonalWorkspace: where.id === 3 }));
     jest.mocked(PendingActions.confirmTransactionDraft).mockResolvedValue({ pendingAction: { ...action, status: 'CONFIRMED' } } as any);
     jest.mocked(PendingActions.cancelPendingAction).mockResolvedValue({ ...action, status: 'CANCELED' });
@@ -73,6 +79,7 @@ describe('WhatsApp native feedback and decisions', () => {
   afterEach(() => { jest.useRealTimers(); });
 
   it('transcribes voice as a continuation of the same owned session and returns text/buttons', async () => {
+    simulateActiveDraft = true;
     await webhook({ type: 'audio', audio: { id: '123', mime_type: 'audio/ogg; codecs=opus' } });
     expect(Audio.transcribe).toHaveBeenCalledWith({ companyId: 3, userId: 2, role: 'ADMIN', mediaId: '123' });
     expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({
@@ -137,6 +144,7 @@ describe('WhatsApp native feedback and decisions', () => {
 
   it('handles Hub audio with owned identity, the existing session and button-only confirmation', async () => {
     db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    simulateActiveDraft = true;
     const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId, messageId: 'wamid.hub.voice', text: '', audio: { mediaId: '123' } });
     expect(Audio.transcribe).toHaveBeenCalledWith({ companyId: 3, userId: 2, role: 'ADMIN', mediaId: '123' });
     expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 4, requireConfirmationButton: true, message: 'Na verdade foram 45 reais na conta Itaú.' }));
@@ -194,6 +202,7 @@ describe('WhatsApp native feedback and decisions', () => {
   it('pins a draft button to its original authorized workspace after switching', async () => {
     db.whatsAppUserBinding.findUnique.mockResolvedValue({ ...binding, activeCompanyId: 9 });
     db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    simulateActiveDraft = true;
     const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId,
       messageId: 'wamid.pinned', text: '', workspaceId: 9, buttonId: buildPendingActionButtons(action)[0].id });
     expect(PendingActions.confirmTransactionDraft).toHaveBeenCalledWith(expect.objectContaining({ companyId: 3, userId: binding.userId }));
@@ -231,6 +240,7 @@ describe('WhatsApp native feedback and decisions', () => {
   });
 
   it.each([0, 1])('resolves button %s by its ID, scoped to owner, company, session and revision', async (index) => {
+    simulateActiveDraft = true;
     await clickButton(index, index === 0 ? 'Cancelar' : 'Confirmar');
     expect(Orchestrator.processTurn).not.toHaveBeenCalled();
     expect(db.assistantPendingAction.findFirst).toHaveBeenCalledWith({ where: {
@@ -282,6 +292,7 @@ describe('WhatsApp native feedback and decisions', () => {
 
   it('keeps technical failure details out of the Hub reply', async () => {
     db.whatsAppMessageLog.create.mockResolvedValue({ id: 99 });
+    simulateActiveDraft = true;
     jest.mocked(PendingActions.confirmTransactionDraft).mockRejectedValue(new Error('private SQL query and credentials'));
     const result = await WhatsAppIntegrationService.dispatchForHub({ waId: binding.waId,
       messageId: 'wamid.failure', text: '', buttonId: buildPendingActionButtons(action)[0].id });
@@ -302,6 +313,14 @@ describe('WhatsApp native feedback and decisions', () => {
     await clickButton(0);
     expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
     expect(Cloud.sendTypingIndicator).not.toHaveBeenCalled();
+  });
+
+  it.each(['Gastei quanto ontem', 'Qual foi a última compra?', 'Meus gastos de hoje'])('keeps queries from replacing the active draft: %s', async text => {
+    simulateActiveDraft = true;
+    await webhook({ type: 'text', text: { body: text } });
+    expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ whatsappDraft: expect.objectContaining({ mode: 'review' }) }));
+    expect(PendingActions.cancelPendingAction).not.toHaveBeenCalled();
+    expect(db.assistantPendingAction.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: action.id }), data: expect.objectContaining({ status: 'CANCELED' }) }));
   });
 
   it('routes typed confirmations through the button-only assistant context', async () => {

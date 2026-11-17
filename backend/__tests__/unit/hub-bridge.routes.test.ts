@@ -3,6 +3,7 @@ jest.mock('../../src/services/whatsapp-integration.service', () => ({ __esModule
 } }));
 jest.mock('../../src/services/hub-workspace.service', () => ({ __esModule: true, default: { list: jest.fn(), select: jest.fn() } }));
 import Workspaces from '../../src/services/hub-workspace.service';
+import AssistantDefaultsService from '../../src/services/assistant-defaults.service';
 import express from 'express';
 import request from 'supertest';
 import { createHmac, randomBytes } from 'node:crypto';
@@ -24,6 +25,18 @@ describe('Cash first-party Hub bridge', () => {
   beforeEach(() => { jest.resetAllMocks(); process.env.CASH_HUB_SHARED_SECRET = secret;
     jest.mocked(Workspaces.list).mockResolvedValue({ connected: false, workspace: null, workspaces: [] }); });
   afterAll(() => { delete process.env.CASH_HUB_SHARED_SECRET; });
+  it('exposes only global assistant settings on a signed request without user context', async () => {
+    const settings = { model: 'gpt-6.2-sol', reasoningEffort: 'low' } as const;
+    const get = jest.spyOn(AssistantDefaultsService, 'getGlobal').mockResolvedValue(settings);
+    const operation = 'assistant_defaults';
+    try {
+      expect((await request(app).post(path).send({ operation })).status).toBe(401);
+      expect((await signed({ operation, sender: '5544999990000' }).send()).status).toBe(400);
+      expect((await signed({ operation }).send()).body).toEqual(settings);
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(Service.getHubBinding).not.toHaveBeenCalled();
+    } finally { get.mockRestore(); }
+  });
   it('fails closed without a configured secret or valid signature', async () => {
     delete process.env.CASH_HUB_SHARED_SECRET;
     expect((await request(app).post(path).send({ operation: 'status', sender: '5544999990000' })).status).toBe(503);

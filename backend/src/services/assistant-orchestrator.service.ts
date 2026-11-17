@@ -137,7 +137,9 @@ export default class AssistantOrchestratorService {
         cards,
         actions,
         pendingAction: llmResult.pendingAction ?? null,
-        telemetry: llmResult.telemetry
+        // Released Cash clients validate this optional SSE field as the literal 'none'.
+        // The turn record below retains the actual effort for every model.
+        telemetry: { ...llmResult.telemetry, reasoningEffort: llmResult.telemetry.reasoningEffort === 'none' ? 'none' : undefined }
       };
 
       await AssistantMessageService.createMessage({

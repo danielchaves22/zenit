@@ -88,12 +88,13 @@ export async function upsertAdminCompanyOpenAi(req: Request, res: Response) {
     const targetCompanyId = parseTargetCompanyId(req);
     await ensureTargetCompanyExists(targetCompanyId);
 
-    const { apiKey, model, promptVersion, isActive } = req.body;
+    const { apiKey, model, assistantModelOverride, promptVersion, isActive } = req.body;
 
     const saved = await OpenAiIntegrationService.upsertByok({
       companyId: targetCompanyId,
       apiKey,
       model,
+      assistantModelOverride,
       promptVersion,
       isActive
     });
@@ -103,6 +104,7 @@ export async function upsertAdminCompanyOpenAi(req: Request, res: Response) {
       actorCompanyId,
       targetCompanyId,
       model: saved.model,
+      assistantModelOverride: saved.assistantModelOverride,
       promptVersion: saved.promptVersion,
       isActive: saved.isActive
     });

@@ -8,6 +8,7 @@ type OpenAiCredentialSummary = {
   id: number;
   provider: AiProvider;
   model: string;
+  assistantModelOverride: string | null;
   promptVersion: string;
   isActive: boolean;
   updatedAt: Date;
@@ -19,6 +20,7 @@ export type OpenAiCredentialDecrypted = {
   provider: AiProvider;
   apiKey: string;
   model: string;
+  assistantModelOverride?: string | null;
   promptVersion: string;
   isActive: boolean;
   updatedAt: Date;
@@ -27,6 +29,7 @@ export type OpenAiCredentialDecrypted = {
 export type OpenAiTenantStatus = {
   configured: boolean;
   model: string | null;
+  assistantModelOverride: string | null;
   promptVersion: string | null;
   isActive: boolean | null;
   updatedAt: Date | null;
@@ -43,6 +46,7 @@ export default class OpenAiIntegrationService {
     companyId: number;
     apiKey?: string;
     model?: string;
+    assistantModelOverride?: string | null;
     promptVersion?: string;
     isActive?: boolean;
   }) {
@@ -70,12 +74,15 @@ export default class OpenAiIntegrationService {
         }
       },
       update: {
-        apiKeyCiphertext: encrypted?.ciphertext ?? existing!.apiKeyCiphertext,
-        apiKeyIv: encrypted?.iv ?? existing!.apiKeyIv,
-        apiKeyTag: encrypted?.tag ?? existing!.apiKeyTag,
-        model: resolveOpenAiModel(data.model || existing?.model),
-        promptVersion: (data.promptVersion || existing?.promptVersion || 'v1').trim(),
-        isActive: data.isActive ?? existing?.isActive ?? true
+        ...(encrypted && {
+          apiKeyCiphertext: encrypted.ciphertext,
+          apiKeyIv: encrypted.iv,
+          apiKeyTag: encrypted.tag
+        }),
+        ...(data.model !== undefined && { model: resolveOpenAiModel(data.model) }),
+        ...(data.assistantModelOverride !== undefined && { assistantModelOverride: data.assistantModelOverride }),
+        ...(data.promptVersion !== undefined && { promptVersion: data.promptVersion.trim() }),
+        ...(data.isActive !== undefined && { isActive: data.isActive })
       },
       create: {
         companyId: data.companyId,
@@ -85,6 +92,7 @@ export default class OpenAiIntegrationService {
         apiKeyIv: encrypted?.iv ?? existing!.apiKeyIv,
         apiKeyTag: encrypted?.tag ?? existing!.apiKeyTag,
         model: resolveOpenAiModel(data.model),
+        assistantModelOverride: data.assistantModelOverride ?? null,
         promptVersion: (data.promptVersion || 'v1').trim(),
         isActive: data.isActive ?? true
       },
@@ -92,6 +100,7 @@ export default class OpenAiIntegrationService {
         id: true,
         provider: true,
         model: true,
+        assistantModelOverride: true,
         promptVersion: true,
         isActive: true,
         updatedAt: true
@@ -111,6 +120,7 @@ export default class OpenAiIntegrationService {
         id: true,
         provider: true,
         model: true,
+        assistantModelOverride: true,
         promptVersion: true,
         isActive: true,
         updatedAt: true,
@@ -134,6 +144,7 @@ export default class OpenAiIntegrationService {
       },
       select: {
         model: true,
+        assistantModelOverride: true,
         promptVersion: true,
         isActive: true,
         updatedAt: true
@@ -143,6 +154,7 @@ export default class OpenAiIntegrationService {
     return {
       configured: !!credential,
       model: credential?.model || null,
+      assistantModelOverride: credential?.assistantModelOverride ?? null,
       promptVersion: credential?.promptVersion || null,
       isActive: credential?.isActive ?? null,
       updatedAt: credential?.updatedAt || null,
@@ -184,6 +196,7 @@ export default class OpenAiIntegrationService {
       provider: credential.provider,
       apiKey,
       model: credential.model,
+      assistantModelOverride: credential.assistantModelOverride,
       promptVersion: credential.promptVersion,
       isActive: credential.isActive,
       updatedAt: credential.updatedAt

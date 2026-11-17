@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/router';
 import {
   Building2,
+  Bot,
   Home,
   Landmark,
   Tags,
@@ -27,7 +28,8 @@ const links = [
   { href: '/admin/companies', label: 'Empresas', icon: Building2 },
   { href: '/admin/users', label: 'Usuários', icon: Users },
   { href: '/admin/banks', label: 'Bancos', icon: Landmark },
-  { href: '/admin/product-attributes', label: 'Características', icon: Tags }
+  { href: '/admin/product-attributes', label: 'Características', icon: Tags },
+  { href: '/admin/assistant-defaults', label: 'Padrão dos assistentes', icon: Bot }
 ];
 export function Sidebar({ collapsed, onToggle, mobileOpen, onClose }: SidebarProps) {
   const router = useRouter();

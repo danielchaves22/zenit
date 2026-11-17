@@ -1,8 +1,9 @@
 import { AssistantMode } from '@prisma/client';
 import { z } from 'zod';
-import { DEFAULT_OPENAI_MODEL, LEGACY_OPENAI_MODEL_FALLBACK, resolveOpenAiModel, shouldRetryWithLegacyOpenAiModel, getOpenAiReasoningEffort, getOpenAiResponsesOptions } from '../constants/openai';
+import { LEGACY_OPENAI_MODEL_FALLBACK, shouldRetryWithLegacyOpenAiModel } from '../constants/openai';
 import { accumulateOpenAiUsage, createOpenAiUsage, OpenAiUsage } from '../utils/openai-usage';
 import OpenAiIntegrationService from './openai-integration.service';
+import AssistantDefaultsService, { type AssistantReasoningEffort } from './assistant-defaults.service';
 import ToolRegistryService from './tool-registry.service';
 import ToolExecutorService, { AssistantToolExecutionContext, ToolExecutionResult } from './tool-executor.service';
 import AssistantTraceService from './assistant-trace.service';
@@ -31,7 +32,7 @@ type RunAssistantTurnResult = {
     promptVersion: string;
     latencyMs: number;
     toolCalls: number;
-    reasoningEffort?: 'none';
+    reasoningEffort?: AssistantReasoningEffort;
     usage: OpenAiUsage;
     usedFallbackModel?: boolean;
   };
@@ -176,6 +177,7 @@ function buildConversationInput(messages: ConversationMessage[], todayDate: stri
 async function requestResponsesApi(params: {
   apiKey: string;
   model: string;
+  reasoningEffort: AssistantReasoningEffort | null;
   body: Record<string, unknown>;
 }): Promise<ResponsesApiResult> {
   const response = await fetch('https://api.openai.com/v1/responses', {
@@ -186,7 +188,7 @@ async function requestResponsesApi(params: {
     },
     body: JSON.stringify({
       model: params.model,
-      ...getOpenAiResponsesOptions(params.model),
+      ...(params.reasoningEffort ? { reasoning: { effort: params.reasoningEffort } } : {}),
       ...params.body
     })
   });
@@ -209,38 +211,32 @@ export default class LlmRuntimeService {
     const startedAt = Date.now();
     const todayDate = getTodayDateString();
     const credential = await OpenAiIntegrationService.getDecryptedCredential(params.context.companyId, true);
-    const baseModel = resolveOpenAiModel(credential.model || DEFAULT_OPENAI_MODEL);
-    let selectedModel = baseModel;
+    let policy = await AssistantDefaultsService.resolveForCompany(credential.assistantModelOverride);
     let usedFallbackModel = false;
     let toolCallsCount = 0;
     const usage = createOpenAiUsage();
-    const request = async (requestParams: Parameters<typeof requestResponsesApi>[0]) => {
-      const result = await requestResponsesApi(requestParams);
+    const request = async (body: Record<string, unknown>) => {
+      const result = await requestResponsesApi({ ...policy, apiKey: credential.apiKey, body });
       accumulateOpenAiUsage(usage, result.parsed?.usage);
       return result;
     };
     const tools = ToolRegistryService.getToolsForMode(AssistantMode.OPERATOR)
       .filter(tool => !params.context.requireConfirmationButton || tool.name !== 'confirm_pending_action');
 
-    const performInitialRequest = async (model: string) =>
-      request({
-        apiKey: credential.apiKey,
-        model,
-        body: {
-          input: buildConversationInput(params.conversation, todayDate, params.context.requireConfirmationButton),
-          tools
-        }
-      });
+    const initialBody = {
+      input: buildConversationInput(params.conversation, todayDate, params.context.requireConfirmationButton),
+      tools
+    };
 
-    let initialResponse = await performInitialRequest(selectedModel);
+    let initialResponse = await request(initialBody);
 
     if (
       !initialResponse.ok &&
-      shouldRetryWithLegacyOpenAiModel(selectedModel, initialResponse.status, initialResponse.raw)
+      shouldRetryWithLegacyOpenAiModel(policy.model, initialResponse.status, initialResponse.raw)
     ) {
-      selectedModel = LEGACY_OPENAI_MODEL_FALLBACK;
+      policy = { model: LEGACY_OPENAI_MODEL_FALLBACK, reasoningEffort: null };
       usedFallbackModel = true;
-      initialResponse = await performInitialRequest(selectedModel);
+      initialResponse = await request(initialBody);
     }
 
     if (!initialResponse.ok) {
@@ -262,11 +258,11 @@ export default class LlmRuntimeService {
             message: finalPayload.data.message,
             pendingAction: correctionNeedsClarification ? undefined : latestPendingAction,
             telemetry: {
-              model: selectedModel,
+              model: policy.model,
               promptVersion: credential.promptVersion,
               latencyMs: Date.now() - startedAt,
               toolCalls: toolCallsCount,
-              reasoningEffort: getOpenAiReasoningEffort(selectedModel),
+              reasoningEffort: policy.reasoningEffort ?? undefined,
               usage,
               usedFallbackModel: usedFallbackModel || undefined
             }
@@ -280,11 +276,11 @@ export default class LlmRuntimeService {
           message: directMessage,
           pendingAction: correctionNeedsClarification ? undefined : latestPendingAction,
           telemetry: {
-            model: selectedModel,
+            model: policy.model,
             promptVersion: credential.promptVersion,
             latencyMs: Date.now() - startedAt,
             toolCalls: toolCallsCount,
-            reasoningEffort: getOpenAiReasoningEffort(selectedModel),
+            reasoningEffort: policy.reasoningEffort ?? undefined,
             usage,
             usedFallbackModel: usedFallbackModel || undefined
           }
@@ -326,9 +322,9 @@ export default class LlmRuntimeService {
               (result.data as { ok?: boolean }).ok === true) {
             return { mode: 'OPERATOR', pendingAction: result.pendingAction,
               message: draftClarification(result.pendingAction.summary),
-              telemetry: { model: selectedModel, promptVersion: credential.promptVersion,
+              telemetry: { model: policy.model, promptVersion: credential.promptVersion,
                 latencyMs: Date.now() - startedAt, toolCalls: toolCallsCount,
-                reasoningEffort: getOpenAiReasoningEffort(selectedModel), usage, usedFallbackModel: usedFallbackModel || undefined }
+                reasoningEffort: policy.reasoningEffort ?? undefined, usage, usedFallbackModel: usedFallbackModel || undefined }
             };
           }
 
@@ -363,19 +359,15 @@ export default class LlmRuntimeService {
       }
 
       currentResponse = await request({
-        apiKey: credential.apiKey,
-        model: selectedModel,
-        body: {
-          previous_response_id: currentResponse.parsed?.id,
-          input: toolOutputs,
-          tools,
-          text: {
-            format: {
-              type: 'json_schema',
-              name: 'assistant_turn_final_response',
-              strict: true,
-              schema: FINAL_RESPONSE_JSON_SCHEMA
-            }
+        previous_response_id: currentResponse.parsed?.id,
+        input: toolOutputs,
+        tools,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: 'assistant_turn_final_response',
+            strict: true,
+            schema: FINAL_RESPONSE_JSON_SCHEMA
           }
         }
       });

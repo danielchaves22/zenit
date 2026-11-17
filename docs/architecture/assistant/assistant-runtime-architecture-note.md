@@ -35,6 +35,12 @@ O modelo precisa decidir qual operacao financeira pedir sem receber o banco inte
 - fazer toda leitura e escrita real no backend;
 - manter `pending actions` para confirmacao de efeitos sensiveis.
 
+## Padrão dos assistentes
+
+Em **Zenit Admin → Padrão dos assistentes**, o administrador da plataforma define o modelo e o esforço de raciocínio para o Hub e o assistente financeiro do Cash. A configuração inicial é `gpt-6.2-sol` com esforço `low`. O Cash consulta a política no início do turno e mantém o mesmo modelo e esforço nas chamadas de ferramentas daquele turno. O Hub lê o padrão pela ponte assinada por meio da operação `assistant_defaults`.
+
+O cadastro OpenAI da empresa permite escolher um modelo específico para o assistente financeiro e voltar a usar o padrão do Zenit. A migração inicia todas as empresas no padrão compartilhado. As chaves de acesso permanecem vinculadas às respectivas integrações e o campo de modelo das demais funções financeiras continua independente.
+
 ## Tradeoffs
 
 - mais infraestrutura no backend;

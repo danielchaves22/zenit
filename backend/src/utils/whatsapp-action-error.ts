@@ -6,6 +6,8 @@ import { formatCurrency } from './money';
 // errors may contain queries, credentials or data outside the current draft.
 const validationMessages = new Map<string, string>([
   ['Escolha a categoria antes de confirmar o lancamento', 'Escolha a categoria antes de confirmar o lançamento.'],
+  ['Escolha uma categoria disponivel antes de confirmar o lancamento', 'Escolha uma categoria disponível antes de confirmar o lançamento.'],
+  ['Escolha a conta antes de confirmar o lancamento', 'Escolha a conta antes de confirmar o lançamento.'],
   ['Categoria indisponivel', 'A categoria selecionada não está mais disponível. Escolha outra categoria.'],
   ['Categoria financeira nao encontrada para a empresa', 'A categoria selecionada não está mais disponível nesta área de trabalho.'],
   ['Categoria financeira incompativel com o tipo da transacao', 'A categoria selecionada não é compatível com o tipo do lançamento.'],
@@ -20,6 +22,11 @@ const validationMessages = new Map<string, string>([
   ['Another transaction is using one of these accounts. Please try again.', 'A conta está sendo atualizada por outra operação. Aguarde um momento e tente confirmar novamente.'],
   ['Lista de categorias desatualizada', 'A lista de categorias mudou. Peça o resumo atualizado do rascunho.'],
   ['Categoria nao oferecida neste rascunho', 'Escolha uma das categorias oferecidas no rascunho atualizado.'],
+  ['Lista de contas desatualizada', 'A lista de contas mudou. Peça o resumo atualizado do rascunho.'],
+  ['Conta nao oferecida neste rascunho', 'Escolha uma das contas oferecidas no rascunho atualizado.'],
+  ['Conta indisponivel', 'A conta selecionada está indisponível para este lançamento. Escolha outra conta.'],
+  ['Conta indisponivel; revise o rascunho', 'A conta selecionada está indisponível para este lançamento. Escolha outra conta.'],
+  ['Usuario sem acesso a conta', 'Você não tem acesso à conta selecionada. Escolha uma conta autorizada.'],
   ['Acao pendente nao encontrada', 'Este rascunho não está mais disponível. Peça o resumo atualizado.'],
   ['Acao pendente nao pode mais ser confirmada', 'Este rascunho já foi confirmado ou cancelado. Peça o resumo atualizado.']
 ]);

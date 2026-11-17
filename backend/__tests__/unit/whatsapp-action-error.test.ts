@@ -12,6 +12,13 @@ describe('WhatsApp Cash validation errors', () => {
   it.each([
     ['Categoria financeira incompativel com o tipo da transacao', 'categoria selecionada não é compatível'],
     ['Usuario sem acesso a conta de origem da acao pendente', 'Você não tem acesso à conta de origem'],
+    ['Usuario sem acesso a conta', 'Você não tem acesso à conta selecionada'],
+    ['Escolha uma categoria disponivel antes de confirmar o lancamento', 'Escolha uma categoria disponível'],
+    ['Escolha a conta antes de confirmar o lancamento', 'Escolha a conta antes de confirmar'],
+    ['Lista de contas desatualizada', 'lista de contas mudou'],
+    ['Conta nao oferecida neste rascunho', 'Escolha uma das contas oferecidas'],
+    ['Conta indisponivel', 'conta selecionada está indisponível'],
+    ['Conta indisponivel; revise o rascunho', 'conta selecionada está indisponível'],
     ['Account 17 is inactive', 'conta selecionada não está mais disponível'],
     ['Account 17 does not belong to company 2', 'conta selecionada não pertence a esta área'],
     ['Acao pendente nao pode mais ser confirmada', 'já foi confirmado ou cancelado'],

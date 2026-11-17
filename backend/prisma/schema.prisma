@@ -2097,6 +2097,19 @@ model WhatsAppMessageLog {
   @@index([assistantSessionId, createdAt])
 }
 
+enum AssistantReasoningEffort {
+  none
+  low
+  medium
+  high
+}
+
+model AssistantDefaults {
+  id              Int                      @id
+  model           String
+  reasoningEffort AssistantReasoningEffort?
+}
+
 model CompanyAiCredential {
   id              Int        @id @default(autoincrement())
   companyId       Int
@@ -2105,6 +2118,7 @@ model CompanyAiCredential {
   apiKeyIv        String
   apiKeyTag       String
   model           String     @default("gpt-5.4-nano")
+  assistantModelOverride String?
   promptVersion   String     @default("v1")
   isActive        Boolean    @default(true)
   createdAt       DateTime   @default(now())

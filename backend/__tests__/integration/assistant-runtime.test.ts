@@ -15,7 +15,8 @@ import PendingActionService from '../../src/services/pending-action.service';
 import FinancialTransactionService from '../../src/services/financial-transaction.service';
 import WhatsAppIntegrationService from '../../src/services/whatsapp-integration.service';
 import WhatsAppCloudApiService from '../../src/services/whatsapp-cloud-api.service';
-import { buildCategoryChoiceList, buildPendingActionButtons } from '../../src/utils/whatsapp-pending-action';
+import { buildCategoryChoiceList, buildDraftChoiceReply, buildPendingActionButtons, parseAccountChoice } from '../../src/utils/whatsapp-pending-action';
+import UserFinancialAccountAccessService from '../../src/services/user-financial-account-access.service';
 import type { PendingAction } from '@zenit/assistant-contracts';
 import ToolExecutorService from '../../src/services/tool-executor.service';
 import ToolRegistryService from '../../src/services/tool-registry.service';
@@ -357,21 +358,173 @@ describe('Assistant runtime', () => {
       description: 'Gasolina', amount: 50, type: 'EXPENSE'
     }, context);
     expect(tied.pendingAction?.summary.categoryOptions).toHaveLength(2);
+    context.turnId = (await prisma.assistantTurn.create({ data: { sessionId: context.sessionId, userId, companyId } })).id;
     const missing = await ToolExecutorService.executeTool('create_transaction_draft', {
       description: 'Xyz123', amount: 50, type: 'EXPENSE'
     }, context);
-    expect(missing.pendingAction).toBeUndefined();
-    expect(missing.data).toMatchObject({ ok: false, missingFields: ['category'] });
+    expect(missing.pendingAction?.summary.missingFields).toEqual(['category']);
+    expect(missing.data).toMatchObject({ ok: true });
+    expect(buildPendingActionButtons(missing.pendingAction!).map(button => button.title)).toEqual(['Cancelar']);
   });
 
-  it.each(['hub', 'webhook'] as const)('entrega lista e usa o ID da selecao sem pedir outra decisao a IA (%s)', async transport => {
+  async function nextDraft(args: Record<string, unknown>, context: Parameters<typeof ToolExecutorService.executeTool>[2]) {
+    const turn = await prisma.assistantTurn.create({ data: { sessionId: context.sessionId, userId, companyId } });
+    return ToolExecutorService.executeTool('create_transaction_draft', args, { ...context, turnId: turn.id });
+  }
+
+  async function accountChoiceFixture() {
+    const fixture = await categoryChoiceFixture();
+    await prisma.financialAccount.updateMany({ where: { companyId }, data: { isDefault: false } });
+    const second = await prisma.financialAccount.create({ data: { companyId, name: 'Itaú', type: 'CHECKING', balance: 1000 } });
+    const action = (await nextDraft(fixture.args, fixture.context)).pendingAction!;
+    return { ...fixture, action, second };
+  }
+
+  it('preserva o rascunho incompleto, escolhe conta antes da categoria e so grava com confirmacao atual', async () => {
+    const { context, categories, action, second } = await accountChoiceFixture();
+    expect(action.summary.fromAccount).toBeNull();
+    expect(action.summary.missingFields).toEqual(['fromAccount']);
+    expect(action.summary.fromAccountOptions).toHaveLength(2);
+    const reply = buildDraftChoiceReply(action);
+    expect(reply.list?.button).toBe('Escolher conta');
+    const selectedRow = reply.list!.rows.find(row => parseAccountChoice(row.id)?.accountId === second.id)!;
+    const choice = parseAccountChoice(selectedRow.id)!;
+    const decision = { ...context, pendingActionId: action.id, expectedUpdatedAt: new Date(choice.revision) };
+    await expect(PendingActionService.confirmTransactionDraft(decision)).rejects.toThrow();
+    const selected = await PendingActionService.selectTransactionAccount({ ...decision, field: 'fromAccount', accountId: second.id });
+    expect(selected.id).toBe(action.id);
+    expect(selected.summary).toMatchObject({ fromAccount: { id: second.id }, amount: 40, notes: 'Manter observação', date: '2026-10-07' });
+    expect(buildDraftChoiceReply(selected).list?.button).toBe('Escolher categoria');
+    await expect(PendingActionService.selectTransactionAccount({ ...decision, field: 'fromAccount', accountId: second.id })).rejects.toThrow('desatualizada');
+    const ready = await PendingActionService.selectTransactionCategory({ ...decision,
+      expectedUpdatedAt: new Date(selected.updatedAt), categoryId: categories[1].id });
+    expect(buildPendingActionButtons(ready)[0].title).toBe('Confirmar');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    await PendingActionService.confirmTransactionDraft({ ...decision, expectedUpdatedAt: new Date(ready.updatedAt) });
+    expect(await prisma.financialTransaction.findFirst({ where: { companyId } })).toMatchObject({ fromAccountId: second.id, categoryId: categories[1].id });
+  });
+
+  it('nao pergunta por conta unica, padrao ou explicitamente indicada; nao escolhe empate pelo banco', async () => {
+    const { context } = await categoryChoiceFixture();
+    const args = { description: 'Gasolina', amount: 10, type: 'EXPENSE' };
+    const only = (await nextDraft(args, context)).pendingAction!;
+    expect(only.summary.fromAccountOptions).toBeUndefined();
+    const second = await prisma.financialAccount.create({ data: { companyId, name: 'Nubank conjunto', bankName: 'Nubank', type: 'CHECKING' } });
+    const withDefault = (await nextDraft(args, context)).pendingAction!;
+    expect(withDefault.summary.fromAccount?.id).toBe(only.summary.fromAccount?.id);
+    const explicit = (await nextDraft({ ...args, fromAccountId: second.id }, context)).pendingAction!;
+    expect(explicit.summary.fromAccount?.id).toBe(second.id);
+    await prisma.financialAccount.update({ where: { id: only.summary.fromAccount!.id }, data: { name: 'Nubank pessoal', bankName: 'Nubank' } });
+    const ambiguous = (await nextDraft({ ...args, accountHint: 'Nubank' }, context)).pendingAction!;
+    expect(ambiguous.summary.fromAccountOptions).toHaveLength(2);
+    expect(ambiguous.summary.fromAccount).toBeNull();
+  });
+
+  it('completa por texto sem perder valor, datas, observacoes nem escolha de categoria', async () => {
+    const { action, context, second } = await accountChoiceFixture();
+    const changed = (await ToolExecutorService.executeTool('update_transaction_draft', { pendingActionId: action.id, amount: 15 }, context)).pendingAction!;
+    expect(changed.summary.fromAccountOptions).toEqual(action.summary.fromAccountOptions);
+    await prisma.financialAccount.update({ where: { id: second.id }, data: { isDefault: true } });
+    const stillPending = (await ToolExecutorService.executeTool('update_transaction_draft', { pendingActionId: action.id, amount: 15 }, context)).pendingAction!;
+    expect(stillPending.summary.fromAccount).toBeNull();
+    expect(stillPending.summary.fromAccountOptions).toHaveLength(2);
+    const completed = (await ToolExecutorService.executeTool('update_transaction_draft', { pendingActionId: action.id, accountHint: 'Itaú' }, context)).pendingAction!;
+    expect(completed.id).toBe(action.id);
+    expect(completed.summary).toMatchObject({ amount: 15, date: '2026-10-07', notes: 'Manter observação', fromAccount: { id: second.id } });
+    expect(completed.summary.categoryOptions).toEqual(action.summary.categoryOptions);
+    expect(completed.summary.fromAccountOptions).toBeUndefined();
+  });
+
+  it('respeita Pix e credito sem inventar conta de outro tipo e preserva a pendencia se nao houver cartao', async () => {
+    const { context } = await categoryChoiceFixture();
+    const args = { description: 'Gasolina', amount: 10, type: 'EXPENSE' };
+    const pix = (await nextDraft({ ...args, accountHint: 'Pix' }, context)).pendingAction!;
+    expect(pix.summary.fromAccount?.name).toBe('Nubank');
+    const noCard = (await nextDraft({ ...args, accountHint: 'cartao' }, context)).pendingAction!;
+    expect(noCard.summary.fromAccount).toBeNull();
+    expect(noCard.summary.fromAccountOptions).toEqual([]);
+    expect(noCard.summary.missingFields).toContain('fromAccount');
+    const card = await prisma.financialAccount.create({ data: { companyId, name: 'Nubank', type: 'CREDIT_CARD' } });
+    const credit = (await nextDraft({ ...args, accountHint: 'cartao' }, context)).pendingAction!;
+    expect(credit.summary.fromAccount?.id).toBe(card.id);
+    const normal = (await nextDraft(args, context)).pendingAction!;
+    expect(normal.summary.fromAccount?.id).not.toBe(card.id);
+  });
+
+  it('oferece conta de destino para receita e nao permite transferir para a propria origem', async () => {
+    const { context, second } = await accountChoiceFixture();
+    const category = await prisma.financialCategory.findFirstOrThrow({ where: { companyId, type: 'INCOME' } });
+    const income = (await nextDraft({ description: 'Recebi', amount: 10, type: 'INCOME', categoryId: category.id }, context)).pendingAction!;
+    expect(income.summary.toAccountOptions).toHaveLength(2);
+    expect(buildDraftChoiceReply(income).text).toContain('Em qual conta');
+    const transfer = (await nextDraft({ description: 'Transferencia', amount: 10, type: 'TRANSFER', fromAccountId: second.id }, context)).pendingAction!;
+    expect(transfer.summary.toAccount?.id).not.toBe(second.id);
+    expect(transfer.summary.toAccountOptions).toBeUndefined();
+  });
+
+  it('revalida conta oferecida, empresa, sessao, permissao e disponibilidade antes de aceitar a escolha', async () => {
+    const { action, context, second } = await accountChoiceFixture();
+    const decision = { ...context, pendingActionId: action.id, expectedUpdatedAt: new Date(action.updatedAt), field: 'fromAccount' as const, accountId: second.id };
+    await expect(PendingActionService.selectTransactionAccount({ ...decision, accountId: 99999999 })).rejects.toThrow('nao oferecida');
+    await expect(PendingActionService.selectTransactionAccount({ ...decision, companyId: 99999999 })).rejects.toThrow();
+    await expect(PendingActionService.selectTransactionAccount({ ...decision, userId: 99999999 })).rejects.toThrow();
+    await expect(PendingActionService.selectTransactionAccount({ ...decision, sessionId: 99999999 })).rejects.toThrow('desatualizada');
+    await expect(PendingActionService.selectTransactionAccount({ ...decision, role: 'USER' })).rejects.toThrow('sem acesso');
+    await prisma.financialAccount.update({ where: { id: second.id }, data: { isActive: false } });
+    await expect(PendingActionService.selectTransactionAccount(decision)).rejects.toThrow('indisponivel');
+    await expect(ToolExecutorService.executeTool('update_transaction_draft', { pendingActionId: action.id, fromAccountId: second.id }, context)).rejects.toThrow('indisponivel');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+  });
+
+  it('lista somente contas autorizadas e rejeita permissao revogada depois da revisao', async () => {
+    const { action, context, second } = await accountChoiceFixture();
+    await UserFinancialAccountAccessService.grantAccess({ userId, companyId, accountIds: [second.id], grantedBy: userId });
+    const own = (await nextDraft({
+      description: 'Gasolina', amount: 10, type: 'EXPENSE'
+    }, { ...context, role: 'USER' })).pendingAction!;
+    expect(own.summary.fromAccount?.id).toBe(second.id);
+    await prisma.userFinancialAccountAccess.deleteMany({ where: { userId, companyId } });
+    await expect(PendingActionService.confirmTransactionDraft({ ...context, role: 'USER', pendingActionId: own.id,
+      expectedUpdatedAt: new Date(own.updatedAt) })).rejects.toThrow('sem acesso');
+    expect(action.summary.fromAccountOptions).toHaveLength(2);
+  });
+
+  it('pagina mais de dez contas sem perder candidatos e mantem IDs vinculados ao rascunho', async () => {
+    const { context } = await accountChoiceFixture();
+    await prisma.financialAccount.createMany({ data: Array.from({ length: 11 }, (_, i) => ({ companyId, name: `Conta ${i}`, type: 'CHECKING' as const })) });
+    const action = (await nextDraft({ description: 'Gasolina', amount: 10, type: 'EXPENSE' }, context)).pendingAction!;
+    const first = buildDraftChoiceReply(action);
+    expect(first.list!.rows).toHaveLength(10);
+    expect(parseAccountChoice(first.list!.rows[9].id)?.page).toBe(1);
+    const second = buildDraftChoiceReply(action, 1);
+    const ids = [...first.list!.rows, ...second.list!.rows].flatMap(row => parseAccountChoice(row.id)?.accountId ?? []);
+    expect(new Set(ids).size).toBe(13);
+    expect(() => buildDraftChoiceReply(action, 99)).toThrow();
+  });
+
+  it('prefere subcategoria especifica e preserva alternativas realmente distintas', async () => {
+    const { context } = await categoryChoiceFixture();
+    const parent = await prisma.financialCategory.create({ data: { companyId, name: 'Alimentação', type: 'EXPENSE', color: '#123456', icon: 'wallet' } });
+    const child = await prisma.financialCategory.create({ data: { companyId, name: 'Padaria', parentId: parent.id, type: 'EXPENSE', color: '#123456', icon: 'wallet' } });
+    const specific = (await nextDraft({ description: 'Padaria', amount: 10, type: 'EXPENSE' }, context)).pendingAction!;
+    expect(specific.summary.category?.id).toBe(child.id);
+    expect(specific.summary.categoryOptions).toBeUndefined();
+    const suggested = (await nextDraft({ description: 'Padaria', amount: 10, type: 'EXPENSE', categoryCandidateIds: [parent.id, child.id] }, context)).pendingAction!;
+    expect(suggested.summary.category?.id).toBe(child.id);
+    expect(suggested.summary.categoryOptions).toBeUndefined();
+  });
+
+  it.each([['hub', false], ['webhook', false], ['hub', true], ['webhook', true]] as const)('entrega lista e usa o ID da selecao sem pedir outra decisao a IA (%s, conta=%s)', async (transport, chooseAccount) => {
     await AppAccessService.setCompanyEntitlements(companyId, [
       { appKey: AppKey.ZENIT_CASH, enabled: true }, { appKey: AppKey.ZENIT_WHATSAPP, enabled: true }
     ]);
     await AppAccessService.setUserGrants(userId, companyId, [
       { appKey: AppKey.ZENIT_CASH, granted: true }, { appKey: AppKey.ZENIT_WHATSAPP, granted: true }
     ]);
-    const { context, categories, action } = await categoryChoiceFixture();
+    const fixture = await (chooseAccount ? accountChoiceFixture() : categoryChoiceFixture());
+    const { context, categories } = fixture;
+    let action = fixture.action;
+    const testId = `${transport}.${companyId}.${context.sessionId}`;
     const waId = `5598${String(userId).padStart(9, '0')}`;
     const binding = await prisma.whatsAppUserBinding.create({ data: { userId, activeCompanyId: companyId, waId, phoneNumber: `+${waId}` } });
     await prisma.whatsAppBindingCompanyContext.create({ data: {
@@ -388,25 +541,40 @@ describe('Assistant runtime', () => {
       { type: 'function_call', name: 'get_pending_action', call_id: 'read', arguments: '{}' }
     ] }))).mockResolvedValueOnce(new Response(JSON.stringify({ output_text: '{"mode":"OPERATOR","message":"Escolha a categoria."}' })));
     if (transport === 'hub') {
-      const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `list.${transport}.${companyId}`, text: 'Reenvie o rascunho' });
-      expect(result.replies[0].list).toEqual(buildCategoryChoiceList(action));
+      const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `list.${testId}`, text: 'Reenvie o rascunho' });
+      expect(result.replies[0].list).toEqual(buildDraftChoiceReply(action).list);
       expect(result.replies[0].buttons).toBeUndefined();
     } else {
       await WhatsAppIntegrationService.processWebhookPayload({ payload: { entry: [{ changes: [{ value: { messages: [
-        { id: `list.${transport}.${companyId}`, from: waId, type: 'text', text: { body: 'Reenvie o rascunho' } }
+        { id: `list.${testId}`, from: waId, type: 'text', text: { body: 'Reenvie o rascunho' } }
       ] } }] }] } });
-      expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ list: buildCategoryChoiceList(action) }));
+      expect(listSpy).toHaveBeenCalledWith(expect.objectContaining({ list: buildDraftChoiceReply(action).list }));
       expect(buttonSpy).not.toHaveBeenCalled();
     }
     const before = fetchSpy.mock.calls.length;
+    if (chooseAccount) {
+      const accountRow = buildDraftChoiceReply(action).list!.rows[1];
+      if (transport === 'hub') {
+        const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `account.${testId}`, text: '', buttonId: accountRow.id });
+        expect(result.replies[0].list?.button).toBe('Escolher categoria');
+        expect(result.replies[0].buttons).toBeUndefined();
+      } else {
+        await WhatsAppIntegrationService.processWebhookPayload({ payload: { entry: [{ changes: [{ value: { messages: [
+          { id: `account.${testId}`, from: waId, type: 'interactive', interactive: { type: 'list_reply', list_reply: { id: accountRow.id, title: 'Texto ignorado' } } }
+        ] } }] }] } });
+        expect(listSpy).toHaveBeenLastCalledWith(expect.objectContaining({ list: expect.objectContaining({ button: 'Escolher categoria' }) }));
+      }
+      action = await PendingActionService.getPendingAction({ pendingActionId: action.id, userId, companyId });
+      expect(action.summary.fromAccount?.id).toBe(parseAccountChoice(accountRow.id)?.accountId);
+    }
     const row = buildCategoryChoiceList(action).rows[1];
     if (transport === 'hub') {
-      const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `choice.${transport}.${companyId}`, text: '', buttonId: row.id });
+      const result = await WhatsAppIntegrationService.dispatchForHub({ waId, messageId: `choice.${testId}`, text: '', buttonId: row.id });
       expect(result.replies[0].buttons?.[0].title).toBe('Confirmar');
       expect(result.replies[0].text).toContain(categories[1].name);
     } else {
       await WhatsAppIntegrationService.processWebhookPayload({ payload: { entry: [{ changes: [{ value: { messages: [
-        { id: `choice.${transport}.${companyId}`, from: waId, type: 'interactive', interactive: {
+        { id: `choice.${testId}`, from: waId, type: 'interactive', interactive: {
           type: 'list_reply', list_reply: { id: row.id, title: 'Confirmar tudo' }
         } }
       ] } }] }] } });
@@ -497,7 +665,7 @@ describe('Assistant runtime', () => {
       { type: 'interactive', interactive: { button_reply: button } });
     await click('old_button', firstButtons[0]);
     const lastText = transport === 'hub' ? hubReplies[hubReplies.length - 1].text : textSpy.mock.calls[textSpy.mock.calls.length - 1][0].text;
-    expect(lastText).toContain('não está mais válido');
+    expect(lastText).toContain('Este botão ou item de lista não está mais válido');
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
     const revisedAction = await PendingActionService.getPendingAction({ pendingActionId: first.id, userId, companyId });
     expect(sentButtons()[1]).toEqual(buildPendingActionButtons(revisedAction as PendingAction));

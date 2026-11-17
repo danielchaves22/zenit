@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ArrowLeft, FlaskConical, KeyRound, Save, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -23,6 +24,7 @@ interface AdminOpenAiStatusResponse {
     id: number;
     provider: 'OPENAI';
     model: string;
+    assistantModelOverride?: string | null;
     promptVersion: string;
     isActive: boolean;
     updatedAt: string;
@@ -74,8 +76,20 @@ export default function CompanyForm({
   const [openAiStatus, setOpenAiStatus] = useState<AdminOpenAiStatusResponse | null>(null);
   const [openAiApiKey, setOpenAiApiKey] = useState('');
   const [openAiModel, setOpenAiModel] = useState(DEFAULT_OPENAI_MODEL);
+  const [assistantModelOverride, setAssistantModelOverride] = useState<string | null>(null);
   const [openAiPromptVersion, setOpenAiPromptVersion] = useState('v1');
   const [openAiEnabled, setOpenAiEnabled] = useState(true);
+  const credential = openAiStatus?.credential;
+  const supportsAssistantOverride = !credential || credential.assistantModelOverride !== undefined;
+  const openAiChanges = {
+    apiKey: openAiApiKey.trim() || undefined,
+    model: openAiModel.trim() !== credential?.model ? openAiModel.trim() : undefined,
+    assistantModelOverride: supportsAssistantOverride && assistantModelOverride?.trim() !== credential?.assistantModelOverride?.trim()
+      ? assistantModelOverride?.trim() ?? null : undefined,
+    promptVersion: openAiPromptVersion.trim() !== credential?.promptVersion ? openAiPromptVersion.trim() : undefined,
+    isActive: openAiEnabled !== credential?.isActive ? openAiEnabled : undefined
+  };
+  const canSaveOpenAi = !!openAiStatus && Object.values(openAiChanges).some((value) => value !== undefined);
 
   useEffect(() => {
     void loadApps();
@@ -111,6 +125,7 @@ export default function CompanyForm({
     setOpenAiStatus(null);
     setOpenAiApiKey('');
     setOpenAiModel(DEFAULT_OPENAI_MODEL);
+    setAssistantModelOverride(null);
     setOpenAiPromptVersion('v1');
     setOpenAiEnabled(true);
   }
@@ -152,6 +167,7 @@ export default function CompanyForm({
       );
       const data = response.data;
       setOpenAiStatus(data);
+      setAssistantModelOverride(data.credential?.assistantModelOverride ?? null);
 
       if (data.credential) {
         setOpenAiModel(data.credential.model || DEFAULT_OPENAI_MODEL);
@@ -218,27 +234,28 @@ export default function CompanyForm({
   }
 
   async function saveOpenAiConfig() {
-    if (!editingCompany) return;
+    if (!editingCompany || !canSaveOpenAi || savingOpenAi || testingOpenAi) return;
 
     if (!openAiApiKey.trim() && !openAiStatus?.configured) {
       addToast('Informe a chave OpenAI para salvar a primeira configuracao.', 'error');
       return;
     }
 
+    if (assistantModelOverride !== null && !assistantModelOverride.trim()) {
+      addToast('Informe o modelo do assistente do Cash desta empresa.', 'error');
+      return;
+    }
+
     try {
       setSavingOpenAi(true);
-      await api.put(`/admin/companies/${editingCompany.id}/openai`, {
-        apiKey: openAiApiKey.trim() || undefined,
-        model: openAiModel,
-        promptVersion: openAiPromptVersion,
-        isActive: openAiEnabled
-      });
+      await api.put(`/admin/companies/${editingCompany.id}/openai`, openAiChanges);
 
       setOpenAiApiKey('');
       addToast('Configuracao OpenAI salva com sucesso.', 'success');
       await loadOpenAiConfig(editingCompany.id);
     } catch (error: any) {
-      addToast(error.response?.data?.error || 'Erro ao salvar configuracao OpenAI.', 'error');
+      const data = error.response?.data;
+      addToast(data?.details?.[0]?.message || data?.error || 'Erro ao salvar a configuração OpenAI.', 'error');
     } finally {
       setSavingOpenAi(false);
     }
@@ -384,6 +401,11 @@ export default function CompanyForm({
 
                 {loadingOpenAi ? (
                   <div className="text-sm text-text">Carregando configuracao OpenAI...</div>
+                ) : !openAiStatus ? (
+                  <div className="space-y-3">
+                    <p role="alert" className="text-sm text-tone-red">Não foi possível carregar a configuração OpenAI.</p>
+                    <Button type="button" variant="outline" onClick={() => void loadOpenAiConfig(editingCompany.id)}>Tentar novamente</Button>
+                  </div>
                 ) : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -401,7 +423,7 @@ export default function CompanyForm({
                       />
 
                       <Input
-                        label="Modelo"
+                        label="Modelo das demais funções financeiras"
                         value={openAiModel}
                         onChange={(event) => setOpenAiModel(event.target.value)}
                         placeholder={DEFAULT_OPENAI_MODEL}
@@ -430,12 +452,38 @@ export default function CompanyForm({
                       </div>
                     </div>
 
+                    <fieldset className="space-y-3 border-t border-border pt-4" disabled={savingOpenAi || testingOpenAi}>
+                      <legend className="px-1 text-base font-medium text-text">Assistente do Cash</legend>
+                      {supportsAssistantOverride ? (
+                        <>
+                          <div className="admin-field">
+                            <label className="admin-label" htmlFor="company-assistant-source">Modelo para o chat da empresa</label>
+                            <select id="company-assistant-source" className="admin-input appearance-auto"
+                              value={assistantModelOverride === null ? 'inherit' : 'custom'}
+                              onChange={(event) => setAssistantModelOverride(event.target.value === 'inherit' ? null : credential?.assistantModelOverride ?? '')}>
+                              <option value="inherit">Usar padrão do Zenit</option>
+                              <option value="custom">Usar outro modelo nesta empresa</option>
+                            </select>
+                          </div>
+                          {assistantModelOverride !== null && (
+                            <Input label="Modelo do assistente do Cash" value={assistantModelOverride}
+                              maxLength={100} spellCheck={false} onChange={(event) => setAssistantModelOverride(event.target.value)} />
+                          )}
+                          <Link href="/admin/assistant-defaults" className="inline-block text-sm text-accent underline">
+                            Ver padrão dos assistentes
+                          </Link>
+                        </>
+                      ) : (
+                        <p className="text-sm text-text-muted">A seleção de modelo do chat estará disponível após a atualização do backend.</p>
+                      )}
+                    </fieldset>
+
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="button"
                         variant="accent"
                         onClick={saveOpenAiConfig}
-                        disabled={savingOpenAi || saving}
+                        disabled={!canSaveOpenAi || savingOpenAi || testingOpenAi || saving}
                         className="flex items-center gap-2"
                       >
                         <Save size={16} />
@@ -446,7 +494,7 @@ export default function CompanyForm({
                         type="button"
                         variant="outline"
                         onClick={testOpenAiConfig}
-                        disabled={testingOpenAi || saving}
+                        disabled={testingOpenAi || savingOpenAi || saving}
                         className="flex items-center gap-2"
                       >
                         <FlaskConical size={16} />

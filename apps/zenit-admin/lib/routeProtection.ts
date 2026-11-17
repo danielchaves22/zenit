@@ -117,6 +117,7 @@ export function getAllowedRoutes(userRole: UserRole | null): string[] {
     allowedRoutes.push('/admin/companies');
     allowedRoutes.push('/admin/banks');
     allowedRoutes.push('/admin/product-attributes');
+    allowedRoutes.push('/admin/assistant-defaults');
   }
   
   return allowedRoutes;

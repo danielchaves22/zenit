@@ -17,10 +17,19 @@ describe('OpenAI model-only updates', () => {
     jest.mocked(prisma.companyAiCredential.upsert).mockResolvedValue({ model: 'gpt-6-luna' } as any);
     await expect(OpenAiIntegrationService.upsertByok({ companyId: 2, model: 'gpt-6-luna' })).resolves.toMatchObject({ model: 'gpt-6-luna' });
     expect(encryptSecret).not.toHaveBeenCalled();
-    expect(prisma.companyAiCredential.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: {
-      apiKeyCiphertext: existing.apiKeyCiphertext, apiKeyIv: existing.apiKeyIv, apiKeyTag: existing.apiKeyTag,
-      model: 'gpt-6-luna', promptVersion: 'v3', isActive: true
-    } }));
+    expect(prisma.companyAiCredential.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: { model: 'gpt-6-luna' }
+    }));
+  });
+
+  it.each(['gpt-6-luna', null])('sets or clears only the chat override (%s)', async assistantModelOverride => {
+    jest.mocked(prisma.companyAiCredential.findUnique).mockResolvedValue({
+      apiKeyCiphertext: 'old', apiKeyIv: 'iv', apiKeyTag: 'tag', model: 'gpt-4o-mini'
+    } as any);
+    await OpenAiIntegrationService.upsertByok({ companyId: 2, assistantModelOverride });
+    expect(prisma.companyAiCredential.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: { assistantModelOverride }
+    }));
   });
 
   it('still requires a key for first configuration', async () => {

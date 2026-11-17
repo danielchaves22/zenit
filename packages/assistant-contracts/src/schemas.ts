@@ -18,6 +18,10 @@ export const assistantCategoryRefSchema = z.object({
   name: z.string().min(1)
 });
 
+export const draftAccountOptionSchema = assistantAccountRefSchema.extend({
+  type: z.enum(['CHECKING', 'SAVINGS', 'CREDIT_CARD', 'INVESTMENT', 'CASH'])
+});
+
 export const draftTransactionSummarySchema = z.object({
   description: z.string().min(1),
   amount: z.number().positive(),
@@ -31,6 +35,9 @@ export const draftTransactionSummarySchema = z.object({
   fromAccount: assistantAccountRefSchema.nullable().optional(),
   toAccount: assistantAccountRefSchema.nullable().optional(),
   category: assistantCategoryRefSchema.nullable().optional(),
+  missingFields: z.array(z.enum(['fromAccount', 'toAccount', 'category'])).optional(),
+  fromAccountOptions: z.array(draftAccountOptionSchema).optional(),
+  toAccountOptions: z.array(draftAccountOptionSchema).optional(),
   categoryOptions: z.array(assistantCategoryRefSchema.extend({ parentName: z.string().optional() })).min(2).max(10).optional()
 });
 

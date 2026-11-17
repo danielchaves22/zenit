@@ -24,7 +24,8 @@ import type { PendingAction } from '@zenit/assistant-contracts';
 import AppAccessService from './app-access.service';
 import UserService from './user.service';
 import WhatsAppCloudApiService, { WhatsAppReplyButton, WhatsAppReplyList } from './whatsapp-cloud-api.service';
-import { buildCategoryChoiceList, buildPendingActionButtons, formatWhatsAppDraft, parseCategoryChoice, parsePendingActionButton } from '../utils/whatsapp-pending-action';
+import { buildDraftChoiceReply, buildPendingActionButtons, formatWhatsAppDraft, parseCategoryChoice, parseAccountChoice, parsePendingActionButton } from '../utils/whatsapp-pending-action';
+import { draftNeedsInput } from '../utils/transaction-draft-clarification';
 import { INTEGRATIONS_CONFIG } from '../config';
 import { logger } from '../utils/logger';
 
@@ -380,7 +381,8 @@ export default class WhatsAppIntegrationService {
         }
         let workspaceId = params.workspaceId;
         if (params.buttonId) {
-          const button = parsePendingActionButton(params.buttonId) || parseCategoryChoice(params.buttonId) || parseDraftIntentButton(params.buttonId);
+          const button = parsePendingActionButton(params.buttonId) || parseCategoryChoice(params.buttonId) ||
+            parseAccountChoice(params.buttonId) || parseDraftIntentButton(params.buttonId);
           const owner = await prisma.whatsAppUserBinding.findUnique({ where: { waId: params.waId } });
           const action = button && owner ? await prisma.assistantPendingAction.findFirst({
             where: { id: button.pendingActionId, userId: owner.userId,
@@ -904,9 +906,10 @@ export default class WhatsAppIntegrationService {
     userId: number;
     companyId: number;
     role: Role;
-  }): Promise<{ message: string; pendingAction?: PendingAction | null }> {
+  }): Promise<{ message: string; pendingAction?: PendingAction | null; accountPage?: number }> {
     const choice = parseCategoryChoice(params.buttonId);
-    const button = choice ? { ...choice, decision: 'category' as const } : parsePendingActionButton(params.buttonId);
+    const accountChoice = parseAccountChoice(params.buttonId);
+    const button = choice ? { ...choice, decision: 'category' as const } : accountChoice ? { ...accountChoice, decision: 'account' as const } : parsePendingActionButton(params.buttonId);
     const invalid = { message: 'Este botão ou item de lista não está mais válido. Peça o resumo atualizado do rascunho para escolher, confirmar ou cancelar.' };
     if (!button) return invalid;
     const { record: latest } = await WhatsAppDraftService.current(params);
@@ -941,8 +944,18 @@ export default class WhatsAppIntegrationService {
     };
     let action: PendingAction;
     try {
+      if (accountChoice?.page != null) {
+        const pendingAction = await PendingActionService.getPendingAction(decisionParams);
+        const expectedField = pendingAction.summary.fromAccountOptions?.length ? 'fromAccount' : 'toAccount';
+        if (expectedField !== accountChoice.field) return invalid;
+        const reply = buildDraftChoiceReply(pendingAction, accountChoice.page);
+        if (!reply.list) return invalid;
+        return { message: reply.text, pendingAction, accountPage: accountChoice.page };
+      }
       action = choice
         ? await PendingActionService.selectTransactionCategory({ ...decisionParams, categoryId: choice.categoryId })
+        : accountChoice?.accountId != null
+        ? await PendingActionService.selectTransactionAccount({ ...decisionParams, accountId: accountChoice.accountId, field: accountChoice.field })
         : button.decision === 'confirm'
         ? (await PendingActionService.confirmTransactionDraft(decisionParams)).pendingAction
         : await PendingActionService.cancelPendingAction(decisionParams);
@@ -954,14 +967,14 @@ export default class WhatsAppIntegrationService {
       return { message: formatWhatsAppActionError(error, record.summary) };
     }
 
-    const message = choice ? `Categoria escolhida: ${action.summary.category?.name}. Revise o rascunho antes de confirmar.` : button.decision === 'confirm'
+    const message = accountChoice ? `Conta escolhida: ${action.summary[accountChoice.field]?.name}. Revise o rascunho antes de confirmar.` : choice ? `Categoria escolhida: ${action.summary.category?.name}. Revise o rascunho antes de confirmar.` : button.decision === 'confirm'
       ? `Lançamento confirmado.\n\n${formatWhatsAppDraft(action.summary)}`
       : 'Rascunho cancelado. Nenhum lançamento foi gravado.';
     const context = { sessionId: params.sessionId, userId: params.userId, companyId: params.companyId };
     await AssistantMessageService.createMessage({
       ...context,
       role: AssistantMessageRole.USER,
-      text: choice ? `Escolher categoria ${action.summary.category?.name} no rascunho #${record.id}` : `${button.decision === 'confirm' ? 'Confirmar' : 'Cancelar'} rascunho #${record.id}`
+      text: accountChoice ? `Escolher conta ${action.summary[accountChoice.field]?.name} no rascunho #${record.id}` : choice ? `Escolher categoria ${action.summary.category?.name} no rascunho #${record.id}` : `${button.decision === 'confirm' ? 'Confirmar' : 'Cancelar'} rascunho #${record.id}`
     });
     await AssistantMessageService.createMessage({
       ...context,
@@ -1041,7 +1054,7 @@ export default class WhatsAppIntegrationService {
     };
     let audioTelemetry: { model: string; bytes: number; latencyMs: number } | undefined;
     const response = await this.withTypingIndicator(params.incomingMessageId, async (): Promise<{
-      message: string; pendingAction?: PendingAction | null; buttons?: WhatsAppReplyButton[]; telemetry?: object
+      message: string; pendingAction?: PendingAction | null; buttons?: WhatsAppReplyButton[]; telemetry?: object; accountPage?: number
     } | null> => {
       let text = params.text;
       if (params.audio) {
@@ -1085,6 +1098,7 @@ export default class WhatsAppIntegrationService {
       }
       const route = await WhatsAppDraftService.route(turnContext, text ?? '', intentButton || undefined);
       if ('reply' in route) return { ...route.reply, pendingAction: null };
+      if ('choiceId' in route) return this.processButtonDecision({ ...turnContext, buttonId: route.choiceId });
       return AssistantOrchestratorService.processTurn({
         ...turnContext, message: route.text, requireConfirmationButton: true, whatsappDraft: route.scope,
         freshDraftContext: route.fresh, onEvent: () => undefined
@@ -1114,13 +1128,8 @@ export default class WhatsAppIntegrationService {
     };
     if (response.buttons) {
       await this.sendOutboundMessage({ ...outboundContext, text: response.message, buttons: response.buttons });
-    } else if (response.pendingAction?.status === 'PENDING' && response.pendingAction.summary.categoryOptions?.length) {
-      const summary = response.pendingAction.summary;
-      const amount = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(summary.amount);
-      await this.sendOutboundMessage({ ...outboundContext,
-        text: `Encontrei mais de uma categoria adequada para “${summary.description}” (${amount}).\n\nEscolha na lista. Se nenhuma servir, escreva a categoria desejada. Para desistir, envie “cancelar”.\n\nO lançamento ainda não foi gravado.`,
-        list: buildCategoryChoiceList(response.pendingAction)
-      });
+    } else if (response.pendingAction?.status === 'PENDING' && draftNeedsInput(response.pendingAction.summary)) {
+      await this.sendOutboundMessage({ ...outboundContext, ...buildDraftChoiceReply(response.pendingAction, response.accountPage) });
     } else if (response.pendingAction?.status === 'PENDING') {
       const text = `Aguardando confirmação\n\n${formatWhatsAppDraft(response.pendingAction.summary)}\n\nDeseja gravar este lançamento?`;
       if (text.length <= 1024) {

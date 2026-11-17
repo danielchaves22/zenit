@@ -7,7 +7,7 @@ audience: dev
 visibility: internal
 status: active
 owner: engineering
-last_reviewed: 2026-10-14
+last_reviewed: 2026-10-22
 summary: Contrato autenticado, responsabilidades e compatibilidade do canal WhatsApp.
 ---
 
@@ -39,13 +39,25 @@ O `AsyncLocalStorage` isola a saída do fluxo Hub por requisição. O caminho an
 
 Não é necessário migrar o banco Cash. O registro de mensagens existente guarda os recibos. Registros antigos, operações em andamento, permissões revogadas e botões de outro usuário não autorizam uma nova execução.
 
-## Escolha de categoria
+## Completar conta e categoria
+
+O Cash conserva o lançamento como rascunho mesmo quando ainda falta conta ou categoria. `missingFields`, `fromAccountOptions` e `toAccountOptions` integram o JSON existente, sem migração. O valor, a descrição, as datas, as observações e as escolhas já feitas são preservados. Uma resposta curta por texto ou áudio deve atualizar o mesmo rascunho.
+
+Conta indicada pelo usuário, uma conta padrão aplicável ou uma única conta elegível seguem diretamente para revisão. Havendo várias contas sem padrão, ou um nome de banco que identifica mais de uma, o Cash oferece as opções autorizadas. Não escolhe a primeira pela ordem do cadastro. Sem indicação de crédito, a resolução automática considera contas que não sejam cartão; um pedido explícito de cartão conserva esse contexto. Não havendo conta disponível, orienta a revisão do cadastro/permissões, sem liberar confirmação.
+
+Quando faltarem conta e categoria, pergunta primeiro a conta de origem/destino, depois a categoria. As listas de conta usam até nove opções e uma linha de navegação quando necessário. IDs `zenit:account` e `zenit:accounts` transportam rascunho, revisão, origem/destino e seleção/página. O Hub já encaminha esses IDs ao Cash; seleção e paginação não chamam a IA. O nome exibido pelo cliente nunca determina a conta.
+
+O Cash revalida usuário, área de trabalho, sessão, revisão, conta oferecida, situação ativa e permissão. A confirmação também revalida as contas e a categoria e recusa campos obrigatórios pendentes, mesmo que alguém tente reutilizar um botão. A revisão final só oferece **Confirmar** depois de resolver as pendências. Os demais canais do assistente usam o mesmo rascunho e podem completar os campos por texto; não exibem ação de confirmação para rascunhos incompletos.
+
+### Categorias
 
 Quando várias categorias forem plausíveis, as ferramentas de criação/correção recebem `categoryCandidateIds` com 2 a 10 IDs obtidos em `search_categories`. O Cash valida empresa e tipo e persiste `categoryOptions` no JSON do rascunho e do resumo; não há nova tabela ou migração. Uma categoria explícita ou uma única opção clara segue para a revisão habitual. Sem correspondência adequada, pede esclarecimento, sem selecionar a categoria padrão silenciosamente.
 
 A resposta contém `list: { button, rows: [{ id, title, description }] }`, sem botões de confirmação. O Hub envia `interactive.type=list`; o ID de `list_reply` volta pelo campo legado `buttonId`. O prefixo `zenit:category` encaminha a seleção diretamente ao Cash, sem chamada à IA. O título vindo do WhatsApp nunca determina a escolha. Listas têm até 10 linhas; títulos até 24 caracteres e descrições até 72, incluindo a categoria pai quando existente. Para outra categoria ou cancelamento, o usuário pode escrever ou enviar áudio.
 
-A seleção fica vinculada ao usuário, empresa, sessão, rascunho e revisão. O Cash revalida a categoria, atualiza o mesmo rascunho e emite novos botões. Escolhas antigas/repetidas e categorias fora da lista são recusadas; a confirmação é bloqueada no serviço enquanto houver opções pendentes. Alterar valor ou conta preserva a escolha pendente. Apenas Confirmar da revisão atual grava a transação.
+A seleção fica vinculada ao usuário, empresa, sessão, rascunho e revisão. O Cash revalida a categoria, atualiza o mesmo rascunho e apresenta a próxima pendência ou a revisão final. Escolhas antigas/repetidas e categorias fora da lista são recusadas; a confirmação é bloqueada no serviço enquanto houver opções pendentes. Alterar valor ou conta preserva a escolha pendente. Apenas Confirmar da revisão atual grava a transação.
+
+A hierarquia não exige pergunta por si só: uma subcategoria cuja descrição seja claramente adequada pode ser selecionada sem também oferecer o pai. Alternativas realmente distintas continuam exigindo escolha; não se adicionam sugestões fracas somente para preencher uma lista.
 
 Publique primeiro o suporte a listas do Hub e depois o Cash. O webhook direto do Cash também suporta listas; não é necessário criar template nem mudar configurações na Meta para essa resposta a uma mensagem do usuário.
 

@@ -4,10 +4,11 @@ import prisma from '../lib/prisma';
 import { draftTransactionSummarySchema } from '@zenit/assistant-contracts';
 import { formatCurrency } from '../utils/money';
 import { draftCutoff, draftIntent, expiredDraftMessage, parseDraftIntentButton, staleDraftMessage, WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
+import { textDraftChoiceId } from '../utils/whatsapp-pending-action';
 import type { WhatsAppReplyButton } from './whatsapp-cloud-api.service';
 
 type Owner = { sessionId: number; userId: number; companyId: number };
-type Result = { reply: { message: string; buttons?: WhatsAppReplyButton[] } } |
+type Result = { reply: { message: string; buttons?: WhatsAppReplyButton[] } } | { choiceId: string } |
   { text: string; scope: WhatsAppDraftScope; fresh: boolean };
 const stale = { reply: { message: staleDraftMessage } };
 
@@ -47,6 +48,9 @@ export default class WhatsAppDraftService {
       text = previous.text;
     }
     if (intent === 'ambiguous') {
+      const draft = draftTransactionSummarySchema.safeParse(record.summary);
+      const choiceId = draft.success && textDraftChoiceId(draft.data, record.id, revision, text);
+      if (choiceId) return { choiceId };
       const nonce = randomUUID().replace(/-/g, '');
       // A clarification is not an edit. Preserve the revision and the original deadline.
       const saved = await prisma.assistantPendingAction.updateMany({ where: exact,
@@ -54,7 +58,6 @@ export default class WhatsAppDraftService {
       if (!saved.count) return stale;
       const buttons = (['new', 'edit'] as const).map(mode => ({ id: `zenit:${mode}:${record.id}:${revision}:${nonce}`,
         title: mode === 'new' ? 'Novo lançamento' : 'Corrigir anterior' }));
-      const draft = draftTransactionSummarySchema.safeParse(record.summary);
       const label = draft.success ? ` de ${formatCurrency(draft.data.amount)} (“${draft.data.description.slice(0, 100)}”)` : '';
       return { reply: { message: `Há um rascunho${label} aguardando confirmação. Esta mensagem é para um novo lançamento ou para corrigir o anterior?`, buttons } };
     }

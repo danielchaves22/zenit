@@ -5,6 +5,7 @@ jest.mock('../../src/services/assistant-trace.service', () => ({ __esModule: tru
 
 import LlmRuntimeService from '../../src/services/llm-runtime.service';
 import Integration from '../../src/services/openai-integration.service';
+import AssistantDefaultsService from '../../src/services/assistant-defaults.service';
 import Executor from '../../src/services/tool-executor.service';
 import Registry from '../../src/services/tool-registry.service';
 import { getOpenAiChatOptions, getOpenAiResponsesOptions } from '../../src/constants/openai';
@@ -21,7 +22,7 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
   afterEach(() => jest.restoreAllMocks());
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(Integration.getDecryptedCredential).mockResolvedValue({ apiKey: 'test-key', model: 'gpt-6-luna', promptVersion: 'v1' } as any);
+    jest.mocked(Integration.getDecryptedCredential).mockResolvedValue({ apiKey: 'test-key', model: 'gpt-5.4-nano', assistantModelOverride: 'gpt-6-luna', promptVersion: 'v1' } as any);
     jest.mocked(Executor.executeTool).mockResolvedValue({ data: { ok: true } });
   });
 
@@ -42,7 +43,12 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
     expect(result.pendingAction).toBeUndefined();
   });
 
-  it('uses none on the initial request and tool continuation and sums all usage', async () => {
+  it.each([
+    { override: 'gpt-6-luna', model: 'gpt-6-luna', effort: 'none' },
+    { override: null, model: 'gpt-6.2-sol', effort: 'low' }
+  ])('uses $model / $effort for the initial request and tool continuation and sums usage', async ({ override, model, effort }) => {
+    const globalDefaults = jest.spyOn(AssistantDefaultsService, 'getGlobal').mockResolvedValue({ model: 'gpt-6.2-sol', reasoningEffort: 'low' });
+    jest.mocked(Integration.getDecryptedCredential).mockResolvedValue({ apiKey: 'test-key', model: 'legacy-non-chat-model', assistantModelOverride: override, promptVersion: 'v1' } as any);
     const fetchMock = jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce(reply({ id: 'resp.first', usage: usage(100, 12, 20, 30), output: [
         { type: 'function_call', name: 'search_accounts', call_id: 'call1', arguments: '{}' }
@@ -51,9 +57,10 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
     const result = await LlmRuntimeService.runOperatorTurn({ context, conversation: [] });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     for (const [, options] of fetchMock.mock.calls) {
-      expect(JSON.parse(String(options?.body))).toMatchObject({ model: 'gpt-6-luna', reasoning: { effort: 'none' } });
+      expect(JSON.parse(String(options?.body))).toMatchObject({ model, reasoning: { effort } });
     }
-    expect(result.telemetry).toMatchObject({ reasoningEffort: 'none', toolCalls: 1, usage: {
+    expect(globalDefaults).toHaveBeenCalledTimes(override ? 0 : 1);
+    expect(result.telemetry).toMatchObject({ reasoningEffort: effort, toolCalls: 1, usage: {
       requests: 2, reportedRequests: 2, inputTokens: 260, outputTokens: 20, cachedInputTokens: 100,
       cacheWriteTokens: 30, reasoningTokens: 0, totalTokens: 280
     } });
@@ -76,7 +83,7 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
   });
 
   it('keeps the legacy fallback free of unsupported reasoning parameters', async () => {
-    jest.mocked(Integration.getDecryptedCredential).mockResolvedValue({ apiKey: 'test-key', model: 'gpt-5.4-nano', promptVersion: 'v1' } as any);
+    jest.mocked(Integration.getDecryptedCredential).mockResolvedValue({ apiKey: 'test-key', assistantModelOverride: 'gpt-5.4-nano', promptVersion: 'v1' } as any);
     const fetchMock = jest.spyOn(global, 'fetch')
       .mockResolvedValueOnce(reply({ error: { code: 'model_not_found' } }, 404))
       .mockResolvedValueOnce(reply({ ...final, usage: usage(20, 6) }));
@@ -87,6 +94,24 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
     expect(result.telemetry).toMatchObject({ model: 'gpt-4o-mini', usedFallbackModel: true,
       usage: { requests: 2, reportedRequests: 1, totalTokens: 26 } });
     expect(result.telemetry.reasoningEffort).toBeUndefined();
+  });
+
+  it('stops after preparing a missing-account draft instead of allowing an invented selection', async () => {
+    const pendingAction = { id: 43, status: 'PENDING', summary: {
+      missingFields: ['fromAccount'], fromAccountOptions: [{ id: 7, name: 'Itaú', type: 'CHECKING' }, { id: 8, name: 'Nubank', type: 'CHECKING' }]
+    } } as any;
+    jest.mocked(Executor.executeTool).mockResolvedValue({ data: { ok: true }, pendingAction });
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(reply({ id: 'choice', output: [
+      { type: 'function_call', name: 'create_transaction_draft', call_id: 'first', arguments: '{}' },
+      { type: 'function_call', name: 'update_transaction_draft', call_id: 'second', arguments: '{"fromAccountId":7}' }
+    ] }));
+    const result = await LlmRuntimeService.runOperatorTurn({ context: { ...context, requireConfirmationButton: true }, conversation: [] });
+    expect(Executor.executeTool).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.pendingAction).toEqual(pendingAction);
+    expect(result.message).toContain('De qual conta');
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.input[0].content[0].text).toContain('omitiu a conta');
   });
 
   it('distinguishes missing usage from a reported zero-token request', async () => {

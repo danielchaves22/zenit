@@ -8,7 +8,9 @@ jest.mock('../../src/lib/prisma', () => ({ __esModule: true, default: {
 } }));
 jest.mock('../../src/services/assistant-orchestrator.service', () => ({ __esModule: true, default: { processTurn: jest.fn() } }));
 jest.mock('../../src/services/assistant-message.service', () => ({ __esModule: true, default: { createMessage: jest.fn() } }));
-jest.mock('../../src/services/pending-action.service', () => ({ __esModule: true, default: { confirmTransactionDraft: jest.fn(), cancelPendingAction: jest.fn() } }));
+jest.mock('../../src/services/pending-action.service', () => ({ __esModule: true, default: {
+  confirmTransactionDraft: jest.fn(), cancelPendingAction: jest.fn(), selectTransactionAccount: jest.fn(), selectTransactionCategory: jest.fn()
+} }));
 jest.mock('../../src/services/app-access.service', () => ({ __esModule: true, default: { hasEffectiveAccess: jest.fn() } }));
 jest.mock('../../src/services/user.service', () => ({ __esModule: true, default: { getUserCompanyContext: jest.fn() } }));
 jest.mock('../../src/services/whatsapp-cloud-api.service', () => ({ __esModule: true, default: {
@@ -321,6 +323,33 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ whatsappDraft: expect.objectContaining({ mode: 'review' }) }));
     expect(PendingActions.cancelPendingAction).not.toHaveBeenCalled();
     expect(db.assistantPendingAction.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: action.id }), data: expect.objectContaining({ status: 'CANCELED' }) }));
+  });
+
+  it.each(['account', 'category', 'new', 'ambiguous'] as const)('handles typed choices on an incomplete draft: %s', async scenario => {
+    const summary = { ...action.summary, category: null, categoryOptions: [
+      { id: 8, name: 'Alimentação' }, { id: 9, name: 'Restaurante' }
+    ] };
+    const options = [{ id: 7, name: 'Itaú', type: 'CHECKING' }, { id: 10, name: scenario === 'ambiguous' ? 'Itau' : 'Nubank', type: 'CREDIT_CARD' }];
+    const record = { ...action, summary: scenario === 'category' ? summary : { ...summary, fromAccount: null, fromAccountOptions: options },
+      updatedAt: new Date(), companyId: 3 };
+    db.assistantPendingAction.findFirst.mockResolvedValue(record);
+    jest.mocked(PendingActions.selectTransactionAccount).mockResolvedValue(action);
+    jest.mocked(PendingActions.selectTransactionCategory).mockResolvedValue(action);
+    const text = scenario === 'new' ? 'Gastei 10 reais no Itaú' : scenario === 'category' ? 'alimentacao' : 'itau';
+    await webhook({ type: 'text', text: { body: text } });
+    if (scenario === 'new') {
+      expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ message: text, freshDraftContext: true, whatsappDraft: { mode: 'new' } }));
+      expect(PendingActions.selectTransactionAccount).not.toHaveBeenCalled();
+    } else if (scenario === 'ambiguous') {
+      expect(Cloud.sendReplyButtons).toHaveBeenCalledWith(expect.objectContaining({ buttons: expect.arrayContaining([expect.objectContaining({ title: 'Corrigir anterior' })]) }));
+      expect(PendingActions.selectTransactionAccount).not.toHaveBeenCalled();
+    } else {
+      const verify = { pendingActionId: action.id, whatsapp: true, expectedUpdatedAt: record.updatedAt };
+      if (scenario === 'account') expect(PendingActions.selectTransactionAccount).toHaveBeenCalledWith(expect.objectContaining({ ...verify, field: 'fromAccount', accountId: 7 }));
+      else expect(PendingActions.selectTransactionCategory).toHaveBeenCalledWith(expect.objectContaining({ ...verify, categoryId: 8 }));
+      expect(Orchestrator.processTurn).not.toHaveBeenCalled();
+    }
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
   });
 
   it('routes typed confirmations through the button-only assistant context', async () => {

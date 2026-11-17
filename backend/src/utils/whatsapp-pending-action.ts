@@ -1,9 +1,10 @@
 import type { DraftTransactionSummary, PendingAction } from '@zenit/assistant-contracts';
 import type { WhatsAppReplyButton, WhatsAppReplyList } from '../services/whatsapp-cloud-api.service';
+import { draftNeedsInput, draftClarification } from './transaction-draft-clarification';
 
 export function buildPendingActionButtons(action: PendingAction): WhatsAppReplyButton[] {
   const revision = new Date(action.updatedAt).getTime();
-  if (action.summary.categoryOptions?.length) return [{ id: `zenit:cancel:${action.id}:${revision}`, title: 'Cancelar' }];
+  if (draftNeedsInput(action.summary)) return [{ id: `zenit:cancel:${action.id}:${revision}`, title: 'Cancelar' }];
   return [
     { id: `zenit:confirm:${action.id}:${revision}`, title: 'Confirmar' },
     { id: `zenit:cancel:${action.id}:${revision}`, title: 'Cancelar' }
@@ -26,6 +27,58 @@ export function parseCategoryChoice(id: string) {
   const [pendingActionId, revision, categoryId] = match.slice(1).map(Number);
   if (![pendingActionId, revision, categoryId].every(Number.isSafeInteger) || !Number.isFinite(new Date(revision).getTime())) return null;
   return { pendingActionId, revision, categoryId };
+}
+
+export function parseAccountChoice(id: string) {
+  const match = /^zenit:(account|accounts):([1-9]\d*):(\d+):(from|to):(\d+)$/.exec(id);
+  if (!match) return null;
+  const [pendingActionId, revision, value] = [match[2], match[3], match[5]].map(Number);
+  if (![pendingActionId, revision, value].every(Number.isSafeInteger) || !Number.isFinite(new Date(revision).getTime()) ||
+      (match[1] === 'account' && value < 1)) return null;
+  return { pendingActionId, revision, field: match[4] === 'from' ? 'fromAccount' as const : 'toAccount' as const,
+    accountId: match[1] === 'account' ? value : undefined, page: match[1] === 'accounts' ? value : undefined };
+}
+
+// Match only the field currently shown by buildDraftChoiceReply, including options on other pages.
+export function textDraftChoiceId(summary: DraftTransactionSummary, id: number, revision: number, text: string) {
+  const equals = (name: string) => name.localeCompare(text.trim(), 'pt-BR', { sensitivity: 'base' }) === 0;
+  for (const field of ['fromAccount', 'toAccount'] as const) {
+    const options = summary[field === 'fromAccount' ? 'fromAccountOptions' : 'toAccountOptions'];
+    if (!options?.length && !summary.missingFields?.includes(field)) continue;
+    const matches = options?.filter(option => equals(option.name));
+    return matches?.length === 1 ? `zenit:account:${id}:${revision}:${field === 'fromAccount' ? 'from' : 'to'}:${matches[0].id}` : undefined;
+  }
+  const matches = summary.categoryOptions?.filter(option => equals(option.name) ||
+    (option.parentName && equals(`${option.parentName} / ${option.name}`)));
+  return matches?.length === 1 ? `zenit:category:${id}:${revision}:${matches[0].id}` : undefined;
+}
+
+export function buildDraftChoiceReply(action: PendingAction, page = 0): { text: string; list?: WhatsAppReplyList } {
+  const { summary } = action;
+  const clip = (value: string, limit: number) => value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+  for (const field of ['fromAccount', 'toAccount'] as const) {
+    const options = summary[field === 'fromAccount' ? 'fromAccountOptions' : 'toAccountOptions'];
+    if (!options?.length && !summary.missingFields?.includes(field)) continue;
+    if (!options?.length) return { text: draftClarification(summary) };
+    const pages = Math.ceil(options.length / 9);
+    if (!Number.isSafeInteger(page) || page < 0 || page >= pages) throw new Error('Pagina de contas invalida');
+    const prefix = `${action.id}:${new Date(action.updatedAt).getTime()}:${field === 'fromAccount' ? 'from' : 'to'}`;
+    const types = { CHECKING: 'Conta corrente', SAVINGS: 'Poupança', CASH: 'Dinheiro', CREDIT_CARD: 'Cartão de crédito', INVESTMENT: 'Investimento' };
+    const rows = options.slice(page * 9, page * 9 + 9).map((option, index) => ({
+      id: `zenit:account:${prefix}:${option.id}`, title: clip(`${page * 9 + index + 1}. ${option.name}`, 24),
+      description: clip(`${option.name} · ${types[option.type]}`, 72)
+    }));
+    if (pages > 1) rows.push({ id: `zenit:accounts:${prefix}:${(page + 1) % pages}`,
+      title: page + 1 < pages ? 'Mais contas' : 'Voltar ao início', description: `Página ${page + 1} de ${pages}` });
+    const question = field === 'fromAccount' ? 'De qual conta saiu esse valor?' : 'Em qual conta entrou esse valor?';
+    return { text: `${question}\n\n${summary.description} · ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(summary.amount)}\n\nEscolha na lista ou escreva o nome da conta. Para desistir, envie “cancelar”. O lançamento ainda não foi gravado.`,
+      list: { button: 'Escolher conta', rows } };
+  }
+  if (summary.categoryOptions?.length) return {
+    text: `Encontrei mais de uma categoria adequada para “${summary.description}”.\n\nEscolha na lista ou escreva o nome da opção. Para usar outra, envie “altere a categoria para” e o nome. Para desistir, envie “cancelar”.\n\nO lançamento ainda não foi gravado.`,
+    list: buildCategoryChoiceList(action)
+  };
+  return { text: draftClarification(summary) };
 }
 
 export function parsePendingActionButton(id: string) {

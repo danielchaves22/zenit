@@ -3,12 +3,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import WhatsAppIntegrationService from '../services/whatsapp-integration.service';
 import HubWorkspaceService from '../services/hub-workspace.service';
+import AssistantDefaultsService from '../services/assistant-defaults.service';
 
 const router = Router();
 const seen = new Map<string, number>();
 const sender = z.string().regex(/^\d{7,20}$/);
 const workspaceId = z.number().int().positive().max(2147483647);
 const bodySchema = z.discriminatedUnion('operation', [
+  z.object({ operation: z.literal('assistant_defaults') }).strict(),
   z.object({ operation: z.literal('status'), sender }).strict(),
   z.object({ operation: z.literal('workspaces'), sender }).strict(),
   z.object({ operation: z.literal('select_workspace'), sender, workspaceId }).strict(),
@@ -43,6 +45,7 @@ router.post('/integrations/hub/bridge', async (req, res) => {
   if (!parsed.success) return res.status(400).json({ error: 'Solicitacao invalida.' });
   const input = parsed.data;
   try {
+    if (input.operation === 'assistant_defaults') return res.json(await AssistantDefaultsService.getGlobal());
     if (input.operation === 'status' || input.operation === 'workspaces') return res.json(await HubWorkspaceService.list(input.sender));
     if (input.operation === 'select_workspace') return res.json(await HubWorkspaceService.select(input.sender, input.workspaceId));
     if (input.operation === 'message') return res.json(await WhatsAppIntegrationService.dispatchForHub({

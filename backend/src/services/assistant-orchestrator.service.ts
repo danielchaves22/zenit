@@ -4,6 +4,7 @@ import { AssistantAction, AssistantCard, AssistantStreamEvent, AssistantTurnResp
 import AssistantMessageService from './assistant-message.service';
 import AssistantSessionService from './assistant-session.service';
 import LlmRuntimeService from './llm-runtime.service';
+import { draftNeedsInput, draftClarification } from '../utils/transaction-draft-clarification';
 
 
 function splitMessageIntoDeltas(message: string): string[] {
@@ -30,7 +31,7 @@ function buildCards(pendingAction?: PendingAction): AssistantCard[] {
       id: `draft-transaction-${pendingAction.id}`,
       kind: 'draft_transaction',
       title: 'Rascunho de lancamento',
-      body: pendingAction.summary.categoryOptions?.length ? 'Escolha a categoria para revisar o rascunho.' : 'Confirme para gravar a transacao.',
+      body: draftNeedsInput(pendingAction.summary) ? draftClarification(pendingAction.summary) : 'Confirme para gravar a transacao.',
       draft: pendingAction.summary
     }
   ];
@@ -55,7 +56,7 @@ function buildActions(pendingAction?: PendingAction): AssistantAction[] {
       pendingActionId: pendingAction.id
     }
   ];
-  return pendingAction.summary.categoryOptions?.length
+  return draftNeedsInput(pendingAction.summary)
     ? actions.filter(action => action.kind !== 'confirm_pending_action') : actions;
 }
 

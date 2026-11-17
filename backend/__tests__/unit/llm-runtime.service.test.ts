@@ -89,6 +89,24 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
     expect(result.telemetry.reasoningEffort).toBeUndefined();
   });
 
+  it('stops after preparing a missing-account draft instead of allowing an invented selection', async () => {
+    const pendingAction = { id: 43, status: 'PENDING', summary: {
+      missingFields: ['fromAccount'], fromAccountOptions: [{ id: 7, name: 'Itaú', type: 'CHECKING' }, { id: 8, name: 'Nubank', type: 'CHECKING' }]
+    } } as any;
+    jest.mocked(Executor.executeTool).mockResolvedValue({ data: { ok: true }, pendingAction });
+    const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValueOnce(reply({ id: 'choice', output: [
+      { type: 'function_call', name: 'create_transaction_draft', call_id: 'first', arguments: '{}' },
+      { type: 'function_call', name: 'update_transaction_draft', call_id: 'second', arguments: '{"fromAccountId":7}' }
+    ] }));
+    const result = await LlmRuntimeService.runOperatorTurn({ context: { ...context, requireConfirmationButton: true }, conversation: [] });
+    expect(Executor.executeTool).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.pendingAction).toEqual(pendingAction);
+    expect(result.message).toContain('De qual conta');
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(body.input[0].content[0].text).toContain('omitiu a conta');
+  });
+
   it('distinguishes missing usage from a reported zero-token request', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(reply(final));
     const result = await LlmRuntimeService.runOperatorTurn({ context, conversation: [] });

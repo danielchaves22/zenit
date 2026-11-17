@@ -762,30 +762,42 @@ function chooseBestCategoryMatch(
   return categories.find((category) => category.isDefault) ?? categories[0] ?? null;
 }
 
-function pickDefaultAccount(accounts: AccountCandidate[], type: TransactionType) {
-  const activeAccounts = accounts.filter((account) => account.isActive);
-  const preferred = activeAccounts.find((account) => account.isDefault);
-  if (preferred) {
-    return preferred;
+function resolveDraftAccount(accounts: AccountCandidate[], id?: number | null, hint?: string | null, preserveChoice = false) {
+  const active = accounts.filter(account => account.isActive);
+  if (id != null) {
+    const account = active.find(candidate => candidate.id === id);
+    if (!account) throw new Error('Conta informada indisponivel ou sem permissao');
+    return { account, options: undefined };
   }
-
-  if (type === TransactionType.INCOME) {
-    return (
-      activeAccounts.find((account) => account.type !== 'CREDIT_CARD') ??
-      activeAccounts[0] ??
-      null
-    );
+  const normalized = normalizeText(hint);
+  const credit = inferAccountTypePreference(hint).prefersCreditCard;
+  const pool = active.filter(account => credit ? account.type === 'CREDIT_CARD'
+    : normalized.includes('dinheiro') ? account.type === 'CASH' : account.type !== 'CREDIT_CARD');
+  const paymentMethodOnly = /^(?:(?:no|na|em|pelo|pela|com|via) )?(pix|dinheiro|debito|cartao|credito|cartao de credito)$/.test(normalized);
+  if (hasExplicitHint(hint) && !paymentMethodOnly) {
+    const ranked = pool.map(account => ({ account, score: scoreAccountCandidate(account, hint) }))
+      .filter(item => item.score >= 60).sort((a, b) => b.score - a.score);
+    const close = ranked.filter(item => item.score >= ranked[0].score - 10);
+    if (close.length === 1 && !preserveChoice) return { account: close[0].account, options: undefined };
+    // A bank name matching two accounts is not resolved by their database order.
+    const options = close.length ? close.map(item => item.account) : pool;
+    return { account: null, options: options.map(({ id, name, type }) => ({ id, name, type })) };
   }
+  const defaults = pool.filter(account => account.isDefault);
+  const account = preserveChoice ? null : defaults.length === 1 ? defaults[0] : pool.length === 1 ? pool[0] : null;
+  const offered = pool.length || hasExplicitHint(hint) ? pool : active;
+  return { account, options: account ? undefined : offered.map(({ id, name, type }) => ({ id, name, type })) };
+}
 
-  if (type === TransactionType.EXPENSE) {
-    return (
-      activeAccounts.find((account) => account.type !== 'CREDIT_CARD') ??
-      activeAccounts[0] ??
-      null
-    );
-  }
-
-  return activeAccounts.find((account) => account.type !== 'CREDIT_CARD') ?? activeAccounts[0] ?? null;
+function categoryChoices(categories: CategoryLike[], hint: string) {
+  const exact = categories.filter(category => normalizeText(category.name) === normalizeText(hint) ||
+    normalizeText(`${category.parent?.name ?? ''} / ${category.name}`) === normalizeText(hint));
+  const ranked = (exact.length ? exact : categories).map(category => ({ category, score: scoreCategoryCandidate(category, hint) }))
+    .filter(item => item.score >= 60).sort((a, b) => b.score - a.score);
+  // Only prefer a child when its own name/aliases match, not merely its parent's name.
+  const specific = ranked.filter(item => !ranked.some(other => other.category.parent?.id === item.category.id &&
+    scoreCategoryCandidate({ ...other.category, parent: null }, hint) >= 60));
+  return specific.filter(item => item.score >= specific[0].score - 10).slice(0, 10).map(item => item.category);
 }
 
 async function getAccessibleAccounts(params: {
@@ -1092,7 +1104,8 @@ export default class ToolExecutorService {
 
   private static async buildDraftResolution(
     draftInput: z.infer<typeof createTransactionDraftArgsSchema>,
-    context: AssistantToolExecutionContext
+    context: AssistantToolExecutionContext,
+    preserveChoices: { fromAccount?: boolean; toAccount?: boolean } = {}
   ) {
     const normalizedType = draftInput.type as TransactionType;
     const normalizedStatus = inferDraftStatus(draftInput);
@@ -1143,16 +1156,14 @@ export default class ToolExecutorService {
 
     let fromAccount: AccountCandidate | null = null;
     let toAccount: AccountCandidate | null = null;
-    const missingFields: string[] = [];
+    const missingFields: NonNullable<DraftTransactionSummary['missingFields']> = [];
+    let fromAccountOptions: DraftTransactionPayload['fromAccountOptions'];
+    let toAccountOptions: DraftTransactionPayload['toAccountOptions'];
 
     if (normalizedType === TransactionType.EXPENSE || normalizedType === TransactionType.TRANSFER) {
-      if (draftInput.fromAccountId != null) {
-        fromAccount = accounts.find((account) => account.id === draftInput.fromAccountId) ?? null;
-      } else if (hasExplicitHint(fromHint)) {
-        fromAccount = chooseBestAccountMatch(accounts, fromHint);
-      } else {
-        fromAccount = pickDefaultAccount(accounts, normalizedType);
-      }
+      const resolved = resolveDraftAccount(accounts, draftInput.fromAccountId, fromHint, preserveChoices.fromAccount);
+      fromAccount = resolved.account;
+      fromAccountOptions = resolved.options;
 
       if (!fromAccount) {
         missingFields.push('fromAccount');
@@ -1165,13 +1176,9 @@ export default class ToolExecutorService {
           ? accounts.filter((account) => account.id !== fromAccount.id)
           : accounts;
 
-      if (draftInput.toAccountId != null) {
-        toAccount = accountPool.find((account) => account.id === draftInput.toAccountId) ?? null;
-      } else if (hasExplicitHint(toHint)) {
-        toAccount = chooseBestAccountMatch(accountPool, toHint);
-      } else {
-        toAccount = pickDefaultAccount(accountPool, normalizedType);
-      }
+      const resolved = resolveDraftAccount(accountPool, draftInput.toAccountId, toHint, preserveChoices.toAccount);
+      toAccount = resolved.account;
+      toAccountOptions = resolved.options;
 
       if (!toAccount) {
         missingFields.push('toAccount');
@@ -1196,25 +1203,23 @@ export default class ToolExecutorService {
         if (ids.length < 2 || ids.some(id => !categories.some(category => category.id === id))) {
           throw new Error('Informe de 2 a 10 categorias distintas existentes, da empresa e do tipo do lancamento');
         }
-        categoryOptions = ids.map(id => {
-          const category = categories.find(candidate => candidate.id === id)!;
-          return { id, name: category.name, ...(category.parent ? { parentName: category.parent.name } : {}) };
+        const candidates = ids.map(id => categories.find(category => category.id === id)!);
+        const specific = candidates.filter(category => !candidates.some(child => child.parent?.id === category.id &&
+          scoreCategoryCandidate({ ...child, parent: null }, draftInput.description) >= 60));
+        if (specific.length === 1) matchedCategory = specific[0];
+        else categoryOptions = specific.map(category => {
+          return { id: category.id, name: category.name, ...(category.parent ? { parentName: category.parent.name } : {}) };
         });
       } else if (draftInput.categoryId != null) {
         matchedCategory =
           categories.find((category) => category.id === draftInput.categoryId) ?? null;
-      } else if (hasExplicitHint(draftInput.categoryHint)) {
-        matchedCategory = chooseBestCategoryMatch(categories, draftInput.categoryHint);
       } else {
-        const ranked = categories.map(category => ({ category, score: scoreCategoryCandidate(category, draftInput.description) }))
-          .filter(item => item.score >= 60).sort((a, b) => b.score - a.score);
-        // Scores rank semantic matches; they are not confidence percentages.
-        const close = ranked.filter(item => item.score >= ranked[0].score - 10).slice(0, 10);
+        const close = categoryChoices(categories, draftInput.categoryHint || draftInput.description);
         if (close.length > 1) {
-          categoryOptions = close.map(({ category }) => ({ id: category.id, name: category.name,
+          categoryOptions = close.map(category => ({ id: category.id, name: category.name,
             ...(category.parent ? { parentName: category.parent.name } : {}) }));
         } else {
-          matchedCategory = ranked[0]?.category ?? null;
+          matchedCategory = close[0] ?? null;
         }
       }
 
@@ -1236,6 +1241,8 @@ export default class ToolExecutorService {
       fromAccountId: fromAccount?.id ?? null,
       toAccountId: toAccount?.id ?? null,
       categoryId: matchedCategory?.id ?? null,
+      ...(fromAccountOptions ? { fromAccountOptions, fromAccountHint: fromHint } : {}),
+      ...(toAccountOptions ? { toAccountOptions, toAccountHint: toHint } : {}),
       ...(categoryOptions ? { categoryOptions } : {})
     };
 
@@ -1254,6 +1261,9 @@ export default class ToolExecutorService {
       category: matchedCategory
     });
     if (categoryOptions) summary.categoryOptions = categoryOptions;
+    if (fromAccountOptions) summary.fromAccountOptions = fromAccountOptions;
+    if (toAccountOptions) summary.toAccountOptions = toAccountOptions;
+    if (missingFields.length) summary.missingFields = missingFields;
 
     return {
       explicitFromSelection,
@@ -1273,23 +1283,8 @@ export default class ToolExecutorService {
     context: AssistantToolExecutionContext
   ): Promise<ToolExecutionResult> {
     const args = createTransactionDraftArgsSchema.parse(rawArguments);
-    const { missingFields, payload, summary, fromAccount, toAccount, matchedCategory } =
+    const { payload, summary } =
       await this.buildDraftResolution(args, context);
-
-    if (missingFields.length > 0) {
-      return {
-        data: {
-          ok: false,
-          type: AssistantPendingActionType.CREATE_TRANSACTION_DRAFT,
-          missingFields,
-          resolved: {
-            fromAccount: fromAccount ? { id: fromAccount.id, name: fromAccount.name } : null,
-            toAccount: toAccount ? { id: toAccount.id, name: toAccount.name } : null,
-            category: matchedCategory
-          }
-        }
-      };
-    }
 
     const pendingAction = await PendingActionService.createTransactionDraftAction({
       sessionId: context.sessionId,
@@ -1356,8 +1351,8 @@ export default class ToolExecutorService {
       notes: args.notes ?? existingPayload.notes ?? null,
       installmentCount: args.installmentCount ?? existingPayload.installmentCount ?? 1,
       accountHint: args.accountHint ?? null,
-      fromAccountHint: args.fromAccountHint ?? null,
-      toAccountHint: args.toAccountHint ?? null,
+      fromAccountHint: args.fromAccountHint ?? (args.accountHint || args.fromAccountId != null ? null : existingPayload.fromAccountHint) ?? null,
+      toAccountHint: args.toAccountHint ?? (args.accountHint || args.toAccountId != null ? null : existingPayload.toAccountHint) ?? null,
       categoryHint: args.categoryHint ?? null,
       categoryCandidateIds: args.categoryCandidateIds ??
         (args.categoryId == null && !hasExplicitHint(args.categoryHint) && (!args.type || args.type === existingPayload.type)
@@ -1382,32 +1377,11 @@ export default class ToolExecutorService {
             : existingPayload.categoryId ?? null
     });
 
-    const { missingFields, payload, summary, fromAccount, toAccount, matchedCategory } =
-      await this.buildDraftResolution(mergedDraft, context);
-
-    if (missingFields.length > 0) {
-      const pendingAction = await PendingActionService.getPendingAction({
-        pendingActionId: record.id,
-        userId: context.userId,
-        companyId: context.companyId
+    const { payload, summary } =
+      await this.buildDraftResolution(mergedDraft, context, {
+        fromAccount: existingPayload.fromAccountOptions !== undefined && args.fromAccountId == null && !hasExplicitHint(args.fromAccountHint) && !hasExplicitHint(args.accountHint),
+        toAccount: existingPayload.toAccountOptions !== undefined && args.toAccountId == null && !hasExplicitHint(args.toAccountHint) && !hasExplicitHint(args.accountHint)
       });
-
-      return {
-        pendingAction,
-        data: {
-          ok: false,
-          type: AssistantPendingActionType.CREATE_TRANSACTION_DRAFT,
-          pendingAction,
-          missingFields,
-          requestedPendingActionId: record.id,
-          resolved: {
-            fromAccount: fromAccount ? { id: fromAccount.id, name: fromAccount.name } : null,
-            toAccount: toAccount ? { id: toAccount.id, name: toAccount.name } : null,
-            category: matchedCategory
-          }
-        }
-      };
-    }
 
     const pendingAction = await PendingActionService.updateTransactionDraftAction({
       pendingActionId: record.id,

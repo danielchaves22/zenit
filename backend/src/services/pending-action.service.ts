@@ -6,6 +6,9 @@ import FinancialTransactionService from './financial-transaction.service';
 import UserFinancialAccountAccessService from './user-financial-account-access.service';
 
 
+const draftAccountOptionSchema = z.object({ id: z.number().int().positive(), name: z.string().min(1),
+  type: z.enum(['CHECKING', 'SAVINGS', 'CREDIT_CARD', 'INVESTMENT', 'CASH']) });
+
 const draftTransactionPayloadSchema = z.object({
   description: z.string().min(1),
   amount: z.number().positive(),
@@ -19,6 +22,10 @@ const draftTransactionPayloadSchema = z.object({
   fromAccountId: z.number().int().positive().nullable().optional(),
   toAccountId: z.number().int().positive().nullable().optional(),
   categoryId: z.number().int().positive().nullable().optional(),
+  fromAccountOptions: z.array(draftAccountOptionSchema).optional(),
+  toAccountOptions: z.array(draftAccountOptionSchema).optional(),
+  fromAccountHint: z.string().nullable().optional(),
+  toAccountHint: z.string().nullable().optional(),
   categoryOptions: z.array(z.object({ id: z.number().int().positive(), name: z.string().min(1),
     parentName: z.string().optional() })).min(2).max(10).optional()
 });
@@ -201,9 +208,48 @@ export default class PendingActionService {
     const summary = assistantPendingActionToContract(record).summary;
     delete payload.categoryOptions;
     delete summary.categoryOptions;
+    summary.missingFields = summary.missingFields?.filter(field => field !== 'category');
     return this.updateTransactionDraftAction({ ...params,
       payload: { ...payload, categoryId: category.id }, summary: { ...summary, category }
     });
+  }
+
+  static async selectTransactionAccount(params: {
+    pendingActionId: number; userId: number; companyId: number; sessionId: number;
+    expectedUpdatedAt: Date; accountId: number; field: 'fromAccount' | 'toAccount'; role: Role;
+  }): Promise<PendingAction> {
+    const record = await this.getOwnedPendingActionOrThrow(params);
+    if (record.sessionId !== params.sessionId || record.updatedAt.getTime() !== params.expectedUpdatedAt.getTime()) {
+      throw new Error('Lista de contas desatualizada');
+    }
+    const payload = draftTransactionPayloadSchema.parse(record.payload);
+    const optionsKey = params.field === 'fromAccount' ? 'fromAccountOptions' : 'toAccountOptions';
+    const idKey = params.field === 'fromAccount' ? 'fromAccountId' : 'toAccountId';
+    const otherId = params.field === 'fromAccount' ? payload.toAccountId : payload.fromAccountId;
+    const offered = payload[optionsKey]?.find(option => option.id === params.accountId);
+    if (!offered) throw new Error('Conta nao oferecida neste rascunho');
+    const account = await prisma.financialAccount.findFirst({
+      where: { id: params.accountId, companyId: params.companyId, isActive: true, type: offered.type },
+      select: { id: true, name: true }
+    });
+    if (!account || (payload.type === 'TRANSFER' && otherId === account.id)) throw new Error('Conta indisponivel');
+    if (!await UserFinancialAccountAccessService.checkUserAccountAccess(params.userId, account.id, params.role, params.companyId)) {
+      throw new Error('Usuario sem acesso a conta');
+    }
+    const summary = assistantPendingActionToContract(record).summary;
+    payload[idKey] = account.id;
+    summary[params.field] = account;
+    delete payload[optionsKey];
+    delete payload[params.field === 'fromAccount' ? 'fromAccountHint' : 'toAccountHint'];
+    delete summary[optionsKey];
+    summary.missingFields = summary.missingFields?.filter(field => field !== params.field);
+    // A transfer cannot offer the selected origin again as its destination.
+    const otherOptions = params.field === 'fromAccount' ? 'toAccountOptions' : 'fromAccountOptions';
+    if (payload.type === 'TRANSFER' && payload[otherOptions]) {
+      payload[otherOptions] = payload[otherOptions]!.filter(option => option.id !== account.id);
+      summary[otherOptions] = payload[otherOptions];
+    }
+    return this.updateTransactionDraftAction({ ...params, payload, summary });
   }
 
   static async cancelPendingAction(params: {
@@ -251,6 +297,20 @@ export default class PendingActionService {
 
     if (payload.categoryOptions?.length) {
       throw new Error('Escolha a categoria antes de confirmar o lancamento');
+    }
+
+    if (((payload.type === 'EXPENSE' || payload.type === 'TRANSFER') && !payload.fromAccountId) ||
+        ((payload.type === 'INCOME' || payload.type === 'TRANSFER') && !payload.toAccountId) ||
+        payload.fromAccountOptions?.length || payload.toAccountOptions?.length) {
+      throw new Error('Escolha a conta antes de confirmar o lancamento');
+    }
+    if (payload.type !== 'TRANSFER' && (!payload.categoryId || !await prisma.financialCategory.findFirst({
+      where: { id: payload.categoryId, companyId: params.companyId, type: payload.type }, select: { id: true }
+    }))) throw new Error('Escolha uma categoria disponivel antes de confirmar o lancamento');
+    for (const id of [payload.fromAccountId, payload.toAccountId].filter((value): value is number => value != null)) {
+      if (!await prisma.financialAccount.findFirst({ where: { id, companyId: params.companyId, isActive: true }, select: { id: true } })) {
+        throw new Error('Conta indisponivel; revise o rascunho');
+      }
     }
 
     if (payload.fromAccountId) {

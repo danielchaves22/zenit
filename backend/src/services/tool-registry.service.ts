@@ -36,7 +36,7 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
     type: 'function',
     name: 'create_transaction_draft',
     description:
-      'Cria um rascunho de lancamento financeiro para despesa, receita ou transferencia. Use quando o usuario quiser registrar uma transacao. Prefira informar categoryId/fromAccountId/toAccountId quando essas referencias ja tiverem sido resolvidas por outras tools.',
+      'Cria um rascunho de lancamento financeiro, mesmo quando faltar conta ou categoria. Use para uma nova transacao. Informe IDs de conta somente quando identificarem a conta indicada pelo usuario; conta omitida deve ter ID/hint nulos, para o Cash resolver padrao/unica opcao ou oferecer lista. Nunca escolha arbitrariamente uma conta retornada pela busca.',
     strict: true,
     parameters: strictObject({
         description: { type: 'string' },

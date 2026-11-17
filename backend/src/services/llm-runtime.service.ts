@@ -7,6 +7,7 @@ import ToolRegistryService from './tool-registry.service';
 import ToolExecutorService, { AssistantToolExecutionContext, ToolExecutionResult } from './tool-executor.service';
 import AssistantTraceService from './assistant-trace.service';
 import { ConversationMessage } from './assistant-message.service';
+import { draftNeedsInput, draftClarification } from '../utils/transaction-draft-clarification';
 
 const finalAssistantPayloadSchema = z.object({
   mode: z.literal('OPERATOR'),
@@ -133,7 +134,9 @@ function buildSystemPrompt(todayDate: string, requireConfirmationButton = false)
     'Ao buscar categoria, pense por conceito e nao apenas por string literal. Exemplos: "cabeleireiro" pode virar "salao de beleza" ou "beleza"; "posto" pode virar "combustivel"; "tennis", "roupa" ou "sapato" podem virar "vestuario" ou "moda".',
     'Se houver uma unica categoria claramente adequada, use categoryId. Se houver duas ou mais opcoes fortes e plausiveis, crie ou atualize o rascunho com categoryCandidateIds (de 2 a 10 IDs reais), categoryId e categoryHint nulos. O WhatsApp exibira uma lista nativa para o usuario escolher. Nao escolha arbitrariamente a primeira, nao pergunte apenas em texto, nem crie outro rascunho. Preserve descricao, valor, conta, datas e demais dados.',
     'Nao inclua alternativas fracas apenas para formar uma lista. Se nao houver categoria adequada, pergunte ao usuario. usedFallback indica que a busca nao achou correspondencia, nao que todas as categorias sao adequadas. categoryOptions no rascunho significa que falta a escolha; corrija outros campos sem resolver essa escolha por conta propria. Se o usuario indicar outra categoria por texto ou voz, busque-a e atualize o mesmo rascunho.',
-    'Quando houver duvida sobre conta, banco ou cartao, use search_accounts antes de criar ou atualizar o rascunho.',
+    'Quando houver duvida sobre conta, banco ou cartao, use search_accounts antes de criar ou atualizar o rascunho. Informe IDs de conta apenas quando identificarem a conta indicada pelo usuario. Se ele omitiu a conta, deixe ID e hint nulos: create_transaction_draft resolve o padrao ou a unica conta elegivel e, se necessario, oferece uma lista. Nao escolha pela ordem dos resultados, historico ou para completar campos. Preserve sinais de Pix, dinheiro ou cartao no accountHint quando informados.',
+    'Uma resposta curta de conta ou categoria pode completar um rascunho anterior: consulte get_pending_action e use update_transaction_draft, preservando os demais campos. Nao crie um segundo rascunho para essa resposta. missingFields ou opcoes de conta/categoria indicam que o usuario ainda precisa escolher; nao resolva essa escolha por conta propria. Pergunte somente o proximo campo pendente, uma decisao por vez.',
+    'Se Padaria for filha de Alimentacao e a compra indicar claramente padaria, prefira a categoria especifica. Nao ofereca pai e filha apenas pela hierarquia. Ofereca lista somente entre alternativas fortes que representem uma duvida real.',
     'Por padrao, nomes de banco como "Bradesco", "Nubank" ou "Itau" devem ser tratados como conta de disponibilidade. So use cartao de credito se o usuario indicar explicitamente cartao, credito, fatura ou parcelamento.',
     'Se a frase mencionar Pix, dinheiro, debito, conta corrente, saldo ou disponibilidade, prefira conta de disponibilidade (CHECKING, CASH ou SAVINGS), nao cartao de credito, salvo indicacao explicita de cartao.',
     'Pix e um meio de pagamento, nao um nome de conta. Se o usuario ja informou uma conta especifica, como "Bradesco", e disser que foi no Pix, use essa conta de disponibilidade e evite buscas redundantes como procurar conta por "Pix" ou mudar para CASH sem indicio explicito.',
@@ -318,12 +321,11 @@ export default class LlmRuntimeService {
           });
 
           // Stop here so the model cannot resolve its own ambiguity in another tool call.
-          if (result.pendingAction?.status === 'PENDING' && result.pendingAction.summary?.categoryOptions?.length &&
+          if (result.pendingAction?.status === 'PENDING' && result.pendingAction.summary && draftNeedsInput(result.pendingAction.summary) &&
               (functionCall.name === 'create_transaction_draft' || functionCall.name === 'update_transaction_draft') &&
               (result.data as { ok?: boolean }).ok === true) {
             return { mode: 'OPERATOR', pendingAction: result.pendingAction,
-              message: `Qual categoria deseja usar? ${result.pendingAction.summary.categoryOptions.map(option =>
-                option.parentName ? `${option.parentName} / ${option.name}` : option.name).join('; ')}. O lançamento ainda não foi gravado.`,
+              message: draftClarification(result.pendingAction.summary),
               telemetry: { model: selectedModel, promptVersion: credential.promptVersion,
                 latencyMs: Date.now() - startedAt, toolCalls: toolCallsCount,
                 reasoningEffort: getOpenAiReasoningEffort(selectedModel), usage, usedFallbackModel: usedFallbackModel || undefined }

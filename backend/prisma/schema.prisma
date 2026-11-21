@@ -50,6 +50,7 @@ enum FinancialTransactionImportSourceType {
   CAIXA_PDF
   BRADESCO_CSV
   NUBANK_CSV
+  NUBANK_OFX
 }
 
 enum TransactionStatus {

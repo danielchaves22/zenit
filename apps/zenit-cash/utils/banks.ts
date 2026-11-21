@@ -21,7 +21,8 @@ export interface FinancialBankReference {
 export type CreditCardReconciliationSourceType =
   | 'CAIXA_PDF'
   | 'BRADESCO_CSV'
-  | 'NUBANK_CSV';
+  | 'NUBANK_CSV'
+  | 'NUBANK_OFX';
 
 export function normalizeBankText(value: string) {
   return value

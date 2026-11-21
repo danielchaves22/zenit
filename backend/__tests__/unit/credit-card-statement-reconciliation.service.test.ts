@@ -1,5 +1,6 @@
 import { CreditCardInvoiceStatus, Prisma, TransactionStatus } from '@prisma/client';
 import { __private__ } from '../../src/services/credit-card-statement-reconciliation.service';
+import { creditCardOfx } from '../fixtures/credit-card-ofx';
 
 const sampleCaixaStatementText = `
 VENCIMENTO
@@ -701,6 +702,68 @@ describe('Credit card statement reconciliation service', () => {
       sourceDescription: 'Deivid Pinturas',
       sourceSection: 'INSTALLMENTS'
     });
+  });
+
+  it.each([false, true])('normalizes Nubank OFX signs and preserves invoice item classifications (XML=%s)', (xml) => {
+    const parsed = __private__.parseNubankOfxStatement(creditCardOfx([
+      { id: 'purchase', date: '20260609235959[-3:BRT]', amount: '-59.90', description: 'Netflix Entretenimento' },
+      { id: 'tax', date: '20260603', amount: '-1.17', description: 'IOF de compra internacional' },
+      { id: 'payment', date: '20260510', amount: '625.29', description: 'Pagamento recebido' },
+      { id: 'installment-1', date: '20260510', amount: '-33.33', description: 'Ri Happy - Parcela 4/6' },
+      { id: 'installment-2', date: '20260510', amount: '-471.00', description: 'Deivid Pinturas - Parcela 4/10' },
+      { id: 'refund', date: '20260610', amount: '10.00', description: 'Estorno Loja' },
+      { id: 'interest', date: '20260611', amount: '-2.50', description: 'Encargo do ciclo', type: 'INT' },
+      { id: 'fee', date: '20260611', amount: '-1.00', description: 'Tarifa do ciclo', type: 'FEE' }
+    ], { xml }), 'Nubank_2026-06-17.ofx');
+
+    expect(parsed.sourceType).toBe('NUBANK_OFX');
+    expect(parsed.parsedNetAmount).toBe('-66.39');
+    expect(parsed.items[0]).toMatchObject({ kind: 'PURCHASE', direction: 'DEBIT', amount: '59.9', signedAmount: '59.9', canImport: true });
+    expect(parsed.items[0].purchaseDate?.getDate()).toBe(9);
+    expect(parsed.items[1]).toMatchObject({ kind: 'TAX', amount: '1.17' });
+    expect(parsed.items[2]).toMatchObject({ kind: 'PAYMENT', direction: 'CREDIT', signedAmount: '-625.29', canImport: false, canImportAsCredit: false });
+    expect(parsed.items[3]).toMatchObject({ kind: 'INSTALLMENT', amount: '33.33', installmentNumber: 4, totalInstallments: 6, sourceDescription: 'Ri Happy' });
+    expect(parsed.items[4]).toMatchObject({ kind: 'INSTALLMENT', amount: '471', installmentNumber: 4, totalInstallments: 10 });
+    expect(parsed.items[5]).toMatchObject({ kind: 'CREDIT', signedAmount: '-10', canImport: false, canImportAsCredit: true });
+    expect(parsed.items[6].kind).toBe('INTEREST');
+    expect(parsed.items[7].kind).toBe('FEE');
+
+    const previewItems = __private__.buildPreviewItems(parsed, [], new Map(), new Map());
+    const comparison = __private__.buildValueComparison(parsed, previewItems, []);
+    expect(comparison.file).toMatchObject({
+      reportedTotalAmount: null,
+      comparableAmount: '558.9',
+      paymentAmount: '625.29',
+      creditAmount: '10',
+      paymentCount: 1,
+      creditCount: 1
+    });
+  });
+
+  it('keeps OFX payment types informational even without a Portuguese payment description', () => {
+    const parsed = __private__.parseNubankOfxStatement(creditCardOfx([
+      { id: 'payment', date: '20260610', amount: '100.00', description: 'Received', type: 'PAYMENT' },
+      { id: 'zero', date: '20260610', amount: '0.00', description: 'Sem valor', type: 'OTHER' }
+    ]), null);
+    expect(parsed.items[0]).toMatchObject({ kind: 'PAYMENT', canImport: false, canImportAsCredit: false });
+    expect(parsed.items[1]).toMatchObject({ amount: '0', canImport: false, canImportAsCredit: false });
+  });
+
+  it('rejects invalid installment counts from the OFX description', () => {
+    const invalid = creditCardOfx([
+      { id: 'invalid-installment', date: '20260610', amount: '-100', description: 'Loja - Parcela 4/3' }
+    ]);
+    expect(() => __private__.parseNubankOfxStatement(invalid, null)).toThrow('Parcelamento invalido');
+  });
+
+  it('allows both Nubank formats only for Nubank and shares recurring-description aliases', () => {
+    expect(__private__.isCompatibleReconciliationSource('NUBANK_OFX', 'NUBANK_CSV')).toBe(true);
+    expect(__private__.isCompatibleReconciliationSource('NUBANK_CSV', 'NUBANK_CSV')).toBe(true);
+    expect(__private__.isCompatibleReconciliationSource('NUBANK_OFX', 'BRADESCO_CSV')).toBe(false);
+    expect(__private__.isCompatibleReconciliationSource('NUBANK_OFX', 'CAIXA_PDF')).toBe(false);
+    expect(__private__.descriptionAliasSourceType('NUBANK_OFX')).toBe('NUBANK_CSV');
+    expect(__private__.descriptionAliasSourceType('NUBANK_CSV')).toBe('NUBANK_CSV');
+    expect(__private__.descriptionAliasSourceType('BRADESCO_CSV')).toBe('BRADESCO_CSV');
   });
 
   it('separates Nubank payments and explains the total difference from item composition', () => {

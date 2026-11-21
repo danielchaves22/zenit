@@ -77,7 +77,25 @@ export function parseCreditCardOfx(buffer: Buffer): CreditCardOfxStatement {
     throw new Error('O arquivo e um extrato de conta. Selecione o OFX da fatura do cartao Nubank');
   }
 
-  const statement = aggregate(text, 'CCSTMTRS');
+  const root = aggregate(text, 'OFX');
+  if (/<SIGNONMSGSRSV1>/i.test(root)) {
+    const signOn = aggregate(aggregate(root, 'SIGNONMSGSRSV1'), 'SONRS');
+    if (/<FI>/i.test(signOn)) {
+      const institutionId = leaf(aggregate(signOn, 'FI'), 'FID');
+      if (institutionId && !/^0*260$/.test(institutionId)) {
+        throw new Error('O arquivo identifica outra instituicao. Selecione o OFX da fatura do cartao Nubank');
+      }
+    }
+  }
+  const messages = aggregate(root, 'CREDITCARDMSGSRSV1');
+  const response = aggregate(messages, 'CCSTMTTRNRS');
+  if (/<STATUS>/i.test(response)) {
+    const status = aggregate(response, 'STATUS');
+    if (leaf(status, 'CODE', true) !== '0' || leaf(status, 'SEVERITY')?.toUpperCase() === 'ERROR') {
+      throw new Error('O banco informou uma falha ao gerar a fatura OFX');
+    }
+  }
+  const statement = aggregate(response, 'CCSTMTRS');
   if (/<STMTTRNP>/i.test(statement)) {
     throw new Error('OFX com lancamentos pendentes nao suportado. Exporte os lancamentos confirmados do cartao');
   }
@@ -98,15 +116,23 @@ export function parseCreditCardOfx(buffer: Buffer): CreditCardOfxStatement {
     throw new Error('O OFX do cartao deve conter de 1 a 5.000 lancamentos completos');
   }
 
-  const ids = new Set<string>();
-  const transactions = chunks.map(([, raw]) => {
+  const fitIdCounts = new Map<string, number>();
+  const rows = chunks.map(([, raw]) => {
     if (/<(?:CORRECTFITID|CORRECTACTION)>/i.test(raw)) {
       throw new Error('OFX com correcoes de lancamentos nao suportado. Revise a fatura antes de importar');
     }
     const fitId = leaf(raw, 'FITID', true)!;
     if (fitId.length > 255) throw new Error('FITID do OFX excede o limite suportado');
-    if (ids.has(fitId)) throw new Error('A fatura OFX contem identificadores FITID repetidos');
-    ids.add(fitId);
+    fitIdCounts.set(fitId, (fitIdCounts.get(fitId) || 0) + 1);
+
+    // CURRENCY qualifies TRNAMT itself. ORIGCURRENCY describes an amount
+    // already converted to the statement currency (OFX Banking 5.2).
+    if (/<CURRENCY>/i.test(raw)) {
+      const currency = aggregate(raw, 'CURRENCY');
+      if (leaf(currency, 'CURSYM', true)?.toUpperCase() !== 'BRL' || /<ORIGCURRENCY>/i.test(raw)) {
+        throw new Error('O valor de cada lancamento OFX deve estar em BRL');
+      }
+    }
 
     const name = leaf(raw, 'NAME');
     const memo = leaf(raw, 'MEMO');
@@ -117,7 +143,9 @@ export function parseCreditCardOfx(buffer: Buffer): CreditCardOfxStatement {
       throw new Error('Lancamento OFX sem descricao ou com descricao maior que o limite');
     }
 
-    const date = calendarDate(leaf(raw, 'DTPOSTED', true)!);
+    const postedDate = calendarDate(leaf(raw, 'DTPOSTED', true)!);
+    const userDate = leaf(raw, 'DTUSER');
+    const date = userDate ? calendarDate(userDate) : postedDate;
     const amount = statementMoney(leaf(raw, 'TRNAMT', true)!);
     const type = leaf(raw, 'TRNTYPE', true)!.toUpperCase();
     const isNegative = amount.startsWith('-');
@@ -126,13 +154,27 @@ export function parseCreditCardOfx(buffer: Buffer): CreditCardOfxStatement {
     }
 
     return {
-      id: `ofx-${createHash('sha256').update(JSON.stringify([accountId, fitId])).digest('hex').slice(0, 60)}`,
+      fitId,
       date,
       amount,
       description,
       type,
       raw: `<STMTTRN>${raw}</STMTTRN>`
     };
+  });
+
+  const usedIds = new Set<string>();
+  const transactions = rows.map(({ fitId, ...row }) => {
+    const identity = [accountId, fitId];
+    // Nubank sometimes reuses a FITID for different entries on the same bill.
+    // Their financial fields distinguish them independently of file order.
+    if (fitIdCounts.get(fitId)! > 1) {
+      identity.push(row.date, row.amount, row.type, row.description);
+    }
+    const id = `ofx-${createHash('sha256').update(JSON.stringify(identity)).digest('hex').slice(0, 60)}`;
+    if (usedIds.has(id)) throw new Error('A fatura OFX contem lancamentos identicos com FITID repetidos');
+    usedIds.add(id);
+    return { id, ...row };
   });
 
   return { endDate: normalizedEndDate, transactions };

@@ -201,6 +201,43 @@ describe('Credit-card reconciliation persisted sessions', () => {
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
   });
 
+  it('imports a purchase and its tax separately when Nubank reuses the FITID, including on reupload', async () => {
+    const date = '20260805120000[-3:BRT]';
+    const purchase = { id: 'shared-id', date, amount: '-60.00', description: 'Loja de exemplo' };
+    const tax = { id: 'shared-id', date, amount: '-2.10', description: 'IOF de compra internacional' };
+    const input = {
+      sourceType: 'NUBANK_OFX' as const,
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileName: 'fatura.ofx',
+      fileBase64: creditCardOfx([purchase, tax]).toString('base64')
+    };
+    const started = await CreditCardReconciliationSessionService.start(context, input);
+    expect(started.preview.items.map(item => item.kind)).toEqual(['PURCHASE', 'TAX']);
+    const committed = await CreditCardReconciliationSessionService.commit(
+      context,
+      started.session.id,
+      started.session.revision,
+      started.preview.items.map(item => ({
+        itemId: item.id, action: 'IMPORT', description: item.sourceDescription, categoryId
+      }))
+    );
+    expect(committed.commitResult.summary.createdCount).toBe(2);
+
+    const replaced = await CreditCardReconciliationSessionService.start(context, {
+      ...input,
+      fileBase64: creditCardOfx([tax, purchase]).toString('base64'),
+      replace: true,
+      expectedSessionId: started.session.id,
+      expectedRevision: committed.session.revision
+    });
+    expect(replaced.progress.confirmedExistingCount).toBe(2);
+    const transactions = await prisma.financialTransaction.findMany({
+      where: { companyId, fromAccountId: accountId }, orderBy: { amount: 'asc' }
+    });
+    expect(transactions.map(transaction => transaction.amount.toString())).toEqual(['2.1', '60']);
+  });
+
   it('reconciles a purchase already imported from CSV when the invoice file is replaced by OFX', async () => {
     const started = await CreditCardReconciliationSessionService.start(context, {
       sourceType: 'NUBANK_CSV',

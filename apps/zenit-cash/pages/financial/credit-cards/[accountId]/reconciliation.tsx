@@ -3878,7 +3878,7 @@ function CreditCardReconciliationPageInner() {
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3">
                     <label
-                      className={`inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition-colors ${
+                      className={`relative inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-semibold text-on-accent transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent ${
                         fileSelectionDisabled
                           ? 'cursor-not-allowed opacity-60'
                           : 'cursor-pointer hover:bg-accent-hover'
@@ -3892,7 +3892,7 @@ function CreditCardReconciliationPageInner() {
                         accept={sourceConfig.accept}
                         onChange={handleFileChange}
                         disabled={fileSelectionDisabled}
-                        className="hidden"
+                        className="sr-only"
                       />
                     </label>
                     <span className="min-w-0 flex-1 truncate text-sm text-text-muted">

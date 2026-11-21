@@ -1792,7 +1792,7 @@ function parseNubankOfxStatement(buffer: Buffer, fileName: string | null): Parse
     }
 
     let kind = classifyItemKind('STATEMENT', sourceDescription, direction, Boolean(installmentMatch));
-    if (transaction.type === 'PAYMENT') kind = 'PAYMENT';
+    if (direction === 'CREDIT' && transaction.type === 'PAYMENT') kind = 'PAYMENT';
     else if (direction === 'DEBIT' && transaction.type === 'INT') kind = 'INTEREST';
     else if (direction === 'DEBIT' && ['FEE', 'SRVCHG'].includes(transaction.type)) kind = 'FEE';
 

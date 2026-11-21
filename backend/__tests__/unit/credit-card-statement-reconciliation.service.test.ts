@@ -740,13 +740,27 @@ describe('Credit card statement reconciliation service', () => {
     });
   });
 
-  it('keeps OFX payment types informational even without a Portuguese payment description', () => {
+  it('keeps an incoming OFX payment informational even without a Portuguese payment description', () => {
     const parsed = __private__.parseNubankOfxStatement(creditCardOfx([
       { id: 'payment', date: '20260610', amount: '100.00', description: 'Received', type: 'PAYMENT' },
       { id: 'zero', date: '20260610', amount: '0.00', description: 'Sem valor', type: 'OTHER' }
     ]), null);
     expect(parsed.items[0]).toMatchObject({ kind: 'PAYMENT', canImport: false, canImportAsCredit: false });
     expect(parsed.items[1]).toMatchObject({ amount: '0', canImport: false, canImportAsCredit: false });
+  });
+
+  it('includes a boleto paid with the card in invoice charges and excludes a card bill payment', () => {
+    const parsed = __private__.parseNubankOfxStatement(creditCardOfx([
+      { id: 'boleto', date: '20260610', amount: '-47.00', description: 'Pagamento de boleto no crédito', type: 'PAYMENT' },
+      { id: 'bill-payment', date: '20260612', amount: '100.00', description: 'Pagamento recebido', type: 'PAYMENT' }
+    ]), null);
+
+    expect(parsed.items[0]).toMatchObject({ kind: 'PURCHASE', direction: 'DEBIT', canImport: true });
+    expect(parsed.items[1]).toMatchObject({ kind: 'PAYMENT', direction: 'CREDIT', canImport: false, canImportAsCredit: false });
+    const preview = __private__.buildPreviewItems(parsed, [], new Map(), new Map());
+    expect(__private__.buildValueComparison(parsed, preview, []).file).toMatchObject({
+      comparableAmount: '47', debitAmount: '47', paymentAmount: '100', paymentCount: 1
+    });
   });
 
   it('rejects invalid installment counts from the OFX description', () => {

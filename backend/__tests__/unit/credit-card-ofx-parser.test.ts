@@ -37,11 +37,27 @@ describe('credit-card OFX parsing', () => {
     expect(parsed.transactions[0].description).toBe('Café & Pão');
   });
 
+  it('uses the purchase date when supplied and still validates the posting date', () => {
+    const text = creditCardOfx([purchase], { xml: true }).toString()
+      .replace('</DTPOSTED>', '</DTPOSTED><DTUSER>20260607120000[-3:BRT]</DTUSER>');
+    expect(parseCreditCardOfx(Buffer.from(text)).transactions[0].date).toBe('2026-06-07');
+    expect(() => parseCreditCardOfx(Buffer.from(text.replace(purchase.date, '20260230')))).toThrow('Data inválida');
+  });
+
   it('rejects bank-account statements instead of treating them as credit-card purchases', () => {
     const accountOfx = creditCardOfx([purchase]).toString()
       .replace(/CREDITCARDMSGSRSV1/g, 'BANKMSGSRSV1')
       .replace(/CCSTMTRS/g, 'STMTRS').replace(/CCACCTFROM/g, 'BANKACCTFROM');
     expect(() => parseCreditCardOfx(Buffer.from(accountOfx))).toThrow('extrato de conta');
+  });
+
+  it('checks the institution identifier when supplied and accepts Nubank with leading zeros', () => {
+    const text = creditCardOfx([purchase], { xml: true }).toString();
+    const withInstitution = (id: string) => Buffer.from(text.replace('<OFX>',
+      `<OFX><SIGNONMSGSRSV1><SONRS><FI><ORG>Banco de exemplo</ORG><FID>${id}</FID></FI></SONRS></SIGNONMSGSRSV1>`
+    ));
+    expect(() => parseCreditCardOfx(withInstitution('237'))).toThrow('outra instituicao');
+    expect(parseCreditCardOfx(withInstitution('0260')).transactions).toHaveLength(1);
   });
 
   it.each<[typeof purchase & { type?: string }, string]>([
@@ -57,9 +73,18 @@ describe('credit-card OFX parsing', () => {
     expect(() => parseCreditCardOfx(creditCardOfx([row]))).toThrow(message);
   });
 
-  it('rejects duplicate FITID values without collapsing legitimate identical purchases with different IDs', () => {
+  it('rejects indistinguishable repeated FITIDs while preserving identical purchases with different IDs', () => {
     expect(() => parseCreditCardOfx(creditCardOfx([purchase, purchase]))).toThrow('FITID repetidos');
     expect(parseCreditCardOfx(creditCardOfx([purchase, { ...purchase, id: 'second' }])).transactions).toHaveLength(2);
+  });
+
+  it('assigns stable distinct IDs when Nubank reuses a FITID for different movements', () => {
+    const fee = { ...purchase, amount: '-0.99', description: 'Taxa de exemplo' };
+    const { transactions } = parseCreditCardOfx(creditCardOfx([purchase, fee]));
+    const reordered = parseCreditCardOfx(creditCardOfx([fee, purchase]));
+    expect(transactions).toHaveLength(2);
+    expect(transactions[0].id).not.toBe(transactions[1].id);
+    expect(reordered.transactions.map(row => row.id)).toEqual([transactions[1].id, transactions[0].id]);
   });
 
   it('accepts the OFX FITID limit while keeping the stored item identifier bounded', () => {
@@ -81,6 +106,23 @@ describe('credit-card OFX parsing', () => {
     expect(() => parseCreditCardOfx(Buffer.from(truncated))).toThrow('lancamentos completos');
     const text = creditCardOfx([purchase]).toString();
     expect(() => parseCreditCardOfx(Buffer.from(text + text))).toThrow('unico cartao');
+  });
+
+  it('requires a credit card response within the OFX envelope and rejects an explicit bank error', () => {
+    const text = creditCardOfx([purchase]).toString();
+    const missingResponse = text.replace(/<\/?CCSTMTTRNRS>/g, '');
+    expect(() => parseCreditCardOfx(Buffer.from(missingResponse))).toThrow('CCSTMTTRNRS');
+    const error = text.replace('<CCSTMTRS>', '<STATUS><CODE>2000\n<SEVERITY>ERROR\n</STATUS><CCSTMTRS>');
+    expect(() => parseCreditCardOfx(Buffer.from(error))).toThrow('falha ao gerar a fatura');
+  });
+
+  it('rejects unconverted foreign amounts and accepts already converted foreign purchases in BRL', () => {
+    const text = creditCardOfx([purchase], { xml: true }).toString();
+    const currency = '<CURRENCY><CURRATE>5.0</CURRATE><CURSYM>USD</CURSYM></CURRENCY>';
+    const withCurrency = (detail: string) => Buffer.from(text.replace('</STMTTRN>', detail + '</STMTTRN>'));
+    expect(() => parseCreditCardOfx(withCurrency(currency))).toThrow('em BRL');
+    const originalCurrency = currency.replace(/CURRENCY/g, 'ORIGCURRENCY');
+    expect(parseCreditCardOfx(withCurrency(originalCurrency)).transactions[0].amount).toBe(purchase.amount);
   });
 
   it('rejects foreign-currency statements and XML entity definitions', () => {

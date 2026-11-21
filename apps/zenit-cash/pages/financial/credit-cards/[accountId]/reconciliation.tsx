@@ -411,7 +411,7 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
     analyzeFileMessage: 'Selecione o arquivo da Caixa antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
     unsupportedDescription:
-      'No momento a conciliacao aceita PDF ou TXT da Caixa e CSVs do Bradesco e Nubank.'
+      'No momento a conciliacao aceita PDF ou TXT da Caixa, CSV do Bradesco e CSV ou OFX do Nubank.'
   },
   BRADESCO_CSV: {
     fileLabel: 'CSV do Bradesco',
@@ -423,19 +423,31 @@ const RECONCILIATION_SOURCE_CONFIG: Record<
     analyzeFileMessage: 'Selecione o CSV da fatura do Bradesco antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
     unsupportedDescription:
-      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.'
+      'No momento a conciliacao aceita PDF ou TXT da Caixa, CSV do Bradesco e CSV ou OFX do Nubank.'
   },
   NUBANK_CSV: {
-    fileLabel: 'CSV do Nubank',
+    fileLabel: 'CSV ou OFX do Nubank',
     sourceLabel: 'CSV Nubank',
-    selectLabel: 'Selecionar CSV do Nubank',
-    helperText: 'Somente o layout atual de exportacao CSV do Nubank e suportado neste momento.',
-    accept: '.csv',
-    invalidFileMessage: 'Selecione um arquivo CSV da fatura do Nubank',
-    analyzeFileMessage: 'Selecione o CSV do Nubank antes de analisar',
+    selectLabel: 'Selecionar CSV ou OFX do Nubank',
+    helperText: 'Importe a fatura do cartão em CSV ou OFX. Extratos da conta têm uma conciliação própria em Contas.',
+    accept: '.csv,.ofx',
+    invalidFileMessage: 'Selecione um arquivo CSV ou OFX da fatura do Nubank',
+    analyzeFileMessage: 'Selecione o CSV ou OFX da fatura do Nubank antes de analisar',
     unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
     unsupportedDescription:
-      'No momento a conciliacao aceita PDF da Caixa e CSVs do Bradesco e Nubank.'
+      'No momento a conciliacao aceita PDF ou TXT da Caixa, CSV do Bradesco e CSV ou OFX do Nubank.'
+  },
+  NUBANK_OFX: {
+    fileLabel: 'CSV ou OFX do Nubank',
+    sourceLabel: 'OFX Nubank',
+    selectLabel: 'Selecionar CSV ou OFX do Nubank',
+    helperText: 'Importe a fatura do cartão em CSV ou OFX. Extratos da conta têm uma conciliação própria em Contas.',
+    accept: '.csv,.ofx',
+    invalidFileMessage: 'Selecione um arquivo CSV ou OFX da fatura do Nubank',
+    analyzeFileMessage: 'Selecione o CSV ou OFX da fatura do Nubank antes de analisar',
+    unsupportedTitle: 'Conciliacao disponivel apenas para cartoes Caixa, Bradesco e Nubank',
+    unsupportedDescription:
+      'No momento a conciliacao aceita PDF ou TXT da Caixa, CSV do Bradesco e CSV ou OFX do Nubank.'
   }
 };
 
@@ -1172,6 +1184,17 @@ function isCsvStatementFile(file: File) {
     fileType === 'application/csv' ||
     fileType === 'application/vnd.ms-excel' ||
     fileType === 'application/octet-stream'
+  );
+}
+
+function isOfxStatementFile(file: File) {
+  const fileType = file.type.toLowerCase();
+
+  return (
+    hasAnyFileExtension(file.name, ['.ofx']) ||
+    fileType === 'application/x-ofx' ||
+    fileType === 'application/ofx' ||
+    fileType === 'text/ofx'
   );
 }
 
@@ -2162,6 +2185,7 @@ function CreditCardReconciliationPageInner() {
   const [invoicesLoading, setInvoicesLoading] = useState(true);
   const [fileName, setFileName] = useState<string | null>(null);
   const [fileBase64, setFileBase64] = useState('');
+  const [fileSourceType, setFileSourceType] = useState<CreditCardReconciliationSourceType | null>(null);
   const [session, setSession] = useState<ReconciliationSession | null>(null);
   const [sessionProgress, setSessionProgress] = useState<ReconciliationProgress | null>(null);
   const [sessionLoading, setSessionLoading] = useState(false);
@@ -2214,8 +2238,9 @@ function CreditCardReconciliationPageInner() {
     () => getCreditCardReconciliationSourceType(card?.bank, card?.bankCode, card?.bankName),
     [card]
   );
-  const sourceConfig = reconciliationSourceType
-    ? RECONCILIATION_SOURCE_CONFIG[reconciliationSourceType]
+  const activeSourceType = fileSourceType || preview?.statement.sourceType || session?.sourceType || reconciliationSourceType;
+  const sourceConfig = activeSourceType
+    ? RECONCILIATION_SOURCE_CONFIG[activeSourceType]
     : null;
   const targetInvoiceOptions = useMemo(
     () => buildTargetInvoiceOptions(card, invoices),
@@ -2557,6 +2582,7 @@ function CreditCardReconciliationPageInner() {
       setSessionReadyTargetKey('');
       setFileName(null);
       setFileBase64('');
+      setFileSourceType(null);
       setPreview(null);
       setCommitResult(null);
       return;
@@ -2786,6 +2812,7 @@ function CreditCardReconciliationPageInner() {
     setCommitResult(workspace.commitResult || null);
     setFileName(workspace.session?.fileName || nextPreview?.statement.fileName || null);
     setFileBase64('');
+    setFileSourceType(null);
 
     if (!nextPreview) {
       setItemDrafts({});
@@ -2835,6 +2862,7 @@ function CreditCardReconciliationPageInner() {
     setCommitResult(null);
     setFileName(null);
     setFileBase64('');
+    setFileSourceType(null);
     setItemDrafts({});
     setSelectedItemIds([]);
     setFocusedPreviewItemId(null);
@@ -2963,7 +2991,7 @@ function CreditCardReconciliationPageInner() {
   }
 
   async function runPreview() {
-    if (!fileBase64 || !fileName) {
+    if (!fileBase64 || !fileName || !fileSourceType) {
       addToast(sourceConfig?.analyzeFileMessage || 'Selecione a fatura antes de analisar', 'error');
       return;
     }
@@ -2996,7 +3024,7 @@ function CreditCardReconciliationPageInner() {
         expectedRevision?: number
       ) =>
         api.post(`/financial/credit-cards/${accountId}/reconciliation/sessions`, {
-          sourceType: reconciliationSourceType,
+          sourceType: fileSourceType,
           targetReferenceYear: selectedTargetInvoice.referenceYear,
           targetReferenceMonth: selectedTargetInvoice.referenceMonth,
           fileBase64,
@@ -3080,6 +3108,7 @@ function CreditCardReconciliationPageInner() {
             }
             setFileName(session?.fileName || null);
             setFileBase64('');
+            setFileSourceType(null);
           }
         );
         return;
@@ -3119,9 +3148,14 @@ function CreditCardReconciliationPageInner() {
       return;
     }
 
-    const isValidFile = reconciliationSourceType === 'CAIXA_PDF'
+    const nextSourceType = reconciliationSourceType === 'NUBANK_CSV' && isOfxStatementFile(nextFile)
+      ? 'NUBANK_OFX'
+      : reconciliationSourceType;
+    const isValidFile = nextSourceType === 'CAIXA_PDF'
       ? isPdfOrTxtStatementFile(nextFile)
-      : isCsvStatementFile(nextFile);
+      : nextSourceType === 'NUBANK_OFX'
+        ? isOfxStatementFile(nextFile)
+        : isCsvStatementFile(nextFile);
     if (!isValidFile) {
       addToast(sourceConfig?.invalidFileMessage || 'Selecione um arquivo suportado', 'error');
       event.target.value = '';
@@ -3134,6 +3168,7 @@ function CreditCardReconciliationPageInner() {
     setPreviewLoading(false);
     setFileName(nextFile.name);
     setFileBase64('');
+    setFileSourceType(null);
     setCommitResult(null);
     if (!session) {
       setPreview(null);
@@ -3151,10 +3186,12 @@ function CreditCardReconciliationPageInner() {
       }
 
       setFileBase64(nextFileBase64);
+      setFileSourceType(nextSourceType);
     } catch (error: any) {
       if (fileReadRequestIdRef.current === fileReadRequestId) {
         setFileName(session?.fileName || null);
         setFileBase64('');
+        setFileSourceType(null);
         addToast(error.message || 'Erro ao ler arquivo', 'error');
       }
     }
@@ -3184,6 +3221,7 @@ function CreditCardReconciliationPageInner() {
     setSessionProgress(null);
     setFileName(null);
     setFileBase64('');
+    setFileSourceType(null);
     setPreview(null);
     setCommitResult(null);
     setItemDrafts({});
@@ -3261,7 +3299,7 @@ function CreditCardReconciliationPageInner() {
     try {
       const csv = buildCreditCardReconciliationCsv({
         cardName: card?.name || 'Cartao',
-        sourceLabel: sourceConfig?.sourceLabel || preview.statement.sourceType,
+        sourceLabel: RECONCILIATION_SOURCE_CONFIG[preview.statement.sourceType]?.sourceLabel || preview.statement.sourceType,
         statusFilterLabel: statusFilter === 'ALL' ? 'Todos' : getStatusLabel(statusFilter),
         fileName,
         preview: {
@@ -3833,6 +3871,9 @@ function CreditCardReconciliationPageInner() {
                       <div className="text-sm font-medium text-text">
                         {sourceConfig.selectLabel}
                       </div>
+                      {reconciliationSourceType === 'NUBANK_CSV' && (
+                        <p className="mt-1 text-xs text-text-muted">{sourceConfig.helperText}</p>
+                      )}
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-3">

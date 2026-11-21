@@ -7,7 +7,7 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-10-02
+last_reviewed: 2026-11-20
 summary: Organize compras no cartão, parcelas, vencimentos e pagamentos sem duplicar despesas.
 ---
 
@@ -37,3 +37,20 @@ A compra representa o gasto; o pagamento da fatura representa a liquidação do 
 Use o fluxo correspondente ao tipo de crédito ou estorno. Quando um estorno se refere a uma compra, mantenha o vínculo correto. Receitas comuns e créditos de cartão têm efeitos diferentes nas consultas.
 
 Na conciliação de cartão, revise os itens importados e as associações sugeridas. Uma sugestão precisa ser conferida antes da confirmação; não aceite uma associação somente porque os valores coincidem.
+
+## Conciliar a fatura do Nubank
+
+Na conciliação do cartão Nubank, selecione a fatura que deseja conferir e use
+**Selecionar CSV ou OFX do Nubank**. A tela identifica o formato do arquivo e mantém
+o mesmo fluxo de revisão e confirmação dos lançamentos.
+
+Use o arquivo da **fatura do cartão de crédito**. O extrato OFX da conta Nubank
+pertence à conciliação de contas e não pode ser usado como fatura do cartão.
+
+Confira compras, parcelas, IOF, juros e créditos antes de importar. Pagamentos de
+fatura não são importados como novas despesas. O saldo informado no OFX não é
+tratado como total das compras da fatura.
+
+Ao reenviar um arquivo ou alternar entre CSV e OFX, revise as correspondências com
+os lançamentos já registrados. Quando existir uma conciliação salva para a fatura,
+a troca do arquivo segue a confirmação de substituição apresentada pela tela.

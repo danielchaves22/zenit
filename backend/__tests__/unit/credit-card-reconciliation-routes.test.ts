@@ -74,33 +74,37 @@ describe('credit-card reconciliation session route validation boundaries', () =>
     }
   });
 
-  it('takes accountId from the authorized POST path and ignores query overrides', () => {
-    const validate = validationMiddleware(
-      '/credit-cards/:accountId/reconciliation/sessions',
-      'post'
-    );
-    const req: any = {
-      method: 'POST',
-      params: { accountId: '12' },
-      query: { accountId: '999' },
-      body: {
-        accountId: '888',
-        sourceType: 'NUBANK_CSV',
-        targetReferenceYear: 2026,
-        targetReferenceMonth: 8,
-        fileBase64: 'YQ==',
-        fileName: 'invoice.csv'
-      }
-    };
-    const next = jest.fn();
+  it.each(['NUBANK_CSV', 'NUBANK_OFX'])(
+    'accepts %s while taking accountId only from the authorized POST path',
+    (sourceType) => {
+      const validate = validationMiddleware(
+        '/credit-cards/:accountId/reconciliation/sessions',
+        'post'
+      );
+      const req: any = {
+        method: 'POST',
+        params: { accountId: '12' },
+        query: { accountId: '999' },
+        body: {
+          accountId: '888',
+          sourceType,
+          targetReferenceYear: 2026,
+          targetReferenceMonth: 8,
+          fileBase64: 'YQ==',
+          fileName: sourceType === 'NUBANK_OFX' ? 'invoice.ofx' : 'invoice.csv'
+        }
+      };
+      const next = jest.fn();
 
-    validate(req, responseDouble(), next);
+      validate(req, responseDouble(), next);
 
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(req.params.accountId).toBe(12);
-    expect(req.body.accountId).toBeUndefined();
-    expect(req.query.accountId).toBe('999');
-  });
+      expect(next).toHaveBeenCalledTimes(1);
+      expect(req.params.accountId).toBe(12);
+      expect(req.body.sourceType).toBe(sourceType);
+      expect(req.body.accountId).toBeUndefined();
+      expect(req.query.accountId).toBe('999');
+    }
+  );
 
   it('validates resume identifiers only from GET path params', () => {
     const validate = validationMiddleware(

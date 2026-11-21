@@ -13,6 +13,7 @@ import CreditCardReconciliationSessionService, {
   type CreditCardReconciliationSessionContext
 } from '../../src/services/credit-card-reconciliation-session.service';
 import CreditCardStatementReconciliationService from '../../src/services/credit-card-statement-reconciliation.service';
+import { creditCardOfx } from '../fixtures/credit-card-ofx';
 
 jest.mock('../../src/services/cache.service', () => ({
   __esModule: true,
@@ -159,6 +160,106 @@ describe('Credit-card reconciliation persisted sessions', () => {
     await prisma.company.delete({ where: { id: companyId } });
     await prisma.user.delete({ where: { id: userId } });
     await prisma.$disconnect();
+  });
+
+  it('persists and resumes an OFX session, imports its purchase once and excludes its payment', async () => {
+    const fileBase64 = creditCardOfx([
+      { id: 'purchase-1', date: '20260805120000[-3:BRT]', amount: '-45.90', description: 'Mercado' },
+      { id: 'payment-1', date: '20260806120000[-3:BRT]', amount: '80.00', description: 'Pagamento recebido' }
+    ], { endDate: '20260831120000[-3:BRT]' }).toString('base64');
+    const input = {
+      sourceType: 'NUBANK_OFX' as const,
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileBase64,
+      fileName: 'invoice.ofx'
+    };
+    const started = await CreditCardReconciliationSessionService.start(context, input);
+    expect(started.session.sourceType).toBe('NUBANK_OFX');
+    expect(started.preview.valueComparison.file.reportedTotalAmount).toBeNull();
+    expect(started.preview.items[0]).toMatchObject({ direction: 'DEBIT', amount: '45.9', canImport: true });
+    expect(started.preview.items[1]).toMatchObject({ kind: 'PAYMENT', canImport: false, canImportAsCredit: false });
+
+    const committed = await CreditCardReconciliationSessionService.commit(
+      context,
+      started.session.id,
+      started.session.revision,
+      [{ itemId: started.preview.items[0].id, action: 'IMPORT', description: 'Mercado', categoryId }]
+    );
+    expect(committed.commitResult.summary.createdCount).toBe(1);
+    const transaction = await prisma.financialTransaction.findFirstOrThrow({ where: { companyId, fromAccountId: accountId } });
+    expect(transaction.importSourceType).toBe('NUBANK_OFX');
+    expect(transaction.amount.toString()).toBe('45.9');
+    expect(transaction.type).toBe(TransactionType.EXPENSE);
+
+    const resumed = await CreditCardReconciliationSessionService.get(context, 2026, 8);
+    expect(resumed.session!.sourceType).toBe('NUBANK_OFX');
+    expect(resumed.progress!.importedCount).toBe(1);
+    const replay = await CreditCardReconciliationSessionService.start(context, input);
+    expect(replay.session).toMatchObject({ id: started.session.id, revision: committed.session.revision });
+    expect(replay.progress.importedCount).toBe(1);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
+  });
+
+  it('reconciles a purchase already imported from CSV when the invoice file is replaced by OFX', async () => {
+    const started = await CreditCardReconciliationSessionService.start(context, {
+      sourceType: 'NUBANK_CSV',
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileBase64: nubankFile([['2026-08-05', 'Mercado', '45,90']]),
+      fileName: 'invoice.csv'
+    });
+    const committed = await CreditCardReconciliationSessionService.commit(
+      context,
+      started.session.id,
+      started.session.revision,
+      [{ itemId: started.preview.items[0].id, action: 'IMPORT', description: 'Compra ja categorizada', categoryId }]
+    );
+    const transaction = await prisma.financialTransaction.findFirstOrThrow({ where: { companyId, fromAccountId: accountId } });
+    const fileBase64 = creditCardOfx([
+      { id: 'same-purchase', date: '20260805120000[-3:BRT]', amount: '-45.90', description: 'Mercado' }
+    ]).toString('base64');
+    const replaced = await CreditCardReconciliationSessionService.start(context, {
+      sourceType: 'NUBANK_OFX',
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileBase64,
+      fileName: 'invoice.ofx',
+      replace: true,
+      expectedSessionId: started.session.id,
+      expectedRevision: committed.session.revision
+    });
+
+    expect(replaced.session).toMatchObject({ id: started.session.id, sourceType: 'NUBANK_OFX' });
+    expect(replaced.preview.items[0].matchedTransactions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: transaction.id })
+    ]));
+    expect(replaced.progress.confirmedExistingCount).toBe(1);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
+    expect((await prisma.financialTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).description)
+      .toBe('Compra ja categorizada');
+  });
+
+  it('restricts Nubank OFX to a Nubank card in the authorized company', async () => {
+    const input = {
+      sourceType: 'NUBANK_OFX' as const,
+      targetReferenceYear: 2026,
+      targetReferenceMonth: 8,
+      fileBase64: creditCardOfx([
+        { id: 'purchase-1', date: '20260805120000[-3:BRT]', amount: '-45.90', description: 'Mercado' }
+      ]).toString('base64'),
+      fileName: 'invoice.ofx'
+    };
+    await expect(CreditCardReconciliationSessionService.start(
+      { ...context, companyId: companyId + 100000 }, input
+    )).rejects.toThrow();
+    await prisma.financialAccount.update({
+      where: { id: accountId }, data: { bankCode: 'BRADESCO', bankName: 'Bradesco' }
+    });
+    await expect(CreditCardReconciliationSessionService.start(context, input))
+      .rejects.toThrow('Fonte de conciliacao incompativel com o banco do cartao');
+    expect(await prisma.creditCardReconciliationSession.count({ where: { accountId } })).toBe(0);
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
   });
 
   it('starts once per invoice, resumes the same hash without AI or revision changes, and replaces by exact CAS', async () => {

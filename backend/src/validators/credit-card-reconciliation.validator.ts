@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CreditCardCreditKind } from '@prisma/client';
 
-const sourceTypeSchema = z.enum(['CAIXA_PDF', 'BRADESCO_CSV', 'NUBANK_CSV'], {
+const sourceTypeSchema = z.enum(['CAIXA_PDF', 'BRADESCO_CSV', 'NUBANK_CSV', 'NUBANK_OFX'], {
   errorMap: () => ({ message: 'Fonte de conciliacao invalida' })
 });
 

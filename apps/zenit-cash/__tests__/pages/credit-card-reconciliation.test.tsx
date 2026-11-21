@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CreditCardReconciliationPage from '@/pages/financial/credit-cards/[accountId]/reconciliation'
 import api from '@/lib/api'
+import { downloadCsvFile } from '@/utils/csv'
 
 const addToastMock = vi.fn()
 const scrollIntoViewMock = vi.fn()
@@ -575,10 +576,17 @@ vi.mock('@/lib/api', () => ({
   }
 }))
 
+vi.mock('@/utils/csv', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/utils/csv')>(),
+  downloadCsvFile: vi.fn()
+}))
+
 async function renderAnalyzedPage({
-  targetInvoiceKey
+  targetInvoiceKey,
+  statementFile
 }: {
   targetInvoiceKey?: string
+  statementFile?: File
 } = {}) {
   const user = userEvent.setup()
   render(<CreditCardReconciliationPage />)
@@ -593,7 +601,7 @@ async function renderAnalyzedPage({
 
   const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
   await waitFor(() => expect(fileInput).toBeEnabled())
-  await user.upload(fileInput, new File(['date,description,amount'], 'fatura.csv', {
+  await user.upload(fileInput, statementFile || new File(['date,description,amount'], 'fatura.csv', {
     type: 'text/csv'
   }))
 
@@ -700,6 +708,64 @@ describe('CreditCardReconciliationPage comparison views', () => {
     vi.unstubAllGlobals()
   })
 
+  it.each([
+    { fileName: 'fatura.ofx', type: 'application/x-ofx', sourceType: 'NUBANK_OFX' },
+    { fileName: 'fatura.OFX', type: '', sourceType: 'NUBANK_OFX' },
+    { fileName: 'fatura.ofx', type: 'application/octet-stream', sourceType: 'NUBANK_OFX' },
+    { fileName: 'fatura.csv', type: 'text/csv', sourceType: 'NUBANK_CSV' }
+  ])('envia $fileName ($type) com a fonte $sourceType', async ({ fileName, type, sourceType }) => {
+    const sourcePreview = {
+      ...preview,
+      statement: { ...preview.statement, sourceType, fileName }
+    }
+    const workspace = buildWorkspace({ sourcePreview })
+    workspace.session = { ...workspace.session, sourceType, fileName }
+    vi.mocked(api.post).mockResolvedValueOnce({ data: workspace })
+
+    await renderAnalyzedPage({ statementFile: new File(['statement'], fileName, { type }) })
+
+    expect(api.post).toHaveBeenCalledWith(
+      '/financial/credit-cards/1/reconciliation/sessions',
+      expect.objectContaining({
+        sourceType,
+        fileName,
+        targetReferenceYear: 2026,
+        targetReferenceMonth: 9
+      })
+    )
+    expect(screen.getByText('Mercado no arquivo')).toBeInTheDocument()
+  })
+
+  it('retoma uma sessao OFX e identifica a origem correta na exportacao da previa', async () => {
+    const sourcePreview = {
+      ...preview,
+      statement: { ...preview.statement, sourceType: 'NUBANK_OFX', fileName: 'fatura.ofx' }
+    }
+    const workspace = buildWorkspace({ sourcePreview })
+    workspace.session = { ...workspace.session, sourceType: 'NUBANK_OFX', fileName: 'fatura.ofx' }
+    const originalGet = vi.mocked(api.get).getMockImplementation()!
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === '/financial/credit-cards/1/reconciliation/sessions/2026/9') {
+        return Promise.resolve({ data: workspace })
+      }
+      return originalGet(url)
+    })
+
+    const user = userEvent.setup()
+    render(<CreditCardReconciliationPage />)
+    await screen.findByText('Mercado no arquivo')
+    expect(screen.queryByText('Escolher arquivo')).not.toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Exportar CSV' }))
+
+    expect(downloadCsvFile).toHaveBeenCalledWith(
+      expect.stringContaining('previa-conciliacao-1-2026-09'),
+      expect.stringContaining('OFX Nubank')
+    )
+    expect(vi.mocked(downloadCsvFile).mock.calls[0]?.[1]).toContain('fatura.ofx')
+  })
+
   it('oferece lancamento individual para credito sem inclui-lo na selecao em massa', async () => {
     const user = userEvent.setup()
     const creditItem = {
@@ -796,13 +862,13 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await screen.findByText('Escolher arquivo')
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     await waitFor(() => expect(fileInput).toBeEnabled())
-    const oldFile = new File(['old'], 'fatura-antiga.csv', { type: 'text/csv' })
+    const oldFile = new File(['old'], 'fatura-antiga.ofx', { type: 'application/x-ofx' })
     const currentFile = new File(['current'], 'fatura-atual.csv', { type: 'text/csv' })
 
     await user.upload(fileInput, oldFile)
     await user.upload(fileInput, currentFile)
     expect(pendingReads.map(({ file }) => file.name)).toEqual([
-      'fatura-antiga.csv',
+      'fatura-antiga.ofx',
       'fatura-atual.csv'
     ])
 
@@ -811,7 +877,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       pendingReads[1]!.reader.onload?.({} as ProgressEvent<FileReader>)
     })
     await act(async () => {
-      pendingReads[0]!.reader.result = 'data:text/csv;base64,b2xk'
+      pendingReads[0]!.reader.result = 'data:application/x-ofx;base64,b2xk'
       pendingReads[0]!.reader.onload?.({} as ProgressEvent<FileReader>)
     })
 
@@ -823,6 +889,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await waitFor(() => expect(fileInput).toBeDisabled())
     expect(screen.getByRole('button', { name: 'Analisando' })).toBeDisabled()
     expect(previewRequestBody).toMatchObject({
+      sourceType: 'NUBANK_CSV',
       fileName: 'fatura-atual.csv',
       fileBase64: 'data:text/csv;base64,Y3VycmVudA=='
     })
@@ -1591,7 +1658,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       .toBeInTheDocument()
   })
 
-  it('substitui arquivo conflitante somente com confirmacao e protecao de sessao e revisao', async () => {
+  it('substitui um CSV por OFX somente com confirmacao e protecao de sessao e revisao', async () => {
     vi.mocked(api.get).mockImplementation((url: string) => {
       if (url === '/financial/credit-cards') return Promise.resolve({ data: [card] })
       if (url === '/financial/credit-cards/1/invoices') return Promise.resolve({ data: [invoice] })
@@ -1624,7 +1691,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await screen.findByText('Escolher arquivo')
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
     await waitFor(() => expect(fileInput).toBeEnabled(), { timeout: 5000 })
-    await user.upload(fileInput, new File(['new'], 'nova-fatura.csv', { type: 'text/csv' }))
+    await user.upload(fileInput, new File(['new'], 'nova-fatura.ofx', { type: 'application/x-ofx' }))
     const analyzeButton = screen.getByRole('button', { name: 'Analisar fatura' })
     await waitFor(() => expect(analyzeButton).toBeEnabled(), { timeout: 5000 })
     await user.click(analyzeButton)
@@ -1645,7 +1712,8 @@ describe('CreditCardReconciliationPage comparison views', () => {
       replace: true,
       expectedSessionId: 301,
       expectedRevision: 1,
-      fileName: 'nova-fatura.csv'
+      sourceType: 'NUBANK_OFX',
+      fileName: 'nova-fatura.ofx'
     })
   }, 20_000)
 

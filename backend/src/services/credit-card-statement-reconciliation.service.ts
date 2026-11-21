@@ -14,6 +14,7 @@ import CreditCardReconciliationCategorySuggestionService, {
   type CreditCardReconciliationCategorySuggestion
 } from './credit-card-reconciliation-category-suggestion.service';
 import { parseDecimal } from '../utils/money';
+import { parseCreditCardOfx } from './credit-card-ofx-parser';
 import {
   addMonthsClamped,
   buildCreditCardInvoiceReferenceForMonth,
@@ -26,7 +27,7 @@ const CAIXA_BANK_CODE = 'CAIXA_ECONOMICA_FEDERAL';
 const BRADESCO_BANK_CODE = 'BRADESCO';
 const NUBANK_BANK_CODE = 'NUBANK';
 
-export type CreditCardReconciliationSourceType = 'CAIXA_PDF' | 'BRADESCO_CSV' | 'NUBANK_CSV';
+export type CreditCardReconciliationSourceType = 'CAIXA_PDF' | 'BRADESCO_CSV' | 'NUBANK_CSV' | 'NUBANK_OFX';
 export type CreditCardReconciliationItemStatus =
   | 'OK'
   | 'SIMILAR'
@@ -493,6 +494,18 @@ function isFixedAliasEligibleItem(item: ParsedStatementItem) {
   );
 }
 
+function descriptionAliasSourceType(sourceType: CreditCardReconciliationSourceType) {
+  return sourceType === 'NUBANK_OFX' ? 'NUBANK_CSV' : sourceType;
+}
+
+function isCompatibleReconciliationSource(
+  sourceType: CreditCardReconciliationSourceType,
+  accountSourceType: CreditCardReconciliationSourceType
+) {
+  return sourceType === accountSourceType
+    || (accountSourceType === 'NUBANK_CSV' && sourceType === 'NUBANK_OFX');
+}
+
 async function loadFixedDescriptionAliases(params: {
   accountId: number;
   companyId: number;
@@ -517,7 +530,7 @@ async function loadFixedDescriptionAliases(params: {
     where: {
       companyId: params.companyId,
       accountId: params.accountId,
-      sourceType: params.sourceType,
+      sourceType: descriptionAliasSourceType(params.sourceType),
       normalizedSourceDescription: {
         in: normalizedDescriptions
       }
@@ -552,7 +565,7 @@ async function saveFixedDescriptionAlias(params: {
     where: {
       unique_credit_card_recurring_description_alias: {
         accountId: params.accountId,
-        sourceType: params.sourceType,
+        sourceType: descriptionAliasSourceType(params.sourceType),
         normalizedSourceDescription
       }
     },
@@ -560,7 +573,7 @@ async function saveFixedDescriptionAlias(params: {
       companyId: params.companyId,
       accountId: params.accountId,
       fixedTemplateId: params.fixedTemplateId,
-      sourceType: params.sourceType,
+      sourceType: descriptionAliasSourceType(params.sourceType),
       sourceDescription: params.sourceDescription,
       normalizedSourceDescription,
       createdBy: params.userId
@@ -1755,6 +1768,72 @@ function parseNubankStatementText(text: string, fileName: string | null): Parsed
   };
 }
 
+function parseNubankOfxStatement(buffer: Buffer, fileName: string | null): ParsedStatement {
+  const ofx = parseCreditCardOfx(buffer);
+  const items: ParsedStatementItem[] = ofx.transactions.map((transaction, index) => {
+    const purchaseDate = parseYyyyMmDd(transaction.date);
+    const ofxAmount = new Prisma.Decimal(transaction.amount);
+    // OFX expresses purchases as debits; the invoice model uses positive charges.
+    const signedAmount = ofxAmount.negated();
+    const amount = ofxAmount.abs().toString();
+    const direction: StatementDirection = ofxAmount.gt(0) ? 'CREDIT' : 'DEBIT';
+    const installmentMatch = transaction.description.match(
+      /^(.*?)(?:\s*-\s*)?parcela\s+(\d{1,3})\/(\d{1,3})$/i
+    );
+    const sourceDescription = installmentMatch
+      ? normalizeInlineWhitespace(installmentMatch[1])
+      : transaction.description;
+    const installmentNumber = installmentMatch ? Number(installmentMatch[2]) : null;
+    const totalInstallments = installmentMatch ? Number(installmentMatch[3]) : null;
+    if (installmentMatch && (
+      !sourceDescription || !installmentNumber || !totalInstallments || installmentNumber > totalInstallments
+    )) {
+      throw new Error('Parcelamento invalido no OFX do cartao Nubank');
+    }
+
+    let kind = classifyItemKind('STATEMENT', sourceDescription, direction, Boolean(installmentMatch));
+    if (transaction.type === 'PAYMENT') kind = 'PAYMENT';
+    else if (direction === 'DEBIT' && transaction.type === 'INT') kind = 'INTEREST';
+    else if (direction === 'DEBIT' && ['FEE', 'SRVCHG'].includes(transaction.type)) kind = 'FEE';
+
+    return {
+      id: transaction.id,
+      sequence: index + 1,
+      kind,
+      direction,
+      amount,
+      signedAmount: signedAmount.toString(),
+      purchaseDate,
+      createDate: purchaseDate,
+      datePrecision: 'PURCHASE_DATE',
+      installmentNumber,
+      totalInstallments,
+      sourceDescription,
+      sourceSection: getStatementSourceSection(kind),
+      cardSuffix: null,
+      ...resolveImportabilityWithAmount(kind, direction, amount),
+      rawLine: transaction.raw
+    };
+  });
+  const parsedNetAmount = items.reduce(
+    (sum, item) => sum.plus(item.signedAmount), new Prisma.Decimal(0)
+  ).toString();
+  const statementDate = parseStatementDateFromFileName(fileName)
+    || (ofx.endDate ? parseYyyyMmDd(ofx.endDate) : null)
+    || items.reduce((latest, item) => item.createDate > latest ? item.createDate : latest, items[0].createDate);
+
+  return {
+    sourceType: 'NUBANK_OFX',
+    fileName,
+    dueDate: statementDate,
+    totalAmount: parsedNetAmount,
+    parsedNetAmount,
+    referenceYear: statementDate.getFullYear(),
+    referenceMonth: statementDate.getMonth() + 1,
+    items
+  };
+}
+
 function toPreviewMatchTransaction(candidate: ExistingTransactionCandidate) {
   return {
     matchKey: candidate.matchKey,
@@ -2748,7 +2827,7 @@ function buildValueComparison(
   return {
     status,
     file: {
-      reportedTotalAmount: statement.sourceType === 'NUBANK_CSV'
+      reportedTotalAmount: statement.sourceType === 'NUBANK_CSV' || statement.sourceType === 'NUBANK_OFX'
         ? null
         : statement.totalAmount,
       comparableAmount: comparableAmount.toString(),
@@ -2809,6 +2888,10 @@ async function parseStatementFromSource(params: {
     return parseNubankStatementText(buffer.toString('utf8'), params.fileName ?? null);
   }
 
+  if (params.sourceType === 'NUBANK_OFX') {
+    return parseNubankOfxStatement(decodeBase64File(params.fileBase64), params.fileName ?? null);
+  }
+
   throw new Error('Fonte de conciliacao nao suportada');
 }
 
@@ -2840,7 +2923,7 @@ export default class CreditCardStatementReconciliationService {
       params.existingTx
     );
 
-    if (params.sourceType !== account.reconciliationSourceType) {
+    if (!isCompatibleReconciliationSource(params.sourceType, account.reconciliationSourceType)) {
       throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
     }
 
@@ -2939,7 +3022,7 @@ export default class CreditCardStatementReconciliationService {
       params.existingTx
     );
 
-    if (params.sourceType !== account.reconciliationSourceType) {
+    if (!isCompatibleReconciliationSource(params.sourceType, account.reconciliationSourceType)) {
       throw new Error('Fonte de conciliacao incompativel com o banco do cartao');
     }
 
@@ -3304,6 +3387,9 @@ export const __private__ = {
   parseCaixaOpenStatementText,
   parseBradescoStatementText,
   parseNubankStatementText,
+  parseNubankOfxStatement,
+  descriptionAliasSourceType,
+  isCompatibleReconciliationSource,
   classifyMatches,
   buildPreviewItems,
   applyTargetReferenceToStatement,

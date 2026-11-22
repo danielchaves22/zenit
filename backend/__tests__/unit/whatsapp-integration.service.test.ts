@@ -14,7 +14,7 @@ jest.mock('../../src/services/pending-action.service', () => ({ __esModule: true
 jest.mock('../../src/services/app-access.service', () => ({ __esModule: true, default: { hasEffectiveAccess: jest.fn() } }));
 jest.mock('../../src/services/user.service', () => ({ __esModule: true, default: { getUserCompanyContext: jest.fn() } }));
 jest.mock('../../src/services/whatsapp-cloud-api.service', () => ({ __esModule: true, default: {
-  verifySignature: jest.fn(), sendTextMessage: jest.fn(), sendReplyButtons: jest.fn(), sendTypingIndicator: jest.fn()
+  verifySignature: jest.fn(), sendTextMessage: jest.fn(), sendReplyButtons: jest.fn(), sendListMessage: jest.fn(), sendTypingIndicator: jest.fn()
 } }));
 jest.mock('../../src/utils/logger', () => ({ logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('../../src/services/whatsapp-audio.service', () => ({ __esModule: true, default: { transcribe: jest.fn() } }));
@@ -57,7 +57,7 @@ describe('WhatsApp native feedback and decisions', () => {
     jest.resetAllMocks();
     jest.mocked(Cloud.verifySignature).mockReturnValue(true);
     jest.mocked(Cloud.sendTypingIndicator).mockResolvedValue();
-    for (const send of [Cloud.sendTextMessage, Cloud.sendReplyButtons]) {
+    for (const send of [Cloud.sendTextMessage, Cloud.sendReplyButtons, Cloud.sendListMessage]) {
       jest.mocked(send).mockResolvedValue({ messageId: 'wamid.outgoing', raw: {} });
     }
     db.whatsAppUserBinding.findUnique.mockResolvedValue(binding);
@@ -317,7 +317,7 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(Cloud.sendTypingIndicator).not.toHaveBeenCalled();
   });
 
-  it.each(['Gastei quanto ontem', 'Qual foi a última compra?', 'Meus gastos de hoje'])('keeps queries from replacing the active draft: %s', async text => {
+  it.each(['Gastei quanto ontem', 'Qual foi a última compra?', 'Meus gastos de hoje', 'Conta Nubank Daniel tem saldo suficiente?'])('keeps queries from replacing the active draft: %s', async text => {
     simulateActiveDraft = true;
     await webhook({ type: 'text', text: { body: text } });
     expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ whatsappDraft: expect.objectContaining({ mode: 'review' }) }));
@@ -325,7 +325,10 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(db.assistantPendingAction.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: action.id }), data: expect.objectContaining({ status: 'CANCELED' }) }));
   });
 
-  it.each(['account', 'category', 'new', 'ambiguous'] as const)('handles typed choices on an incomplete draft: %s', async scenario => {
+  it.each([
+    ['account', 'itau'], ['account', 'Conta Itaú'], ['category', 'alimentacao'], ['category', 'Categoria Alimentação'],
+    ['new', 'Gastei 10 reais no Itaú'], ['ambiguous', 'itau']
+  ] as const)('handles typed choices on an incomplete draft: %s, %s', async (scenario, text) => {
     const summary = { ...action.summary, category: null, categoryOptions: [
       { id: 8, name: 'Alimentação' }, { id: 9, name: 'Restaurante' }
     ] };
@@ -335,13 +338,13 @@ describe('WhatsApp native feedback and decisions', () => {
     db.assistantPendingAction.findFirst.mockResolvedValue(record);
     jest.mocked(PendingActions.selectTransactionAccount).mockResolvedValue(action);
     jest.mocked(PendingActions.selectTransactionCategory).mockResolvedValue(action);
-    const text = scenario === 'new' ? 'Gastei 10 reais no Itaú' : scenario === 'category' ? 'alimentacao' : 'itau';
     await webhook({ type: 'text', text: { body: text } });
     if (scenario === 'new') {
       expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ message: text, freshDraftContext: true, whatsappDraft: { mode: 'new' } }));
       expect(PendingActions.selectTransactionAccount).not.toHaveBeenCalled();
     } else if (scenario === 'ambiguous') {
-      expect(Cloud.sendReplyButtons).toHaveBeenCalledWith(expect.objectContaining({ buttons: expect.arrayContaining([expect.objectContaining({ title: 'Corrigir anterior' })]) }));
+      expect(Cloud.sendListMessage).toHaveBeenCalledWith(expect.objectContaining({ list: expect.objectContaining({ button: 'Escolher conta' }) }));
+      expect(Orchestrator.processTurn).not.toHaveBeenCalled();
       expect(PendingActions.selectTransactionAccount).not.toHaveBeenCalled();
     } else {
       const verify = { pendingActionId: action.id, whatsapp: true, expectedUpdatedAt: record.updatedAt };
@@ -349,6 +352,44 @@ describe('WhatsApp native feedback and decisions', () => {
       else expect(PendingActions.selectTransactionCategory).toHaveBeenCalledWith(expect.objectContaining({ ...verify, categoryId: 8 }));
       expect(Orchestrator.processTurn).not.toHaveBeenCalled();
     }
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['Conta Nubank Daniel', false], ['foi ontem', false], ['foi no Nubank', false], ['valor:29,50', false], ['Categoria Presente', true], ['Presente', true]
+  ] as const)('edits the same draft when given a field value: %s', async (text, waitingForCategory) => {
+    const record = { ...action, updatedAt: new Date(action.updatedAt), summary: {
+      ...action.summary, fromAccount: { id: 7, name: 'Conta Principal' },
+      ...(waitingForCategory ? { category: null, missingFields: ['category'] } : {})
+    } };
+    db.assistantPendingAction.findFirst.mockResolvedValue(record);
+    await webhook({ type: 'text', text: { body: text } });
+    expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({
+      message: text, whatsappDraft: { mode: 'edit', id: action.id, revision: record.updatedAt.getTime() },
+      requireConfirmationButton: true, freshDraftContext: false
+    }));
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+
+  it('routes the answer to a transfer-side question back to the same draft', async () => {
+    const updatedAt = new Date(action.updatedAt);
+    db.assistantPendingAction.findFirst.mockResolvedValue({ ...action, updatedAt,
+      summary: { ...action.summary, type: 'TRANSFER', category: null, toAccount: { id: 12, name: 'Destino' } } });
+    await webhook({ type: 'text', text: { body: 'origem' } });
+    expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'origem', whatsappDraft: { id: action.id, revision: updatedAt.getTime(), mode: 'edit' }
+    }));
+    expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+
+  it.each(['Conta de luz R$ 80', 'Conta de luz 80', '80 no Nubank', 'cem reais padaria'])('asks before mixing an ambiguous entry into the draft: %s', async text => {
+    db.assistantPendingAction.findFirst.mockResolvedValue({ ...action, updatedAt: new Date(action.updatedAt),
+      summary: { ...action.summary, category: null, missingFields: ['category'] } });
+    await webhook({ type: 'text', text: { body: text } });
+    expect(Cloud.sendReplyButtons).toHaveBeenCalledWith(expect.objectContaining({
+      buttons: expect.arrayContaining([expect.objectContaining({ title: 'Corrigir anterior' })])
+    }));
+    expect(Orchestrator.processTurn).not.toHaveBeenCalled();
     expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
   });
 

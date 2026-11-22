@@ -1054,7 +1054,7 @@ export default class WhatsAppIntegrationService {
     };
     let audioTelemetry: { model: string; bytes: number; latencyMs: number } | undefined;
     const response = await this.withTypingIndicator(params.incomingMessageId, async (): Promise<{
-      message: string; pendingAction?: PendingAction | null; buttons?: WhatsAppReplyButton[]; telemetry?: object; accountPage?: number
+      message: string; pendingAction?: PendingAction | null; buttons?: WhatsAppReplyButton[]; list?: WhatsAppReplyList; telemetry?: object; accountPage?: number
     } | null> => {
       let text = params.text;
       if (params.audio) {
@@ -1126,8 +1126,8 @@ export default class WhatsAppIntegrationService {
       userId: params.binding.userId,
       waId: params.waId
     };
-    if (response.buttons) {
-      await this.sendOutboundMessage({ ...outboundContext, text: response.message, buttons: response.buttons });
+    if (response.buttons || response.list) {
+      await this.sendOutboundMessage({ ...outboundContext, text: response.message, buttons: response.buttons, list: response.list });
     } else if (response.pendingAction?.status === 'PENDING' && draftNeedsInput(response.pendingAction.summary)) {
       await this.sendOutboundMessage({ ...outboundContext, ...buildDraftChoiceReply(response.pendingAction, response.accountPage) });
     } else if (response.pendingAction?.status === 'PENDING') {

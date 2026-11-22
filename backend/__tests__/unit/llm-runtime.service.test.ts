@@ -43,6 +43,21 @@ describe('Explicit economical reasoning and whole-turn usage', () => {
     expect(result.pendingAction).toBeUndefined();
   });
 
+  it('keeps a question about a transfer visible when the WhatsApp edit only read the original draft', async () => {
+    const pendingAction = { id: 42, status: 'PENDING' } as any;
+    jest.mocked(Executor.executeTool).mockResolvedValueOnce({ data: { ok: true }, pendingAction });
+    const question = 'Nubank Daniel é a conta de origem ou de destino?';
+    jest.spyOn(global, 'fetch')
+      .mockResolvedValueOnce(reply({ id: 'read', output: [{ type: 'function_call', name: 'get_pending_action', call_id: 'read', arguments: '{}' }] }))
+      .mockResolvedValueOnce(reply({ output_text: JSON.stringify({ mode: 'OPERATOR', message: question }) }));
+    const result = await LlmRuntimeService.runOperatorTurn({
+      context: { ...context, requireConfirmationButton: true, whatsappDraft: { mode: 'edit', id: 42, revision: 1 } },
+      conversation: []
+    });
+    expect(result.message).toBe(question);
+    expect(result.pendingAction).toBeUndefined();
+  });
+
   it.each([
     { override: 'gpt-6-luna', model: 'gpt-6-luna', effort: 'none' },
     { override: null, model: 'gpt-6.2-sol', effort: 'low' }

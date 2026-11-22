@@ -639,6 +639,55 @@ describe('Assistant runtime', () => {
     expect((await prisma.assistantPendingAction.findUniqueOrThrow({ where: { id: action.id } })).payload).toMatchObject({ categoryId: categories[1].id });
   });
 
+  it('edita por texto a categoria e a conta da Frutaria Depieri no mesmo rascunho do WhatsApp', async () => {
+    const apps = [AppKey.ZENIT_CASH, AppKey.ZENIT_WHATSAPP];
+    await AppAccessService.setCompanyEntitlements(companyId, apps.map(appKey => ({ appKey, enabled: true })));
+    await AppAccessService.setUserGrants(userId, companyId, apps.map(appKey => ({ appKey, granted: true })));
+    const waId = '5500000000222';
+    await prisma.whatsAppUserBinding.create({ data: { userId, activeCompanyId: companyId, waId, phoneNumber: '+' + waId } });
+    await prisma.financialAccount.updateMany({ where: { companyId, isDefault: true }, data: { name: 'Conta Principal' } });
+    const nubank = await prisma.financialAccount.create({ data: { companyId, name: 'Nubank Daniel', type: 'CHECKING', balance: 100 } });
+    const [food, snack] = await Promise.all(['Alimentação', 'Lanches'].map(name => prisma.financialCategory.create({
+      data: { companyId, name, type: 'EXPENSE', color: '#123456', icon: 'wallet' }
+    })));
+    const fetchSpy = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Chamada de IA inesperada'));
+    const tool = (name: string, args: object) => new Response(JSON.stringify({ id: `resp.${name}`, output: [
+      { type: 'function_call', name, call_id: `call.${name}`, arguments: JSON.stringify(args) }
+    ] }));
+    const final = () => new Response(JSON.stringify({ output_text: '{"mode":"OPERATOR","message":"Confira o rascunho."}' }));
+    const send = async (messageId: string, text: string, buttonId?: string) =>
+      (await WhatsAppIntegrationService.dispatchForHub({ waId, messageId, text, buttonId })).replies[0];
+    fetchSpy.mockResolvedValueOnce(tool('create_transaction_draft', { description: 'Frutaria Depieri', type: 'EXPENSE',
+      amount: 25.9, categoryExplicit: false, categoryCandidateIds: [food.id, snack.id] }));
+    expect((await send('depieri.open', '25,90 Frutaria Depieri')).list?.button).toBe('Escolher categoria');
+    const draft = await prisma.assistantPendingAction.findFirstOrThrow({ where: { companyId } });
+    const callsBeforeSelection = fetchSpy.mock.calls.length;
+    const categoryReply = await send('depieri.category', 'Categoria Alimentação');
+    expect(categoryReply.buttons?.map(button => button.title)).toEqual(['Confirmar', 'Cancelar']);
+    expect(fetchSpy.mock.calls).toHaveLength(callsBeforeSelection);
+    expect(categoryReply.text).toContain('Conta Principal');
+
+    fetchSpy.mockResolvedValueOnce(tool('get_pending_action', { pendingActionId: draft.id }))
+      .mockResolvedValueOnce(tool('update_transaction_draft', { pendingActionId: draft.id, fromAccountId: nubank.id }))
+      .mockResolvedValueOnce(final());
+    const accountReply = await send('depieri.account', 'Conta Nubank Daniel');
+    expect(accountReply.buttons?.map(button => button.title)).toEqual(['Confirmar', 'Cancelar']);
+    expect(accountReply.text).toContain('Nubank Daniel');
+    const current = await prisma.assistantPendingAction.findMany({ where: { companyId } });
+    expect(current).toHaveLength(1);
+    expect(current[0]).toMatchObject({ id: draft.id, status: 'PENDING', payload: {
+      amount: 25.9, description: 'Frutaria Depieri', categoryId: food.id, fromAccountId: nubank.id
+    } });
+    expect((await send('depieri.stale', 'Confirmar', categoryReply.buttons![0].id)).text).toContain('não está mais válido');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    expect((await send('depieri.confirm', 'Confirmar', accountReply.buttons![0].id)).text).toContain('Lançamento confirmado');
+    await send('depieri.replay', 'Confirmar', accountReply.buttons![0].id);
+    const saved = await prisma.financialTransaction.findMany({ where: { companyId } });
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ description: 'Frutaria Depieri', categoryId: food.id, fromAccountId: nubank.id });
+    expect(Number(saved[0].amount)).toBe(25.9);
+  });
+
   it.each(['webhook', 'hub'] as const)('recebe voz, corrige o mesmo rascunho por voz, rejeita botoes antigos e grava apenas a versao revisada (%s)', async (transport) => {
     await AppAccessService.setCompanyEntitlements(companyId, [
       { appKey: AppKey.ZENIT_CASH, enabled: true }, { appKey: AppKey.ZENIT_WHATSAPP, enabled: true }

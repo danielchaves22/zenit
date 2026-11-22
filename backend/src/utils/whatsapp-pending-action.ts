@@ -1,6 +1,9 @@
 import type { DraftTransactionSummary, PendingAction } from '@zenit/assistant-contracts';
 import type { WhatsAppReplyButton, WhatsAppReplyList } from '../services/whatsapp-cloud-api.service';
 import { draftNeedsInput, draftClarification } from './transaction-draft-clarification';
+import { namedDraftChoice } from './whatsapp-draft-lifecycle';
+
+type DraftChoices = Pick<PendingAction, 'id' | 'summary' | 'updatedAt'>;
 
 export function buildPendingActionButtons(action: PendingAction): WhatsAppReplyButton[] {
   const revision = new Date(action.updatedAt).getTime();
@@ -11,7 +14,7 @@ export function buildPendingActionButtons(action: PendingAction): WhatsAppReplyB
   ];
 }
 
-export function buildCategoryChoiceList(action: PendingAction): WhatsAppReplyList {
+export function buildCategoryChoiceList(action: DraftChoices): WhatsAppReplyList {
   const revision = new Date(action.updatedAt).getTime();
   const clip = (value: string, limit: number) => value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
   return { button: 'Escolher categoria', rows: (action.summary.categoryOptions ?? []).map((option, index) => ({
@@ -40,20 +43,26 @@ export function parseAccountChoice(id: string) {
 }
 
 // Match only the field currently shown by buildDraftChoiceReply, including options on other pages.
-export function textDraftChoiceId(summary: DraftTransactionSummary, id: number, revision: number, text: string) {
-  const equals = (name: string) => name.localeCompare(text.trim(), 'pt-BR', { sensitivity: 'base' }) === 0;
+export function matchDraftChoice(summary: DraftTransactionSummary, id: number, revision: number, text: string) {
+  const named = namedDraftChoice(text);
+  const equals = (name: string, value: string) => name.localeCompare(value.trim(), 'pt-BR', { sensitivity: 'base' }) === 0;
   for (const field of ['fromAccount', 'toAccount'] as const) {
     const options = summary[field === 'fromAccount' ? 'fromAccountOptions' : 'toAccountOptions'];
     if (!options?.length && !summary.missingFields?.includes(field)) continue;
-    const matches = options?.filter(option => equals(option.name));
-    return matches?.length === 1 ? `zenit:account:${id}:${revision}:${field === 'fromAccount' ? 'from' : 'to'}:${matches[0].id}` : undefined;
+    const matches = options?.filter(option => equals(option.name, text) ||
+      (named && (named.field === 'account' || named.field === field) && equals(option.name, named.value)));
+    if (matches && matches.length > 1) return { repeat: true } as const;
+    if (matches?.length === 1) return { choiceId: `zenit:account:${id}:${revision}:${field === 'fromAccount' ? 'from' : 'to'}:${matches[0].id}` };
+    return undefined;
   }
-  const matches = summary.categoryOptions?.filter(option => equals(option.name) ||
-    (option.parentName && equals(`${option.parentName} / ${option.name}`)));
-  return matches?.length === 1 ? `zenit:category:${id}:${revision}:${matches[0].id}` : undefined;
+  const categoryMatches = (name: string) => equals(name, text) || (named?.field === 'category' && equals(name, named.value));
+  const matches = summary.categoryOptions?.filter(option => categoryMatches(option.name) ||
+    (option.parentName && categoryMatches(`${option.parentName} / ${option.name}`)));
+  if (matches && matches.length > 1) return { repeat: true } as const;
+  if (matches?.length === 1) return { choiceId: `zenit:category:${id}:${revision}:${matches[0].id}` };
 }
 
-export function buildDraftChoiceReply(action: PendingAction, page = 0): { text: string; list?: WhatsAppReplyList } {
+export function buildDraftChoiceReply(action: DraftChoices, page = 0): { text: string; list?: WhatsAppReplyList } {
   const { summary } = action;
   const clip = (value: string, limit: number) => value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
   for (const field of ['fromAccount', 'toAccount'] as const) {
@@ -75,7 +84,7 @@ export function buildDraftChoiceReply(action: PendingAction, page = 0): { text: 
       list: { button: 'Escolher conta', rows } };
   }
   if (summary.categoryOptions?.length) return {
-    text: `Encontrei mais de uma categoria adequada para “${summary.description}”.\n\nEscolha na lista ou escreva o nome da opção. Para usar outra, envie “altere a categoria para” e o nome. Para desistir, envie “cancelar”.\n\nO lançamento ainda não foi gravado.`,
+    text: `Qual categoria deseja usar para “${summary.description}”?\n\nEscolha na lista ou escreva o nome da categoria. Para desistir, envie “cancelar”.\n\nO lançamento ainda não foi gravado.`,
     list: buildCategoryChoiceList(action)
   };
   return { text: draftClarification(summary) };

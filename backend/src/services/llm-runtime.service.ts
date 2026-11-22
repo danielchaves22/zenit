@@ -161,7 +161,7 @@ function buildConversationInput(messages: ConversationMessage[], todayDate: stri
       role: 'system',
       content: [{ type: 'input_text', text: [buildSystemPrompt(todayDate, requireConfirmationButton),
         scope?.mode === 'new' ? 'O usuário está iniciando um lançamento independente. Use apenas os dados deste novo pedido. Não copie dados do rascunho anterior.' : '',
-        scope?.mode === 'edit' ? 'O usuário escolheu corrigir o rascunho atual. Consulte get_pending_action e atualize apenas os campos informados. Não crie outro rascunho.' : ''
+        scope?.mode === 'edit' ? 'Esta mensagem complementa ou corrige o rascunho atual. Consulte get_pending_action e atualize apenas os campos informados, sem pedir para confirmar a intenção de editar. Uma resposta curta pode ser o nome do campo solicitado. Se mais de uma conta corresponder, use o nome como hint e deixe o ID em aberto para o usuário escolher. Em uma transferência, se não estiver claro se a conta é de origem ou destino, pergunte somente isso.' : ''
       ].filter(Boolean).join('\n') }]
     }
   ];
@@ -250,7 +250,8 @@ export default class LlmRuntimeService {
     }
 
     let latestPendingAction: ToolExecutionResult['pendingAction'];
-    let correctionNeedsClarification = false;
+    // Reading an edit's original draft must not hide a follow-up question behind confirmation buttons.
+    let correctionNeedsClarification = params.context.whatsappDraft?.mode === 'edit';
     let currentResponse = initialResponse;
 
     for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {

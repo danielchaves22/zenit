@@ -3,12 +3,13 @@ import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
 import { draftTransactionSummarySchema } from '@zenit/assistant-contracts';
 import { formatCurrency } from '../utils/money';
-import { draftCutoff, draftIntent, expiredDraftMessage, parseDraftIntentButton, staleDraftMessage, WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
-import { textDraftChoiceId } from '../utils/whatsapp-pending-action';
-import type { WhatsAppReplyButton } from './whatsapp-cloud-api.service';
+import { draftCutoff, draftIntent, expiredDraftMessage, isShortOptionName, parseDraftIntentButton, staleDraftMessage, WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
+import { buildDraftChoiceReply, matchDraftChoice } from '../utils/whatsapp-pending-action';
+import { draftNeedsInput } from '../utils/transaction-draft-clarification';
+import type { WhatsAppReplyButton, WhatsAppReplyList } from './whatsapp-cloud-api.service';
 
 type Owner = { sessionId: number; userId: number; companyId: number };
-type Result = { reply: { message: string; buttons?: WhatsAppReplyButton[] } } | { choiceId: string } |
+type Result = { reply: { message: string; buttons?: WhatsAppReplyButton[]; list?: WhatsAppReplyList } } | { choiceId: string } |
   { text: string; scope: WhatsAppDraftScope; fresh: boolean };
 const stale = { reply: { message: staleDraftMessage } };
 
@@ -31,7 +32,7 @@ export default class WhatsAppDraftService {
     const { record, expired, where } = await this.current(owner);
     if (!record) {
       if (button) return { reply: { message: expired.count ? expiredDraftMessage : staleDraftMessage } };
-      const intent = draftIntent(text);
+      const intent = draftIntent(text, expired.count > 0);
       if (intent === 'edit' || intent === 'cancel') return { reply: { message: expired.count ? expiredDraftMessage :
         'Não há rascunho ativo para alterar ou cancelar. Envie os dados para iniciar um novo lançamento.' } };
       return { text, scope: { mode: intent === 'new' ? 'new' : 'open' }, fresh: !!expired.count || intent === 'new' };
@@ -41,16 +42,24 @@ export default class WhatsAppDraftService {
     const metadata = (record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata) ?
       record.metadata : {}) as Prisma.JsonObject;
     const { whatsappDraftChoice: previous, ...other } = metadata;
-    const intent = button?.mode ?? draftIntent(text);
+    let intent = button?.mode ?? draftIntent(text, true);
     if (button) {
       if (button.pendingActionId !== record.id || button.revision !== revision || !previous ||
           typeof previous !== 'object' || Array.isArray(previous) || previous.nonce !== button.nonce || typeof previous.text !== 'string') return stale;
       text = previous.text;
     }
+    const draft = draftTransactionSummarySchema.safeParse(record.summary);
+    if (!button && draft.success && (intent === 'ambiguous' || intent === 'edit')) {
+      const choice = matchDraftChoice(draft.data, record.id, revision, text);
+      if (choice?.choiceId) return { choiceId: choice.choiceId };
+      if (choice?.repeat) {
+        const reply = buildDraftChoiceReply({ id: record.id, updatedAt: record.updatedAt.toISOString(), summary: draft.data });
+        return { reply: { message: reply.text, list: reply.list } };
+      }
+      // A short name can answer the field the assistant just asked about, even outside its shortlist.
+      if (intent === 'ambiguous' && draftNeedsInput(draft.data) && isShortOptionName(text)) intent = 'edit';
+    }
     if (intent === 'ambiguous') {
-      const draft = draftTransactionSummarySchema.safeParse(record.summary);
-      const choiceId = draft.success && textDraftChoiceId(draft.data, record.id, revision, text);
-      if (choiceId) return { choiceId };
       const nonce = randomUUID().replace(/-/g, '');
       // A clarification is not an edit. Preserve the revision and the original deadline.
       const saved = await prisma.assistantPendingAction.updateMany({ where: exact,

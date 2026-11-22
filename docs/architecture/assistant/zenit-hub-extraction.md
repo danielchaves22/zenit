@@ -71,4 +71,6 @@ Cada usuário mantém no máximo um rascunho ativo por área de trabalho. Ele ex
 
 “Categoria Alimentação” responde à lista de categorias. Na revisão, “Conta Nubank Daniel” altera a conta do mesmo lançamento. Se o nome identificar mais de uma conta, o usuário esclarece qual deseja. A prévia atualizada mantém as demais escolhas, e a gravação exige o botão **Confirmar** dessa revisão.
 
+Para trocar a descrição, o usuário pode responder, por exemplo, `Descrição fica "Almoço de domingo"`. O Cash copia o texto entre aspas para o rascunho e envia o resumo atualizado. A mesma forma funciona para a observação.
+
 Com um rascunho ativo, uma mensagem como “80 reais, Nubank” oferece **Novo lançamento** ou **Corrigir anterior**. A escolha recupera a mensagem original (ou sua transcrição); o usuário não precisa repeti-la. Iniciar outro lançamento descarta o rascunho anterior sem gravá-lo e limpa seu contexto. Uma correção preserva os campos não alterados. Botões de escolha são de uso único e vinculados à pessoa, área, sessão e revisão. Para gravar, continua sendo obrigatório tocar em **Confirmar** no resumo válido.

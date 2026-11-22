@@ -1,15 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../lib/prisma';
-import { draftTransactionSummarySchema } from '@zenit/assistant-contracts';
+import { draftTransactionSummarySchema, type PendingAction } from '@zenit/assistant-contracts';
 import { formatCurrency } from '../utils/money';
-import { draftCutoff, draftIntent, expiredDraftMessage, isShortOptionName, parseDraftIntentButton, staleDraftMessage, WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
+import { draftCutoff, draftIntent, draftTextAssignment, expiredDraftMessage, isShortOptionName, parseDraftIntentButton, staleDraftMessage, WhatsAppDraftScope } from '../utils/whatsapp-draft-lifecycle';
 import { buildDraftChoiceReply, matchDraftChoice } from '../utils/whatsapp-pending-action';
 import { draftNeedsInput } from '../utils/transaction-draft-clarification';
 import type { WhatsAppReplyButton, WhatsAppReplyList } from './whatsapp-cloud-api.service';
+import PendingActionService, { type DraftTransactionPayload } from './pending-action.service';
 
 type Owner = { sessionId: number; userId: number; companyId: number };
 type Result = { reply: { message: string; buttons?: WhatsAppReplyButton[]; list?: WhatsAppReplyList } } | { choiceId: string } |
+  { updatedAction: PendingAction; text: string } |
   { text: string; scope: WhatsAppDraftScope; fresh: boolean };
 const stale = { reply: { message: staleDraftMessage } };
 
@@ -77,6 +79,28 @@ export default class WhatsAppDraftService {
           { status: 'CANCELED', canceledAt: new Date() } : { updatedAt: record.updatedAt }) }
       });
       if (!changed.count) return stale;
+    }
+    const assignment = intent === 'edit' ? draftTextAssignment(text) : undefined;
+    if (assignment?.literal && draft.success) {
+      const { field, literal } = assignment;
+      if (field === 'description' && literal.length > 255) {
+        return { reply: { message: 'A descrição pode ter até 255 caracteres. Envie uma versão mais curta.' } };
+      }
+      const patch = { [field]: literal };
+      try {
+        const updatedAction = await PendingActionService.updateTransactionDraftAction({
+          ...owner, pendingActionId: record.id, expectedUpdatedAt: record.updatedAt, whatsapp: true,
+          summary: { ...draft.data, ...patch }, payload: { ...(record.payload as unknown as DraftTransactionPayload), ...patch }
+        });
+        return { updatedAction, text };
+      } catch (error) {
+        if (error instanceof Error && error.message === 'WhatsApp draft expired') return { reply: { message: expiredDraftMessage } };
+        if ((error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') ||
+            (error instanceof Error && error.message === 'Acao pendente nao pode mais ser atualizada')) {
+          return { reply: { message: 'O rascunho mudou. Peça o resumo atualizado antes de continuar.' } };
+        }
+        throw error;
+      }
     }
     return { text, fresh: intent === 'new', scope: intent === 'new' ? { mode: 'new' } : { mode: intent, id: record.id, revision } };
   }

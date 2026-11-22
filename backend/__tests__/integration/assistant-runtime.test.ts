@@ -688,6 +688,47 @@ describe('Assistant runtime', () => {
     expect(Number(saved[0].amount)).toBe(25.9);
   });
 
+  it('aplica a descrição ditada pelo usuário ao rascunho aberto e exige a confirmação revisada', async () => {
+    const apps = [AppKey.ZENIT_CASH, AppKey.ZENIT_WHATSAPP];
+    await AppAccessService.setCompanyEntitlements(companyId, apps.map(appKey => ({ appKey, enabled: true })));
+    await AppAccessService.setUserGrants(userId, companyId, apps.map(appKey => ({ appKey, granted: true })));
+    const waId = '5500000000333';
+    await prisma.whatsAppUserBinding.create({ data: { userId, activeCompanyId: companyId, waId, phoneNumber: '+' + waId } });
+    const account = await prisma.financialAccount.findFirstOrThrow({ where: { companyId, isDefault: true } });
+    const category = await prisma.financialCategory.findFirstOrThrow({ where: { companyId, type: 'EXPENSE' } });
+    const send = async (messageId: string, text: string, buttonId?: string) =>
+      (await WhatsAppIntegrationService.dispatchForHub({ waId, messageId, text, buttonId })).replies[0];
+    const initialDescription = 'Marmita na Rotisseria Fernandes';
+    const draftData = { amount: 89.77, description: initialDescription, type: 'EXPENSE',
+      categoryId: category.id, fromAccountId: account.id };
+    const fetchSpy = jest.spyOn(global, 'fetch').mockRejectedValue(new Error('Chamada de IA inesperada'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'resp.draft', output: [{
+        type: 'function_call', name: 'create_transaction_draft', call_id: 'call.draft', arguments: JSON.stringify(draftData)
+      }] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ output_text: '{"mode":"OPERATOR","message":"Confira o rascunho."}' })));
+    const initial = await send('marmita.open', 'Gastei 89,77 na marmita na Rotisseria Fernandes');
+    expect(initial.buttons?.map(b => b.title)).toEqual(['Confirmar', 'Cancelar']);
+    const currentDraft = () => prisma.assistantPendingAction.findFirstOrThrow({ where: { companyId, status: 'PENDING' } });
+    const original = await currentDraft();
+    const callsBeforeEdit = fetchSpy.mock.calls.length;
+
+    const description = 'Frango marmita Rotisseria Fernandes';
+    const revised = await send('marmita.edit', `Descrição fica "${description}"`);
+    expect(revised.buttons?.map(b => b.title)).toEqual(['Confirmar', 'Cancelar']);
+    expect(revised.text).toContain(description);
+    expect(fetchSpy.mock.calls).toHaveLength(callsBeforeEdit);
+    expect(await currentDraft()).toMatchObject({ id: original.id, sessionId: original.sessionId,
+      payload: { ...original.payload as object, description }, summary: { ...original.summary as object, description } });
+    expect(await prisma.assistantPendingAction.count({ where: { companyId } })).toBe(1);
+    expect((await send('marmita.old', 'Confirmar', initial.buttons![0].id)).text).toContain('não está mais válido');
+    expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+    expect((await send('marmita.confirm', 'Confirmar', revised.buttons![0].id)).text).toContain('Lançamento confirmado');
+    const saved = await prisma.financialTransaction.findMany({ where: { companyId } });
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({ description, categoryId: category.id, fromAccountId: account.id });
+    expect(Number(saved[0].amount)).toBe(89.77);
+  });
+
   it.each(['webhook', 'hub'] as const)('recebe voz, corrige o mesmo rascunho por voz, rejeita botoes antigos e grava apenas a versao revisada (%s)', async (transport) => {
     await AppAccessService.setCompanyEntitlements(companyId, [
       { appKey: AppKey.ZENIT_CASH, enabled: true }, { appKey: AppKey.ZENIT_WHATSAPP, enabled: true }

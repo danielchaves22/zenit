@@ -970,12 +970,14 @@ export default class WhatsAppIntegrationService {
     const message = accountChoice ? `Conta escolhida: ${action.summary[accountChoice.field]?.name}. Revise o rascunho antes de confirmar.` : choice ? `Categoria escolhida: ${action.summary.category?.name}. Revise o rascunho antes de confirmar.` : button.decision === 'confirm'
       ? `Lançamento confirmado.\n\n${formatWhatsAppDraft(action.summary)}`
       : 'Rascunho cancelado. Nenhum lançamento foi gravado.';
-    const context = { sessionId: params.sessionId, userId: params.userId, companyId: params.companyId };
-    await AssistantMessageService.createMessage({
-      ...context,
-      role: AssistantMessageRole.USER,
-      text: accountChoice ? `Escolher conta ${action.summary[accountChoice.field]?.name} no rascunho #${record.id}` : choice ? `Escolher categoria ${action.summary.category?.name} no rascunho #${record.id}` : `${button.decision === 'confirm' ? 'Confirmar' : 'Cancelar'} rascunho #${record.id}`
-    });
+    const userText = accountChoice ? `Escolher conta ${action.summary[accountChoice.field]?.name} no rascunho #${record.id}` : choice ? `Escolher categoria ${action.summary.category?.name} no rascunho #${record.id}` : `${button.decision === 'confirm' ? 'Confirmar' : 'Cancelar'} rascunho #${record.id}`;
+    return this.recordDraftReply(params, userText, message, action);
+  }
+
+  private static async recordDraftReply(owner: { sessionId: number; userId: number; companyId: number },
+    userText: string, message: string, action: PendingAction) {
+    const context = { sessionId: owner.sessionId, userId: owner.userId, companyId: owner.companyId };
+    await AssistantMessageService.createMessage({ ...context, role: AssistantMessageRole.USER, text: userText });
     await AssistantMessageService.createMessage({
       ...context,
       role: AssistantMessageRole.ASSISTANT,
@@ -1099,6 +1101,9 @@ export default class WhatsAppIntegrationService {
       const route = await WhatsAppDraftService.route(turnContext, text ?? '', intentButton || undefined);
       if ('reply' in route) return { ...route.reply, pendingAction: null };
       if ('choiceId' in route) return this.processButtonDecision({ ...turnContext, buttonId: route.choiceId });
+      if ('updatedAction' in route) {
+        return this.recordDraftReply(turnContext, route.text, formatWhatsAppDraft(route.updatedAction.summary), route.updatedAction);
+      }
       return AssistantOrchestratorService.processTurn({
         ...turnContext, message: route.text, requireConfirmationButton: true, whatsappDraft: route.scope,
         freshDraftContext: route.fresh, onEvent: () => undefined

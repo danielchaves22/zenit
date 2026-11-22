@@ -15,14 +15,29 @@ export function namedDraftChoice(text: string) {
   return { field: 'account' as const, value };
 }
 
+// A quoted replacement is literal only when it occupies the entire value.
+// Mixed requests like 'descrição fica "Almoço" e mude a conta' still need interpretation.
+export function draftTextAssignment(text: string) {
+  const message = text.trim();
+  const label = /^(?:a\s+)?(descri[cç][aã]o|observa[cç][aã]o)\b\s*/iu.exec(message);
+  if (!label) return undefined;
+  const assignment = /^(?:[:=]\s*|(?:fica(?:r[aá])?|deve ficar|pode ficar)(?:\s+como)?\s+|(?:[eé]|ser[aá]|vai ser|pode ser)\s+|(?=["“'‘]))([\s\S]+)$/iu.exec(message.slice(label[0].length));
+  if (!assignment) return undefined;
+  const field = /^descri/i.test(label[1]) ? 'description' as const : 'notes' as const;
+  const quoted = /^(?:"([^"]+)"|“([^”]+)”|'([^']+)'|‘([^’]+)’)\s*[.!]?$/u.exec(assignment[1].trim());
+  return { field, literal: quoted?.slice(1).find(value => value !== undefined)?.trim() };
+}
+
 export function draftIntent(text: string, hasDraftContext = false): 'new' | 'edit' | 'review' | 'cancel' | 'ambiguous' {
   const t = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const assignment = draftTextAssignment(text);
+  if (assignment?.literal) return 'edit';
   if (/^(?:por favor[, ]+)?(?:cancele?|cancelar|descart[ae]|descartar|desista|desistir|nao quero mais)\b/.test(t)) return 'cancel';
   if (/^(?:(?:eu )?quis dizer|na verdade|corrig\w*|corrija\w*|correcao|retifi\w*|ajust\w*|troque|mude|altere|altera[r]?|o valor (?:correto (?:e|era)|era|e)|a (?:conta|categoria|data) (?:era|correta e|certa e)|(?:quero|preciso) (?:corrigir|alterar|ajustar)|(?:no|nesse|neste) rascunho)\b/.test(t)) return 'edit';
   if (/\b(?:quanto|quais|qual foi|quando foi|por que)\b/.test(t) || /^(?:sera que|voce sabe|eu ja|ja (?:paguei|recebi|lancei))\b/.test(t)) return 'review';
   if (/^(?:por favor[, ]+)?(?:crie|cadastre|registre) (?:a |uma )?categoria\b/.test(t)) return 'review';
   if (/^(?:quanto|qual|quais|quando|como|mostr\w*|consult\w*|list\w*|reenv\w*|reapresent\w*|exib\w*|oi|ola|obrigad[oa]|bom dia|boa (?:tarde|noite)|(?:pode|quero) confirmar|veja|verifique|resumo|saldo|extrato|tenho|confirm\w*|sim\b|nao$|meus? (?:saldos?|gastos?|lancamentos?)|minha fatura)\b/.test(t)) return 'review';
-  if (t.includes('?')) return hasDraftContext && namedDraftChoice(text) ? 'review' : 'ambiguous';
+  if (t.includes('?')) return hasDraftContext && (assignment || namedDraftChoice(text)) ? 'review' : 'ambiguous';
   if (/\b(?:na verdade|corrigindo|em vez de|e nao|quis dizer)\b/.test(t)) return 'ambiguous';
   if (/^(?:(?:eu |hoje |ontem )?(?:gastei|paguei|comprei|recebi|transferi)|(?:um |outro )?novo lancamento|outr[oa] (?:lancamento|despesa|compra|receita)|(?:registre|lance|anote|cadastre) (?:um[a]? |outr[oa] )?(?:despesa|receita|compra|transferencia|lancamento|r\$|\d))\b/.test(t)) return 'new';
   if (!hasDraftContext) return 'ambiguous';
@@ -30,7 +45,7 @@ export function draftIntent(text: string, hasDraftContext = false): 'new' | 'edi
   if ((namedDraftChoice(text) || /^(?:foi|era) (?:na|no|pela|pelo|com) \S/.test(t)) && !hasTransactionAmountOrVerb(t)) return 'edit';
   if (/^(?:(?:a )?conta de |(?:de |na )?)(?:origem|destino)[.!]?$/.test(t)) return 'edit';
   if (/^(?:foi\s+)?(?:hoje|ontem|anteontem|(?:no dia |dia )?\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)[.!]?$/.test(t)) return 'edit';
-  if (/^(?:(?:o )?valor(?:\s*[:=]\s*|\s+)(?:r\$\s*)?\d|(?:data|vencimento|efetivacao)(?:\s*[:=]\s*|\s+)(?:hoje|ontem|amanha|\d)|(?:descricao|observacao)\s*[:=]\s*\S)/.test(t)) return 'edit';
+  if (assignment || /^(?:(?:o )?valor(?:\s*[:=]\s*|\s+)(?:r\$\s*)?\d|(?:data|vencimento|efetivacao)(?:\s*[:=]\s*|\s+)(?:hoje|ontem|amanha|\d))/.test(t)) return 'edit';
   return 'ambiguous';
 }
 

@@ -28,6 +28,7 @@ import PendingActions from '../../src/services/pending-action.service';
 import AppAccess from '../../src/services/app-access.service';
 import Users from '../../src/services/user.service';
 import { buildPendingActionButtons } from '../../src/utils/whatsapp-pending-action';
+import { draftIntent, draftTextAssignment } from '../../src/utils/whatsapp-draft-lifecycle';
 import type { PendingAction } from '@zenit/assistant-contracts';
 import { logger } from '../../src/utils/logger';
 import Audio from '../../src/services/whatsapp-audio.service';
@@ -317,7 +318,7 @@ describe('WhatsApp native feedback and decisions', () => {
     expect(Cloud.sendTypingIndicator).not.toHaveBeenCalled();
   });
 
-  it.each(['Gastei quanto ontem', 'Qual foi a última compra?', 'Meus gastos de hoje', 'Conta Nubank Daniel tem saldo suficiente?'])('keeps queries from replacing the active draft: %s', async text => {
+  it.each(['Gastei quanto ontem', 'Qual foi a última compra?', 'Meus gastos de hoje', 'Conta Nubank Daniel tem saldo suficiente?', 'A descrição fica “Almoço”?'])('keeps queries from replacing the active draft: %s', async text => {
     simulateActiveDraft = true;
     await webhook({ type: 'text', text: { body: text } });
     expect(Orchestrator.processTurn).toHaveBeenCalledWith(expect.objectContaining({ whatsappDraft: expect.objectContaining({ mode: 'review' }) }));
@@ -369,6 +370,26 @@ describe('WhatsApp native feedback and decisions', () => {
       requireConfirmationButton: true, freshDraftContext: false
     }));
     expect(PendingActions.confirmTransactionDraft).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'Descrição fica "Frango marmita Rotisseria Fernandes"',
+    'A descrição é almoço de domingo',
+    'Descrição: almoço de domingo'
+  ])('recognizes a description assignment on an active draft: %s', text => {
+    expect(draftIntent(text, true)).toBe('edit');
+  });
+
+  it('treats punctuation inside the quoted description as part of the value', () => {
+    const text = 'A descrição fica “Almoço?”';
+    expect(draftIntent(text, true)).toBe('edit');
+    expect(draftTextAssignment(text)).toMatchObject({ field: 'description', literal: 'Almoço?' });
+  });
+
+  it('leaves a multi-field correction for the assistant to interpret in full', () => {
+    const text = 'Descrição fica “Almoço” e a conta fica “Nubank”';
+    expect(draftIntent(text, true)).toBe('edit');
+    expect(draftTextAssignment(text)?.literal).toBeUndefined();
   });
 
   it('routes the answer to a transfer-side question back to the same draft', async () => {

@@ -126,6 +126,7 @@ export default class AssistantOrchestratorService {
           role: params.role,
           mode: AssistantMode.OPERATOR,
           whatsappDraft: params.whatsappDraft,
+          userMessage: params.message,
           requireConfirmationButton: params.requireConfirmationButton
         },
         conversation

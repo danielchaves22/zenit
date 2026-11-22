@@ -52,6 +52,7 @@ const OPERATOR_TOOLS: OpenAiToolDefinition[] = [
         fromAccountHint: { type: ['string', 'null'] },
         toAccountHint: { type: ['string', 'null'] },
         categoryHint: { type: ['string', 'null'] },
+        categoryExplicit: { type: 'boolean', description: 'true somente se o usuário indicou qual categoria usar. Se você inferiu a categoria do estabelecimento, informe false, mesmo que envie categoryId ou categoryCandidateIds.' },
         categoryCandidateIds: { type: ['array', 'null'], items: { type: 'integer' }, minItems: 2, maxItems: 10,
           description: 'Quando varias categorias forem plausiveis, informe seus IDs retornados por search_categories e categoryId/categoryHint nulos. O usuario escolhe na lista antes da confirmacao. null se categoria explicita ou unica opcao adequada.' },
         fromAccountId: { type: ['number', 'null'] },

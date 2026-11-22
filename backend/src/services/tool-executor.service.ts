@@ -13,6 +13,7 @@ import { z } from 'zod';
 import CreditCardInvoiceService from './credit-card-invoice.service';
 import FinancialAccountService from './financial-account.service';
 import FinancialTransactionService from './financial-transaction.service';
+import { suggestHistoricalCategories } from './transaction-description-history.service';
 import RealizedExpensesService from './realized-expenses.service';
 import PendingActionService, { DraftTransactionPayload } from './pending-action.service';
 import UserService from './user.service';
@@ -38,6 +39,7 @@ const createTransactionDraftArgsSchema = z.object({
   fromAccountHint: z.string().nullable().optional(),
   toAccountHint: z.string().nullable().optional(),
   categoryHint: z.string().nullable().optional(),
+  categoryExplicit: z.boolean().optional(),
   categoryCandidateIds: z.array(z.number().int().positive()).min(2).max(10).nullable().optional(),
   fromAccountId: z.coerce.number().int().positive().nullable().optional(),
   toAccountId: z.coerce.number().int().positive().nullable().optional(),
@@ -140,6 +142,7 @@ const CATEGORY_ICON_HINTS: Array<{
 
 export type AssistantToolExecutionContext = {
   whatsappDraft?: WhatsAppDraftScope;
+  userMessage?: string;
   sessionId: number;
   turnId: number;
   userId: number;
@@ -802,6 +805,10 @@ function categoryChoices(categories: CategoryLike[], hint: string) {
   return specific.filter(item => item.score >= specific[0].score - 10).slice(0, 10).map(item => item.category);
 }
 
+function draftCategoryOption(category: CategoryLike) {
+  return { id: category.id, name: category.name, ...(category.parent ? { parentName: category.parent.name } : {}) };
+}
+
 async function getAccessibleAccounts(params: {
   userId: number;
   role: Role;
@@ -1118,7 +1125,7 @@ export default class ToolExecutorService {
   private static async buildDraftResolution(
     draftInput: z.infer<typeof createTransactionDraftArgsSchema>,
     context: AssistantToolExecutionContext,
-    preserveChoices: { fromAccount?: boolean; toAccount?: boolean } = {}
+    options: { preserveFromAccount?: boolean; preserveToAccount?: boolean; useCategoryHistory?: boolean } = {}
   ) {
     const normalizedType = draftInput.type as TransactionType;
     const normalizedStatus = inferDraftStatus(draftInput);
@@ -1174,7 +1181,7 @@ export default class ToolExecutorService {
     let toAccountOptions: DraftTransactionPayload['toAccountOptions'];
 
     if (normalizedType === TransactionType.EXPENSE || normalizedType === TransactionType.TRANSFER) {
-      const resolved = resolveDraftAccount(accounts, draftInput.fromAccountId, fromHint, preserveChoices.fromAccount);
+      const resolved = resolveDraftAccount(accounts, draftInput.fromAccountId, fromHint, options.preserveFromAccount);
       fromAccount = resolved.account;
       fromAccountOptions = resolved.options;
 
@@ -1189,7 +1196,7 @@ export default class ToolExecutorService {
           ? accounts.filter((account) => account.id !== fromAccount.id)
           : accounts;
 
-      const resolved = resolveDraftAccount(accountPool, draftInput.toAccountId, toHint, preserveChoices.toAccount);
+      const resolved = resolveDraftAccount(accountPool, draftInput.toAccountId, toHint, options.preserveToAccount);
       toAccount = resolved.account;
       toAccountOptions = resolved.options;
 
@@ -1220,22 +1227,30 @@ export default class ToolExecutorService {
         const specific = candidates.filter(category => !candidates.some(child => child.parent?.id === category.id &&
           scoreCategoryCandidate({ ...child, parent: null }, draftInput.description) >= 60));
         if (specific.length === 1) matchedCategory = specific[0];
-        else categoryOptions = specific.map(category => {
-          return { id: category.id, name: category.name, ...(category.parent ? { parentName: category.parent.name } : {}) };
-        });
+        else categoryOptions = specific.map(draftCategoryOption);
       } else if (draftInput.categoryId != null) {
         matchedCategory =
           categories.find((category) => category.id === draftInput.categoryId) ?? null;
       } else {
         const close = categoryChoices(categories, draftInput.categoryHint || draftInput.description);
         if (close.length > 1) {
-          categoryOptions = close.map(category => ({ id: category.id, name: category.name,
-            ...(category.parent ? { parentName: category.parent.name } : {}) }));
+          categoryOptions = close.map(draftCategoryOption);
         } else {
           matchedCategory = close[0] ?? null;
         }
       }
 
+      if (options.useCategoryHistory) {
+        const ids = await suggestHistoricalCategories({
+          companyId: context.companyId, type: normalizedType, description: draftInput.description,
+          accessibleAccountIds: await getAccessibleAccountIds(context)
+        });
+        const historical = ids.flatMap(id => categories.filter(category => category.id === id));
+        if (historical.length && historical.length === ids.length) {
+          matchedCategory = historical.length === 1 ? historical[0] : null;
+          categoryOptions = historical.length === 1 ? undefined : historical.map(draftCategoryOption);
+        }
+      }
       if (!matchedCategory && !categoryOptions) {
         missingFields.push('category');
       }
@@ -1296,8 +1311,12 @@ export default class ToolExecutorService {
     context: AssistantToolExecutionContext
   ): Promise<ToolExecutionResult> {
     const args = createTransactionDraftArgsSchema.parse(rawArguments);
+    // Older tool callers supplied only categoryId/categoryHint to indicate a selection.
+    const categoryExplicit = args.categoryExplicit ?? (args.categoryId != null || hasExplicitHint(args.categoryHint));
+    const userNamedCategory = /\bcategoria\s*[:=]?\s+[\p{L}\d]/iu.test(context.userMessage ?? '');
+    const useCategoryHistory = !!(context.whatsappDraft || context.requireConfirmationButton) && !categoryExplicit && !userNamedCategory;
     const { payload, summary } =
-      await this.buildDraftResolution(args, context);
+      await this.buildDraftResolution(args, context, { useCategoryHistory });
 
     const pendingAction = await PendingActionService.createTransactionDraftAction({
       whatsapp: !!context.whatsappDraft,
@@ -1395,8 +1414,8 @@ export default class ToolExecutorService {
 
     const { payload, summary } =
       await this.buildDraftResolution(mergedDraft, context, {
-        fromAccount: existingPayload.fromAccountOptions !== undefined && args.fromAccountId == null && !hasExplicitHint(args.fromAccountHint) && !hasExplicitHint(args.accountHint),
-        toAccount: existingPayload.toAccountOptions !== undefined && args.toAccountId == null && !hasExplicitHint(args.toAccountHint) && !hasExplicitHint(args.accountHint)
+        preserveFromAccount: existingPayload.fromAccountOptions !== undefined && args.fromAccountId == null && !hasExplicitHint(args.fromAccountHint) && !hasExplicitHint(args.accountHint),
+        preserveToAccount: existingPayload.toAccountOptions !== undefined && args.toAccountId == null && !hasExplicitHint(args.toAccountHint) && !hasExplicitHint(args.accountHint)
       });
 
     const pendingAction = await PendingActionService.updateTransactionDraftAction({

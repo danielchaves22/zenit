@@ -372,6 +372,60 @@ describe('Assistant runtime', () => {
     return ToolExecutorService.executeTool('create_transaction_draft', args, { ...context, turnId: turn.id });
   }
 
+  async function recordPurchases(ownerCompanyId: number, fromAccountId: number, categoryId: number, descriptions: string[]) {
+    await prisma.financialTransaction.createMany({ data: descriptions.map(description => ({
+      companyId: ownerCompanyId, createdBy: userId, fromAccountId, categoryId, description,
+      date: new Date(), amount: 18, type: 'EXPENSE', status: 'COMPLETED'
+    })) });
+  }
+
+  it('usa o histórico da frutaria nas contas acessíveis, respeita uma categoria explícita e oferece escolhas quando o uso se divide', async () => {
+    const { context, categories: [first, second] } = await categoryChoiceFixture();
+    const visible = await prisma.financialAccount.findFirstOrThrow({ where: { companyId } });
+    const hidden = await prisma.financialAccount.create({ data: { name: 'Restrita', companyId, type: 'CHECKING' } });
+    await UserFinancialAccountAccessService.grantAccess({ userId, companyId, accountIds: [visible.id], grantedBy: userId });
+    const merchant = 'Frutaria Depieri';
+    const descriptions = [merchant, merchant, 'Compra na Frutaria Depieri'];
+    await recordPurchases(companyId, visible.id, first.id, descriptions);
+    const web = await FinancialTransactionService.getDescriptionSuggestions(companyId, 'DEPie', 'EXPENSE');
+    expect(web).toEqual([
+      { description: merchant, frequency: 2, categoryId: first.id, categoryName: first.name },
+      { description: 'Compra na Frutaria Depieri', frequency: 1, categoryId: first.id, categoryName: first.name }
+    ]);
+    await recordPurchases(companyId, hidden.id, second.id, descriptions);
+    const userContext = { ...context, role: 'USER' as const };
+    const args = { description: merchant, amount: 25.9, type: 'EXPENSE', categoryExplicit: false };
+    const history = await nextDraft({ ...args, categoryCandidateIds: [second.id, first.id] }, userContext);
+    expect(history.pendingAction?.summary.category?.id).toBe(first.id);
+    expect(history.pendingAction?.summary.categoryOptions).toBeUndefined();
+
+    const explicit = await nextDraft({ ...args, categoryId: second.id, categoryExplicit: true }, userContext);
+    expect(explicit.pendingAction?.summary.category?.id).toBe(second.id);
+    await recordPurchases(companyId, visible.id, second.id, descriptions.map(d => d.replace('Depieri', 'Depiéri')));
+    const mixed = await nextDraft(args, userContext);
+    expect(mixed.pendingAction?.summary.category).toBeNull();
+    expect(mixed.pendingAction?.summary.categoryOptions?.map(c => c.id).sort()).toEqual([first.id, second.id].sort());
+  });
+
+  it('isola o histórico de compras com a mesma descrição em outra área de trabalho', async () => {
+    const { context } = await categoryChoiceFixture();
+    const other = await prisma.company.create({ data: { name: 'Outra empresa de teste', code: Number(`6${String(Date.now()).slice(-7)}`) } });
+    try {
+      const account = await prisma.financialAccount.create({ data: { companyId: other.id, name: 'Banco da outra empresa', type: 'CHECKING' } });
+      const category = await prisma.financialCategory.create({ data: { companyId: other.id, name: 'Restaurante', type: 'EXPENSE', color: '#123456', icon: 'wallet' } });
+      await recordPurchases(other.id, account.id, category.id, Array(4).fill('Depieri Empório'));
+      const own = await nextDraft({ description: 'Depieri Empório', type: 'EXPENSE', amount: 25.9, categoryExplicit: false }, context);
+      expect(own.pendingAction?.summary.category).toBeNull();
+      expect(own.pendingAction?.summary.categoryOptions).toBeUndefined();
+      expect(own.pendingAction?.summary.missingFields).toContain('category');
+    } finally {
+      await prisma.financialTransaction.deleteMany({ where: { companyId: other.id } });
+      await prisma.financialAccount.deleteMany({ where: { companyId: other.id } });
+      await prisma.financialCategory.deleteMany({ where: { companyId: other.id } });
+      await prisma.company.delete({ where: { id: other.id } });
+    }
+  });
+
   async function accountChoiceFixture() {
     const fixture = await categoryChoiceFixture();
     await prisma.financialAccount.updateMany({ where: { companyId }, data: { isDefault: false } });

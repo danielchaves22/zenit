@@ -51,6 +51,8 @@ O Cash revalida usuário, área de trabalho, sessão, revisão, conta oferecida,
 
 ### Categorias
 
+Ao preparar um lançamento pelo WhatsApp sem categoria indicada pelo usuário, o Cash procura descrições semelhantes no histórico da mesma área de trabalho e do mesmo tipo de lançamento, respeitando a visibilidade das contas. Um histórico consistente pode preencher a categoria na prévia. Se mais de uma categoria for plausível, o usuário escolhe na lista. Quando o histórico é insuficiente, o assistente usa o catálogo de categorias. Uma categoria informada pelo usuário tem prioridade.
+
 Quando várias categorias forem plausíveis, as ferramentas de criação/correção recebem `categoryCandidateIds` com 2 a 10 IDs obtidos em `search_categories`. O Cash valida empresa e tipo e persiste `categoryOptions` no JSON do rascunho e do resumo; não há nova tabela ou migração. Uma categoria explícita ou uma única opção clara segue para a revisão habitual. Sem correspondência adequada, pede esclarecimento, sem selecionar a categoria padrão silenciosamente.
 
 A resposta contém `list: { button, rows: [{ id, title, description }] }`, sem botões de confirmação. O Hub envia `interactive.type=list`; o ID de `list_reply` volta pelo campo legado `buttonId`. O prefixo `zenit:category` encaminha a seleção diretamente ao Cash, sem chamada à IA. O título vindo do WhatsApp nunca determina a escolha. Listas têm até 10 linhas; títulos até 24 caracteres e descrições até 72, incluindo a categoria pai quando existente. Para outra categoria ou cancelamento, o usuário pode escrever ou enviar áudio.

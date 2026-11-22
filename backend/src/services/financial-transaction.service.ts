@@ -1,4 +1,5 @@
 import prisma from '../lib/prisma';
+import { getDescriptionFrequencies } from './transaction-description-history.service';
 import { FinancialTransaction, TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { logger } from '../utils/logger';
 import {
@@ -4534,35 +4535,9 @@ export default class FinancialTransactionService {
     
     try {
       // âœ… BUSCAR DESCRIÃ‡Ã•ES FILTRADAS POR TIPO E FREQUÃŠNCIA
-      const suggestions = await prisma.financialTransaction.groupBy({
-        by: ['description', 'categoryId'],
-        where: {
-          companyId,
-          type: transactionType, // âœ… FILTRO POR TIPO DE TRANSAÃ‡ÃƒO
-          ...buildOperationalTransactionWhere(),
-          description: {
-            contains: normalizedQuery,
-            mode: 'insensitive' // Case-insensitive search
-          }
-        },
-        _count: {
-          description: true
-        },
-        orderBy: [
-          {
-            _count: {
-              description: 'desc' // Mais frequentes primeiro
-            }
-          },
-          {
-            categoryId: 'asc'
-          },
-          {
-            description: 'asc' // AlfabÃ©tica como critÃ©rio secundÃ¡rio
-          }
-        ],
-        take: limit
-      });
+      const suggestions = await getDescriptionFrequencies(companyId, transactionType, {
+        description: { contains: normalizedQuery, mode: 'insensitive' }
+      }, limit);
 
       const categoryIds = suggestions
         .map((item) => item.categoryId)

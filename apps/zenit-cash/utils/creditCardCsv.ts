@@ -548,7 +548,7 @@ export function buildCreditCardReconciliationCsv({
       },
       {
         header: 'Descricao_a_importar',
-        getValue: (item) => itemDrafts[item.id]?.description || item.sourceDescription
+        getValue: (item) => itemDrafts[item.id]?.description ?? item.sourceDescription
       },
       {
         header: 'Categoria_a_importar',

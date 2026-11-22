@@ -888,6 +888,7 @@ model FinancialTransaction {
   // ✅ ÍNDICES EXISTENTES
   bankReconciliationLinks BankReconciliationTransaction[]
   creditCardReconciliationLinks CreditCardReconciliationItemTransaction[]
+  creditCardDescriptionHistory CreditCardDescriptionHistory?
   @@index([companyId])
   @@index([fromAccountId])
   @@index([toAccountId])
@@ -1137,6 +1138,7 @@ model CreditCardReconciliationItem {
   createdAt      DateTime                                 @default(now())
   updatedAt      DateTime                                 @updatedAt
   transactions   CreditCardReconciliationItemTransaction[]
+  descriptionHistory CreditCardDescriptionHistory?
   events         CreditCardReconciliationEvent[]
 
   @@unique([sessionId, sourceItemId], name: "unique_credit_card_reconciliation_source_item", map: "unique_credit_card_reconciliation_source_item")
@@ -1170,6 +1172,25 @@ model CreditCardReconciliationEvent {
 
   @@index([sessionId, createdAt])
   @@index([itemId])
+}
+
+model CreditCardDescriptionHistory {
+  transactionId     Int                                  @id
+  transaction       FinancialTransaction                 @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  itemId            Int?                                 @unique
+  item              CreditCardReconciliationItem?         @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  accountId         Int
+  sourceType        FinancialTransactionImportSourceType
+  sourceDescription String
+  sourceHash        String                               @db.Char(64)
+  kind              String
+  invoiceId         Int
+  amount            Decimal                              @db.Decimal(15, 2)
+  date              DateTime
+  installmentNumber Int?
+  totalInstallments Int?
+
+  @@index([accountId, sourceType, sourceHash], map: "idx_credit_card_description_history_source")
 }
 
 model CreditCardInvoice {

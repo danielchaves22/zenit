@@ -766,6 +766,163 @@ describe('CreditCardReconciliationPage comparison views', () => {
     expect(vi.mocked(downloadCsvFile).mock.calls[0]?.[1]).toContain('fatura.ofx')
   })
 
+  it('propõe uma descrição e categoria do histórico e salva a edição manual', async () => {
+    const sourcePreview = {
+      ...preview,
+      items: preview.items.map(item => item.id === 'bank-pending'
+        ? { ...item, historyOptions: [{ description: 'Feira semanal', categoryId: 7, categoryName: category.name, count: 2 }] }
+        : item)
+    }
+    vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) })
+    const user = await renderAnalyzedPage()
+    const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
+    const description = pending.getByRole('textbox', { name: 'Digite para buscar descricoes anteriores' })
+    expect(description).toHaveValue('Feira semanal')
+    expect(pending.getByRole('combobox', { name: 'Categoria do lancamento' })).toHaveValue('7')
+    expect(pending.getByText(/Sugestão inicial baseada em faturas anteriores/)).toBeVisible()
+    expect(pending.queryByText('Categoria anterior')).not.toBeInTheDocument()
+    expect(api.post).toHaveBeenCalledTimes(1)
+
+    await user.clear(description)
+    await user.type(description, 'Feira de domingo')
+    await user.click(pending.getByRole('button', { name: 'Importar este item' }))
+    expect(api.post).toHaveBeenCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
+      expectedRevision: 1,
+      selectedItems: [{ itemId: 'bank-pending', action: 'IMPORT', description: 'Feira de domingo', categoryId: 7 }]
+    })
+  })
+
+  it('oferece cada par histórico sem pré-seleção e mantém a validação de categoria', async () => {
+    const sourcePreview = {
+      ...preview,
+      items: preview.items.map(item => item.id === 'bank-pending'
+        ? { ...item, historyOptions: [
+          { description: 'Assinatura', categoryId: 7, categoryName: category.name, count: 3 },
+          { description: 'Assinatura pessoal', categoryId: null, categoryName: null, count: 1 }
+        ] }
+        : item)
+    }
+    vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) })
+    const user = await renderAnalyzedPage()
+    const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
+    const description = pending.getByRole('textbox', { name: 'Digite para buscar descricoes anteriores' })
+    const categoryField = pending.getByRole('combobox', { name: 'Categoria do lancamento' })
+    const importButton = pending.getByRole('button', { name: 'Importar este item' })
+    expect(description).toHaveValue('Pendente no arquivo')
+    expect(categoryField).toHaveValue('')
+    expect(importButton).toBeDisabled()
+
+    await user.click(pending.getByRole('button', { name: 'Assinatura · Categoria de teste (3 usos)' }))
+    expect(description).toHaveValue('Assinatura')
+    expect(categoryField).toHaveValue('7')
+    expect(importButton).toBeEnabled()
+    await user.click(pending.getByRole('button', { name: 'Assinatura pessoal · Sem categoria (1 uso)' }))
+    expect(description).toHaveValue('Assinatura pessoal')
+    expect(categoryField).toHaveValue('')
+    expect(importButton).toBeDisabled()
+    await user.selectOptions(categoryField, '7')
+    expect(importButton).toBeEnabled()
+    expect(api.post).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['ação em outro item', 'conflito de revisão'])(
+    'recalcula somente campos intocados quando o histórico muda após %s',
+    async (refresh) => {
+      const first = { description: 'Despesa anterior', categoryId: 7, categoryName: category.name, count: 2 }
+      const other = { description: 'Outra despesa', categoryId: null, categoryName: null, count: 1 }
+      const affected = ['bank-market', 'bank-gas', 'bank-pending']
+      const withHistory = (options: Array<typeof first | typeof other>) => ({
+        ...preview,
+        items: preview.items.map(item => affected.includes(item.id) ? { ...item, historyOptions: options } : item)
+      })
+      const initial = buildWorkspace({ sourcePreview: withHistory([first]) })
+      const updated = buildWorkspace({ sourcePreview: withHistory([first, other]), revision: 2 })
+      vi.mocked(api.post).mockResolvedValueOnce({ data: initial })
+      if (refresh === 'conflito de revisão') {
+        vi.mocked(api.post).mockRejectedValueOnce({ response: { status: 409, data: { code: 'REVISION_CONFLICT' } } })
+      } else {
+        vi.mocked(api.post).mockResolvedValueOnce({ data: updated })
+      }
+      const user = await renderAnalyzedPage()
+      const market = within(screen.getByText('Mercado no arquivo').closest('section')!)
+      const gas = within(screen.getByText('Posto no arquivo').closest('section')!)
+      const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
+      const textbox = 'Digite para buscar descricoes anteriores'
+      const categoryLabel = 'Categoria do lancamento'
+      expect(market.getByRole('textbox', { name: textbox })).toHaveValue(first.description)
+      await user.clear(gas.getByRole('textbox', { name: textbox }))
+      await user.type(gas.getByRole('textbox', { name: textbox }), 'Viagem')
+      // The deliberate category choice finishes on the same value as the automatic default.
+      await user.selectOptions(pending.getByRole('combobox', { name: categoryLabel }), '')
+      await user.selectOptions(pending.getByRole('combobox', { name: categoryLabel }), '7')
+      if (refresh === 'conflito de revisão') {
+        vi.mocked(api.get).mockResolvedValueOnce({ data: updated })
+      }
+      const anotherItem = within(screen.getByText('Assinatura ambigua B no arquivo').closest('section')!)
+      await user.click(anotherItem.getByRole('button', { name: 'Ignorar' }))
+      await market.findByRole('group', { name: /Usar uma sugestão/ })
+      expect(market.getByRole('textbox', { name: textbox })).toHaveValue('Mercado no arquivo')
+      expect(market.getByRole('combobox', { name: categoryLabel })).toHaveValue('')
+      expect(gas.getByRole('textbox', { name: textbox })).toHaveValue('Viagem')
+      expect(gas.getByRole('combobox', { name: categoryLabel })).toHaveValue('')
+      expect(pending.getByRole('textbox', { name: textbox })).toHaveValue('Pendente no arquivo')
+      expect(pending.getByRole('combobox', { name: categoryLabel })).toHaveValue('7')
+    }
+  )
+
+  it('bloqueia a categoria histórica indisponível no item e no lote e exporta os campos atuais', async () => {
+    const sourcePreview = {
+      ...preview,
+      items: preview.items.map(item => item.id === 'bank-pending'
+        ? { ...item, historyOptions: [{ description: 'Viagem', categoryId: 999, categoryName: 'Antiga', count: 1 }] }
+        : item)
+    }
+    vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) })
+    const user = await renderAnalyzedPage()
+    const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
+    const categoryField = pending.getByRole('combobox', { name: 'Categoria do lancamento' })
+    expect(categoryField).toHaveValue('')
+    expect(pending.getByRole('button', { name: 'Importar este item' })).toBeDisabled()
+    await user.click(pending.getByRole('checkbox'))
+    const batch = screen.getByRole('button', { name: 'Importar 1 selecionado(s)' })
+    expect(batch).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Exportar CSV' }))
+    expect(vi.mocked(downloadCsvFile).mock.lastCall?.[1]).toContain(';Pendente no arquivo;Viagem;;')
+
+    await user.selectOptions(categoryField, '7')
+    expect(batch).toBeEnabled()
+    await user.clear(pending.getByRole('textbox', { name: 'Digite para buscar descricoes anteriores' }))
+    await user.click(screen.getByRole('button', { name: 'Exportar CSV' }))
+    expect(vi.mocked(downloadCsvFile).mock.lastCall?.[1]).toContain(';Pendente no arquivo;;Categoria de teste;')
+    expect(batch).toBeDisabled()
+  })
+
+  it('destaca a contraparte histórica nas duas vistas e mantém a confirmação manual', async () => {
+    const sourcePreview = {
+      ...preview,
+      items: preview.items.map(item => item.id === 'bank-ambiguous-a'
+        ? { ...item, historySuggestedMatchKey: 'transaction:505' }
+        : item)
+    }
+    vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) })
+    const user = await renderAnalyzedPage()
+    const detailed = within(screen.getByText('Assinatura ambigua A no arquivo').closest('section')!)
+    expect(detailed.getByText('Sugerido por faturas anteriores').parentElement)
+      .toHaveTextContent('Assinatura alternativa no Zenit')
+    const candidate = detailed.getByRole('option', { name: /Sugerido por faturas anteriores · Assinatura alternativa/ })
+    expect(candidate.closest('select')).toHaveValue('')
+    expect(detailed.getByText('Assinatura ambigua no Zenit', { exact: true })).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+    const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
+    const zenitRegion = screen.getByRole('region', { name: 'Lançamentos da fatura no Zenit' })
+    await user.click(getFileSelectionButton(fileRegion, 'bank-ambiguous-a', /Assinatura ambigua A/))
+    const suggestedRow = within(getZenitItem(zenitRegion, 'transaction:505'))
+    expect(suggestedRow.getByText('Sugerido por faturas anteriores')).toBeVisible()
+    expect(suggestedRow.getByRole('button')).toHaveAttribute('aria-pressed', 'false')
+    expect(api.post).toHaveBeenCalledTimes(1)
+  })
+
   it('oferece lancamento individual para credito sem inclui-lo na selecao em massa', async () => {
     const user = userEvent.setup()
     const creditItem = {

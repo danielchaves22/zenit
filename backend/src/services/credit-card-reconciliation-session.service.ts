@@ -20,6 +20,7 @@ import CreditCardStatementReconciliationService, {
 } from './credit-card-statement-reconciliation.service';
 import FinancialTransactionService from './financial-transaction.service';
 import CreditCardReconciliationValueAnalysisService from './credit-card-reconciliation-value-analysis.service';
+import { recordCreditCardDescriptionHistory } from './credit-card-reconciliation-history.service';
 
 const PARSER_VERSION = 2;
 const ACTIVE_MUTATION_TTL_MS = 10 * 60 * 1000;
@@ -1558,6 +1559,7 @@ async function invalidateStaleResolutions(
         { currentRevision: session.revision, currentSessionId: session.id }
       );
     }
+    await tx.creditCardDescriptionHistory.deleteMany({ where: { itemId: invalidItem.id } });
     await tx.creditCardReconciliationItemTransaction.deleteMany({
       where: { itemId: invalidItem.id }
     });
@@ -2332,6 +2334,11 @@ export default class CreditCardReconciliationSessionService {
                 transactionSnapshot: asJson(anchorTransaction)
               }
             });
+            if (selectedInput.action !== 'IMPORT_CREDIT') {
+              await recordCreditCardDescriptionHistory(
+                tx, session.sourceType, persistedItem.id, itemSnapshot, anchorTransaction
+              );
+            }
           }
         }
 
@@ -2557,6 +2564,7 @@ export default class CreditCardReconciliationSessionService {
         // The join is reconciliation evidence only. Removing it must not mutate
         // the financial transaction or the global recurring-description alias.
         await tx.creditCardReconciliationItemTransaction.deleteMany({ where: { itemId: item.id } });
+        await tx.creditCardDescriptionHistory.deleteMany({ where: { itemId: item.id } });
         await tx.creditCardReconciliationItem.update({
           where: { id: item.id },
           data: {
@@ -2588,6 +2596,11 @@ export default class CreditCardReconciliationSessionService {
               transactionSnapshot: asJson(transaction)
             }
           });
+        }
+        if (input.decision === 'CONFIRM_EXISTING' && transactions.length === 1) {
+          await recordCreditCardDescriptionHistory(
+            tx, session.sourceType, item.id, item.snapshot as unknown as ReconciliationPreviewItem, transactions[0]
+          );
         }
       }
 

@@ -7,7 +7,7 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-11-20
+last_reviewed: 2026-11-22
 summary: Organize compras no cartão, parcelas, vencimentos e pagamentos sem duplicar despesas.
 ---
 
@@ -37,6 +37,14 @@ A compra representa o gasto; o pagamento da fatura representa a liquidação do 
 Use o fluxo correspondente ao tipo de crédito ou estorno. Quando um estorno se refere a uma compra, mantenha o vínculo correto. Receitas comuns e créditos de cartão têm efeitos diferentes nas consultas.
 
 Na conciliação de cartão, revise os itens importados e as associações sugeridas. Uma sugestão precisa ser conferida antes da confirmação; não aceite uma associação somente porque os valores coincidem.
+
+### Reutilizar uma descrição de outra fatura
+
+Quando você cria uma despesa pela conciliação ou confirma que um item da fatura corresponde a um lançamento existente, o Cash pode reutilizar a descrição e a categoria escolhidas em faturas posteriores do mesmo cartão. As faturas já conciliadas também podem contribuir quando o Cash conserva o registro da sua escolha.
+
+Por exemplo, se você vinculou `MP*PADOCAVILA` a **Padaria da Vila** na categoria **Alimentação**, uma nova compra com esse texto pode vir com esses campos preenchidos, mesmo que o valor seja diferente. Você pode editar os dois campos antes de importar. Se já usou descrições ou categorias diferentes para esse texto, escolha a combinação adequada ou informe outra.
+
+Quando há mais de um lançamento compatível na fatura atual, o histórico também pode destacar um deles para você conferir. Verifique a data, o valor e a parcela antes de confirmar o vínculo.
 
 ## Conciliar a fatura do Nubank
 

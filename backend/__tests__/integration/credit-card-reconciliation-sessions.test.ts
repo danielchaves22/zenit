@@ -201,6 +201,108 @@ describe('Credit-card reconciliation persisted sessions', () => {
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
   });
 
+  describe('description and category from previous invoices', () => {
+    const merchant = 'MP*PADOCAVILA';
+
+    function startCsv(month: number, amount: string) {
+      const day = `2026-${String(month).padStart(2, '0')}-04`;
+      return CreditCardReconciliationSessionService.start(context, {
+        sourceType: 'NUBANK_CSV', targetReferenceYear: 2026, targetReferenceMonth: month,
+        fileName: 'fatura.csv', fileBase64: nubankFile([[day, merchant, amount]])
+      });
+    }
+
+    function startOfx(month: number, target = context, year = 2026) {
+      const date = `${year}${String(month).padStart(2, '0')}04`;
+      return CreditCardReconciliationSessionService.start(target, {
+        sourceType: 'NUBANK_OFX', targetReferenceYear: year, targetReferenceMonth: month,
+        fileName: 'fatura.ofx', fileBase64: creditCardOfx([
+          { id: 'debit', date, amount: '-32.50', description: merchant }
+        ]).toString('base64')
+      });
+    }
+
+    async function addInvoicePurchases(month: number, descriptions: string[], amount: number) {
+      const invoice = await prisma.creditCardInvoice.create({
+        data: {
+          accountId, referenceYear: 2026, referenceMonth: month,
+          closingDate: new Date(Date.UTC(2026, month - 1, 10, 12)),
+          dueDate: new Date(Date.UTC(2026, month - 1, 15, 12))
+        }
+      });
+      return Promise.all(descriptions.map(description => prisma.financialTransaction.create({
+        data: {
+          description, amount, date: new Date(Date.UTC(2026, month - 1, 4, 12)),
+          type: TransactionType.EXPENSE, status: TransactionStatus.COMPLETED,
+          fromAccountId: accountId, creditCardInvoiceId: invoice.id, categoryId, companyId, createdBy: userId
+        }
+      })));
+    }
+
+    it('suggests a manually confirmed CSV link on another OFX invoice and withdraws it when undone', async () => {
+      const [chosen] = await addInvoicePurchases(8, ['Padaria da Vila', 'Outra despesa'], 19);
+      const first = await startCsv(8, '19,00');
+      const firstId = first.preview.items[0].id;
+      const confirmed = await CreditCardReconciliationSessionService.decide(context, first.session.id, firstId, {
+        expectedRevision: first.session.revision, decision: 'CONFIRM_EXISTING', transactionIds: [chosen.id]
+      });
+      const [newPurchase] = await addInvoicePurchases(9, ['Padaria da Vila', 'Despesa do mesmo valor'], 32.5);
+      const second = await startOfx(9);
+      const suggested = second.preview.items[0];
+      expect(suggested.historyOptions).toEqual([
+        { description: 'Padaria da Vila', categoryId, categoryName: 'Compras', count: 1 }
+      ]);
+      const currentMatch = suggested.matchedTransactions.find(match => match.id === newPurchase.id);
+      expect(currentMatch).toBeDefined();
+      expect(suggested.historySuggestedMatchKey).toBe(currentMatch!.matchKey);
+      expect(suggested.matchedTransactions).toHaveLength(2);
+      expect(second.progress.confirmedExistingCount).toBe(0);
+
+      await CreditCardReconciliationSessionService.decide(context, first.session.id, firstId, {
+        expectedRevision: confirmed.session.revision, decision: 'UNCONFIRM_EXISTING'
+      });
+      const refreshed = await CreditCardReconciliationSessionService.get(context, 2026, 9);
+      expect(refreshed.preview!.items[0].historyOptions ?? []).toEqual([]);
+      expect(refreshed.preview!.items[0].historySuggestedMatchKey).toBeFalsy();
+      expect(refreshed.preview!.items[0].categorySuggestion.fromConfirmedHistory).not.toBe(true);
+    });
+
+    it('keeps distinct choices after resetting old sessions and isolates history by card', async () => {
+      const otherCategory = await prisma.financialCategory.create({
+        data: { name: 'Refeições', type: 'EXPENSE', companyId }
+      });
+      const choices = [
+        { description: 'Pão do café', categoryId, categoryName: 'Compras' },
+        { description: 'Almoço na padaria', categoryId: otherCategory.id, categoryName: 'Refeições' }
+      ];
+      for (const [index, choice] of choices.entries()) {
+        const started = await startCsv(11 + index, '21,40');
+        const committed = await CreditCardReconciliationSessionService.commit(
+          context, started.session.id, started.session.revision,
+          [{ itemId: started.preview.items[0].id, action: 'IMPORT', description: choice.description, categoryId: choice.categoryId }]
+        );
+        expect(committed.commitResult.summary.createdCount).toBe(1);
+        await CreditCardReconciliationSessionService.reset(context, started.session.id, committed.session.revision);
+      }
+
+      const earlier = await startOfx(8);
+      expect(earlier.preview.items[0].historyOptions ?? []).toEqual([]);
+      const later = await startOfx(1, context, 2027);
+      const options = later.preview.items[0].historyOptions;
+      expect(options).toHaveLength(2);
+      expect(options).toEqual(expect.arrayContaining(choices.map(choice => ({ ...choice, count: 1 }))));
+      expect(later.preview.items[0].historySuggestedMatchKey).toBeFalsy();
+      const otherCard = await prisma.financialAccount.create({
+        data: {
+          name: 'Segundo cartão', type: 'CREDIT_CARD', bankCode: 'NUBANK', bankName: 'Nubank',
+          balance: 0, creditLimit: 500, statementClosingDay: 10, statementDueDay: 15, companyId
+        }
+      });
+      const isolated = await startOfx(1, { ...context, accountId: otherCard.id }, 2027);
+      expect(isolated.preview.items[0].historyOptions ?? []).toEqual([]);
+    });
+  });
+
   it('imports a purchase and its tax separately when Nubank reuses the FITID, including on reupload', async () => {
     const date = '20260805120000[-3:BRT]';
     const purchase = { id: 'shared-id', date, amount: '-60.00', description: 'Loja de exemplo' };

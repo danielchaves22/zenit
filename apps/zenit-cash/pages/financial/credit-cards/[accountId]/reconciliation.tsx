@@ -232,6 +232,13 @@ interface ReconciliationPreviewItem {
   canImport: boolean;
   canImportAsCredit: boolean;
   nonImportableReason: string | null;
+  historyOptions?: Array<{
+    description: string;
+    categoryId: number | null;
+    categoryName: string | null;
+    count: number;
+  }>;
+  historySuggestedMatchKey?: string | null;
   categorySuggestion: {
     categoryId: number | null;
     categoryName: string | null;
@@ -952,6 +959,14 @@ function getProjectedFixedMatches(item: ReconciliationPreviewItem) {
   );
 }
 
+function HistoricalMatchLabel() {
+  return (
+    <span className="rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+      Sugerido por faturas anteriores
+    </span>
+  );
+}
+
 function getUniqueProjectedFixedTemplateId(item: ReconciliationPreviewItem) {
   const fixedTemplateIds = Array.from(
     new Set(
@@ -1146,16 +1161,17 @@ function getSystemTransactionDateLabel(transaction: ReconciliationInvoiceSystemT
   return 'Sem data informada';
 }
 
-function buildItemDrafts(items: ReconciliationPreviewItem[]) {
-  return items.reduce<Record<string, ReconciliationItemDraft>>((accumulator, item) => {
-    accumulator[item.id] = {
-      description: item.sourceDescription,
-      categoryId: item.categorySuggestion.categoryId
-        ? String(item.categorySuggestion.categoryId)
-        : ''
-    };
-    return accumulator;
-  }, {});
+function initialItemDraft(item: ReconciliationPreviewItem): ReconciliationItemDraft {
+  const options = item.historyOptions || [];
+  if (options.length === 1) {
+    const [option] = options;
+    return { description: option.description, categoryId: String(option.categoryId ?? '') };
+  }
+
+  return {
+    description: item.sourceDescription,
+    categoryId: options.length ? '' : String(item.categorySuggestion.categoryId ?? '')
+  };
 }
 
 function hasAnyFileExtension(fileName: string, extensions: string[]) {
@@ -2108,6 +2124,9 @@ function CreditCardReconciliationSideBySide({
                       >
                         <div className="min-w-0">
                           <div className="font-medium text-text">{transaction.description}</div>
+                          {focusedResolution === 'PENDING' && focusedItem?.historySuggestedMatchKey === transactionKey && (
+                            <HistoricalMatchLabel />
+                          )}
                           <div className="mt-1 text-sm text-text-muted">
                             {getSystemTransactionDateLabel(transaction)} • parcela{' '}
                             {formatInstallmentLabel(
@@ -2198,7 +2217,7 @@ function CreditCardReconciliationPageInner() {
   const [commitResult, setCommitResult] = useState<ReconciliationCommitResult | null>(null);
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
-  const [itemDrafts, setItemDrafts] = useState<Record<string, ReconciliationItemDraft>>({});
+  const [draftEdits, setDraftEdits] = useState<Record<string, Partial<ReconciliationItemDraft>>>({});
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<ReconciliationFilter>('ALL');
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -2478,15 +2497,23 @@ function CreditCardReconciliationPageInner() {
     [selectedItems]
   );
 
+  const itemDrafts = useMemo(() => {
+    const categoryIds = new Set(categories.map((category) => String(category.id)));
+    const drafts: Record<string, ReconciliationItemDraft> = {};
+    for (const item of preview?.items ?? []) {
+      const draft = { ...initialItemDraft(item), ...draftEdits[item.id] };
+      drafts[item.id] = {
+        description: draft.description,
+        categoryId: categoryIds.has(draft.categoryId) ? draft.categoryId : ''
+      };
+    }
+    return drafts;
+  }, [categories, draftEdits, preview]);
+
   const selectedDraftIssues = useMemo(() => {
     return selectedItems.reduce(
       (summary, item) => {
-        const draft = itemDrafts[item.id] || {
-          description: item.sourceDescription,
-          categoryId: item.categorySuggestion.categoryId
-            ? String(item.categorySuggestion.categoryId)
-            : ''
-        };
+        const draft = itemDrafts[item.id];
 
         if (!draft.description.trim()) {
           summary.missingDescriptionCount += 1;
@@ -2785,11 +2812,6 @@ function CreditCardReconciliationPageInner() {
     }
   }
 
-  function initializePreviewState(nextPreview: ReconciliationPreview) {
-    setSelectedItemIds([]);
-    setItemDrafts(buildItemDrafts(nextPreview.items));
-  }
-
   function applyWorkspace(
     workspace: ReconciliationWorkspace,
     options: { resetTransient?: boolean } = {}
@@ -2815,28 +2837,29 @@ function CreditCardReconciliationPageInner() {
     setFileSourceType(null);
 
     if (!nextPreview) {
-      setItemDrafts({});
+      setDraftEdits({});
       setSelectedItemIds([]);
       setFocusedPreviewItemId(null);
       return;
     }
 
+    const nextItemsById = new Map(nextPreview.items.map((item) => [item.id, item]));
+    if (session && workspace.session?.id === session.id && workspace.session.fileHash === session.fileHash) {
+      setDraftEdits((current) => Object.fromEntries(
+        Object.entries(current).filter(([itemId]) => nextItemsById.has(itemId))
+      ));
+    } else {
+      setDraftEdits({});
+    }
     if (options.resetTransient) {
       setStatusFilter('ALL');
       setReconciliationViewMode('DETAILED');
       setFocusedPreviewItemId(null);
       setReconciliationMobilePanel('FILE');
-      initializePreviewState(nextPreview);
+      setSelectedItemIds([]);
       return;
     }
 
-    const nextItemsById = new Map(nextPreview.items.map((item) => [item.id, item]));
-    setItemDrafts((current) => ({
-      ...buildItemDrafts(nextPreview.items),
-      ...Object.fromEntries(
-        Object.entries(current).filter(([itemId]) => nextItemsById.has(itemId))
-      )
-    }));
     setSelectedItemIds((current) =>
       current.filter((itemId) => {
         const item = nextItemsById.get(itemId);
@@ -2863,7 +2886,7 @@ function CreditCardReconciliationPageInner() {
     setFileName(null);
     setFileBase64('');
     setFileSourceType(null);
-    setItemDrafts({});
+    setDraftEdits({});
     setSelectedItemIds([]);
     setFocusedPreviewItemId(null);
     setReconciliationViewMode('DETAILED');
@@ -3172,7 +3195,7 @@ function CreditCardReconciliationPageInner() {
     setCommitResult(null);
     if (!session) {
       setPreview(null);
-      setItemDrafts({});
+      setDraftEdits({});
       setSelectedItemIds([]);
       setFocusedPreviewItemId(null);
       setReconciliationMobilePanel('FILE');
@@ -3224,7 +3247,7 @@ function CreditCardReconciliationPageInner() {
     setFileSourceType(null);
     setPreview(null);
     setCommitResult(null);
-    setItemDrafts({});
+    setDraftEdits({});
     setSelectedItemIds([]);
     setFocusedPreviewItemId(null);
     setLocalSystemSelections({});
@@ -3333,34 +3356,10 @@ function CreditCardReconciliationPageInner() {
     }
   }
 
-  function getItemDraft(item: ReconciliationPreviewItem): ReconciliationItemDraft {
-    return (
-      itemDrafts[item.id] || {
-        description: item.sourceDescription,
-        categoryId: item.categorySuggestion.categoryId
-          ? String(item.categorySuggestion.categoryId)
-          : ''
-      }
-    );
-  }
-
-  function handleDraftDescriptionChange(itemId: string, description: string) {
-    setItemDrafts((current) => ({
+  function editItemDraft(itemId: string, changes: Partial<ReconciliationItemDraft>) {
+    setDraftEdits((current) => ({
       ...current,
-      [itemId]: {
-        ...(current[itemId] || { description: '', categoryId: '' }),
-        description
-      }
-    }));
-  }
-
-  function handleDraftCategoryChange(itemId: string, categoryId: string) {
-    setItemDrafts((current) => ({
-      ...current,
-      [itemId]: {
-        ...(current[itemId] || { description: '', categoryId: '' }),
-        categoryId
-      }
+      [itemId]: { ...current[itemId], ...changes }
     }));
   }
 
@@ -3390,15 +3389,10 @@ function CreditCardReconciliationPageInner() {
       ? categories.some((category) => String(category.id) === nextCategoryId)
       : false;
 
-    setItemDrafts((current) => ({
-      ...current,
-      [itemId]: {
-        description: suggestion.description,
-        categoryId: hasKnownCategory
-          ? nextCategoryId
-          : current[itemId]?.categoryId || ''
-      }
-    }));
+    editItemDraft(itemId, {
+      description: suggestion.description,
+      ...(hasKnownCategory ? { categoryId: nextCategoryId } : {})
+    });
   }
 
   function buildCommitPayload(
@@ -3423,7 +3417,7 @@ function CreditCardReconciliationPageInner() {
         };
       }
 
-      const draft = getItemDraft(item);
+      const draft = itemDrafts[item.id];
       const description = draft.description.trim();
       if (!description) {
         throw new Error(`Informe a descricao a lancar do item ${item.sequence}`);
@@ -4344,7 +4338,8 @@ function CreditCardReconciliationPageInner() {
                   const selectable = isManuallyImportable(item);
                   const linkableToFixed = canLinkToFixed(item);
                   const resolution = getItemResolution(item);
-                  const draft = getItemDraft(item);
+                  const draft = itemDrafts[item.id];
+                  const historyOptions = item.historyOptions || [];
                   const suggestionSourceLabel = getSuggestionSourceLabel(
                     item.categorySuggestion.source
                   );
@@ -4670,6 +4665,38 @@ function CreditCardReconciliationPageInner() {
 
                           {selectable && (
                             <div className="mt-4 border-t border-border pt-4">
+                              {historyOptions.length === 1 && (
+                                <p className="mb-3 text-sm text-text-muted">
+                                  Sugestão inicial baseada em faturas anteriores deste cartão.
+                                </p>
+                              )}
+                              {historyOptions.length > 1 && (
+                                <fieldset className="mb-4 min-w-0">
+                                  <legend className="mb-2 text-sm font-medium text-text">
+                                    Usar uma sugestão de faturas anteriores deste cartão
+                                  </legend>
+                                  <div className="flex flex-wrap gap-2">
+                                    {historyOptions.map((option) => (
+                                      <Button
+                                        key={JSON.stringify([option.description, option.categoryId])}
+                                        type="button"
+                                        variant="outline"
+                                        className="max-w-full break-words text-left"
+                                        disabled={commitLoading || itemCommitLoading}
+                                        onClick={() => editItemDraft(item.id, {
+                                          description: option.description,
+                                          categoryId: String(option.categoryId ?? '')
+                                        })}
+                                      >
+                                        <span className="min-w-0">
+                                          {option.description} · {option.categoryName || 'Sem categoria'}
+                                          {' '}({option.count} {option.count === 1 ? 'uso' : 'usos'})
+                                        </span>
+                                      </Button>
+                                    ))}
+                                  </div>
+                                </fieldset>
+                              )}
                               <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
                                 <div>
                                   <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
@@ -4677,7 +4704,7 @@ function CreditCardReconciliationPageInner() {
                                   </div>
                                   <AutocompleteInput
                                     value={draft.description}
-                                    onChange={(value) => handleDraftDescriptionChange(item.id, value)}
+                                    onChange={(description) => editItemDraft(item.id, { description })}
                                     onSuggestionSelect={(suggestion) =>
                                       handleDraftSuggestionSelect(item.id, suggestion)
                                     }
@@ -4703,7 +4730,7 @@ function CreditCardReconciliationPageInner() {
                                     <CategorySelect
                                       categories={categories}
                                       value={draft.categoryId}
-                                      onChange={(value) => handleDraftCategoryChange(item.id, value)}
+                                      onChange={(categoryId) => editItemDraft(item.id, { categoryId })}
                                       placeholder={
                                         categoriesLoading
                                           ? 'Carregando categorias...'
@@ -4716,12 +4743,12 @@ function CreditCardReconciliationPageInner() {
                                       }
                                     />
                                   </div>
-                                  {suggestionSourceLabel && (
+                                  {!historyOptions.length && suggestionSourceLabel && (
                                     <div className="mt-2 text-sm text-text-muted">
                                       Sugestao inicial por {suggestionSourceLabel.toLowerCase()}.
                                     </div>
                                   )}
-                                  {item.categorySuggestion.reason && (
+                                  {!historyOptions.length && item.categorySuggestion.reason && (
                                     <div className="mt-1 text-sm text-text-subtle">
                                       {item.categorySuggestion.reason}
                                     </div>
@@ -4770,6 +4797,9 @@ function CreditCardReconciliationPageInner() {
                                         <div className="font-medium text-text">
                                           {transaction.description}
                                         </div>
+                                        {resolution === 'PENDING' && item.historySuggestedMatchKey === transaction.matchKey && (
+                                          <HistoricalMatchLabel />
+                                        )}
                                         {transaction.matchSource === 'PROJECTED_FIXED' && (
                                           <span className="rounded-full border border-sky-500/40 bg-tone-sky-soft px-2 py-0.5 text-[11px] font-medium text-tone-sky">
                                             Fixa projetada
@@ -4915,12 +4945,14 @@ function CreditCardReconciliationPageInner() {
                                   </option>
                                   {availableSystemTransactions.map((transaction) => {
                                     const transactionDate = transaction.date || transaction.dueDate;
+                                    const transactionKey = getSystemInvoiceTransactionKey(transaction);
 
                                     return (
                                       <option
-                                        key={getSystemInvoiceTransactionKey(transaction)}
-                                        value={getSystemInvoiceTransactionKey(transaction)}
+                                        key={transactionKey}
+                                        value={transactionKey}
                                       >
+                                        {item.historySuggestedMatchKey === transactionKey && 'Sugerido por faturas anteriores · '}
                                         {`${transaction.description} • ${formatCurrency(
                                           transaction.amount
                                         )} • ${

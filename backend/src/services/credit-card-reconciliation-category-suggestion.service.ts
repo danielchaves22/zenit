@@ -1,5 +1,5 @@
 import prisma from '../lib/prisma';
-import { TransactionStatus, TransactionType } from '@prisma/client';
+import { Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 import {
   LEGACY_OPENAI_MODEL_FALLBACK,
   getOpenAiChatOptions,
@@ -58,6 +58,8 @@ export type CreditCardReconciliationCategorySuggestion = {
   categoryIcon: string | null;
   source: CreditCardReconciliationCategorySuggestionSource | null;
   reason: string | null;
+  // Session snapshots keep ordinary suggestions, while confirmed link history is reloaded on review.
+  fromConfirmedHistory?: true;
 };
 
 const CATEGORY_SEMANTIC_ALIASES: Array<{
@@ -719,8 +721,8 @@ async function suggestByAi(params: {
   }
 }
 
-async function loadExpenseCategories(companyId: number) {
-  return prisma.financialCategory.findMany({
+async function loadExpenseCategories(companyId: number, existingTx?: Prisma.TransactionClient) {
+  return (existingTx ?? prisma).financialCategory.findMany({
     where: {
       companyId,
       type: TransactionType.EXPENSE
@@ -746,8 +748,9 @@ async function loadExpenseCategories(companyId: number) {
 async function loadHistoryTransactions(params: {
   companyId: number;
   accountId: number;
+  existingTx?: Prisma.TransactionClient;
 }) {
-  return prisma.financialTransaction.findMany({
+  return (params.existingTx ?? prisma).financialTransaction.findMany({
     where: {
       companyId: params.companyId,
       fromAccountId: params.accountId,
@@ -793,12 +796,11 @@ export default class CreditCardReconciliationCategorySuggestionService {
     companyId: number;
     accountId: number;
     items: SuggestibleStatementItem[];
+    existingTx?: Prisma.TransactionClient;
+    allowAi?: boolean;
   }) {
-    const categories = await loadExpenseCategories(params.companyId);
-    const historyTransactions = await loadHistoryTransactions({
-      companyId: params.companyId,
-      accountId: params.accountId
-    });
+    const categories = await loadExpenseCategories(params.companyId, params.existingTx);
+    const historyTransactions = await loadHistoryTransactions(params);
 
     const suggestions = new Map<string, CreditCardReconciliationCategorySuggestion>();
     const unresolvedItems: SuggestibleStatementItem[] = [];
@@ -825,6 +827,7 @@ export default class CreditCardReconciliationCategorySuggestionService {
       suggestions.set(item.id, createEmptySuggestion());
     });
 
+    if (params.existingTx || params.allowAi === false) return suggestions;
     const aiSuggestions = await suggestByAi({
       companyId: params.companyId,
       items: unresolvedItems,

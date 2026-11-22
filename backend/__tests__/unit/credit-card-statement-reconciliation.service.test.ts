@@ -780,6 +780,67 @@ describe('Credit card statement reconciliation service', () => {
     expect(__private__.descriptionAliasSourceType('BRADESCO_CSV')).toBe('BRADESCO_CSV');
   });
 
+  describe('confirmed description history', () => {
+    const parsed = __private__.parseNubankOfxStatement(creditCardOfx([
+      { id: 'synthetic-shop', date: '20260609', amount: '-20.00', description: 'POS EXEMPLO' }
+    ]), null);
+    const item = parsed.items[0];
+    const learned = { description: 'Feira do bairro', categoryId: 2, categoryName: 'Feira', count: 3 };
+    const other = { description: 'Presente', categoryId: 3, categoryName: 'Presentes', count: 1 };
+    const fallback = {
+      categoryId: 1, categoryName: 'Compras', categoryIcon: null, categoryColor: null,
+      source: 'RULE' as const, reason: 'Sugestão anterior'
+    };
+    const candidate = (id: number, description: string) => ({
+      matchKey: `transaction:${id}`, matchSource: 'TRANSACTION' as const, id,
+      fixedTemplateId: null, occurrenceKey: null, description, amount: new Prisma.Decimal('20.00'),
+      date: item.purchaseDate!, installmentNumber: null, totalInstallments: null,
+      status: TransactionStatus.COMPLETED, purchaseGroupId: null, creditCardInvoice: null
+    });
+    const candidates = [candidate(1, 'Livro'), candidate(2, 'Feira do bairro')];
+    const preview = (options: typeof learned[], transactions = candidates) =>
+      __private__.buildPreviewItems(parsed, transactions, new Map([[item.id, fallback]]), new Map(),
+        new Map([[item.id, options]]))[0];
+
+    it('uses a single confirmed pair for a draft and keeps all alternatives when prior choices differ', () => {
+      expect(preview([learned], [])).toMatchObject({
+        sourceDescription: 'POS EXEMPLO', historyOptions: [learned],
+        categorySuggestion: { source: 'HISTORY', categoryId: 2 }
+      });
+      expect(preview([learned, other], [])).toMatchObject({
+        historyOptions: [learned, other], categorySuggestion: { categoryId: null, source: null }
+      });
+      expect(preview([], []).categorySuggestion).toEqual(fallback);
+    });
+
+    it('ranks a historically named exact candidate for human review while preserving both candidates', () => {
+      const row = preview([learned]);
+      expect(row).toMatchObject({ status: 'SIMILAR', reason: 'AMBIGUOUS_EXACT', historySuggestedMatchKey: 'transaction:2' });
+      expect(row.matchedTransactions.map(match => match.id)).toEqual([2, 1]);
+      expect(preview([learned, other]).historySuggestedMatchKey).toBeNull();
+      expect(preview([learned], [candidate(1, learned.description), candidate(2, learned.description)]).historySuggestedMatchKey).toBeNull();
+    });
+
+    it('requires matching date, amount and installment terms and withholds a contested recommendation', () => {
+      const financiallyDifferent = [
+        { ...candidate(3, learned.description), date: new Date(2026, 5, 10, 12) },
+        { ...candidate(4, learned.description), amount: new Prisma.Decimal(19) },
+        { ...candidate(5, learned.description), installmentNumber: 2, totalInstallments: 3 }
+      ];
+      const history = new Map([[item.id, [learned]]]);
+      const rows = __private__.buildPreviewItems(parsed,
+        [candidate(1, 'Outro'), candidate(2, 'Livro'), ...financiallyDifferent], new Map(), new Map(), history);
+      expect(rows[0].historySuggestedMatchKey).toBeNull();
+      expect(rows[0].matchedTransactions.map(match => match.id)).toEqual([1, 2]);
+
+      const competingItem = { ...item, id: 'another-row', sourceDescription: 'Outro item da fatura' };
+      const competing = __private__.buildPreviewItems({ ...parsed, items: [item, competingItem] },
+        candidates, new Map(), new Map(), history);
+      expect(competing.map(row => row.historySuggestedMatchKey)).toEqual([null, null]);
+      expect(competing[0].matchedTransactions.map(match => match.id)).toEqual([1, 2]);
+    });
+  });
+
   it('separates Nubank payments and explains the total difference from item composition', () => {
     const parsed = __private__.parseNubankStatementText(
       sampleNubankStatementText,

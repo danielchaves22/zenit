@@ -13,6 +13,11 @@ import FixedTransactionService, { buildOccurrenceKeyValue } from './fixed-transa
 import CreditCardReconciliationCategorySuggestionService, {
   type CreditCardReconciliationCategorySuggestion
 } from './credit-card-reconciliation-category-suggestion.service';
+import {
+  loadCreditCardDescriptionHistory,
+  normalizeCreditCardHistoryDescription,
+  type CreditCardDescriptionHistoryOption
+} from './credit-card-reconciliation-history.service';
 import { parseDecimal } from '../utils/money';
 import { parseCreditCardOfx } from './credit-card-ofx-parser';
 import {
@@ -159,6 +164,8 @@ export type ReconciliationPreviewItem = {
     | 'REVERSE_AMBIGUOUS'
     | 'UNCONFIRMED';
   categorySuggestion: CreditCardReconciliationCategorySuggestion;
+  historyOptions?: CreditCardDescriptionHistoryOption[];
+  historySuggestedMatchKey?: string | null;
   matchedTransactions: Array<{
     matchKey: string;
     matchSource: 'TRANSACTION' | 'PROJECTED_FIXED';
@@ -2615,9 +2622,10 @@ function buildPreviewItems(
   statement: ParsedStatement,
   candidates: ExistingTransactionCandidate[],
   categorySuggestions: Map<string, CreditCardReconciliationCategorySuggestion>,
-  fixedDescriptionAliases: FixedDescriptionAliasMap
+  fixedDescriptionAliases: FixedDescriptionAliasMap,
+  historyByItemId: Map<string, CreditCardDescriptionHistoryOption[]> = new Map()
 ): ReconciliationPreviewItem[] {
-  return statement.items.map((item) => {
+  const items: ReconciliationPreviewItem[] = statement.items.map((item) => {
     const classification = classifyMatches(
       item,
       candidates,
@@ -2626,6 +2634,28 @@ function buildPreviewItems(
       fixedDescriptionAliases
     );
 
+    const historyOptions = historyByItemId.get(item.id) || [];
+    const uniqueOption = historyOptions.length === 1 ? historyOptions[0] : null;
+    const historicalMatches = uniqueOption && classification.reason === 'AMBIGUOUS_EXACT'
+      ? classification.matchedTransactions.filter(candidate =>
+          candidate.matchSource === 'TRANSACTION' &&
+          normalizeCreditCardHistoryDescription(candidate.description) ===
+            normalizeCreditCardHistoryDescription(uniqueOption.description))
+      : [];
+    const emptySuggestion: CreditCardReconciliationCategorySuggestion = {
+      categoryId: null, categoryName: null, categoryColor: null, categoryIcon: null, source: null, reason: null
+    };
+    let categorySuggestion = categorySuggestions.get(item.id) || emptySuggestion;
+    if (historyOptions.length && item.canImport) {
+      categorySuggestion = {
+        ...emptySuggestion,
+        fromConfirmedHistory: true,
+        categoryId: uniqueOption?.categoryId ?? null,
+        categoryName: uniqueOption?.categoryName ?? null,
+        source: uniqueOption?.categoryId ? 'HISTORY' : null,
+        reason: uniqueOption?.categoryId ? 'Categoria confirmada anteriormente para esta descrição de fatura.' : null
+      };
+    }
     return {
       id: item.id,
       sequence: item.sequence,
@@ -2645,17 +2675,30 @@ function buildPreviewItems(
       canImport: item.canImport,
       canImportAsCredit: item.canImportAsCredit,
       nonImportableReason: item.nonImportableReason,
-      categorySuggestion: categorySuggestions.get(item.id) || {
-        categoryId: null,
-        categoryName: null,
-        categoryColor: null,
-        categoryIcon: null,
-        source: null,
-        reason: null
-      },
+      categorySuggestion,
+      historyOptions,
+      historySuggestedMatchKey: historicalMatches.length === 1 ? historicalMatches[0].matchKey : null,
       matchedTransactions: classification.matchedTransactions.map(toPreviewMatchTransaction)
     };
   });
+  if (items.some(item => item.historySuggestedMatchKey)) {
+    const usage = new Map<string, number>();
+    for (const item of items) {
+      for (const match of item.matchedTransactions) {
+        usage.set(match.matchKey, (usage.get(match.matchKey) || 0) + 1);
+      }
+    }
+    for (const item of items) {
+      const key = item.historySuggestedMatchKey;
+      if (!key) continue;
+      if (usage.get(key) !== 1) {
+        item.historySuggestedMatchKey = null;
+        continue;
+      }
+      item.matchedTransactions.sort((a, b) => Number(b.matchKey === key) - Number(a.matchKey === key));
+    }
+  }
+  return items;
 }
 
 function buildPreviewSummary(items: ReconciliationPreviewItem[]) {
@@ -2936,7 +2979,7 @@ export default class CreditCardStatementReconciliationService {
       referenceYear: params.targetReferenceYear,
       referenceMonth: params.targetReferenceMonth
     });
-    const [candidates, categorySuggestions, fixedDescriptionAliases] = await Promise.all([
+    const [candidates, historyByItemId, fixedDescriptionAliases] = await Promise.all([
       loadCandidateTransactions({
         accountId: params.accountId,
         companyId: params.companyId,
@@ -2945,22 +2988,15 @@ export default class CreditCardStatementReconciliationService {
         targetReferenceMonth: statement.referenceMonth,
         existingTx: params.existingTx
       }),
-      params.categorySuggestionsByItemId
-        ? Promise.resolve(new Map(Object.entries(params.categorySuggestionsByItemId)))
-        : CreditCardReconciliationCategorySuggestionService.suggestForItems({
-            companyId: params.companyId,
-            accountId: params.accountId,
-            items: statement.items.map((item) => ({
-              id: item.id,
-              kind: item.kind,
-              amount: item.amount,
-              installmentNumber: item.installmentNumber,
-              totalInstallments: item.totalInstallments,
-              sourceDescription: item.sourceDescription,
-              sourceSection: item.sourceSection,
-              canImport: item.canImport
-            }))
-          }),
+      loadCreditCardDescriptionHistory({
+        accountId: params.accountId,
+        companyId: params.companyId,
+        sourceType: params.sourceType,
+        targetReferenceYear: statement.referenceYear,
+        targetReferenceMonth: statement.referenceMonth,
+        items: statement.items,
+        existingTx: params.existingTx
+      }),
       loadFixedDescriptionAliases({
         accountId: params.accountId,
         companyId: params.companyId,
@@ -2969,11 +3005,31 @@ export default class CreditCardStatementReconciliationService {
         existingTx: params.existingTx
       })
     ]);
+    const categorySuggestions = new Map(Object.entries(params.categorySuggestionsByItemId || {}));
+    const unresolved = statement.items.filter(item =>
+      item.canImport && !historyByItemId.get(item.id)?.length &&
+      (!categorySuggestions.has(item.id) || categorySuggestions.get(item.id)?.fromConfirmedHistory)
+    );
+    if (unresolved.length) {
+      const fallback = await CreditCardReconciliationCategorySuggestionService.suggestForItems({
+        companyId: params.companyId,
+        accountId: params.accountId,
+        items: unresolved,
+        existingTx: params.existingTx,
+        allowAi: !params.categorySuggestionsByItemId
+      });
+      for (const item of unresolved) {
+        categorySuggestions.delete(item.id);
+        const suggestion = fallback.get(item.id);
+        if (suggestion) categorySuggestions.set(item.id, suggestion);
+      }
+    }
     const items = buildPreviewItems(
       statement,
       candidates,
       categorySuggestions,
-      fixedDescriptionAliases
+      fixedDescriptionAliases,
+      historyByItemId
     );
 
     return {

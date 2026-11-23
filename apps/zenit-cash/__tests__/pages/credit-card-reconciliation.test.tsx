@@ -2023,6 +2023,79 @@ describe('CreditCardReconciliationPage comparison views', () => {
     })
   }, 20_000)
 
+  it.each(['detalhada', 'lado a lado'])('vincula a fixa escolhida fora das sugestões na vista %s', async (view) => {
+    const fixed = { ...targetInvoiceDetail.transactions[5], id: view === 'detalhada' ? null : undefined,
+      isFixedProjection: view === 'detalhada' ? true : undefined, description: 'Dropbox Plus (Mensal)',
+      fixedTemplateId: 45, occurrenceKey: '45:2026-09', amount: '69.00' }
+    const key = 'projected-fixed:45:45:2026-09'
+    const previousGet = vi.mocked(api.get).getMockImplementation()!
+    vi.mocked(api.get).mockImplementation((url: string) => url === '/financial/credit-card-invoices/101'
+      ? Promise.resolve({ data: { ...targetInvoiceDetail, transactions: [...targetInvoiceDetail.transactions, fixed] } })
+      : previousGet(url))
+    const sourcePreview = { ...preview, items: preview.items.map(item => item.id === 'bank-pending'
+      ? { ...item, sourceDescription: 'Paypal *Dropbox', amount: '68.76',
+          ...(view === 'lado a lado' ? { status: 'SIMILAR', matchedTransactions: [fixedMatch] } : {}) }
+      : item) }
+    const linked = buildWorkspace({ sourcePreview, revision: 2, resolutions: { 'bank-pending': 'LINKED_FIXED' },
+      resolutionData: { 'bank-pending': { fixedTemplateId: 45, occurrenceKey: fixed.occurrenceKey, matchKey: key } } })
+    vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) }).mockResolvedValueOnce({ data: linked })
+    const user = await renderAnalyzedPage()
+    const detailed = () => within(screen.getByText('Paypal *Dropbox').closest('section')!)
+    const button = { name: 'Vincular a fixa' }
+    const counterpart = { name: 'Selecionar contraparte na fatura do Zenit' }
+    const marketDraft = within(screen.getByText('Mercado no arquivo').closest('section')!).getByRole('textbox', { name: 'Descrição a lançar' })
+    await user.clear(marketDraft)
+    await user.type(marketDraft, 'Mercado revisado')
+    await user.selectOptions(detailed().getByRole('combobox', counterpart), 'transaction:504')
+    expect(detailed().queryByRole('button', button)).not.toBeInTheDocument()
+    expect(detailed().getByRole('button', { name: 'Confirmar correspondencia existente' })).toBeEnabled()
+    if (view === 'detalhada') {
+      await user.selectOptions(detailed().getByRole('combobox', counterpart), '')
+      expect(detailed().queryByRole('button', button)).not.toBeInTheDocument()
+      await user.selectOptions(detailed().getByRole('combobox', counterpart), key)
+      expect(detailed().queryByRole('button', { name: 'Confirmar correspondencia existente' })).not.toBeInTheDocument()
+      expect(detailed().getAllByRole('button', button)).toHaveLength(1)
+      await user.click(detailed().getByRole('button', button))
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+      const files = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
+      await user.click(getFileSelectionButton(files, 'bank-pending', /Paypal \*Dropbox/))
+      const rows = screen.getByRole('region', { name: 'Lançamentos da fatura no Zenit' })
+      await user.click(within(getZenitItem(rows, key)).getByRole('button'))
+      expect(screen.queryByRole('button', { name: 'Confirmar correspondencia existente' })).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', button))
+      await user.click(screen.getByRole('button', { name: 'Visualização detalhada' }))
+    }
+    expect(vi.mocked(api.post).mock.calls).toHaveLength(2)
+    expect(api.post).toHaveBeenLastCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
+      expectedRevision: 1, selectedItems: [{ itemId: 'bank-pending', action: 'LINK_FIXED', fixedTemplateId: 45, occurrenceKey: fixed.occurrenceKey }]
+    })
+    expect(detailed().getByText(fixed.description)).toBeVisible()
+    expect(detailed().queryByRole('button', button)).not.toBeInTheDocument()
+    const market = within(screen.getByText('Mercado no arquivo').closest('section')!)
+    expect(market.getByRole('textbox', { name: 'Descrição a lançar' })).toHaveValue('Mercado revisado')
+    expect(market.queryByRole('option', { name: /Dropbox Plus/ })).not.toBeInTheDocument()
+  })
+
+  it('bloqueia projeções sem identidade ou duplicadas e mantém a confirmação de uma ocorrência materializada', async () => {
+    const base = targetInvoiceDetail.transactions[5]
+    const rows = [
+      { ...base, description: 'Duplicada A' },
+      { ...base, description: 'Duplicada B' },
+      { ...base, description: 'Sem identidade', occurrenceKey: null },
+      { ...base, description: 'Mensalidade já lançada', id: 971, occurrenceKey: '93:2026-09', fixedTemplateId: 93 }
+    ]
+    const previousGet = vi.mocked(api.get).getMockImplementation()!
+    vi.mocked(api.get).mockImplementation((url: string) => url === '/financial/credit-card-invoices/101'
+      ? Promise.resolve({ data: { ...targetInvoiceDetail, transactions: rows } }) : previousGet(url))
+    const user = await renderAnalyzedPage()
+    const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
+    expect(pending.queryByRole('option', { name: /Duplicada|Sem identidade/ })).not.toBeInTheDocument()
+    await user.selectOptions(pending.getByRole('combobox', { name: 'Selecionar contraparte na fatura do Zenit' }), 'transaction:971')
+    expect(pending.getByRole('button', { name: 'Confirmar correspondencia existente' })).toBeEnabled()
+    expect(pending.queryByRole('button', { name: 'Vincular a fixa' })).not.toBeInTheDocument()
+  })
+
   it('confirma a contraparte visual selecionada como checkpoint persistido', async () => {
     const confirmedWorkspace = buildWorkspace({
       revision: 2,

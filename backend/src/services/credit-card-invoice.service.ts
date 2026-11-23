@@ -425,8 +425,8 @@ export default class CreditCardInvoiceService {
     }
   }
 
-  private static async getCardAccount(accountId: number, companyId: number): Promise<CardAccountWithConfig | null> {
-    return prisma.financialAccount.findFirst({
+  private static async getCardAccount(accountId: number, companyId: number, db: Prisma.TransactionClient = prisma): Promise<CardAccountWithConfig | null> {
+    return db.financialAccount.findFirst({
       where: {
         id: accountId,
         companyId,
@@ -495,9 +495,14 @@ export default class CreditCardInvoiceService {
     account: CardAccountWithConfig;
     companyId: number;
     now?: Date;
+    reference?: { referenceYear: number; referenceMonth: number };
+    existingTx?: Prisma.TransactionClient;
   }): Promise<Map<string, InvoiceProjectionBucket>> {
     const { account, companyId, now = new Date() } = params;
-    const window = buildProjectionWindow(now);
+    const db = params.existingTx ?? prisma;
+    const window = params.reference
+      ? [{ ...params.reference, projectionKey: buildProjectionKey(params.reference.referenceYear, params.reference.referenceMonth) }]
+      : buildProjectionWindow(now);
     const firstWindowMonth = window[0];
     const lastWindowMonth = window[window.length - 1];
     const rangeStart = new Date(firstWindowMonth.referenceYear, firstWindowMonth.referenceMonth - 1, 1, 0, 0, 0, 0);
@@ -510,7 +515,7 @@ export default class CreditCardInvoiceService {
       ])
     );
 
-    const templates = await prisma.recurringTransaction.findMany({
+    const templates = await db.recurringTransaction.findMany({
       where: {
         companyId,
         isActive: true,
@@ -568,7 +573,7 @@ export default class CreditCardInvoiceService {
       return buckets;
     }
 
-    const existingOccurrences = await prisma.financialTransaction.findMany({
+    const existingOccurrences = await db.financialTransaction.findMany({
       where: {
         companyId,
         OR: [
@@ -692,6 +697,22 @@ export default class CreditCardInvoiceService {
     }
 
     return buckets;
+  }
+
+  static async getReconciliationProjectedFixed(params: {
+    accountId: number; companyId: number; referenceYear: number; referenceMonth: number;
+    existingTx?: Prisma.TransactionClient;
+  }) {
+    const { referenceYear, referenceMonth } = params;
+    const account = await this.getCardAccount(params.accountId, params.companyId, params.existingTx);
+    if (!account?.statementClosingDay || !account.statementDueDay) return [];
+    const buckets = await this.buildProjectedInvoiceBuckets({
+      account, companyId: params.companyId, reference: { referenceYear, referenceMonth }, existingTx: params.existingTx
+    });
+    const bucket = buckets.get(buildProjectionKey(referenceYear, referenceMonth));
+    if (!bucket) return [];
+    const invoiceStatus = resolveCreditCardInvoiceStatus(bucket.closingDate, false);
+    return bucket.projectedTransactions.map(row => ({ ...row, invoiceStatus }));
   }
 
   private static async buildFixedMaterializationContext(params: {

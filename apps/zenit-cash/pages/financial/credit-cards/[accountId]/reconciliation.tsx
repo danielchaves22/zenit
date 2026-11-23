@@ -394,6 +394,8 @@ interface ReconciliationCommitSelection {
   categoryId?: number;
   creditKind?: CreditCardCreditKind;
   refundOfTransactionId?: number;
+  fixedTemplateId?: number;
+  occurrenceKey?: string;
 }
 
 const RECONCILIATION_SOURCE_CONFIG: Record<
@@ -981,36 +983,57 @@ function getUniqueProjectedFixedTemplateId(item: ReconciliationPreviewItem) {
   return fixedTemplateIds.length === 1 ? fixedTemplateIds[0]! : null;
 }
 
+function isPurchaseForFixedLink(item: ReconciliationPreviewItem) {
+  return item.canImport && item.direction === 'DEBIT' && item.kind === 'PURCHASE' &&
+    (item.status === 'PENDING' || item.status === 'SIMILAR') &&
+    getItemResolution(item) === 'PENDING' && !item.installmentNumber && !item.totalInstallments;
+}
+
 function canLinkToFixed(item: ReconciliationPreviewItem) {
   const isSuppressedFixedLink =
     item.progress?.resolutionData?.mode === 'AUTO_MATCH_SUPPRESSED' &&
     item.progress.resolutionData.suppressedResolution === 'LINKED_FIXED';
 
   return (
-    item.canImport &&
-    getItemResolution(item) === 'PENDING' &&
+    isPurchaseForFixedLink(item) &&
     (item.status === 'SIMILAR' || isSuppressedFixedLink) &&
-    item.kind === 'PURCHASE' &&
-    !item.installmentNumber &&
-    !item.totalInstallments &&
     item.matchedTransactions.length > 0 &&
     getProjectedFixedMatches(item).length === item.matchedTransactions.length &&
     Boolean(getUniqueProjectedFixedTemplateId(item))
   );
 }
 
+function isFixedProjectionRow(transaction: ReconciliationInvoiceSystemTransaction) {
+  return transaction.id == null && (transaction.isFixedProjection || (transaction.isProjected && transaction.fixedTemplateId != null));
+}
+
+function getFixedProjectionTarget(transaction?: ReconciliationInvoiceSystemTransaction | null) {
+  if (!transaction || !isFixedProjectionRow(transaction)) return null;
+  const { fixedTemplateId, occurrenceKey } = transaction;
+  if (!fixedTemplateId || !Number.isSafeInteger(fixedTemplateId) || fixedTemplateId <= 0 ||
+      !occurrenceKey || !occurrenceKey.startsWith(fixedTemplateId + ':')) return null;
+  return { fixedTemplateId, occurrenceKey };
+}
+
+function getLinkedFixedKey(item: ReconciliationPreviewItem) {
+  if (getItemResolution(item) !== 'LINKED_FIXED') return null;
+  const data = item.progress?.resolutionData;
+  if (typeof data?.matchKey === 'string' && data.matchKey.startsWith('projected-fixed:')) return data.matchKey;
+  if (typeof data?.fixedTemplateId === 'number' && typeof data.occurrenceKey === 'string') {
+    return `projected-fixed:${data.fixedTemplateId}:${data.occurrenceKey}`;
+  }
+  const matches = getProjectedFixedMatches(item);
+  return matches.length === 1 ? getMatchedTransactionSystemKey(matches[0]) : null;
+}
+
 function getSystemInvoiceTransactionKey(transaction: ReconciliationInvoiceSystemTransaction) {
-  if (transaction.id !== null) {
+  if (transaction.id != null) {
     return `transaction:${transaction.id}`;
   }
 
-  if (
-    transaction.isFixedProjection &&
-    transaction.fixedTemplateId !== null &&
-    transaction.fixedTemplateId !== undefined &&
-    transaction.occurrenceKey
-  ) {
-    return `projected-fixed:${transaction.fixedTemplateId}:${transaction.occurrenceKey}`;
+  const target = getFixedProjectionTarget(transaction);
+  if (target) {
+    return `projected-fixed:${target.fixedTemplateId}:${target.occurrenceKey}`;
   }
 
   return `projection:${transaction.description}:${transaction.amount}:${
@@ -1039,7 +1062,7 @@ function getSystemInvoiceTransactionAliases(
 ) {
   const aliases: string[] = [];
 
-  if (transaction.id !== null) {
+  if (transaction.id != null) {
     aliases.push(`transaction:${transaction.id}`);
   }
 
@@ -1047,13 +1070,8 @@ function getSystemInvoiceTransactionAliases(
     aliases.push(`occurrence:${transaction.occurrenceKey}`);
   }
 
-  if (
-    transaction.isFixedProjection &&
-    transaction.fixedTemplateId !== null &&
-    transaction.fixedTemplateId !== undefined &&
-    transaction.occurrenceKey
-  ) {
-    aliases.push(`projected-fixed:${transaction.fixedTemplateId}:${transaction.occurrenceKey}`);
+  if (getFixedProjectionTarget(transaction)) {
+    aliases.push(getSystemInvoiceTransactionKey(transaction));
   }
 
   return Array.from(new Set(aliases));
@@ -1369,6 +1387,9 @@ interface SystemInvoiceTransactionRow {
 }
 
 interface CreditCardReconciliationSideBySideProps {
+  renderFixedLinkAction: (item: ReconciliationPreviewItem) => React.ReactNode;
+  canSelectProjection: (item: ReconciliationPreviewItem, transaction: ReconciliationInvoiceSystemTransaction) => boolean;
+  linkedFixedKeys: Set<string>;
   renderExpenseEditor: (item: ReconciliationPreviewItem) => React.ReactNode;
   preview: ReconciliationPreview;
   rows: SystemInvoiceTransactionRow[];
@@ -1719,6 +1740,9 @@ function CreditCardReconciliationValueSummary({
 }
 
 function CreditCardReconciliationSideBySide({
+  renderFixedLinkAction,
+  canSelectProjection,
+  linkedFixedKeys,
   renderExpenseEditor,
   preview,
   rows,
@@ -1806,6 +1830,10 @@ function CreditCardReconciliationSideBySide({
       return focusedItem.progress?.resolutionData?.mode === 'AUTO_EXACT'
         ? 'Lançamento relacionado automaticamente nesta conciliação.'
         : 'Lancamento existente confirmado nesta conciliacao.';
+    }
+    if (focusedResolution === 'LINKED_FIXED') return 'Fixa vinculada nesta conciliação.';
+    if (selectedSystemRow && getFixedProjectionTarget(selectedSystemRow.transaction)) {
+      return `Fixa selecionada: ${selectedSystemRow.transaction.description}.`;
     }
 
     if (highlightedRows.length === 0) {
@@ -2097,7 +2125,8 @@ function CreditCardReconciliationSideBySide({
                 )}
             </div>
             {focusedItem && sessionStatus === 'OPEN' && (
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 flex flex-wrap items-start gap-2">
+                {renderFixedLinkAction(focusedItem)}
                 {focusedResolution === 'PENDING' && focusedItem.canImportAsCredit && (
                   <Button
                     variant="accent"
@@ -2213,11 +2242,12 @@ function CreditCardReconciliationSideBySide({
                   const isExternalSettlement = Boolean(
                     transaction.isExternalCreditCardSettlement
                   );
-                  const isAlreadyClaimed = Boolean(
+                  const isAlreadyClaimed = linkedFixedKeys.has(transactionKey) || Boolean(
                     transaction.id && resolvedSystemTransactionIds.has(transaction.id)
                   );
                   const canSelect =
-                    Boolean(focusedItem) && !isExternalSettlement && !isAlreadyClaimed;
+                    focusedItem && !isExternalSettlement && !isAlreadyClaimed &&
+                    (!isFixedProjectionRow(transaction) || canSelectProjection(focusedItem, transaction));
 
                   return (
                     <li
@@ -2267,7 +2297,7 @@ function CreditCardReconciliationSideBySide({
                             )}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
-                            {transaction.isFixedProjection && (
+                            {isFixedProjectionRow(transaction) && (
                               <span className="rounded-full border border-sky-500/40 bg-tone-sky-soft px-2 py-0.5 text-[11px] font-medium text-tone-sky">
                                 Fixa projetada
                               </span>
@@ -2500,6 +2530,9 @@ function CreditCardReconciliationPageInner() {
       return transactionIds;
     }, new Set<number>());
   }, [preview]);
+  const linkedFixedKeys = useMemo(() => new Set(
+    (preview?.items ?? []).map(getLinkedFixedKey).filter((key): key is string => key !== null)
+  ), [preview]);
 
   const previewItemSystemMatchResolutions = useMemo(() => {
     const resolutions = new Map<string, PreviewItemSystemMatchResolution>();
@@ -2513,7 +2546,7 @@ function CreditCardReconciliationPageInner() {
         item.id,
         resolvePreviewItemSystemMatches({
           item,
-          localSelectionKey: localSystemSelections[item.id],
+          localSelectionKey: localSystemSelections[item.id] || getLinkedFixedKey(item) || undefined,
           rowIdsByIdentityKey: targetInvoiceRowIdsByIdentityKey,
           targetInvoiceReference: selectedTargetInvoice
             ? formatReference(
@@ -2755,10 +2788,6 @@ function CreditCardReconciliationPageInner() {
   }, [accountId, router.isReady, selectedTargetInvoiceKey]);
 
   useEffect(() => {
-    setLocalSystemSelections({});
-  }, [preview, selectedTargetInvoiceKey]);
-
-  useEffect(() => {
     if (targetInvoiceTransactionsByKey.size === 0) {
       return;
     }
@@ -2766,7 +2795,10 @@ function CreditCardReconciliationPageInner() {
     setLocalSystemSelections((current) => {
       let changed = false;
       const nextEntries = Object.entries(current).filter(([, transactionKey]) => {
-        const exists = targetInvoiceTransactionsByKey.has(transactionKey);
+        const transaction = targetInvoiceTransactionsByKey.get(transactionKey);
+        const exists = transaction && !transaction.isExternalCreditCardSettlement &&
+          !linkedFixedKeys.has(transactionKey) && !identityCollisionRowIds.has(transactionKey) &&
+          (transaction.id == null || !resolvedSystemTransactionIds.has(transaction.id));
 
         if (!exists) {
           changed = true;
@@ -2777,7 +2809,7 @@ function CreditCardReconciliationPageInner() {
 
       return changed ? Object.fromEntries(nextEntries) : current;
     });
-  }, [targetInvoiceTransactionsByKey]);
+  }, [targetInvoiceTransactionsByKey, linkedFixedKeys, identityCollisionRowIds, resolvedSystemTransactionIds]);
 
   useEffect(() => {
     if (
@@ -2973,6 +3005,7 @@ function CreditCardReconciliationPageInner() {
     setFileSourceType(null);
 
     if (!nextPreview) {
+      setLocalSystemSelections({});
       setCreditItemId(null);
       setDraftEdits({});
       setSelectedItemIds([]);
@@ -2982,10 +3015,15 @@ function CreditCardReconciliationPageInner() {
 
     const nextItemsById = new Map(nextPreview.items.map((item) => [item.id, item]));
     if (session && workspace.session?.id === session.id && workspace.session.fileHash === session.fileHash) {
+      setLocalSystemSelections(current => Object.fromEntries(Object.entries(current).filter(([id]) => {
+        const nextItem = nextItemsById.get(id);
+        return nextItem && getItemResolution(nextItem) === 'PENDING';
+      })));
       setDraftEdits((current) => Object.fromEntries(
         Object.entries(current).filter(([itemId]) => nextItemsById.has(itemId))
       ));
     } else {
+      setLocalSystemSelections({});
       setCreditItemId(null);
       setDraftEdits({});
     }
@@ -3920,6 +3958,40 @@ function CreditCardReconciliationPageInner() {
     );
   }
 
+  function canSelectProjection(item: ReconciliationPreviewItem, transaction: ReconciliationInvoiceSystemTransaction) {
+    if (!isPurchaseForFixedLink(item) || !getFixedProjectionTarget(transaction) || transaction.isExternalCreditCardSettlement) return false;
+    const key = getSystemInvoiceTransactionKey(transaction);
+    return targetInvoiceTransactionsByKey.has(key) && !linkedFixedKeys.has(key) && !identityCollisionRowIds.has(key) &&
+      !Object.entries(localSystemSelections).some(([id, selection]) => id !== item.id && selection === key);
+  }
+
+  function renderFixedLinkAction(item: ReconciliationPreviewItem) {
+    const selectedKey = localSystemSelections[item.id];
+    const selected = selectedKey ? targetInvoiceTransactionsByKey.get(selectedKey) : null;
+    const linkable = selectedKey ? selected && canSelectProjection(item, selected) : canLinkToFixed(item);
+    if (!linkable) return null;
+    const target = getFixedProjectionTarget(selected);
+    const saving = committingItemIds.includes(item.id);
+    return (
+      <div className="min-w-0 max-w-xs">
+        <Button variant="outline" onClick={() => void commitItems([item.id], 'LINK_FIXED',
+          target ? [{ itemId: item.id, action: 'LINK_FIXED', ...target }] : undefined)}
+          disabled={!sessionTargetReady || commitLoading || hasPendingSingleCommit || hasDecisionInFlight ||
+            sessionActionLoading !== null || sessionCompleted || Boolean(selectedKey && (targetInvoiceDetailLoading || targetInvoiceDetailError))}
+          className={`flex items-center gap-2 text-sm ${reconciliationViewMode === 'DETAILED' ? 'lg:ml-auto' : ''}`}>
+          {saving && <RefreshCw size={14} className="animate-spin" />}
+          {saving ? 'Salvando vínculo...' : 'Vincular a fixa'}
+        </Button>
+        {selected && (
+          <p className="mt-1 text-xs text-text-muted">
+            Associa esta descrição à fixa “{selected.description}” para as próximas faturas.
+            A regra mantém o valor de {formatCurrency(selected.amount)}. Nenhuma nova despesa é criada.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   function renderExpenseEditor(item: ReconciliationPreviewItem) {
     const draft = itemDrafts[item.id];
     return (
@@ -4439,6 +4511,9 @@ function CreditCardReconciliationPageInner() {
                 />
               ) : reconciliationViewMode === 'SIDE_BY_SIDE' ? (
                 <CreditCardReconciliationSideBySide
+                  renderFixedLinkAction={renderFixedLinkAction}
+                  canSelectProjection={canSelectProjection}
+                  linkedFixedKeys={linkedFixedKeys}
                   renderExpenseEditor={renderExpenseEditor}
                   preview={preview}
                   rows={targetInvoiceTransactionRows}
@@ -4495,14 +4570,11 @@ function CreditCardReconciliationPageInner() {
               <div className="space-y-4">
                 {filteredItems.map((item) => {
                   const selectable = isManuallyImportable(item);
-                  const linkableToFixed = canLinkToFixed(item);
                   const resolution = getItemResolution(item);
                   const itemCommitLoading = committingItemIds.includes(item.id);
                   const itemDecisionLoading = decisionItemIds.includes(item.id);
                   const localSelectionKey = localSystemSelections[item.id] || '';
-                  const selectedSystemTransaction = localSelectionKey
-                    ? targetInvoiceTransactionsByKey.get(localSelectionKey) || null
-                    : null;
+                  const selectedSystemTransaction = targetInvoiceTransactionsByKey.get(localSelectionKey || getLinkedFixedKey(item) || '');
                   const otherLocalSelectionKeys = new Set(
                     Object.entries(localSystemSelections)
                       .filter(([entryItemId]) => entryItemId !== item.id)
@@ -4515,6 +4587,9 @@ function CreditCardReconciliationPageInner() {
                     (transaction) => {
                           if (transaction.isExternalCreditCardSettlement) {
                             return false;
+                          }
+                          if (isFixedProjectionRow(transaction)) {
+                            return canSelectProjection(item, transaction);
                           }
 
                           const transactionKey = getSystemInvoiceTransactionKey(transaction);
@@ -4618,27 +4693,7 @@ function CreditCardReconciliationPageInner() {
                                 {formatCurrency(item.amount)}
                               </div>
                               <div className="flex flex-wrap gap-2 lg:justify-end">
-                                {linkableToFixed && (
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => void commitItems([item.id], 'LINK_FIXED')}
-                                    disabled={
-                                      !sessionTargetReady ||
-                                      commitLoading ||
-                                      hasPendingSingleCommit ||
-                                      hasDecisionInFlight ||
-                                      sessionActionLoading !== null ||
-                                      sessionCompleted ||
-                                      itemCommitLoading
-                                    }
-                                    className="flex items-center gap-2 text-sm"
-                                  >
-                                    {itemCommitLoading && (
-                                      <RefreshCw size={14} className="animate-spin" />
-                                    )}
-                                    {itemCommitLoading ? 'Salvando vinculo...' : 'Vincular a fixa'}
-                                  </Button>
-                                )}
+                                {renderFixedLinkAction(item)}
                                 {item.canImportAsCredit && resolution === 'PENDING' && (
                                   <Button
                                     variant="accent"
@@ -4810,12 +4865,14 @@ function CreditCardReconciliationPageInner() {
                               </div>
                             </div>
                             <span className="rounded-full border border-border px-2.5 py-1 text-xs text-text-muted">
-                              {getMatchSummaryLabel(item)}
+                                  {getFixedProjectionTarget(selectedSystemTransaction)
+                                    ? resolution === 'LINKED_FIXED' ? 'Ocorrência associada' : 'Fixa selecionada'
+                                    : getMatchSummaryLabel(item)}
                             </span>
                           </div>
 
                           <div className="mt-4 space-y-3">
-                            {item.matchedTransactions.length > 0 ? (
+                            {item.matchedTransactions.length > 0 && !selectedSystemTransaction ? (
                               item.matchedTransactions.map((transaction) => (
                                 <div
                                   key={`${item.id}-${transaction.matchKey}`}
@@ -4888,7 +4945,7 @@ function CreditCardReconciliationPageInner() {
                                       <div className="font-medium text-text">
                                         {selectedSystemTransaction.description}
                                       </div>
-                                      {selectedSystemTransaction.isFixedProjection && (
+                                      {isFixedProjectionRow(selectedSystemTransaction) && (
                                         <span className="rounded-full border border-sky-500/40 bg-tone-sky-soft px-2 py-0.5 text-[11px] font-medium text-tone-sky">
                                           Fixa projetada
                                         </span>
@@ -4918,7 +4975,7 @@ function CreditCardReconciliationPageInner() {
                                     <div className="text-sm font-semibold text-text">
                                       {formatCurrency(selectedSystemTransaction.amount)}
                                     </div>
-                                    {selectedSystemTransaction.id !== null && (
+                                    {selectedSystemTransaction.id != null && (
                                       <Link
                                         href={`/financial/transactions/${selectedSystemTransaction.id}`}
                                         className="text-sm font-medium text-accent hover:text-accent-hover"
@@ -4926,7 +4983,7 @@ function CreditCardReconciliationPageInner() {
                                         Abrir
                                       </Link>
                                     )}
-                                    {selectedSystemTransaction.id === null &&
+                                    {selectedSystemTransaction.id == null &&
                                       selectedSystemTransaction.fixedTemplateId && (
                                         <Link
                                           href={`/financial/fixed-transactions/${selectedSystemTransaction.fixedTemplateId}`}
@@ -4956,12 +5013,15 @@ function CreditCardReconciliationPageInner() {
                                   Selecionar contraparte na fatura do Zenit
                                 </div>
                                 <select
+                                  aria-label="Selecionar contraparte na fatura do Zenit"
                                   value={localSelectionKey}
                                   onChange={(event) =>
                                     handleLocalSystemSelectionChange(item.id, event.target.value)
                                   }
                                   disabled={
                                     !sessionTargetReady ||
+                                    sessionCompleted || commitLoading || hasPendingSingleCommit || hasDecisionInFlight ||
+                                    sessionActionLoading !== null || Boolean(targetInvoiceDetailError) ||
                                     targetInvoiceDetailLoading ||
                                     (!selectedSystemTransaction &&
                                       availableSystemTransactions.length === 0)
@@ -4983,6 +5043,7 @@ function CreditCardReconciliationPageInner() {
                                         value={transactionKey}
                                       >
                                         {item.historySuggestedMatchKey === transactionKey && 'Sugerido por faturas anteriores · '}
+                                        {getFixedProjectionTarget(transaction) && 'Fixa projetada · '}
                                         {`${transaction.description} • ${formatCurrency(
                                           transaction.amount
                                         )} • ${
@@ -5023,8 +5084,9 @@ function CreditCardReconciliationPageInner() {
                                   </Button>
                                 )}
                                 <div className="mt-2 text-sm text-text-muted">
-                                  Selecione a contraparte correta e confirme para gravar este
-                                  checkpoint no andamento da conciliacao.
+                                  {getFixedProjectionTarget(selectedSystemTransaction)
+                                    ? 'Use “Vincular a fixa” nas ações do item para salvar a associação.'
+                                    : 'Selecione a contraparte correta e confirme para gravar este checkpoint no andamento da conciliacao.'}
                                 </div>
                               </div>
                             )}

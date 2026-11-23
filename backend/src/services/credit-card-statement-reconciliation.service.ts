@@ -99,6 +99,7 @@ type ExistingTransactionCandidate = {
   id: number | null;
   fixedTemplateId: number | null;
   occurrenceKey: string | null;
+  requiresFixedAlias?: boolean;
   description: string;
   amount: Prisma.Decimal;
   direction?: StatementDirection;
@@ -297,6 +298,7 @@ export type ReconciliationCommitResult = {
       | 'FAILED';
     message: string;
     createdTransactionIds: number[];
+    linkedFixed?: { fixedTemplateId: number; occurrenceKey: string; matchKey: string };
   }>;
 };
 
@@ -1883,9 +1885,11 @@ function classifyMatches(
     };
   }
 
-  candidates = candidates.filter(
-    (candidate) => (candidate.direction ?? 'DEBIT') === item.direction
-  );
+  const mappedTemplateId = isFixedAliasEligibleItem(item)
+    ? fixedDescriptionAliases.get(normalizeFixedDescriptionAlias(item.sourceDescription))
+    : undefined;
+  candidates = candidates.filter(candidate => (candidate.direction ?? 'DEBIT') === item.direction &&
+    (!candidate.requiresFixedAlias || candidate.fixedTemplateId === mappedTemplateId));
 
   const amount = parseDecimal(item.amount);
   const importInstallments = normalizeInstallmentSignature(
@@ -1921,16 +1925,41 @@ function classifyMatches(
   });
 
   const exactMatchesWithSourceDescription = filterCandidatesBySourceDescription(
-    exactMatches,
+    exactMatches.filter(candidate => candidate.matchSource === 'TRANSACTION'),
     item.sourceDescription
   );
-
-  if (exactMatchesWithSourceDescription.length === 1) {
+  // A re-upload still points to its original financial transaction, even when
+  // the same statement text is also an alias for a projected recurring charge.
+  if (exactMatchesWithSourceDescription.length) {
+    const unique = exactMatchesWithSourceDescription.length === 1;
     return {
-      status: 'OK',
-      reason: 'EXACT',
+      status: unique ? 'OK' : 'SIMILAR',
+      reason: unique ? 'EXACT' : 'AMBIGUOUS_EXACT',
       matchedTransactions: exactMatchesWithSourceDescription
     };
+  }
+
+  const mappedOccurrences = mappedTemplateId === undefined ? [] : candidates.filter(candidate =>
+    candidate.fixedTemplateId === mappedTemplateId && isCandidateInStatementReference(candidate, referenceYear, referenceMonth)
+  );
+  if (mappedOccurrences.length) {
+    const otherExact = exactMatches.filter(candidate => !mappedOccurrences.includes(candidate));
+    const amountDiverges = mappedOccurrences.some(candidate => !candidate.amount.equals(amount));
+    if (amountDiverges || otherExact.length || mappedOccurrences.length > 1) {
+      return {
+        status: 'SIMILAR',
+        reason: otherExact.length || mappedOccurrences.length > 1 ? 'AMBIGUOUS_EXACT' : 'AMOUNT_DIVERGENCE',
+        matchedTransactions: [...mappedOccurrences, ...otherExact]
+      };
+    }
+    if (!exactMatches.length) {
+      const projected = mappedOccurrences[0]!.matchSource === 'PROJECTED_FIXED';
+      return {
+        status: projected ? 'OK' : 'SIMILAR',
+        reason: projected ? 'MAPPED_FIXED' : 'DATE_DIVERGENCE',
+        matchedTransactions: mappedOccurrences
+      };
+    }
   }
 
   if (exactMatches.length === 1) {
@@ -1941,51 +1970,12 @@ function classifyMatches(
     };
   }
 
-  if (exactMatchesWithSourceDescription.length > 1) {
-    return {
-      status: 'SIMILAR',
-      reason: 'AMBIGUOUS_EXACT',
-      matchedTransactions: exactMatchesWithSourceDescription
-    };
-  }
-
   if (exactMatches.length > 1) {
     return {
       status: 'SIMILAR',
       reason: 'AMBIGUOUS_EXACT',
       matchedTransactions: exactMatches
     };
-  }
-
-  const normalizedSourceDescription = normalizeFixedDescriptionAlias(item.sourceDescription);
-  const mappedFixedTemplateId =
-    isFixedAliasEligibleItem(item) && normalizedSourceDescription
-      ? fixedDescriptionAliases.get(normalizedSourceDescription) || null
-      : null;
-
-  if (mappedFixedTemplateId) {
-    const mappedProjectedFixedMatches = candidates.filter((candidate) =>
-      candidate.matchSource === 'PROJECTED_FIXED' &&
-      candidate.fixedTemplateId === mappedFixedTemplateId &&
-      isCandidateInStatementReference(candidate, referenceYear, referenceMonth) &&
-      hasComparableAmountMatch(item, candidate, amount)
-    );
-
-    if (mappedProjectedFixedMatches.length === 1) {
-      return {
-        status: 'OK',
-        reason: 'MAPPED_FIXED',
-        matchedTransactions: mappedProjectedFixedMatches
-      };
-    }
-
-    if (mappedProjectedFixedMatches.length > 1) {
-      return {
-        status: 'SIMILAR',
-        reason: 'AMBIGUOUS_EXACT',
-        matchedTransactions: mappedProjectedFixedMatches
-      };
-    }
   }
 
   const amountDivergenceMatches = candidates.filter((candidate) => {
@@ -2136,14 +2126,12 @@ async function loadCandidateTransactions(params: {
 }) {
   const db = params.existingTx ?? prisma;
   const { minDate, maxDate } = buildDateWindow(params.items);
-  const [targetInvoiceCandidates, materializedTransactions, projectedFixedCandidates] = await Promise.all([
-    loadTargetInvoiceCandidates({
-      accountId: params.accountId,
-      companyId: params.companyId,
-      referenceYear: params.targetReferenceYear,
-      referenceMonth: params.targetReferenceMonth,
-      existingTx: params.existingTx
-    }),
+  const target = {
+    accountId: params.accountId, companyId: params.companyId,
+    referenceYear: params.targetReferenceYear, referenceMonth: params.targetReferenceMonth, existingTx: params.existingTx
+  };
+  const [targetInvoiceCandidates, materializedTransactions, nearbyProjections, targetProjections] = await Promise.all([
+    loadTargetInvoiceCandidates(target),
     db.financialTransaction.findMany({
       where: {
         companyId: params.companyId,
@@ -2177,6 +2165,8 @@ async function loadCandidateTransactions(params: {
         totalInstallments: true,
         status: true,
         purchaseGroupId: true,
+        recurringTransactionId: true,
+        occurrenceKey: true,
         importSourceType: true,
         importSourceDescription: true,
         type: true,
@@ -2202,9 +2192,13 @@ async function loadCandidateTransactions(params: {
       minDate,
       maxDate,
       existingTx: params.existingTx
-    })
+    }),
+    CreditCardInvoiceService.getReconciliationProjectedFixed(target)
   ]);
 
+  const nearbyTargetKeys = new Set(nearbyProjections
+    .filter(candidate => isCandidateInStatementReference(candidate, target.referenceYear, target.referenceMonth))
+    .map(candidate => candidate.matchKey));
   const mergedCandidates = [
     ...targetInvoiceCandidates,
     ...materializedTransactions.map((candidate) => ({
@@ -2215,10 +2209,21 @@ async function loadCandidateTransactions(params: {
         candidate.type === TransactionType.INCOME && candidate.creditCardCreditKind
           ? 'CREDIT' as const
           : 'DEBIT' as const,
-      fixedTemplateId: null,
-      occurrenceKey: null
+      fixedTemplateId: candidate.recurringTransactionId
     })),
-    ...projectedFixedCandidates
+    // Use the invoice's own projection catalogue for this reference, including its
+    // suppression of previously materialized occurrences that lack an occurrence key.
+    ...nearbyProjections.filter(candidate => !isCandidateInStatementReference(candidate, target.referenceYear, target.referenceMonth)),
+    ...targetProjections.map(transaction => {
+      const candidate = mapInvoiceTransactionToCandidate({
+        transaction,
+        invoice: { id: null, referenceYear: target.referenceYear, referenceMonth: target.referenceMonth,
+          status: transaction.invoiceStatus, dueDate: transaction.dueDate }
+      });
+      // The full catalogue is available for manual choices. An occurrence outside
+      // the statement's ordinary search must have an explicit alias to enter the ranking.
+      return { ...candidate, requiresFixedAlias: !nearbyTargetKeys.has(candidate.matchKey) };
+    })
   ] as ExistingTransactionCandidate[];
 
   return Array.from(
@@ -2251,7 +2256,7 @@ function mapInvoiceTransactionToCandidate(params: {
       : `transaction:${params.transaction.id}`,
     matchSource: isProjectedFixed ? 'PROJECTED_FIXED' : 'TRANSACTION',
     id: isProjectedFixed ? null : params.transaction.id,
-    fixedTemplateId: isProjectedFixed ? params.transaction.fixedTemplateId ?? null : null,
+    fixedTemplateId: (isProjectedFixed ? params.transaction.fixedTemplateId : params.transaction.recurringTransactionId) ?? null,
     occurrenceKey: params.transaction.occurrenceKey ?? null,
     description: params.transaction.description,
     amount: new Prisma.Decimal(params.transaction.amount.toString()),
@@ -2324,6 +2329,7 @@ async function loadTargetInvoiceCandidates(params: {
             importSourceType: true,
             importSourceDescription: true,
             occurrenceKey: true,
+            recurringTransactionId: true,
             type: true,
             creditCardCreditKind: true
           }
@@ -2355,12 +2361,8 @@ async function loadTargetInvoiceCandidates(params: {
   });
 
   const invoiceDetail = invoice
-    ? await CreditCardInvoiceService.getInvoiceById(invoice.id, params.companyId)
-    : await CreditCardInvoiceService.getProjectedInvoiceByKey({
-        accountId: params.accountId,
-        projectionKey: buildInvoiceProjectionKey(params.referenceYear, params.referenceMonth),
-        companyId: params.companyId
-      });
+    ? await CreditCardInvoiceService.getInvoiceById(invoice.id, params.companyId, false)
+    : null;
 
   if (!invoiceDetail) {
     return [] as ExistingTransactionCandidate[];
@@ -2626,16 +2628,33 @@ function buildPreviewItems(
   candidates: ExistingTransactionCandidate[],
   categorySuggestions: Map<string, CreditCardReconciliationCategorySuggestion>,
   fixedDescriptionAliases: FixedDescriptionAliasMap,
-  historyByItemId: Map<string, CreditCardDescriptionHistoryOption[]> = new Map()
+  historyByItemId: Map<string, CreditCardDescriptionHistoryOption[]> = new Map(),
+  manualFixedByItemId?: ReadonlyMap<string, string>
 ): ReconciliationPreviewItem[] {
+  const claimedKeys = new Set(manualFixedByItemId?.values());
+  const fixedByKey = new Map(candidates.filter(candidate =>
+    claimedKeys.has(candidate.matchKey) && candidate.matchSource === 'PROJECTED_FIXED' &&
+    isCandidateInStatementReference(candidate, statement.referenceYear, statement.referenceMonth)
+  ).map(candidate => [candidate.matchKey, candidate]));
+  const availableCandidates = claimedKeys.size ? candidates.filter(candidate => !claimedKeys.has(candidate.matchKey)) : candidates;
   const items: ReconciliationPreviewItem[] = statement.items.map((item) => {
-    const classification = classifyMatches(
-      item,
-      candidates,
-      statement.referenceYear,
-      statement.referenceMonth,
-      fixedDescriptionAliases
-    );
+    const chosenKey = manualFixedByItemId?.get(item.id);
+    const chosen = chosenKey ? fixedByKey.get(chosenKey) : undefined;
+    let classification: MatchClassification;
+    if (chosen) {
+      const equal = chosen.amount.equals(parseDecimal(item.amount));
+      classification = {
+        status: equal ? 'OK' : 'SIMILAR', reason: equal ? 'MAPPED_FIXED' : 'AMOUNT_DIVERGENCE',
+        matchedTransactions: [chosen]
+      };
+    } else if (chosenKey) {
+      // Never replace a saved human choice with the next match in the ranking.
+      classification = { status: 'PENDING', reason: 'NO_MATCH', matchedTransactions: [] };
+    } else {
+      classification = classifyMatches(
+        item, availableCandidates, statement.referenceYear, statement.referenceMonth, fixedDescriptionAliases
+      );
+    }
 
     const historyOptions = historyByItemId.get(item.id) || [];
     const preferredOption = historyOptions[0];
@@ -2947,10 +2966,6 @@ function normalizeCreatedTransactions(
   return Array.isArray(transaction) ? transaction : [transaction];
 }
 
-function buildInvoiceProjectionKey(referenceYear: number, referenceMonth: number) {
-  return `${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
-}
-
 export async function addReconciliationDescriptionSuggestions(
   items: ReconciliationPreviewItem[],
   context: { companyId: number; userId: number; existingTx?: Prisma.TransactionClient }
@@ -2988,6 +3003,7 @@ export default class CreditCardStatementReconciliationService {
     fileBase64: string;
     fileName?: string | null;
     categorySuggestionsByItemId?: Record<string, CreditCardReconciliationCategorySuggestion>;
+    manualFixedByItemId?: ReadonlyMap<string, string>;
     existingTx?: Prisma.TransactionClient;
   }): Promise<ReconciliationPreviewResult> {
     const account = await ensureCreditCardAccount(
@@ -3059,7 +3075,8 @@ export default class CreditCardStatementReconciliationService {
       candidates,
       categorySuggestions,
       fixedDescriptionAliases,
-      historyByItemId
+      historyByItemId,
+      params.manualFixedByItemId
     );
 
     return {
@@ -3095,9 +3112,12 @@ export default class CreditCardStatementReconciliationService {
     deferPostCommitEffects?: boolean;
     forceImportItemIds?: string[];
     forceLinkFixedItemIds?: string[];
+    claimedFixedOccurrenceKeys?: string[];
     selectedItems: Array<{
       itemId: string;
       action?: 'IMPORT' | 'IMPORT_CREDIT' | 'LINK_FIXED';
+      fixedTemplateId?: number;
+      occurrenceKey?: string;
       description?: string;
       categoryId?: number;
       creditKind?: CreditCardCreditKind;
@@ -3154,11 +3174,21 @@ export default class CreditCardStatementReconciliationService {
       existingTx: params.existingTx
     });
 
-    for (const itemId of selectedItemIds) {
+    const selectedProjections = candidates.filter(candidate => candidate.matchSource === 'PROJECTED_FIXED' &&
+      isCandidateInStatementReference(candidate, statement.referenceYear, statement.referenceMonth));
+    const claimedOccurrences = new Set(params.claimedFixedOccurrenceKeys);
+    const requestOrder = new Map(selectedItemIds.map((id, index) => [id, index]));
+    // Resolve the chosen projections before checking imports for duplicates, even when the
+    // caller submitted a charge first. Actual transactions remain evidence throughout the batch.
+    const processingOrder = [
+      ...selectedItemsInput.filter(input => input.action === 'LINK_FIXED'),
+      ...selectedItemsInput.filter(input => input.action !== 'LINK_FIXED')
+    ];
+    for (const selectedInput of processingOrder) {
+      const itemId = selectedInput.itemId;
       const item = selectedItems.find((entry) => entry.id === itemId);
-      const selectedInput = selectedItemsInput.find((entry) => entry.itemId === itemId);
 
-      if (!item || !selectedInput) {
+      if (!item) {
         results.push({
           itemId,
           status: 'FAILED',
@@ -3185,7 +3215,8 @@ export default class CreditCardStatementReconciliationService {
 
       const classification = classifyMatches(
         item,
-        candidates,
+        claimedOccurrences.size ? candidates.filter(candidate => candidate.matchSource !== 'PROJECTED_FIXED' ||
+          !candidate.occurrenceKey || !claimedOccurrences.has(candidate.occurrenceKey)) : candidates,
         statement.referenceYear,
         statement.referenceMonth,
         fixedDescriptionAliases
@@ -3202,7 +3233,7 @@ export default class CreditCardStatementReconciliationService {
       }
 
       if (action === 'LINK_FIXED') {
-        if (!isFixedAliasEligibleItem(item)) {
+        if (item.direction !== 'DEBIT' || !isFixedAliasEligibleItem(item)) {
           results.push({
             itemId,
             status: 'FAILED',
@@ -3212,45 +3243,37 @@ export default class CreditCardStatementReconciliationService {
           continue;
         }
 
-        if (
-          classification.reason === 'MAPPED_FIXED' &&
-          forceLinkFixedItemIds.has(itemId)
-        ) {
-          results.push({
-            itemId,
-            status: 'LINKED_FIXED',
-            message: 'Item reassociado a fixa recorrente nesta conciliacao',
-            createdTransactionIds: []
-          });
-          continue;
-        }
-
-        if (classification.reason === 'MAPPED_FIXED') {
-          results.push({
-            itemId,
-            status: 'SKIPPED_DUPLICATE',
-            message: 'Descricao ja vinculada a fixa recorrente desta fatura',
-            createdTransactionIds: []
-          });
-          continue;
-        }
-
+        const explicit = selectedInput.fixedTemplateId !== undefined || selectedInput.occurrenceKey !== undefined;
         const projectedFixedMatches = classification.matchedTransactions.filter(
-          (candidate) => candidate.matchSource === 'PROJECTED_FIXED' && candidate.fixedTemplateId
+          candidate => candidate.matchSource === 'PROJECTED_FIXED' && candidate.fixedTemplateId &&
+            isCandidateInStatementReference(candidate, statement.referenceYear, statement.referenceMonth)
         );
-        const fixedTemplateIds = Array.from(
-          new Set(
-            projectedFixedMatches
-              .map((candidate) => candidate.fixedTemplateId)
-              .filter((fixedTemplateId): fixedTemplateId is number => Boolean(fixedTemplateId))
-          )
-        );
-
-        if (fixedTemplateIds.length !== 1) {
+        const target = explicit
+          ? selectedProjections.find(candidate =>
+              candidate.fixedTemplateId === selectedInput.fixedTemplateId && candidate.occurrenceKey === selectedInput.occurrenceKey)
+          : classification.matchedTransactions.length === 1 ? projectedFixedMatches[0] : undefined;
+        if (!target?.fixedTemplateId || !target.occurrenceKey || claimedOccurrences.has(target.occurrenceKey)) {
           results.push({
             itemId,
             status: 'FAILED',
-            message: 'Nao foi possivel identificar uma fixa unica para vinculo',
+            message: explicit || target ? 'Ocorrência fixa indisponível para este vínculo na fatura.' : 'Nao foi possivel identificar uma fixa unica para vinculo',
+            createdTransactionIds: []
+          });
+          continue;
+        }
+        const linkedFixed = {
+          fixedTemplateId: target.fixedTemplateId, occurrenceKey: target.occurrenceKey,
+          matchKey: target.matchKey
+        };
+        claimedOccurrences.add(target.occurrenceKey);
+
+        if (!explicit && classification.reason === 'MAPPED_FIXED') {
+          const reassociated = forceLinkFixedItemIds.has(itemId);
+          results.push({
+            itemId,
+            status: reassociated ? 'LINKED_FIXED' : 'SKIPPED_DUPLICATE',
+            message: reassociated ? 'Item reassociado a fixa recorrente nesta conciliacao' : 'Descricao ja vinculada a fixa recorrente desta fatura',
+            linkedFixed,
             createdTransactionIds: []
           });
           continue;
@@ -3261,16 +3284,17 @@ export default class CreditCardStatementReconciliationService {
           companyId: params.companyId,
           userId: params.userId,
           sourceType: params.sourceType,
-          fixedTemplateId: fixedTemplateIds[0]!,
+          fixedTemplateId: target.fixedTemplateId,
           sourceDescription: item.sourceDescription,
           existingTx: params.existingTx
         });
-        fixedDescriptionAliases.set(normalizedSourceDescription, fixedTemplateIds[0]!);
+        fixedDescriptionAliases.set(normalizedSourceDescription, target.fixedTemplateId);
 
         results.push({
           itemId,
           status: 'LINKED_FIXED',
           message: 'Descricao vinculada a fixa recorrente com sucesso',
+          linkedFixed,
           createdTransactionIds: []
         });
         continue;
@@ -3465,7 +3489,7 @@ export default class CreditCardStatementReconciliationService {
         skippedNotImportableCount: results.filter((result) => result.status === 'SKIPPED_NOT_IMPORTABLE').length,
         failedCount: results.filter((result) => result.status === 'FAILED').length
       },
-      results
+      results: results.sort((a, b) => requestOrder.get(a.itemId)! - requestOrder.get(b.itemId)!)
     };
   }
 }

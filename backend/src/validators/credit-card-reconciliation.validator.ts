@@ -31,6 +31,8 @@ const expectedRevisionSchema = z.coerce.number()
 const selectedItemSchema = z.object({
   itemId: z.string().trim().min(1, 'ID do item selecionado e obrigatorio').max(64),
   action: z.enum(['IMPORT', 'IMPORT_CREDIT', 'LINK_FIXED']).optional().default('IMPORT'),
+  fixedTemplateId: z.number().int().positive().optional(),
+  occurrenceKey: z.string().max(64).regex(/^[1-9]\d*:\d{4}-(0[1-9]|1[0-2])$/).optional(),
   description: z.string()
     .trim()
     .max(255, 'Descricao do lancamento deve ter no maximo 255 caracteres')
@@ -43,6 +45,11 @@ const selectedItemSchema = z.object({
   refundOfTransactionId: z.coerce.number().int().positive().optional()
 }).superRefine((item, ctx) => {
   const action = item.action || 'IMPORT';
+  if (item.fixedTemplateId !== undefined || item.occurrenceKey !== undefined) {
+    if (action !== 'LINK_FIXED' || !item.fixedTemplateId || !item.occurrenceKey?.startsWith(`${item.fixedTemplateId}:`)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['occurrenceKey'], message: 'Informe a ocorrência da fixa selecionada.' });
+    }
+  }
   if (action === 'LINK_FIXED') {
     return;
   }

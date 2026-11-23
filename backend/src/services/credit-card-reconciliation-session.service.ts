@@ -79,6 +79,8 @@ type StartSessionInput = {
 type CommitSelection = {
   itemId: string;
   action?: 'IMPORT' | 'IMPORT_CREDIT' | 'LINK_FIXED';
+  fixedTemplateId?: number;
+  occurrenceKey?: string;
   description?: string;
   categoryId?: number;
   creditKind?: CreditCardCreditKind;
@@ -248,6 +250,36 @@ function buildMatchKeyUsage(items: ReconciliationPreviewItem[]) {
   }
 
   return usage;
+}
+
+function manualFixedTarget(item: any): { matchKey: string; occurrenceKey: string } | null {
+  const data = item.resolutionData;
+  if (item.resolution !== CreditCardReconciliationItemResolution.LINKED_FIXED || data?.action !== 'LINK_FIXED') return null;
+  if (data.mode === 'MANUAL_PROJECTED' || data.mode === 'ALREADY_MAPPED') {
+    if (typeof data.matchKey === 'string' && typeof data.occurrenceKey === 'string') return data;
+  }
+  if (data.mode != null && data.mode !== 'ALREADY_MAPPED') return null;
+
+  // Older human links saved the action, but no occurrence ID. Only the single
+  // projection in their original snapshot can identify that choice on reopening.
+  const snapshot = item.snapshot as ReconciliationPreviewItem;
+  const matches = snapshot?.matchedTransactions?.filter(match => match.matchSource === 'PROJECTED_FIXED');
+  const match = matches?.length === 1 ? matches[0] : null;
+  if (!match?.fixedTemplateId || !match.occurrenceKey || match.matchKey !== `projected-fixed:${match.fixedTemplateId}:${match.occurrenceKey}`) return null;
+  return { matchKey: match.matchKey, occurrenceKey: match.occurrenceKey };
+}
+
+function claimedFixedOccurrenceKeys(items: any[], preview: ReconciliationPreviewResult): string[] {
+  const currentById = new Map(preview.items.map(item => [item.id, item]));
+  return items.flatMap(item => {
+    if (item.resolution !== CreditCardReconciliationItemResolution.LINKED_FIXED) return [];
+    const key = item.resolutionData?.occurrenceKey ?? manualFixedTarget(item)?.occurrenceKey;
+    if (typeof key === 'string') return [key];
+    // Reserve an existing resolution's sole current projection even when the old
+    // snapshot cannot establish a saved target. Never use this fallback to restore a choice.
+    const matches = currentById.get(item.sourceItemId)?.matchedTransactions.filter(match => match.matchSource === 'PROJECTED_FIXED');
+    return matches?.length === 1 && matches[0].occurrenceKey ? [matches[0].occurrenceKey] : [];
+  });
 }
 
 function getAutomaticLinkedFixedResolution(
@@ -626,6 +658,10 @@ async function rebuildPersistedSessionPreview(
     fileBase64: Buffer.from(session.fileData).toString('base64'),
     fileName: session.fileName,
     categorySuggestionsByItemId: getPersistedCategorySuggestions(items),
+    manualFixedByItemId: new Map(items.flatMap(item => {
+      const target = manualFixedTarget(item);
+      return target ? [[item.sourceItemId, target.matchKey] as [string, string]] : [];
+    })),
     existingTx
   });
 }
@@ -746,8 +782,10 @@ async function loadWorkspaceSession(
 
 async function lockPreviewEvidenceRows(
   tx: Prisma.TransactionClient,
+  context: CreditCardReconciliationSessionContext,
   preview: ReconciliationPreviewResult,
-  persistedItems: any[]
+  persistedItems: any[],
+  selections: CommitSelection[] = []
 ) {
   const transactionIds = Array.from(new Set([
     ...preview.items.flatMap((item) =>
@@ -761,15 +799,18 @@ async function lockPreviewEvidenceRows(
       ) || []
     )
   ])).sort((left, right) => left - right);
-  const recurringTransactionIds = Array.from(new Set(
-    preview.items.flatMap((item) =>
+  const recurringTransactionIds = Array.from(new Set([
+    ...selections.flatMap(item => item.action === 'LINK_FIXED' && item.fixedTemplateId ? [item.fixedTemplateId] : []),
+    ...persistedItems.flatMap(item => item.resolution === 'LINKED_FIXED' && typeof item.resolutionData?.fixedTemplateId === 'number'
+      ? [item.resolutionData.fixedTemplateId as number] : []),
+    ...preview.items.flatMap((item) =>
       item.matchedTransactions.flatMap((match) =>
         match.matchSource === 'PROJECTED_FIXED' && match.fixedTemplateId !== null
           ? [match.fixedTemplateId]
           : []
       )
     )
-  )).sort((left, right) => left - right);
+  ])).sort((left, right) => left - right);
 
   // Lock order is account -> invoice -> recurring templates -> financial
   // candidates. Deleting a recurring template can reach financial rows through
@@ -782,6 +823,7 @@ async function lockPreviewEvidenceRows(
       SELECT id
       FROM "RecurringTransaction"
       WHERE id IN (${Prisma.join(recurringTransactionIds)})
+        AND "companyId" = ${context.companyId} AND "fromAccountId" = ${context.accountId}
       ORDER BY id
       FOR UPDATE
     `);
@@ -836,7 +878,7 @@ async function buildWorkspace(
       initialSession.items,
       tx
     );
-    await lockPreviewEvidenceRows(tx, initialPreview, initialSession.items);
+    await lockPreviewEvidenceRows(tx, context, initialPreview, initialSession.items);
 
     // A writer may have held a candidate/template row before we acquired its
     // evidence lock. Reload every durable input and rebuild the classification
@@ -1503,6 +1545,10 @@ async function invalidateStaleResolutions(
 
     if (item.resolution === CreditCardReconciliationItemResolution.LINKED_FIXED) {
       const current = previewById.get(item.sourceItemId);
+      const target = manualFixedTarget(item);
+      if (target) {
+        return !current?.matchedTransactions.some(match => match.matchKey === target.matchKey);
+      }
       const resolutionData = item.resolutionData as { mode?: string } | null;
       const isDuplicatedAutomaticMatch = resolutionData?.mode === 'PROJECTED_MATCH' &&
         current?.matchedTransactions.some((match) =>
@@ -2137,7 +2183,7 @@ export default class CreditCardReconciliationSessionService {
           initialEvidenceSession.items,
           tx
         );
-        await lockPreviewEvidenceRows(tx, initialPreview, initialEvidenceSession.items);
+        await lockPreviewEvidenceRows(tx, context, initialPreview, initialEvidenceSession.items, selectedItems);
 
         const session = await loadWorkspaceSession(tx, context, sessionId);
         if (
@@ -2230,6 +2276,7 @@ export default class CreditCardReconciliationSessionService {
           allowPaidInvoiceSettlement: false,
           existingTx: tx,
           deferPostCommitEffects: true,
+          claimedFixedOccurrenceKeys: claimedFixedOccurrenceKeys(allPersistedItems, revalidatedPreview),
           forceImportItemIds,
           forceLinkFixedItemIds
         });
@@ -2270,9 +2317,9 @@ export default class CreditCardReconciliationSessionService {
               resolution,
               resolutionData: asJson({
                 action: selectedInput.action || 'IMPORT',
-                mode: itemResult.status === 'SKIPPED_DUPLICATE'
-                  ? 'ALREADY_MAPPED'
-                  : null,
+                mode: itemResult.status === 'SKIPPED_DUPLICATE' ? 'ALREADY_MAPPED'
+                  : itemResult.linkedFixed ? 'MANUAL_PROJECTED' : null,
+                ...itemResult.linkedFixed,
                 description: selectedInput.description || null,
                 categoryId: selectedInput.categoryId || null,
                 creditKind: selectedInput.creditKind || null,

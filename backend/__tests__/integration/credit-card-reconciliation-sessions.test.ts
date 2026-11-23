@@ -1885,6 +1885,192 @@ describe('Credit-card reconciliation persisted sessions', () => {
     })).rejects.toMatchObject({ code: 'SESSION_TARGET_PAID' });
   });
 
+  it('links a manually selected projected Dropbox charge, preserving its amount and suggesting it next month', async () => {
+    const description = 'Dropbox Fhs9llrvt8yy';
+    const template = await prisma.recurringTransaction.create({
+      data: {
+        description: 'Dropbox', amount: 69, type: 'EXPENSE', frequency: 'MONTHLY', dayOfMonth: 10,
+        startDate: new Date('2026-01-01T12:00:00Z'), nextDueDate: new Date('2026-12-10T12:00:00Z'),
+        fromAccountId: accountId, categoryId, companyId, createdBy: userId
+      }
+    });
+    const occurrenceKey = `${template.id}:2026-12`;
+    const selection = { action: 'LINK_FIXED' as const, fixedTemplateId: template.id, occurrenceKey };
+    try {
+      const started = await CreditCardReconciliationSessionService.start(context, {
+        sourceType: 'NUBANK_CSV', targetReferenceYear: 2026, targetReferenceMonth: 12,
+        fileName: 'dezembro.csv', fileBase64: nubankFile([
+          ['2026-11-10', description, '68,76'], ['2026-11-11', 'Outra assinatura', '70,43']
+        ])
+      });
+      const charge = started.preview.items.find(item => item.sourceDescription === description)!;
+      const other = started.preview.items.find(item => item.sourceDescription === 'Outra assinatura')!;
+      expect(charge).toMatchObject({ status: 'PENDING', matchedTransactions: [] });
+      const wrongMonth = await CreditCardReconciliationSessionService.commit(context, started.session.id,
+        started.session.revision, [{ itemId: charge.id, ...selection, occurrenceKey: `${template.id}:2026-11` }]);
+      expect(wrongMonth.commitResult.results[0]).toMatchObject({ status: 'FAILED', createdTransactionIds: [] });
+      expect(await prisma.creditCardRecurringDescriptionAlias.count({ where: { fixedTemplateId: template.id } })).toBe(0);
+      const committed = await CreditCardReconciliationSessionService.commit(context, started.session.id,
+        wrongMonth.session.revision, [{ itemId: charge.id, ...selection }]);
+      expect(committed.commitResult.results[0]).toMatchObject({ status: 'LINKED_FIXED', createdTransactionIds: [] });
+      const reopened = await CreditCardReconciliationSessionService.get(context, 2026, 12);
+      expect(reopened.preview!.items.find(item => item.id === charge.id)).toMatchObject({
+        amount: '68.76', progress: { resolution: 'LINKED_FIXED', resolutionData: { fixedTemplateId: template.id, occurrenceKey } }
+      });
+      expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(0);
+      expect((await prisma.recurringTransaction.findUniqueOrThrow({ where: { id: template.id } })).amount.toString()).toBe('69');
+      expect(await prisma.creditCardRecurringDescriptionAlias.findMany({ where: { fixedTemplateId: template.id } }))
+        .toEqual([expect.objectContaining({ accountId, sourceDescription: description })]);
+
+      const duplicate = await CreditCardReconciliationSessionService.commit(context, started.session.id,
+        reopened.session!.revision, [{ itemId: other.id, ...selection }]);
+      expect(duplicate.commitResult.results[0]).toMatchObject({ status: 'FAILED', createdTransactionIds: [] });
+      expect(duplicate.preview.items.find(item => item.id === other.id)?.progress.resolution).toBe('PENDING');
+      expect(await prisma.creditCardRecurringDescriptionAlias.count({ where: { fixedTemplateId: template.id } })).toBe(1);
+
+      const january = await CreditCardReconciliationSessionService.start(context, {
+        sourceType: 'NUBANK_OFX', targetReferenceYear: 2027, targetReferenceMonth: 1, fileName: 'janeiro.ofx',
+        fileBase64: creditCardOfx([{ id: 'jan-1', date: '20261210', amount: '-72.15', description }]).toString('base64')
+      });
+      expect(january.preview.items[0]).toMatchObject({
+        status: 'SIMILAR', progress: { resolution: 'PENDING' },
+        matchedTransactions: [expect.objectContaining({ matchSource: 'PROJECTED_FIXED', fixedTemplateId: template.id,
+          occurrenceKey: `${template.id}:2027-01` })]
+      });
+      const januaryItemId = january.preview.items[0].id;
+      const accepted = await CreditCardReconciliationSessionService.commit(context, january.session.id,
+        january.session.revision, [{ itemId: januaryItemId, action: 'LINK_FIXED' }]);
+      expect(accepted.commitResult.results[0]).toMatchObject({ status: 'LINKED_FIXED', createdTransactionIds: [] });
+      const januaryReopened = await CreditCardReconciliationSessionService.get(context, 2027, 1);
+      expect(januaryReopened.preview!.items[0].progress).toMatchObject({
+        resolution: 'LINKED_FIXED', resolutionData: { fixedTemplateId: template.id, occurrenceKey: `${template.id}:2027-01` }
+      });
+      const unlinked = await CreditCardReconciliationSessionService.decide(context, started.session.id, charge.id, {
+        expectedRevision: duplicate.session.revision, decision: 'UNLINK_FIXED'
+      });
+      const linkedOther = await CreditCardReconciliationSessionService.commit(context, started.session.id,
+        unlinked.session.revision, [{ itemId: other.id, ...selection }]);
+      expect(linkedOther.commitResult.results[0]).toMatchObject({ status: 'LINKED_FIXED', createdTransactionIds: [] });
+      expect(linkedOther.preview.items.find(item => item.id === charge.id)?.progress.resolution).toBe('PENDING');
+    } finally {
+      await prisma.recurringTransaction.delete({ where: { id: template.id } });
+    }
+  });
+
+  it('preserves a completed legacy manual fixed link with a cent difference until unlinked or the projection disappears', async () => {
+    const template = await prisma.recurringTransaction.create({ data: {
+      description: 'Armazenamento', amount: 69, type: 'EXPENSE', frequency: 'MONTHLY',
+      startDate: new Date('2026-12-01T12:00:00Z'), nextDueDate: new Date('2027-01-10T12:00:00Z'),
+      fromAccountId: accountId, categoryId, companyId, createdBy: userId
+    } });
+    try {
+      const started = await CreditCardReconciliationSessionService.start(context, {
+        sourceType: 'NUBANK_CSV', targetReferenceYear: 2027, targetReferenceMonth: 1, fileName: 'janeiro.csv',
+        fileBase64: nubankFile([['2027-01-10', 'Dropbox AB12', '68,95']])
+      });
+      const charge = started.preview.items[0];
+      const occurrenceKey = `${template.id}:2027-01`;
+      expect(charge.matchedTransactions).toEqual([expect.objectContaining({ occurrenceKey })]);
+      const { id: sessionId } = started.session;
+      const oldClientSelection = [{ itemId: charge.id, action: 'LINK_FIXED' as const }];
+      const linked = await CreditCardReconciliationSessionService.commit(context, sessionId, started.session.revision, oldClientSelection);
+      const complete = await CreditCardReconciliationSessionService.updateStatus(context, sessionId, linked.session.revision, 'COMPLETED');
+      // The pre-occurrence protocol stored exactly this human checkpoint, without a template/key.
+      const legacyData = { action: 'LINK_FIXED', mode: null, transactionIds: [] };
+      const restoreLegacyEncoding = () => prisma.creditCardReconciliationItem.updateMany({
+        where: { sessionId, sourceItemId: charge.id }, data: { resolutionData: legacyData }
+      });
+      await restoreLegacyEncoding();
+      const restored = await CreditCardReconciliationSessionService.get(context, 2027, 1);
+      expect(restored.session).toMatchObject({ status: 'COMPLETED', revision: complete.session.revision });
+      expect(restored.preview!.items[0]).toMatchObject({ status: 'SIMILAR', reason: 'AMOUNT_DIVERGENCE',
+        progress: { resolution: 'LINKED_FIXED' }, matchedTransactions: [expect.objectContaining({ occurrenceKey })] });
+
+      const open = await CreditCardReconciliationSessionService.updateStatus(context, sessionId, complete.session.revision, 'OPEN');
+      const unlinked = await CreditCardReconciliationSessionService.decide(context, sessionId, charge.id,
+        { expectedRevision: open.session.revision, decision: 'UNLINK_FIXED' });
+      expect(unlinked.preview.items[0].progress).toMatchObject({ resolution: 'PENDING', resolutionData: { occurrenceKey } });
+      await CreditCardReconciliationSessionService.commit(context, sessionId, unlinked.session.revision, oldClientSelection);
+      await restoreLegacyEncoding();
+      await prisma.recurringTransaction.update({ where: { id: template.id }, data: { isActive: false } });
+      const invalidated = await CreditCardReconciliationSessionService.get(context, 2027, 1);
+      expect(invalidated.preview!.items[0].progress.resolution).toBe('PENDING');
+      expect(invalidated.events).toEqual(expect.arrayContaining([expect.objectContaining({ action: 'INVALIDATE' })]));
+    } finally {
+      await prisma.recurringTransaction.delete({ where: { id: template.id } });
+    }
+  });
+
+  it('recognizes an exact imported charge on reset and re-upload even with a differently priced recurring alias', async () => {
+    const template = await prisma.recurringTransaction.create({ data: {
+      description: 'Armazenamento', amount: 69, type: 'EXPENSE', frequency: 'MONTHLY',
+      startDate: new Date('2026-12-01T12:00:00Z'), nextDueDate: new Date('2027-01-10T12:00:00Z'),
+      fromAccountId: accountId, categoryId, companyId, createdBy: userId
+    } });
+    try {
+      await prisma.creditCardRecurringDescriptionAlias.create({ data: {
+        companyId, accountId, fixedTemplateId: template.id, sourceType: 'NUBANK_CSV',
+        sourceDescription: 'Dropbox AB12', normalizedSourceDescription: 'DROPBOX AB12', createdBy: userId
+      } });
+      const input = { sourceType: 'NUBANK_CSV' as const, targetReferenceYear: 2027, targetReferenceMonth: 1,
+        fileName: 'janeiro.csv', fileBase64: nubankFile([['2027-01-05', 'Dropbox AB12', '68,76']]) };
+      const started = await CreditCardReconciliationSessionService.start(context, input);
+      const charge = started.preview.items[0];
+      expect(charge).toMatchObject({ status: 'SIMILAR', reason: 'AMOUNT_DIVERGENCE' });
+      const selected = [{ itemId: charge.id, action: 'IMPORT' as const, description: 'Compra avulsa do mesmo fornecedor', categoryId }];
+      const imported = await CreditCardReconciliationSessionService.commit(context, started.session.id, started.session.revision, selected);
+      expect(imported.commitResult.results[0].status).toBe('CREATED');
+      const [createdId] = imported.commitResult.results[0].createdTransactionIds;
+      await CreditCardReconciliationSessionService.reset(context, started.session.id, imported.session.revision);
+      const uploaded = await CreditCardReconciliationSessionService.start(context, input);
+      expect(uploaded.preview.items[0]).toMatchObject({ status: 'OK', reason: 'EXACT',
+        progress: { resolution: 'CONFIRMED_EXISTING' }, matchedTransactions: [expect.objectContaining({ id: createdId, matchSource: 'TRANSACTION' })] });
+      await expect(CreditCardReconciliationSessionService.commit(context, uploaded.session.id, uploaded.session.revision, selected))
+        .rejects.toMatchObject({ code: 'ITEM_STATE_CONFLICT' });
+      expect(await prisma.financialTransaction.count({ where: { companyId, fromAccountId: accountId } })).toBe(1);
+    } finally {
+      await prisma.recurringTransaction.delete({ where: { id: template.id } });
+    }
+  });
+
+  it('suggests the materialized occurrence of a mapped series without duplicating its legacy projection', async () => {
+    const date = new Date('2027-01-10T12:00:00Z');
+    const template = await prisma.recurringTransaction.create({ data: {
+      description: 'Armazenamento', amount: 69, type: 'EXPENSE', frequency: 'MONTHLY',
+      startDate: new Date('2026-12-01T12:00:00Z'), nextDueDate: date,
+      fromAccountId: accountId, categoryId, companyId, createdBy: userId
+    } });
+    try {
+      const invoice = await prisma.creditCardInvoice.create({ data: {
+        accountId, referenceYear: 2027, referenceMonth: 1, closingDate: date, dueDate: new Date('2027-01-15T12:00:00Z')
+      } });
+      const existing = await prisma.financialTransaction.create({ data: {
+        description: 'Armazenamento', amount: 69, date, type: 'EXPENSE', fromAccountId: accountId,
+        creditCardInvoiceId: invoice.id, recurringTransactionId: template.id, occurrenceKey: null, companyId, createdBy: userId
+      } });
+      await prisma.creditCardRecurringDescriptionAlias.create({ data: {
+        companyId, accountId, fixedTemplateId: template.id, sourceType: 'NUBANK_CSV',
+        sourceDescription: 'Dropbox AB12', normalizedSourceDescription: 'DROPBOX AB12', createdBy: userId
+      } });
+      const started = await CreditCardReconciliationSessionService.start(context, {
+        sourceType: 'NUBANK_OFX', targetReferenceYear: 2027, targetReferenceMonth: 1,
+        fileName: 'janeiro.ofx', fileBase64: creditCardOfx([
+          { id: 'dropbox', date: '20270105', amount: '-68.76', description: 'Dropbox AB12' }
+        ], { endDate: '20270131120000[-3:BRT]' }).toString('base64')
+      });
+      const reopened = await CreditCardReconciliationSessionService.get(context, 2027, 1);
+      for (const preview of [started.preview, reopened.preview!]) {
+        expect(preview.items[0]).toMatchObject({
+          status: 'SIMILAR', reason: 'AMOUNT_DIVERGENCE', progress: { resolution: 'PENDING' },
+          matchedTransactions: [expect.objectContaining({ matchSource: 'TRANSACTION', id: existing.id, fixedTemplateId: template.id })]
+        });
+      }
+    } finally {
+      await prisma.financialTransaction.deleteMany({ where: { companyId, recurringTransactionId: template.id } });
+      await prisma.recurringTransaction.delete({ where: { id: template.id } });
+    }
+  });
+
   it('automatically persists a unique projected fixed match as terminal progress', async () => {
     const fixedTemplate = await prisma.recurringTransaction.create({
       data: {
@@ -1962,11 +2148,11 @@ describe('Credit-card reconciliation persisted sessions', () => {
           reason: null
         },
         matchedTransactions: [{
-          matchKey: `fixed:${fixedTemplate.id}:2026-08`,
+          matchKey: `projected-fixed:${fixedTemplate.id}:${fixedTemplate.id}:2026-08`,
           matchSource: 'PROJECTED_FIXED',
           id: null,
           fixedTemplateId: fixedTemplate.id,
-          occurrenceKey: '2026-08',
+          occurrenceKey: `${fixedTemplate.id}:2026-08`,
           description: 'Assinatura',
           amount: '25',
           date: '2026-08-05T12:00:00.000Z',
@@ -2018,9 +2204,9 @@ describe('Credit-card reconciliation persisted sessions', () => {
           resolutionData: {
             mode: 'AUTO_MATCH_SUPPRESSED',
             suppressedResolution: 'LINKED_FIXED',
-            matchKey: `fixed:${fixedTemplate.id}:2026-08`,
+            matchKey: `projected-fixed:${fixedTemplate.id}:${fixedTemplate.id}:2026-08`,
             fixedTemplateId: fixedTemplate.id,
-            occurrenceKey: '2026-08'
+            occurrenceKey: `${fixedTemplate.id}:2026-08`
           }
         }
       });
@@ -2094,11 +2280,11 @@ describe('Credit-card reconciliation persisted sessions', () => {
         status: 'OK',
         reason: 'MAPPED_FIXED',
         matchedTransactions: [{
-          matchKey: 'fixed:88:2026-08',
+          matchKey: 'projected-fixed:88:88:2026-08',
           matchSource: 'PROJECTED_FIXED',
           id: null,
           fixedTemplateId: 88,
-          occurrenceKey: '2026-08',
+          occurrenceKey: '88:2026-08',
           description: 'Assinatura',
           amount: '25',
           date: '2026-08-05T12:00:00.000Z',

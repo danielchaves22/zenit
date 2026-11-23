@@ -50,6 +50,12 @@ Na visão **Detalhada**, as alternativas aparecem junto aos campos da nova despe
 
 Quando há mais de um lançamento compatível na fatura atual, o histórico também pode destacar um deles para você conferir. Verifique a data, o valor e a parcela antes de confirmar o vínculo.
 
+### Vincular uma cobrança a uma fixa projetada
+
+Se o valor de uma assinatura variar, selecione a **Fixa projetada** em **Selecionar contraparte na fatura do Zenit** e clique em **Vincular a fixa**. Por exemplo, você pode associar uma cobrança de R$ 68,76 do Dropbox à previsão de R$ 69,00. O Cash salva o vínculo da ocorrência e a descrição usada no extrato. O valor previsto da fixa continua em R$ 69,00, e a cobrança permanece no arquivo por R$ 68,76.
+
+Em outra fatura do cartão, quando a descrição já vinculada aparecer com um valor diferente, o Cash pode sugerir a fixa daquele mês para você conferir. Se o banco mudar o texto da cobrança, você também pode selecionar a fixa manualmente.
+
 ## Conciliar a fatura do Nubank
 
 Na conciliação do cartão Nubank, selecione a fatura que deseja conferir e use

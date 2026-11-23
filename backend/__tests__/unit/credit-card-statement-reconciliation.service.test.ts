@@ -1,9 +1,11 @@
-import { CreditCardInvoiceStatus, Prisma, TransactionStatus } from '@prisma/client';
-import { __private__, addReconciliationDescriptionSuggestions } from '../../src/services/credit-card-statement-reconciliation.service';
+import { CreditCardInvoiceStatus, Prisma, TransactionStatus, type FinancialTransaction } from '@prisma/client';
+import CreditCardStatementReconciliationService, { __private__, addReconciliationDescriptionSuggestions } from '../../src/services/credit-card-statement-reconciliation.service';
+import FinancialTransactionService from '../../src/services/financial-transaction.service';
 import * as descriptionSuggestions from '../../src/services/reconciliation-description-suggestion.service';
 import { logger } from '../../src/utils/logger';
 import type { CreditCardDescriptionHistoryOption } from '../../src/services/credit-card-reconciliation-history.service';
 import { creditCardOfx } from '../fixtures/credit-card-ofx';
+import { commitCreditCardReconciliationSessionSchema } from '../../src/validators/credit-card-reconciliation.validator';
 
 const sampleCaixaStatementText = `
 VENCIMENTO
@@ -95,7 +97,101 @@ DATA	DESCRITIVO	CRÉDITO	DÉBITO
 03/07	05 PARCELA ANUIDADE		69,00
 `.trim();
 
+function fixedCommitFixture(hasReceipt: boolean) {
+  const text = 'date,title,amount\n2026-11-10,Plano exterior,121.00\n2026-12-10,Cobranca distinta,59.00';
+  const fileName = 'Nubank_2026-12-17.csv';
+  const [subscription, charge] = __private__.parseNubankStatementText(text, fileName).items;
+  const account = { id: 3, type: 'CREDIT_CARD', statementClosingDay: 10, statementDueDay: 17, bankName: 'Nubank' };
+  const template = { id: 8, type: 'EXPENSE', fromAccountId: 3, fromAccount: account, startDate: new Date('2026-01-01Z'),
+    amount: new Prisma.Decimal(59), description: 'Assinatura' };
+  const receipt = { id: 11, amount: new Prisma.Decimal(59), description: 'Cobranca distinta', type: 'EXPENSE',
+    date: new Date('2026-12-10T12:00:00Z'), status: 'COMPLETED', installmentNumber: null, totalInstallments: null };
+  const tx = {
+    financialAccount: { findFirst: jest.fn().mockResolvedValue(account) },
+    recurringTransaction: { findMany: jest.fn().mockResolvedValue([template]) },
+    financialTransaction: { findMany: jest.fn().mockResolvedValue([]) },
+    creditCardInvoice: { findFirst: jest.fn().mockResolvedValue({ id: 12, referenceYear: 2026, referenceMonth: 12,
+      status: 'OPEN', dueDate: new Date('2026-12-17Z'), transactions: hasReceipt ? [receipt] : [] }) },
+    creditCardRecurringDescriptionAlias: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn() }
+  };
+  const params = {
+    accountId: 3, companyId: 4, userId: 5, sourceType: 'NUBANK_CSV' as const, targetReferenceYear: 2026, targetReferenceMonth: 12,
+    fileName, fileBase64: Buffer.from(text).toString('base64'), existingTx: tx as unknown as Prisma.TransactionClient
+  };
+  return { params, charge, subscription, receipt, tx };
+}
+
 describe('Credit card statement reconciliation service', () => {
+  it.each([
+    { sameBatch: false, hasReceipt: false }, { sameBatch: true, hasReceipt: false }, { sameBatch: true, hasReceipt: true }
+  ])('ranks imports against actual receipts and unclaimed projections (sameBatch=$sameBatch, actualReceipt=$hasReceipt)', async ({ sameBatch, hasReceipt }) => {
+    const { params, charge, subscription, receipt } = fixedCommitFixture(hasReceipt);
+    const create = jest.spyOn(FinancialTransactionService, 'createTransaction').mockResolvedValue(receipt as FinancialTransaction);
+    try {
+      const result = await CreditCardStatementReconciliationService.commit({
+        ...params,
+        claimedFixedOccurrenceKeys: sameBatch ? [] : ['8:2026-12'],
+        selectedItems: [
+          { itemId: charge.id, action: 'IMPORT', description: 'Cobranca distinta', categoryId: 1 },
+          ...(sameBatch ? [{ itemId: subscription.id, action: 'LINK_FIXED' as const, fixedTemplateId: 8, occurrenceKey: '8:2026-12' }] : [])
+        ]
+      });
+      expect(result.results.map(item => item.status)).toEqual([
+        hasReceipt ? 'SKIPPED_DUPLICATE' : 'CREATED', ...(sameBatch ? ['LINKED_FIXED'] : [])
+      ]);
+      expect(create).toHaveBeenCalledTimes(hasReceipt ? 0 : 1);
+    } finally { create.mockRestore(); }
+  });
+
+  it('requires the user to select the fixed occurrence if a materialized charge also matches', async () => {
+    const { params, charge, tx } = fixedCommitFixture(true);
+    tx.creditCardRecurringDescriptionAlias.findMany.mockResolvedValue([{ fixedTemplateId: 8, normalizedSourceDescription: 'COBRANCA DISTINTA' }]);
+    const link = { itemId: charge.id, action: 'LINK_FIXED' as const };
+    const implicit = await CreditCardStatementReconciliationService.commit({ ...params, selectedItems: [link] });
+    expect(implicit.results[0].status).toBe('FAILED');
+    expect(tx.creditCardRecurringDescriptionAlias.upsert).not.toHaveBeenCalled();
+    const explicit = await CreditCardStatementReconciliationService.commit({ ...params,
+      selectedItems: [{ ...link, fixedTemplateId: 8, occurrenceKey: '8:2026-12' }] });
+    expect(explicit.results[0]).toMatchObject({ status: 'LINKED_FIXED', createdTransactionIds: [] });
+  });
+
+  it('preserves a manually chosen occurrence outside the ranking and keeps the real amount difference', () => {
+    const statement = __private__.parseNubankStatementText(
+      'date,title,amount\n2026-11-10,Loja A,121.00\n2026-11-10,Loja B,59.00', 'Nubank_2026-12-17.csv'
+    );
+    const projected = {
+      matchKey: 'projected-fixed:8:8:2026-12', matchSource: 'PROJECTED_FIXED' as const, id: null,
+      fixedTemplateId: 8, occurrenceKey: '8:2026-12', description: 'Mensalidade', amount: new Prisma.Decimal(59),
+      date: new Date('2026-12-10T12:00:00Z'), installmentNumber: null, totalInstallments: null,
+      status: TransactionStatus.PENDING, purchaseGroupId: null,
+      creditCardInvoice: { id: 0, referenceYear: 2026, referenceMonth: 12, status: CreditCardInvoiceStatus.OPEN }
+    };
+    const another = { ...projected, matchKey: 'projected-fixed:9:9:2026-12', fixedTemplateId: 9,
+      occurrenceKey: '9:2026-12', amount: new Prisma.Decimal(121) };
+    const chosen = new Map([[statement.items[0].id, projected.matchKey]]);
+    const rows = __private__.buildPreviewItems(statement, [projected, another], new Map(), new Map(), new Map(), chosen);
+    expect(rows[0]).toMatchObject({ status: 'SIMILAR', reason: 'AMOUNT_DIVERGENCE',
+      matchedTransactions: [{ matchKey: projected.matchKey, amount: '59' }] });
+    expect(rows[1].matchedTransactions).toHaveLength(0);
+    expect(__private__.buildValueComparison(statement, rows, [projected, another]).amountDivergences[0])
+      .toMatchObject({ matchKey: projected.matchKey, differenceAmount: '-62' });
+
+    const afterRemoval = __private__.buildPreviewItems(statement, [another], new Map(), new Map(), new Map(), chosen);
+    expect(afterRemoval[0]).toMatchObject({ status: 'PENDING', matchedTransactions: [] });
+  });
+
+  it('accepts only a coherent template and occurrence pair for an explicit fixed selection', () => {
+    const selection = { itemId: 'row', action: 'LINK_FIXED', fixedTemplateId: 8, occurrenceKey: '8:2026-12' };
+    const valid = (row: object) => commitCreditCardReconciliationSessionSchema.safeParse({
+      accountId: 1, sessionId: 2, expectedRevision: 1, selectedItems: [row]
+    }).success;
+    expect(valid(selection)).toBe(true);
+    expect(valid({ itemId: 'row', action: 'LINK_FIXED' })).toBe(true);
+    expect(valid({ ...selection, occurrenceKey: undefined })).toBe(false);
+    expect(valid({ ...selection, occurrenceKey: '9:2026-12' })).toBe(false);
+    expect(valid({ ...selection, occurrenceKey: '8:2026-13' })).toBe(false);
+    expect(valid({ ...selection, action: 'IMPORT', description: 'Edited', categoryId: 5 })).toBe(false);
+  });
   it('parses the Caixa statement layout, including annuity installments', () => {
     const parsed = __private__.parseCaixaStatementText(
       sampleCaixaStatementText,

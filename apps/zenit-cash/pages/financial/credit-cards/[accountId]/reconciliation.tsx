@@ -237,6 +237,7 @@ interface ReconciliationPreviewItem {
     categoryId: number | null;
     categoryName: string | null;
     count: number;
+    lastConfirmedAt?: string | null;
   }>;
   historySuggestedMatchKey?: string | null;
   categorySuggestion: {
@@ -1162,16 +1163,140 @@ function getSystemTransactionDateLabel(transaction: ReconciliationInvoiceSystemT
 }
 
 function initialItemDraft(item: ReconciliationPreviewItem): ReconciliationItemDraft {
-  const options = item.historyOptions || [];
-  if (options.length === 1) {
-    const [option] = options;
+  const option = item.historyOptions?.[0];
+  if (option) {
     return { description: option.description, categoryId: String(option.categoryId ?? '') };
   }
 
   return {
     description: item.sourceDescription,
-    categoryId: options.length ? '' : String(item.categorySuggestion.categoryId ?? '')
+    categoryId: String(item.categorySuggestion.categoryId ?? '')
   };
+}
+
+interface ExpenseDraftEditorProps {
+  item: ReconciliationPreviewItem;
+  draft: ReconciliationItemDraft;
+  categoryName?: string;
+  categories: CategoryOption[];
+  categoriesLoading: boolean;
+  compact: boolean;
+  disabled: boolean;
+  importing: boolean;
+  onEdit: (changes: Partial<ReconciliationItemDraft>) => void;
+  onSelectDescription: (suggestion: AutocompleteSuggestion) => void;
+  fetchDescriptions: (query: string) => Promise<AutocompleteSuggestion[]>;
+  onImport: () => void;
+}
+
+function ExpenseDraftEditor({
+  item, draft, categoryName, categories, categoriesLoading, compact, disabled, importing,
+  onEdit, onSelectDescription, fetchDescriptions, onImport
+}: ExpenseDraftEditorProps) {
+  const [expanded, setExpanded] = useState(false);
+  const fieldId = React.useId();
+  const options = item.historyOptions ?? [];
+  const commonDescription = options.length > 1 && options.every((option) =>
+    option.description.localeCompare(options[0].description, 'pt-BR', { sensitivity: 'base' }) === 0
+  ) ? options[0].description : null;
+  const sourceLabel = getSuggestionSourceLabel(item.categorySuggestion.source);
+  return (
+    <div className="mt-4 min-w-0 border-t border-border pt-3">
+      {compact && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0">
+            <span className="text-xs font-medium text-text-muted">Nova despesa no Zenit</span>
+            <p id={fieldId + '-summary'} className="break-words text-sm text-text">
+              {draft.description || 'Informe a descrição'} · {categoryName || 'Selecione a categoria'}
+            </p>
+          </div>
+          <Button type="button" variant="outline" aria-expanded={expanded} aria-controls={fieldId}
+            aria-describedby={fieldId + '-summary'} onClick={() => setExpanded(!expanded)}>
+            {expanded ? 'Recolher edição' : 'Revisar lançamento'}
+          </Button>
+        </div>
+      )}
+      <div id={fieldId} hidden={compact && !expanded}>
+        {(!compact || expanded) && (<>
+          {options.length > 0 && (
+            <fieldset className="my-3 min-w-0">
+              <legend className="mb-2 text-sm font-medium text-text">
+                {commonDescription
+                  ? `Categorias usadas para “${commonDescription}” em faturas anteriores`
+                  : 'Escolhas em faturas anteriores deste cartão'}
+              </legend>
+              <div className="flex flex-wrap gap-2">
+                {options.map((option, index) => {
+                  const categoryId = String(option.categoryId ?? '');
+                  const selected = draft.categoryId === categoryId && (commonDescription !== null || draft.description === option.description);
+                  return (
+                    <Button
+                      key={JSON.stringify([option.description, option.categoryId])}
+                      type="button"
+                      variant="outline"
+                      aria-pressed={selected}
+                      disabled={disabled}
+                      className={`max-w-full break-words text-left ${selected ? 'border-accent bg-accent/10' : ''}`}
+                      onClick={() => onEdit(commonDescription ? { categoryId } : { description: option.description, categoryId })}
+                    >
+                      <span className="min-w-0">
+                        <span className="block">
+                          {!commonDescription && `${option.description} · `}{option.categoryName || 'Sem categoria'}
+                        </span>
+                        <span className="block text-xs text-text-muted">
+                          {index === 0 && (option.lastConfirmedAt ? 'Última escolha · ' : 'Sugestão inicial · ')}
+                          {option.count} {option.count === 1 ? 'uso' : 'usos'}
+                        </span>
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
+          <div className={`mt-3 grid min-w-0 gap-3 ${compact ? '' : 'lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]'}`}>
+            <div>
+              <AutocompleteInput
+                id={fieldId + '-description'}
+                label="Descrição a lançar"
+                value={draft.description}
+                onChange={(description) => onEdit({ description })}
+                onSuggestionSelect={onSelectDescription}
+                fetchSuggestions={fetchDescriptions}
+                placeholder="Digite para buscar descrições anteriores"
+                minLength={3}
+                maxSuggestions={10}
+                disabled={disabled}
+              />
+              {!draft.description.trim() && <p className="mt-2 text-sm text-tone-amber">Informe a descrição do lançamento.</p>}
+            </div>
+            <div>
+              <CategorySelect
+                id={fieldId + '-category'}
+                label="Categoria a lançar"
+                categories={categories}
+                value={draft.categoryId}
+                onChange={(categoryId) => onEdit({ categoryId })}
+                placeholder={categoriesLoading ? 'Carregando categorias...' : 'Selecione a categoria'}
+                disabled={disabled || categoriesLoading}
+              />
+              {!options.length && sourceLabel && (
+                <p className="mt-2 text-sm text-text-muted">Sugestão inicial por {sourceLabel.toLowerCase()}.</p>
+              )}
+              {!options.length && item.categorySuggestion.reason && (
+                <p className="mt-1 text-sm text-text-subtle">{item.categorySuggestion.reason}</p>
+              )}
+              {!draft.categoryId && <p className="mt-2 text-sm text-tone-amber">Escolha a categoria antes de importar este item.</p>}
+            </div>
+          </div>
+          <Button type="button" variant="outline" className="mt-3" onClick={onImport}
+            disabled={disabled || categoriesLoading || !draft.description.trim() || !draft.categoryId}>
+            {importing ? 'Importando...' : 'Importar este item'}
+          </Button>
+        </>)}
+      </div>
+    </div>
+  );
 }
 
 function hasAnyFileExtension(fileName: string, extensions: string[]) {
@@ -1240,6 +1365,7 @@ interface SystemInvoiceTransactionRow {
 }
 
 interface CreditCardReconciliationSideBySideProps {
+  renderExpenseEditor: (item: ReconciliationPreviewItem) => React.ReactNode;
   preview: ReconciliationPreview;
   rows: SystemInvoiceTransactionRow[];
   identityCollisionRowIds: Set<string>;
@@ -1589,6 +1715,7 @@ function CreditCardReconciliationValueSummary({
 }
 
 function CreditCardReconciliationSideBySide({
+  renderExpenseEditor,
   preview,
   rows,
   identityCollisionRowIds,
@@ -1884,6 +2011,7 @@ function CreditCardReconciliationSideBySide({
                           </span>
                         </button>
                       </div>
+                      {selectable && renderExpenseEditor(item)}
                     </li>
                   );
                 })}
@@ -2497,18 +2625,21 @@ function CreditCardReconciliationPageInner() {
     [selectedItems]
   );
 
+  const categoryNames = useMemo(
+    () => new Map(categories.map((category) => [String(category.id), category.name])),
+    [categories]
+  );
   const itemDrafts = useMemo(() => {
-    const categoryIds = new Set(categories.map((category) => String(category.id)));
     const drafts: Record<string, ReconciliationItemDraft> = {};
     for (const item of preview?.items ?? []) {
       const draft = { ...initialItemDraft(item), ...draftEdits[item.id] };
       drafts[item.id] = {
         description: draft.description,
-        categoryId: categoryIds.has(draft.categoryId) ? draft.categoryId : ''
+        categoryId: categoryNames.has(draft.categoryId) ? draft.categoryId : ''
       };
     }
     return drafts;
-  }, [categories, draftEdits, preview]);
+  }, [categoryNames, draftEdits, preview]);
 
   const selectedDraftIssues = useMemo(() => {
     return selectedItems.reduce(
@@ -3782,6 +3913,26 @@ function CreditCardReconciliationPageInner() {
     );
   }
 
+  function renderExpenseEditor(item: ReconciliationPreviewItem) {
+    const draft = itemDrafts[item.id];
+    return (
+      <ExpenseDraftEditor
+        item={item}
+        draft={draft}
+        categoryName={categoryNames.get(draft.categoryId)}
+        categories={categories}
+        categoriesLoading={categoriesLoading}
+        compact={reconciliationViewMode === 'SIDE_BY_SIDE'}
+        disabled={!sessionTargetReady || commitLoading || hasPendingSingleCommit || hasDecisionInFlight || sessionActionLoading !== null || sessionCompleted}
+        importing={committingItemIds.includes(item.id)}
+        onEdit={(changes) => editItemDraft(item.id, changes)}
+        onSelectDescription={(suggestion) => handleDraftSuggestionSelect(item.id, suggestion)}
+        fetchDescriptions={fetchDescriptionSuggestions}
+        onImport={() => void commitItems([item.id])}
+      />
+    );
+  }
+
   const filterButtons: Array<{ value: ReconciliationFilter; label: string; count: number }> = [
     { value: 'ALL', label: 'Todos', count: preview?.items.length || 0 },
     { value: 'OK', label: 'OK', count: displayedStatusCounts.OK },
@@ -4281,6 +4432,7 @@ function CreditCardReconciliationPageInner() {
                 />
               ) : reconciliationViewMode === 'SIDE_BY_SIDE' ? (
                 <CreditCardReconciliationSideBySide
+                  renderExpenseEditor={renderExpenseEditor}
                   preview={preview}
                   rows={targetInvoiceTransactionRows}
                   identityCollisionRowIds={identityCollisionRowIds}
@@ -4338,15 +4490,8 @@ function CreditCardReconciliationPageInner() {
                   const selectable = isManuallyImportable(item);
                   const linkableToFixed = canLinkToFixed(item);
                   const resolution = getItemResolution(item);
-                  const draft = itemDrafts[item.id];
-                  const historyOptions = item.historyOptions || [];
-                  const suggestionSourceLabel = getSuggestionSourceLabel(
-                    item.categorySuggestion.source
-                  );
                   const itemCommitLoading = committingItemIds.includes(item.id);
                   const itemDecisionLoading = decisionItemIds.includes(item.id);
-                  const missingDescription = selectable && !draft.description.trim();
-                  const missingCategory = selectable && !draft.categoryId;
                   const localSelectionKey = localSystemSelections[item.id] || '';
                   const selectedSystemTransaction = localSelectionKey
                     ? targetInvoiceTransactionsByKey.get(localSelectionKey) || null
@@ -4485,30 +4630,6 @@ function CreditCardReconciliationPageInner() {
                                       <RefreshCw size={14} className="animate-spin" />
                                     )}
                                     {itemCommitLoading ? 'Salvando vinculo...' : 'Vincular a fixa'}
-                                  </Button>
-                                )}
-                                {selectable && (
-                                  <Button
-                                    variant="outline"
-                                    onClick={() => void commitItems([item.id])}
-                                    disabled={
-                                      !sessionTargetReady ||
-                                      commitLoading ||
-                                      hasPendingSingleCommit ||
-                                      hasDecisionInFlight ||
-                                      sessionActionLoading !== null ||
-                                      sessionCompleted ||
-                                      categoriesLoading ||
-                                      itemCommitLoading ||
-                                      missingDescription ||
-                                      missingCategory
-                                    }
-                                    className="flex items-center gap-2 text-sm"
-                                  >
-                                    {itemCommitLoading && (
-                                      <RefreshCw size={14} className="animate-spin" />
-                                    )}
-                                    {itemCommitLoading ? 'Importando...' : 'Importar este item'}
                                   </Button>
                                 )}
                                 {item.canImportAsCredit && resolution === 'PENDING' && (
@@ -4663,105 +4784,7 @@ function CreditCardReconciliationPageInner() {
                             </div>
                           </div>
 
-                          {selectable && (
-                            <div className="mt-4 border-t border-border pt-4">
-                              {historyOptions.length === 1 && (
-                                <p className="mb-3 text-sm text-text-muted">
-                                  Sugestão inicial baseada em faturas anteriores deste cartão.
-                                </p>
-                              )}
-                              {historyOptions.length > 1 && (
-                                <fieldset className="mb-4 min-w-0">
-                                  <legend className="mb-2 text-sm font-medium text-text">
-                                    Usar uma sugestão de faturas anteriores deste cartão
-                                  </legend>
-                                  <div className="flex flex-wrap gap-2">
-                                    {historyOptions.map((option) => (
-                                      <Button
-                                        key={JSON.stringify([option.description, option.categoryId])}
-                                        type="button"
-                                        variant="outline"
-                                        className="max-w-full break-words text-left"
-                                        disabled={commitLoading || itemCommitLoading}
-                                        onClick={() => editItemDraft(item.id, {
-                                          description: option.description,
-                                          categoryId: String(option.categoryId ?? '')
-                                        })}
-                                      >
-                                        <span className="min-w-0">
-                                          {option.description} · {option.categoryName || 'Sem categoria'}
-                                          {' '}({option.count} {option.count === 1 ? 'uso' : 'usos'})
-                                        </span>
-                                      </Button>
-                                    ))}
-                                  </div>
-                                </fieldset>
-                              )}
-                              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-                                <div>
-                                  <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
-                                    Descricao a lancar
-                                  </div>
-                                  <AutocompleteInput
-                                    value={draft.description}
-                                    onChange={(description) => editItemDraft(item.id, { description })}
-                                    onSuggestionSelect={(suggestion) =>
-                                      handleDraftSuggestionSelect(item.id, suggestion)
-                                    }
-                                    fetchSuggestions={fetchDescriptionSuggestions}
-                                    placeholder="Digite para buscar descricoes anteriores"
-                                    minLength={3}
-                                    maxSuggestions={10}
-                                    disabled={commitLoading || itemCommitLoading}
-                                    className="mt-2"
-                                  />
-                                  {missingDescription && (
-                                    <div className="mt-2 text-sm text-tone-amber">
-                                      Informe a descricao que deve ser salva no lancamento.
-                                    </div>
-                                  )}
-                                </div>
-
-                                <div>
-                                  <div className="text-xs uppercase tracking-[0.18em] text-text-subtle">
-                                    Categoria do lancamento
-                                  </div>
-                                  <div className="mt-2">
-                                    <CategorySelect
-                                      categories={categories}
-                                      value={draft.categoryId}
-                                      onChange={(categoryId) => editItemDraft(item.id, { categoryId })}
-                                      placeholder={
-                                        categoriesLoading
-                                          ? 'Carregando categorias...'
-                                          : 'Selecione a categoria'
-                                      }
-                                      disabled={
-                                        commitLoading ||
-                                        categoriesLoading ||
-                                        itemCommitLoading
-                                      }
-                                    />
-                                  </div>
-                                  {!historyOptions.length && suggestionSourceLabel && (
-                                    <div className="mt-2 text-sm text-text-muted">
-                                      Sugestao inicial por {suggestionSourceLabel.toLowerCase()}.
-                                    </div>
-                                  )}
-                                  {!historyOptions.length && item.categorySuggestion.reason && (
-                                    <div className="mt-1 text-sm text-text-subtle">
-                                      {item.categorySuggestion.reason}
-                                    </div>
-                                  )}
-                                  {missingCategory && (
-                                    <div className="mt-2 text-sm text-tone-amber">
-                                      Escolha a categoria antes de importar este item.
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )}
+                          {selectable && renderExpenseEditor(item)}
                         </div>
 
                         <div className="bg-elevated px-5 py-4">

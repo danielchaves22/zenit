@@ -42,7 +42,11 @@ Na conciliação de cartão, revise os itens importados e as associações suger
 
 Quando você cria uma despesa pela conciliação ou confirma que um item da fatura corresponde a um lançamento existente, o Cash pode reutilizar a descrição e a categoria escolhidas em faturas posteriores do mesmo cartão. As faturas já conciliadas também podem contribuir quando o Cash conserva o registro da sua escolha.
 
-Por exemplo, se você vinculou `MP*PADOCAVILA` a **Padaria da Vila** na categoria **Alimentação**, uma nova compra com esse texto pode vir com esses campos preenchidos, mesmo que o valor seja diferente. Você pode editar os dois campos antes de importar. Se já usou descrições ou categorias diferentes para esse texto, escolha a combinação adequada ou informe outra.
+Por exemplo, se você vinculou `MP*PADOCAVILA` a **Padaria da Vila** na categoria **Alimentação**, uma nova compra com esse texto pode vir com os dois campos preenchidos, mesmo que o valor seja diferente. A descrição original da fatura continua visível para conferência.
+
+Se você já usou mais de uma combinação para esse texto, o Cash preenche a descrição e a categoria da sua escolha mais recente. O que conta é quando você confirmou o vínculo ou importou a compra. Para históricos antigos sem registro desse momento, o Cash sugere a combinação mais usada quando nenhuma das opções tem data conhecida.
+
+Na visão **Detalhada**, as alternativas aparecem junto aos campos da nova despesa. Em **Lado a lado**, clique em **Revisar lançamento** para abrir esses mesmos campos. Em ambas as visões, você pode escolher outra sugestão ou editar a descrição e a categoria antes de importar. Se só a categoria variar entre as sugestões, basta escolher a categoria desejada.
 
 Quando há mais de um lançamento compatível na fatura atual, o histórico também pode destacar um deles para você conferir. Verifique a data, o valor e a parcela antes de confirmar o vínculo.
 

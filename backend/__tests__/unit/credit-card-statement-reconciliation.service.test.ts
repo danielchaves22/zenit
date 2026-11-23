@@ -1,5 +1,6 @@
 import { CreditCardInvoiceStatus, Prisma, TransactionStatus } from '@prisma/client';
 import { __private__ } from '../../src/services/credit-card-statement-reconciliation.service';
+import type { CreditCardDescriptionHistoryOption } from '../../src/services/credit-card-reconciliation-history.service';
 import { creditCardOfx } from '../fixtures/credit-card-ofx';
 
 const sampleCaixaStatementText = `
@@ -785,8 +786,14 @@ describe('Credit card statement reconciliation service', () => {
       { id: 'synthetic-shop', date: '20260609', amount: '-20.00', description: 'POS EXEMPLO' }
     ]), null);
     const item = parsed.items[0];
-    const learned = { description: 'Feira do bairro', categoryId: 2, categoryName: 'Feira', count: 3 };
-    const other = { description: 'Presente', categoryId: 3, categoryName: 'Presentes', count: 1 };
+    const learned = {
+      description: 'Feira do bairro', categoryId: 2, categoryName: 'Feira', count: 3,
+      lastConfirmedAt: '2026-03-01T12:00:00.000Z'
+    };
+    const other = {
+      description: 'Presente', categoryId: 3, categoryName: 'Presentes', count: 1,
+      lastConfirmedAt: '2026-05-01T12:00:00.000Z'
+    };
     const fallback = {
       categoryId: 1, categoryName: 'Compras', categoryIcon: null, categoryColor: null,
       source: 'RULE' as const, reason: 'Sugestão anterior'
@@ -798,26 +805,42 @@ describe('Credit card statement reconciliation service', () => {
       status: TransactionStatus.COMPLETED, purchaseGroupId: null, creditCardInvoice: null
     });
     const candidates = [candidate(1, 'Livro'), candidate(2, 'Feira do bairro')];
-    const preview = (options: typeof learned[], transactions = candidates) =>
+    const preview = (options: CreditCardDescriptionHistoryOption[], transactions = candidates) =>
       __private__.buildPreviewItems(parsed, transactions, new Map([[item.id, fallback]]), new Map(),
         new Map([[item.id, options]]))[0];
 
-    it('uses a single confirmed pair for a draft and keeps all alternatives when prior choices differ', () => {
+    it('suggests the latest confirmed pair for a draft even when another option was used more often', () => {
       expect(preview([learned], [])).toMatchObject({
         sourceDescription: 'POS EXEMPLO', historyOptions: [learned],
         categorySuggestion: { source: 'HISTORY', categoryId: 2 }
       });
-      expect(preview([learned, other], [])).toMatchObject({
-        historyOptions: [learned, other], categorySuggestion: { categoryId: null, source: null }
+      expect(preview([other, learned], [])).toMatchObject({
+        sourceDescription: 'POS EXEMPLO', historyOptions: [other, learned],
+        categorySuggestion: { categoryId: 3, categoryName: 'Presentes', source: 'HISTORY' }
       });
       expect(preview([], []).categorySuggestion).toEqual(fallback);
+    });
+
+    it('keeps the most recent description and its missing category together', () => {
+      const uncategorized = { ...other, categoryId: null, categoryName: null };
+      expect(preview([uncategorized, learned], [])).toMatchObject({
+        historyOptions: [uncategorized, learned], categorySuggestion: { categoryId: null, categoryName: null, source: null }
+      });
     });
 
     it('ranks a historically named exact candidate for human review while preserving both candidates', () => {
       const row = preview([learned]);
       expect(row).toMatchObject({ status: 'SIMILAR', reason: 'AMBIGUOUS_EXACT', historySuggestedMatchKey: 'transaction:2' });
       expect(row.matchedTransactions.map(match => match.id)).toEqual([2, 1]);
-      expect(preview([learned, other]).historySuggestedMatchKey).toBeNull();
+      const multiplePairs = preview([other, learned], [
+        candidate(1, learned.description),
+        candidate(2, other.description)
+      ]);
+      expect(multiplePairs).toMatchObject({
+        status: 'SIMILAR', reason: 'AMBIGUOUS_EXACT', historySuggestedMatchKey: null,
+        categorySuggestion: { categoryId: 3 }
+      });
+      expect(multiplePairs.matchedTransactions.map(match => match.id)).toEqual([1, 2]);
       expect(preview([learned], [candidate(1, learned.description), candidate(2, learned.description)]).historySuggestedMatchKey).toBeNull();
     });
 

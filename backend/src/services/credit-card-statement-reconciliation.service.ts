@@ -2635,25 +2635,25 @@ function buildPreviewItems(
     );
 
     const historyOptions = historyByItemId.get(item.id) || [];
-    const uniqueOption = historyOptions.length === 1 ? historyOptions[0] : null;
-    const historicalMatches = uniqueOption && classification.reason === 'AMBIGUOUS_EXACT'
+    const preferredOption = historyOptions[0];
+    const historicalMatches = historyOptions.length === 1 && classification.reason === 'AMBIGUOUS_EXACT'
       ? classification.matchedTransactions.filter(candidate =>
           candidate.matchSource === 'TRANSACTION' &&
           normalizeCreditCardHistoryDescription(candidate.description) ===
-            normalizeCreditCardHistoryDescription(uniqueOption.description))
+            normalizeCreditCardHistoryDescription(preferredOption.description))
       : [];
     const emptySuggestion: CreditCardReconciliationCategorySuggestion = {
       categoryId: null, categoryName: null, categoryColor: null, categoryIcon: null, source: null, reason: null
     };
     let categorySuggestion = categorySuggestions.get(item.id) || emptySuggestion;
-    if (historyOptions.length && item.canImport) {
+    if (preferredOption && item.canImport) {
       categorySuggestion = {
         ...emptySuggestion,
         fromConfirmedHistory: true,
-        categoryId: uniqueOption?.categoryId ?? null,
-        categoryName: uniqueOption?.categoryName ?? null,
-        source: uniqueOption?.categoryId ? 'HISTORY' : null,
-        reason: uniqueOption?.categoryId ? 'Categoria confirmada anteriormente para esta descrição de fatura.' : null
+        categoryId: preferredOption.categoryId,
+        categoryName: preferredOption.categoryName,
+        source: preferredOption.categoryId ? 'HISTORY' : null,
+        reason: preferredOption.categoryId ? 'Categoria confirmada anteriormente para esta descrição de fatura.' : null
       };
     }
     return {

@@ -249,8 +249,11 @@ describe('Credit-card reconciliation persisted sessions', () => {
       const [newPurchase] = await addInvoicePurchases(9, ['Padaria da Vila', 'Despesa do mesmo valor'], 32.5);
       const second = await startOfx(9);
       const suggested = second.preview.items[0];
+      const decisionTime = confirmed.preview.items[0].progress.resolvedAt;
+      expect(decisionTime).toBeInstanceOf(Date);
       expect(suggested.historyOptions).toEqual([
-        { description: 'Padaria da Vila', categoryId, categoryName: 'Compras', count: 1 }
+        { description: 'Padaria da Vila', categoryId, categoryName: 'Compras', count: 1,
+          lastConfirmedAt: decisionTime.toISOString() }
       ]);
       const currentMatch = suggested.matchedTransactions.find(match => match.id === newPurchase.id);
       expect(currentMatch).toBeDefined();
@@ -267,7 +270,7 @@ describe('Credit-card reconciliation persisted sessions', () => {
       expect(refreshed.preview!.items[0].categorySuggestion.fromConfirmedHistory).not.toBe(true);
     });
 
-    it('keeps distinct choices after resetting old sessions and isolates history by card', async () => {
+    it('prefers the last confirmation even for an older purchase and keeps distinct choices after resetting sessions', async () => {
       const otherCategory = await prisma.financialCategory.create({
         data: { name: 'Refeições', type: 'EXPENSE', companyId }
       });
@@ -275,13 +278,17 @@ describe('Credit-card reconciliation persisted sessions', () => {
         { description: 'Pão do café', categoryId, categoryName: 'Compras' },
         { description: 'Almoço na padaria', categoryId: otherCategory.id, categoryName: 'Refeições' }
       ];
-      for (const [index, choice] of choices.entries()) {
-        const started = await startCsv(11 + index, '21,40');
+      const lastConfirmedAt = new Map<string, string>();
+      for (const [month, choice] of [[11, choices[0]], [12, choices[0]], [10, choices[1]]] as const) {
+        const started = await startCsv(month, '21,40');
         const committed = await CreditCardReconciliationSessionService.commit(
           context, started.session.id, started.session.revision,
           [{ itemId: started.preview.items[0].id, action: 'IMPORT', description: choice.description, categoryId: choice.categoryId }]
         );
         expect(committed.commitResult.summary.createdCount).toBe(1);
+        const decisionTime = committed.preview.items[0].progress.resolvedAt;
+        expect(decisionTime).toBeInstanceOf(Date);
+        lastConfirmedAt.set(choice.description, decisionTime.toISOString());
         await CreditCardReconciliationSessionService.reset(context, started.session.id, committed.session.revision);
       }
 
@@ -289,8 +296,11 @@ describe('Credit-card reconciliation persisted sessions', () => {
       expect(earlier.preview.items[0].historyOptions ?? []).toEqual([]);
       const later = await startOfx(1, context, 2027);
       const options = later.preview.items[0].historyOptions;
-      expect(options).toHaveLength(2);
-      expect(options).toEqual(expect.arrayContaining(choices.map(choice => ({ ...choice, count: 1 }))));
+      expect(options).toEqual([
+        { ...choices[1], count: 1, lastConfirmedAt: lastConfirmedAt.get(choices[1].description) },
+        { ...choices[0], count: 2, lastConfirmedAt: lastConfirmedAt.get(choices[0].description) }
+      ]);
+      expect(later.preview.items[0].categorySuggestion.categoryId).toBe(otherCategory.id);
       expect(later.preview.items[0].historySuggestedMatchKey).toBeFalsy();
       const otherCard = await prisma.financialAccount.create({
         data: {

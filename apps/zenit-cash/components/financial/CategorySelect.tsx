@@ -101,6 +101,7 @@ function normalizeSearchText(value: string) {
 }
 
 interface CategorySelectProps {
+  id?: string;
   label?: string;
   categories: CategoryOption[];
   value: string;
@@ -173,6 +174,7 @@ function CategoryRow({
 }
 
 export default function CategorySelect({
+  id,
   label,
   categories,
   value,
@@ -316,9 +318,10 @@ export default function CategorySelect({
 
   return (
     <div className={className} ref={containerRef}>
-      {label && <label className="mb-1 block text-sm font-medium text-text-muted">{label}</label>}
+      {label && <label htmlFor={id} className="mb-1 block text-sm font-medium text-text-muted">{label}</label>}
 
       <button
+        id={id}
         ref={triggerRef}
         type="button"
         disabled={disabled}

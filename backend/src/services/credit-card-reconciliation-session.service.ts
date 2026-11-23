@@ -2336,7 +2336,7 @@ export default class CreditCardReconciliationSessionService {
             });
             if (selectedInput.action !== 'IMPORT_CREDIT') {
               await recordCreditCardDescriptionHistory(
-                tx, session.sourceType, persistedItem.id, itemSnapshot, anchorTransaction
+                tx, session.sourceType, persistedItem.id, itemSnapshot, anchorTransaction, resolvedAt
               );
             }
           }
@@ -2578,12 +2578,13 @@ export default class CreditCardReconciliationSessionService {
         const resolution = input.decision === 'IGNORE'
           ? CreditCardReconciliationItemResolution.IGNORED
           : CreditCardReconciliationItemResolution.CONFIRMED_EXISTING;
+        const resolvedAt = new Date();
         await tx.creditCardReconciliationItem.update({
           where: { id: item.id },
           data: {
             resolution,
             resolutionData: asJson({ transactionIds: transactions.map((transaction) => transaction.id) }),
-            resolvedAt: new Date(),
+            resolvedAt,
             resolvedBy: context.userId
           }
         });
@@ -2599,7 +2600,8 @@ export default class CreditCardReconciliationSessionService {
         }
         if (input.decision === 'CONFIRM_EXISTING' && transactions.length === 1) {
           await recordCreditCardDescriptionHistory(
-            tx, session.sourceType, item.id, item.snapshot as unknown as ReconciliationPreviewItem, transactions[0]
+            tx, session.sourceType, item.id, item.snapshot as unknown as ReconciliationPreviewItem,
+            transactions[0], resolvedAt
           );
         }
       }

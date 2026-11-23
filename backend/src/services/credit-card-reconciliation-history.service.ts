@@ -7,6 +7,7 @@ export interface CreditCardDescriptionHistoryOption {
   categoryId: number | null;
   categoryName: string | null;
   count: number;
+  lastConfirmedAt: string | null;
 }
 
 interface StatementItem {
@@ -38,7 +39,8 @@ export async function recordCreditCardDescriptionHistory(
   itemId: number,
   item: Pick<StatementItem, 'kind' | 'direction' | 'sourceDescription'>,
   transaction: Pick<FinancialTransaction,
-    'id' | 'fromAccountId' | 'creditCardInvoiceId' | 'amount' | 'date' | 'installmentNumber' | 'totalInstallments'>
+    'id' | 'fromAccountId' | 'creditCardInvoiceId' | 'amount' | 'date' | 'installmentNumber' | 'totalInstallments'>,
+  confirmedAt: Date
 ) {
   const normalized = normalizeCreditCardHistoryDescription(item.sourceDescription);
   if (!normalized || item.direction !== 'DEBIT' || !expenseKinds.has(item.kind) ||
@@ -57,7 +59,8 @@ export async function recordCreditCardDescriptionHistory(
     amount: transaction.amount,
     date: transaction.date,
     installmentNumber: transaction.installmentNumber,
-    totalInstallments: transaction.totalInstallments
+    totalInstallments: transaction.totalInstallments,
+    confirmedAt
   };
   await tx.creditCardDescriptionHistory.upsert({
     where: { transactionId: transaction.id },
@@ -116,7 +119,9 @@ export async function loadCreditCardDescriptionHistory(params: {
         }
       }
     },
-    orderBy: [{ date: 'desc' }, { transactionId: 'desc' }]
+    // The first eligible record for each pair supplies its latest verified
+    // choice. Transaction ID breaks simultaneous decisions and undated ties.
+    orderBy: [{ confirmedAt: { sort: 'desc', nulls: 'last' } }, { transactionId: 'desc' }]
   });
 
   const groups = new Map<string, Map<string, CreditCardDescriptionHistoryOption>>();
@@ -141,14 +146,20 @@ export async function loadCreditCardDescriptionHistory(params: {
       previous.count++;
     } else {
       options.set(optionKey, {
-        description, categoryId: category?.id ?? null, categoryName: category?.name ?? null, count: 1
+        description, categoryId: category?.id ?? null, categoryName: category?.name ?? null,
+        count: 1, lastConfirmedAt: record.confirmedAt?.toISOString() ?? null
       });
     }
     groups.set(key, options);
   }
   for (const [itemId, key] of requested) {
     const options = groups.get(key);
-    if (options) result.set(itemId, [...options.values()].sort((a, b) => b.count - a.count));
+    if (options) {
+      // Keep the database's transaction ID order when time and count tie.
+      result.set(itemId, [...options.values()].sort((a, b) =>
+        (b.lastConfirmedAt ?? '').localeCompare(a.lastConfirmedAt ?? '') || b.count - a.count
+      ));
+    }
   }
   return result;
 }

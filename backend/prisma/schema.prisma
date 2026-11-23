@@ -1189,6 +1189,7 @@ model CreditCardDescriptionHistory {
   date              DateTime
   installmentNumber Int?
   totalInstallments Int?
+  confirmedAt       DateTime?
 
   @@index([accountId, sourceType, sourceHash], map: "idx_credit_card_description_history_source")
 }

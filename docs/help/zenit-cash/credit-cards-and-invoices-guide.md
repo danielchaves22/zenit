@@ -7,7 +7,7 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-11-22
+last_reviewed: 2026-11-23
 summary: Organize compras no cartão, parcelas, vencimentos e pagamentos sem duplicar despesas.
 ---
 
@@ -38,13 +38,13 @@ Use o fluxo correspondente ao tipo de crédito ou estorno. Quando um estorno se 
 
 Na conciliação de cartão, revise os itens importados e as associações sugeridas. Uma sugestão precisa ser conferida antes da confirmação; não aceite uma associação somente porque os valores coincidem.
 
-### Reutilizar uma descrição de outra fatura
+### Reutilizar a descrição de um lançamento conciliado
 
-Quando você cria uma despesa pela conciliação ou confirma que um item da fatura corresponde a um lançamento existente, o Cash pode reutilizar a descrição e a categoria escolhidas em faturas posteriores do mesmo cartão. As faturas já conciliadas também podem contribuir quando o Cash conserva o registro da sua escolha.
+Ao criar um lançamento, o Cash procura a última vez em que alguém importou ou vinculou explicitamente o mesmo texto de extrato a um lançamento. A busca inclui as contas e os cartões que você pode consultar no espaço atual, inclusive a fatura em andamento. Você pode editar a descrição sugerida antes de importar.
 
-Por exemplo, se você vinculou `MP*PADOCAVILA` a **Padaria da Vila** na categoria **Alimentação**, uma nova compra com esse texto pode vir com os dois campos preenchidos, mesmo que o valor seja diferente. A descrição original da fatura continua visível para conferência.
+Por exemplo, depois de importar `sem*Parar*Abastece` como **Sem Parar**, a próxima compra com o mesmo texto já pode abrir como **Sem Parar**, mesmo que tenha outro valor. A descrição original da fatura continua visível para conferência.
 
-Se você já usou mais de uma combinação para esse texto, o Cash preenche a descrição e a categoria da sua escolha mais recente. O que conta é quando você confirmou o vínculo ou importou a compra. Para históricos antigos sem registro desse momento, o Cash sugere a combinação mais usada quando nenhuma das opções tem data conhecida.
+O Cash sugere a categoria separadamente, usando as escolhas e regras aplicáveis ao cartão. Quando há combinações de descrição e categoria em faturas anteriores desse cartão, você também pode selecionar uma delas.
 
 Na visão **Detalhada**, as alternativas aparecem junto aos campos da nova despesa. Em **Lado a lado**, clique em **Revisar lançamento** para abrir esses mesmos campos. Em ambas as visões, você pode escolher outra sugestão ou editar a descrição e a categoria antes de importar. Se só a categoria variar entre as sugestões, basta escolher a categoria desejada.
 

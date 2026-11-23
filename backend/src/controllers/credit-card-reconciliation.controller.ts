@@ -57,13 +57,14 @@ function handleSessionError(res: Response, error: any, fallback: string) {
 
 export async function previewCreditCardReconciliation(req: Request, res: Response) {
   try {
-    const { companyId } = getUserContext(req);
+    const { companyId, userId } = getUserContext(req);
     const accountId = Number(req.params.accountId);
     const { sourceType, targetReferenceYear, targetReferenceMonth, fileBase64, fileName } = req.body;
 
     const preview = await CreditCardStatementReconciliationService.buildPreview({
       accountId,
       companyId,
+      userId,
       sourceType,
       targetReferenceYear,
       targetReferenceMonth,

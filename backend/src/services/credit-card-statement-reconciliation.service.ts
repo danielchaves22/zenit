@@ -18,6 +18,8 @@ import {
   normalizeCreditCardHistoryDescription,
   type CreditCardDescriptionHistoryOption
 } from './credit-card-reconciliation-history.service';
+import { loadReconciliationDescriptionSuggestions } from './reconciliation-description-suggestion.service';
+import { logger } from '../utils/logger';
 import { parseDecimal } from '../utils/money';
 import { parseCreditCardOfx } from './credit-card-ofx-parser';
 import {
@@ -166,6 +168,7 @@ export type ReconciliationPreviewItem = {
   categorySuggestion: CreditCardReconciliationCategorySuggestion;
   historyOptions?: CreditCardDescriptionHistoryOption[];
   historySuggestedMatchKey?: string | null;
+  suggestedDescription?: string | null;
   matchedTransactions: Array<{
     matchKey: string;
     matchSource: 'TRANSACTION' | 'PROJECTED_FIXED';
@@ -2948,10 +2951,37 @@ function buildInvoiceProjectionKey(referenceYear: number, referenceMonth: number
   return `${referenceYear}-${String(referenceMonth).padStart(2, '0')}`;
 }
 
+export async function addReconciliationDescriptionSuggestions(
+  items: ReconciliationPreviewItem[],
+  context: { companyId: number; userId: number; existingTx?: Prisma.TransactionClient }
+): Promise<ReconciliationPreviewItem[]> {
+  const sourceDescriptions = [...new Set(items
+    .filter(item => item.canImport || item.canImportAsCredit)
+    .map(item => item.sourceDescription))];
+  let descriptions = new Map<string, string>();
+  if (sourceDescriptions.length) {
+    try {
+      descriptions = await loadReconciliationDescriptionSuggestions({ ...context, sourceDescriptions });
+    } catch (error) {
+      logger.warn('Sugestões de descrição indisponíveis na conciliação de cartão', {
+        errorType: error instanceof Error ? error.name : 'UnknownError'
+      });
+    }
+  }
+
+  return items.map(item => ({
+    ...item,
+    suggestedDescription: item.canImport || item.canImportAsCredit
+      ? descriptions.get(item.sourceDescription) ?? null
+      : null
+  }));
+}
+
 export default class CreditCardStatementReconciliationService {
   static async buildPreview(params: {
     accountId: number;
     companyId: number;
+    userId?: number;
     sourceType: CreditCardReconciliationSourceType;
     targetReferenceYear: number;
     targetReferenceMonth: number;
@@ -3044,7 +3074,9 @@ export default class CreditCardStatementReconciliationService {
       },
       summary: buildPreviewSummary(items),
       valueComparison: buildValueComparison(statement, items, candidates),
-      items
+      items: params.userId === undefined ? items : await addReconciliationDescriptionSuggestions(items, {
+        companyId: params.companyId, userId: params.userId, existingTx: params.existingTx
+      })
     };
   }
 

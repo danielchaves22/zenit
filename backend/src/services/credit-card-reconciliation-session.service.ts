@@ -13,6 +13,7 @@ import {
   TransactionType
 } from '@prisma/client';
 import CreditCardStatementReconciliationService, {
+  addReconciliationDescriptionSuggestions,
   type CreditCardReconciliationSourceType,
   type ReconciliationCommitResult,
   type ReconciliationPreviewItem,
@@ -885,12 +886,16 @@ async function buildWorkspace(
   }
 
   const { session, persistedBySourceId, workspacePreview } = attempt;
+  // Description history depends on the viewer's access. Keep it out of shared session snapshots.
+  const items = await addReconciliationDescriptionSuggestions(workspacePreview.items, {
+    companyId: context.companyId, userId: context.userId
+  });
 
   return {
     session: sessionDto(session),
     preview: {
       ...workspacePreview,
-      items: workspacePreview.items.map((item) => {
+      items: items.map((item) => {
         const persisted = persistedBySourceId.get(item.id)!;
         const terminal =
           (item.canImport === false && !item.canImportAsCredit) ||
@@ -2334,11 +2339,9 @@ export default class CreditCardReconciliationSessionService {
                 transactionSnapshot: asJson(anchorTransaction)
               }
             });
-            if (selectedInput.action !== 'IMPORT_CREDIT') {
-              await recordCreditCardDescriptionHistory(
-                tx, session.sourceType, persistedItem.id, itemSnapshot, anchorTransaction, resolvedAt
-              );
-            }
+            await recordCreditCardDescriptionHistory(
+              tx, session.sourceType, persistedItem.id, itemSnapshot, anchorTransaction, resolvedAt
+            );
           }
         }
 

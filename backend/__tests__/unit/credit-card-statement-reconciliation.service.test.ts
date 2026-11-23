@@ -1,5 +1,7 @@
 import { CreditCardInvoiceStatus, Prisma, TransactionStatus } from '@prisma/client';
-import { __private__ } from '../../src/services/credit-card-statement-reconciliation.service';
+import { __private__, addReconciliationDescriptionSuggestions } from '../../src/services/credit-card-statement-reconciliation.service';
+import * as descriptionSuggestions from '../../src/services/reconciliation-description-suggestion.service';
+import { logger } from '../../src/utils/logger';
 import type { CreditCardDescriptionHistoryOption } from '../../src/services/credit-card-reconciliation-history.service';
 import { creditCardOfx } from '../fixtures/credit-card-ofx';
 
@@ -808,6 +810,43 @@ describe('Credit card statement reconciliation service', () => {
     const preview = (options: CreditCardDescriptionHistoryOption[], transactions = candidates) =>
       __private__.buildPreviewItems(parsed, transactions, new Map([[item.id, fallback]]), new Map(),
         new Map([[item.id, options]]))[0];
+
+    it('enriches expense and credit drafts in one lookup without changing local categories or match candidates', async () => {
+      const debit = preview([learned]);
+      const credit = { ...debit, id: 'credit', sourceDescription: 'ESTORNO', canImport: false, canImportAsCredit: true };
+      const ineligible = { ...debit, id: 'total', canImport: false, canImportAsCredit: false };
+      const unknown = { ...debit, id: 'other', sourceDescription: 'OUTRO' };
+      const lookup = jest.spyOn(descriptionSuggestions, 'loadReconciliationDescriptionSuggestions')
+        .mockResolvedValue(new Map([[debit.sourceDescription, 'Nome mais recente'], ['ESTORNO', 'Devolução']]));
+      try {
+        const rows = [debit, credit, ineligible, unknown, { ...debit, id: 'duplicate' }];
+        const result = await addReconciliationDescriptionSuggestions(rows, { companyId: 99, userId: 42 });
+        expect(lookup).toHaveBeenCalledTimes(1);
+        expect(lookup).toHaveBeenCalledWith({ companyId: 99, userId: 42, sourceDescriptions: [debit.sourceDescription, 'ESTORNO', 'OUTRO'] });
+        expect(result).toEqual(rows.map((row, i) => ({
+          ...row, suggestedDescription: ['Nome mais recente', 'Devolução', null, null, 'Nome mais recente'][i]
+        })));
+        expect(debit).not.toHaveProperty('suggestedDescription');
+      } finally {
+        lookup.mockRestore();
+      }
+    });
+
+    it('keeps the local preview available when shared history fails and omits financial data from the warning', async () => {
+      const row = preview([learned]);
+      const lookup = jest.spyOn(descriptionSuggestions, 'loadReconciliationDescriptionSuggestions')
+        .mockRejectedValue(new Error(row.sourceDescription));
+      const log = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+      try {
+        await expect(addReconciliationDescriptionSuggestions([row], { companyId: 99, userId: 42 }))
+          .resolves.toEqual([{ ...row, suggestedDescription: null }]);
+        expect(log).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(log.mock.calls)).not.toContain(row.sourceDescription);
+      } finally {
+        lookup.mockRestore();
+        log.mockRestore();
+      }
+    });
 
     it('suggests the latest confirmed pair for a draft even when another option was used more often', () => {
       expect(preview([learned], [])).toMatchObject({

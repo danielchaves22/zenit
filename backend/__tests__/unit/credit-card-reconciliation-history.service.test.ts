@@ -39,7 +39,7 @@ describe('credit card description history', () => {
     const db = { creditCardDescriptionHistory: { upsert, findMany } } as unknown as Prisma.TransactionClient;
     const date = new Date('2026-12-06T00:00:00Z');
     const anchor = {
-      id: 21, amount: new Prisma.Decimal('15.20'), date, fromAccountId: 7, creditCardInvoiceId: 13,
+      id: 21, amount: new Prisma.Decimal('15.20'), date, fromAccountId: 7, toAccountId: null, creditCardInvoiceId: 13,
       installmentNumber: null, totalInstallments: null
     };
     const confirmedAt = new Date('2026-12-30T18:43:00Z');

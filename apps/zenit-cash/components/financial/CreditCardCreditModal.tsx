@@ -50,6 +50,7 @@ interface CreditCardCreditModalProps {
   title?: string;
   submitting?: boolean;
   initialDescription?: string;
+  descriptionDraft?: { value: string; onChange: (description: string) => void };
   initialAmount?: string | number;
   initialDate?: string;
   initialCreditKind?: CreditCardCreditKind;
@@ -81,6 +82,7 @@ export function CreditCardCreditModal({
   title = 'Adicionar crédito à fatura',
   submitting = false,
   initialDescription = '',
+  descriptionDraft,
   initialAmount = '0',
   initialDate,
   initialCreditKind = 'REFUND',
@@ -89,7 +91,9 @@ export function CreditCardCreditModal({
   onSubmit
 }: CreditCardCreditModalProps) {
   const [creditKind, setCreditKind] = useState<CreditCardCreditKind>(initialCreditKind);
-  const [description, setDescription] = useState(initialDescription);
+  const [localDescription, setLocalDescription] = useState(initialDescription);
+  const description = descriptionDraft?.value ?? localDescription;
+  const setDescription = descriptionDraft?.onChange ?? setLocalDescription;
   const [amount, setAmount] = useState(String(initialAmount));
   const [date, setDate] = useState(initialDate || getTodayDateValue());
   const [categoryId, setCategoryId] = useState('');
@@ -105,7 +109,7 @@ export function CreditCardCreditModal({
     if (!isOpen) return;
 
     setCreditKind(initialCreditKind);
-    setDescription(initialDescription);
+    setLocalDescription(initialDescription);
     setAmount(String(initialAmount));
     setDate(initialDate || getTodayDateValue());
     setCategoryId('');
@@ -302,6 +306,7 @@ export function CreditCardCreditModal({
         )}
 
         <Input
+          id="credit-card-credit-description"
           label="Descrição"
           value={description}
           onChange={(event) => setDescription(event.target.value)}

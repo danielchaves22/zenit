@@ -7,7 +7,7 @@ audience: user
 visibility: public
 status: active
 owner: product
-last_reviewed: 2026-10-29
+last_reviewed: 2026-11-23
 summary: Use a conciliação para comparar extratos com os lançamentos do Cash e tratar diferenças.
 ---
 
@@ -58,6 +58,8 @@ confiabilidade. A nova versão substituirá a atual após a validação da trans
 5. Trate os itens sem correspondência e ignore somente aqueles que realmente não devem participar da conciliação.
 
 Evite criar uma nova transação quando o movimento já estiver registrado. Descrição, data, conta e valor ajudam a conferir a correspondência.
+
+Ao registrar um lançamento para um único movimento, o Cash sugere a descrição do último lançamento que alguém importou ou vinculou explicitamente ao mesmo texto de extrato. Isso inclui as contas e os cartões que você pode consultar no espaço atual. Sem uma escolha anterior, o campo começa com o texto do extrato. Você pode editar o nome antes de salvar.
 
 ## Concluir o período
 

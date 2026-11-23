@@ -13,6 +13,8 @@ import CreditCardReconciliationSessionService, {
   type CreditCardReconciliationSessionContext
 } from '../../src/services/credit-card-reconciliation-session.service';
 import CreditCardStatementReconciliationService from '../../src/services/credit-card-statement-reconciliation.service';
+import BankReconciliationService from '../../src/services/bank-reconciliation.service';
+import { normalizeDescription } from '../../src/services/bank-statement-parser';
 import { creditCardOfx } from '../fixtures/credit-card-ofx';
 
 jest.mock('../../src/services/cache.service', () => ({
@@ -116,6 +118,12 @@ describe('Credit-card reconciliation persisted sessions', () => {
       }
     });
     userId = user.id;
+    const cashApp = await prisma.ecosystemApp.upsert({
+      where: { appKey: 'ZENIT_CASH' }, create: { appKey: 'ZENIT_CASH', name: 'Zenit Cash' }, update: { isActive: true }
+    });
+    await prisma.userCompany.create({ data: { companyId, userId, role: 'ADMIN' } });
+    await prisma.companyAppEntitlement.create({ data: { companyId, appId: cashApp.id } });
+    await prisma.userAppGrant.create({ data: { companyId, userId, appId: cashApp.id } });
   });
 
   beforeEach(async () => {
@@ -157,6 +165,7 @@ describe('Credit-card reconciliation persisted sessions', () => {
     await prisma.creditCardInvoice.deleteMany({ where: { account: { companyId } } });
     await prisma.financialCategory.deleteMany({ where: { companyId } });
     await prisma.financialAccount.deleteMany({ where: { companyId } });
+    await prisma.userCompany.deleteMany({ where: { companyId } });
     await prisma.company.delete({ where: { id: companyId } });
     await prisma.user.delete({ where: { id: userId } });
     await prisma.$disconnect();
@@ -199,6 +208,65 @@ describe('Credit-card reconciliation persisted sessions', () => {
     expect(replay.session).toMatchObject({ id: started.session.id, revision: committed.session.revision });
     expect(replay.progress.importedCount).toBe(1);
     expect(await prisma.financialTransaction.count({ where: { companyId } })).toBe(1);
+  });
+
+  it('uses the last explicit name immediately within a statement and across visible bank and card accounts', async () => {
+    const merchant = 'sem*Parar*Abastece';
+    const bank = await prisma.financialAccount.create({
+      data: { name: 'Conta corrente', type: 'CHECKING', companyId, balance: 1000 }
+    });
+    const bankContext = { ...context, accountId: bank.id, role: 'ADMIN' };
+    const month = '2026-12';
+    const bankRow = await prisma.bankStatementItem.create({
+      data: { accountId: bank.id, identityKey: 'movement-1', date: new Date('2026-12-03'), amount: -42,
+        description: merchant, normalizedDescription: normalizeDescription(merchant) }
+    });
+    const cardInput = {
+      sourceType: 'NUBANK_CSV' as const, targetReferenceYear: 2026, targetReferenceMonth: 12, fileName: 'dezembro.csv',
+      fileBase64: nubankFile([['2026-11-22', merchant, '283,93'], ['2026-11-18', merchant, '307,38']])
+    };
+    const started = await CreditCardReconciliationSessionService.start(context, cardInput);
+    const first = started.preview.items.find(item => item.amount === '283.93')!;
+    const second = started.preview.items.find(item => item.amount === '307.38')!;
+    expect(second.suggestedDescription).toBeNull();
+    const imported = await CreditCardReconciliationSessionService.commit(context, started.session.id, started.session.revision,
+      [{ itemId: first.id, action: 'IMPORT', description: 'Sem Parar', categoryId }]);
+    const remaining = imported.preview.items.find(item => item.id === second.id)!;
+    expect(remaining).toMatchObject({ suggestedDescription: 'Sem Parar', progress: { resolution: 'PENDING' } });
+    expect(remaining.matchedTransactions).toHaveLength(0);
+    expect(await BankReconciliationService.suggestCreateDescription(bankContext, month, bankRow.id))
+      .toEqual({ suggestedDescription: 'Sem Parar' });
+
+    const bankChoice = await BankReconciliationService.create(bankContext, month, {
+      itemIds: [bankRow.id], description: 'Abastecimento Sem Parar', categoryId, effectiveDate: '2026-12-03'
+    });
+    const refreshed = await CreditCardReconciliationSessionService.get(context, 2026, 12);
+    expect(refreshed.preview!.items.find(item => item.id === second.id)).toMatchObject({
+      suggestedDescription: 'Abastecimento Sem Parar', progress: { resolution: 'PENDING' }, matchedTransactions: []
+    });
+    const cash = await prisma.ecosystemApp.findUniqueOrThrow({ where: { appKey: 'ZENIT_CASH' } });
+    const restricted = await prisma.user.create({ data: {
+      name: 'Consulta do cartão', email: `card-only-${companyId}@test.invalid`, password: 'test-only',
+      companies: { create: { companyId, role: 'USER', manageFinancialAccounts: true } },
+      appGrants: { create: { companyId, appId: cash.id } },
+      financialAccountAccess: { create: { companyId, financialAccountId: accountId, grantedBy: userId } }
+    } });
+    try {
+      const limited = await CreditCardReconciliationSessionService.get({ ...context, userId: restricted.id }, 2026, 12);
+      expect(limited.preview!.items.find(item => item.id === second.id)?.suggestedDescription).toBe('Sem Parar');
+    } finally {
+      await prisma.userCompany.deleteMany({ where: { userId: restricted.id } });
+      await prisma.user.delete({ where: { id: restricted.id } });
+    }
+    await BankReconciliationService.undo(bankContext, month, bankChoice.groupId, 'Desfazer escolha');
+    expect(await BankReconciliationService.suggestCreateDescription(bankContext, month, bankRow.id))
+      .toEqual({ suggestedDescription: 'Sem Parar' });
+    await CreditCardReconciliationSessionService.reset(context, started.session.id, imported.session.revision);
+    const restarted = await CreditCardReconciliationSessionService.start(context, cardInput);
+    expect(restarted.preview.items.find(item => item.id === first.id)?.progress.resolution).toBe('CONFIRMED_EXISTING');
+    expect(restarted.preview.items.find(item => item.id === second.id)).toMatchObject({
+      suggestedDescription: 'Sem Parar', progress: { resolution: 'PENDING' }, matchedTransactions: []
+    });
   });
 
   describe('description and category from previous invoices', () => {
@@ -266,6 +334,7 @@ describe('Credit-card reconciliation persisted sessions', () => {
       });
       const refreshed = await CreditCardReconciliationSessionService.get(context, 2026, 9);
       expect(refreshed.preview!.items[0].historyOptions ?? []).toEqual([]);
+      expect(refreshed.preview!.items[0].suggestedDescription).toBeNull();
       expect(refreshed.preview!.items[0].historySuggestedMatchKey).toBeFalsy();
       expect(refreshed.preview!.items[0].categorySuggestion.fromConfirmedHistory).not.toBe(true);
     });
@@ -584,7 +653,7 @@ describe('Credit-card reconciliation persisted sessions', () => {
       [{
         itemId: item.id,
         action: 'IMPORT_CREDIT',
-        description: 'Cashback recebido',
+        description: 'Cashback do cartão',
         creditKind: 'CASHBACK'
       }]
     );
@@ -631,6 +700,15 @@ describe('Credit-card reconciliation persisted sessions', () => {
       totalAmount: expect.anything()
     });
     expect(credit.creditCardInvoice?.totalAmount.toString()).toBe('-10');
+    const evidence = await prisma.creditCardDescriptionHistory.findUniqueOrThrow({ where: { transactionId: credit.id } });
+    expect(evidence).toMatchObject({ accountId, sourceDescription: 'Cashback recebido' });
+    const anotherCredit = await CreditCardReconciliationSessionService.start(context, {
+      sourceType: 'NUBANK_CSV', targetReferenceYear: 2026, targetReferenceMonth: 9, fileName: 'setembro.csv',
+      fileBase64: nubankFile([['2026-09-06', 'Cashback recebido', '-15,00']])
+    });
+    expect(anotherCredit.preview.items[0]).toMatchObject({
+      suggestedDescription: 'Cashback do cartão', canImportAsCredit: true
+    });
   });
 
   it('resumes a v1 snapshot after parser evolution without losing its decisions', async () => {

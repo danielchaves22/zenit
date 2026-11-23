@@ -287,7 +287,7 @@ describe('Simplified bank reconciliation', () => {
     await waitFor(() => expect(screen.queryByText('Importar extrato da conta')).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Reiniciar conciliação' })).toBeInTheDocument();
   });
-  it('uses description history to fill the structured category selector', async () => {
+  it('prefills only the bank description and creates in the current account with the manually chosen values', async () => {
     const user = userEvent.setup();
     data = makeData([item(1)]);
     const defaultGet = vi.mocked(api.get).getMockImplementation()!;
@@ -297,6 +297,7 @@ describe('Simplified bank reconciliation', () => {
         { id: 11, name: 'Mercado', color: '#22c55e', icon: 'shopping-cart', type: 'EXPENSE', parentId: 10 }
       ] } as any;
       if (String(url) === '/financial/accounts') return { data: [] } as any;
+      if (String(url).endsWith('/items/1/description-suggestion')) return { data: { suggestedDescription: 'Feira de sábado' } } as any;
       if (String(url) === '/financial/transactions/autocomplete') return { data: { suggestions: [
         { description: 'Mercado do bairro', frequency: 4, categoryId: 11, categoryName: 'Mercado' }
       ] } } as any;
@@ -308,7 +309,7 @@ describe('Simplified bank reconciliation', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Registrar faltante' }));
 
     const descriptionInput = await screen.findByRole('textbox', { name: 'Descrição *' });
-    expect(descriptionInput).toHaveValue('Movimento 1');
+    await waitFor(() => expect(descriptionInput).toHaveValue('Feira de sábado'));
     expect(screen.getByRole('button', { name: 'Criar e conciliar' })).toBeDisabled();
 
     await user.clear(descriptionInput);
@@ -319,6 +320,44 @@ describe('Simplified bank reconciliation', () => {
     expect(descriptionInput).toHaveValue('Mercado do bairro');
     expect(screen.getByRole('button', { name: /Alimentação \/ Mercado/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Criar e conciliar' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Criar e conciliar' }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/financial/accounts/1/reconciliation/2026-08/transactions',
+      { itemIds: [1], description: 'Mercado do bairro', effectiveDate: '2026-08-22', categoryId: 11, transferAccountId: undefined }));
+  });
+
+  it('keeps the statement fallback and preserves a manually edited draft when history arrives late', async () => {
+    data = makeData([item(1)]);
+    let resolveHistory!: (value: { data: { suggestedDescription: string } }) => void;
+    const history = new Promise<{ data: { suggestedDescription: string } }>(resolve => { resolveHistory = resolve; });
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (url === '/financial/categories' || url === '/financial/accounts') return { data: [] } as any;
+      if (url.endsWith('/description-suggestion')) return history;
+      return defaultGet(url, config);
+    });
+    await open();
+    fireEvent.click(screen.getByLabelText('Selecionar Movimento 1 em 22/08/2026'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Registrar faltante' }));
+    const input = await screen.findByRole('textbox', { name: 'Descrição *' });
+    expect(input).toHaveValue('Movimento 1');
+    fireEvent.change(input, { target: { value: 'Descrição que escrevi' } });
+    await act(async () => resolveHistory({ data: { suggestedDescription: 'Descrição do histórico' } }));
+    expect(input).toHaveValue('Descrição que escrevi');
+  });
+
+  it('keeps the combined statement description for a group without requesting a historical default', async () => {
+    data = makeData([item(1), item(3)]);
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (url === '/financial/categories' || url === '/financial/accounts') return { data: [] } as any;
+      return defaultGet(url, config);
+    });
+    await open();
+    fireEvent.click(selectAll());
+    fireEvent.click(screen.getByRole('tab', { name: 'Lançamentos sem vínculo' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Registrar lançamento faltante' }));
+    expect(await screen.findByRole('textbox', { name: 'Descrição *' })).toHaveValue('Movimento 1 / Movimento 3');
+    expect(vi.mocked(api.get).mock.calls.some(([url]) => url.endsWith('/description-suggestion'))).toBe(false);
   });
   it('does not offer reset, upload or selection in a completed month', async () => {
     data.session = { id: 1, month: '2026-08', status: 'COMPLETED' };

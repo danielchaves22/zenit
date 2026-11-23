@@ -38,6 +38,23 @@ beforeEach(() => {
 const open = async () => { const rendered = render(<Workspace accountId={1} month="2026-08" onMonthChange={vi.fn()} />); await screen.findByText('Cash 1'); return rendered; };
 
 describe('Guided reconciliation transition', () => {
+  it('opens a single missing entry with its statement text if the optional description lookup fails', async () => {
+    const defaultGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (url === '/financial/categories' || url === '/financial/accounts') return { data: [] } as any;
+      if (url.endsWith('/description-suggestion')) throw new Error('history unavailable');
+      return defaultGet(url, config);
+    });
+    await open();
+    fireEvent.click(screen.getByText('Outras ações para este movimento'));
+    fireEvent.click(screen.getByRole('button', { name: 'Registrar lançamento faltante' }));
+    const description = await screen.findByRole('textbox', { name: 'Descrição *' });
+    expect(description).toHaveValue('Movimento 1');
+    expect(api.get).toHaveBeenCalledWith('/financial/accounts/1/reconciliation-v2/2026-08/items/1/description-suggestion',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(screen.getByRole('button', { name: 'Criar e conciliar' })).toBeDisabled();
+  });
+
   it('uses its discovery routes, preserves the classic link and separates focus from batch selection', async () => {
     await open();
     expect(screen.getByRole('link', { name: 'Usar conciliação atual' })).toHaveAttribute('href', '/financial/accounts/1/reconciliation?month=2026-08');

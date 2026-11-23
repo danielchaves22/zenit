@@ -7,8 +7,7 @@ import { logger } from '../utils/logger';
  */
 export function cacheMiddleware(ttlSeconds: number = 300) {
   return async (req: Request, res: Response, next: NextFunction) => {
-    // Only cache GET requests
-    if (req.method !== 'GET') {
+    if (req.method !== 'GET' || res.get('Cache-Control')?.includes('no-store')) {
       return next();
     }
 

@@ -797,11 +797,11 @@ describe('CreditCardReconciliationPage comparison views', () => {
     })
   })
 
-  it('preenche o par mais recente mesmo quando menos frequente e permite trocar no lado a lado', async () => {
+  it('prioriza a última descrição conciliada com a categoria deste cartão e permite escolher outro par', async () => {
     const sourcePreview = {
       ...preview,
       items: preview.items.map(item => item.id === 'bank-pending'
-        ? { ...item, historyOptions: [
+        ? { ...item, suggestedDescription: 'Serviço de vídeo', historyOptions: [
           { description: 'Assinatura', categoryId: 7, categoryName: category.name, count: 1, lastConfirmedAt: '2026-08-15T12:00:00Z' },
           { description: 'Assinatura pessoal', categoryId: null, categoryName: null, count: 3, lastConfirmedAt: '2026-07-10T12:00:00Z' }
         ] }
@@ -812,15 +812,17 @@ describe('CreditCardReconciliationPage comparison views', () => {
     const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
     const description = pending.getByRole('textbox', { name: 'Descrição a lançar' })
     const categoryField = pending.getByRole('combobox', { name: 'Categoria do lancamento' })
-    expect(description).toHaveValue('Assinatura')
+    expect(description).toHaveValue('Serviço de vídeo')
     expect(categoryField).toHaveValue('7')
     expect(pending.getByRole('button', { name: /Assinatura · Categoria de teste Última escolha · 1 uso/ }))
-      .toHaveAttribute('aria-pressed', 'true')
+      .toHaveAttribute('aria-pressed', 'false')
+    await user.click(screen.getByRole('button', { name: 'Exportar CSV' }))
+    expect(vi.mocked(downloadCsvFile).mock.lastCall?.[1]).toContain(';Pendente no arquivo;Serviço de vídeo;Categoria de teste;')
     await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
     const fileRegion = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
     const side = within(getFileItem(fileRegion, 'bank-pending'))
     expect(side.getByText('Pendente no arquivo')).toBeVisible()
-    expect(side.getByText('Assinatura · Categoria de teste')).toBeVisible()
+    expect(side.getByText('Serviço de vídeo · Categoria de teste')).toBeVisible()
     await user.click(side.getByRole('button', { name: 'Revisar lançamento' }))
     await user.click(side.getByRole('button', { name: /Assinatura pessoal · Sem categoria 3 usos/ }))
     expect(side.getByRole('textbox')).toHaveValue('Assinatura pessoal')
@@ -857,7 +859,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) })
     const user = await renderAnalyzedPage()
     const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
-    const choices = within(pending.getByRole('group', { name: 'Categorias usadas para “Café” em faturas anteriores' }))
+    const choices = within(pending.getByRole('group', { name: 'Categorias usadas para “Café” em faturas anteriores deste cartão' }))
     expect(choices.queryByRole('button', { name: /Café/ })).not.toBeInTheDocument()
     expect(choices.getByRole('button', { name: 'Categoria de teste Última escolha · 1 uso' })).toHaveAttribute('aria-pressed', 'true')
     const name = pending.getByRole('textbox')
@@ -875,12 +877,12 @@ describe('CreditCardReconciliationPage comparison views', () => {
       const first = { description: 'Despesa anterior', categoryId: 7, categoryName: category.name, count: 2 }
       const other = { description: 'Outra despesa', categoryId: null, categoryName: null, count: 1 }
       const affected = ['bank-market', 'bank-gas', 'bank-pending']
-      const withHistory = (options: Array<typeof first | typeof other>) => ({
+      const withHistory = (options: Array<typeof first | typeof other>, suggestedDescription?: string) => ({
         ...preview,
-        items: preview.items.map(item => affected.includes(item.id) ? { ...item, historyOptions: options } : item)
+        items: preview.items.map(item => affected.includes(item.id) ? { ...item, historyOptions: options, suggestedDescription } : item)
       })
       const initial = buildWorkspace({ sourcePreview: withHistory([first]) })
-      const updated = buildWorkspace({ sourcePreview: withHistory([other, first]), revision: 2 })
+      const updated = buildWorkspace({ sourcePreview: withHistory([other, first], 'Descrição recém-confirmada'), revision: 2 })
       vi.mocked(api.post).mockResolvedValueOnce({ data: initial })
       if (refresh === 'conflito de revisão') {
         vi.mocked(api.post).mockRejectedValueOnce({ response: { status: 409, data: { code: 'REVISION_CONFLICT' } } })
@@ -905,12 +907,17 @@ describe('CreditCardReconciliationPage comparison views', () => {
       const anotherItem = within(screen.getByText('Assinatura ambigua B no arquivo').closest('section')!)
       await user.click(anotherItem.getByRole('button', { name: 'Ignorar' }))
       await market.findByRole('button', { name: /Outra despesa · Sem categoria/ })
-      expect(market.getByRole('textbox', { name: textbox })).toHaveValue('Outra despesa')
+      expect(market.getByRole('textbox', { name: textbox })).toHaveValue('Descrição recém-confirmada')
       expect(market.getByRole('combobox', { name: categoryLabel })).toHaveValue('')
       expect(gas.getByRole('textbox', { name: textbox })).toHaveValue('Viagem')
       expect(gas.getByRole('combobox', { name: categoryLabel })).toHaveValue('')
-      expect(pending.getByRole('textbox', { name: textbox })).toHaveValue('Outra despesa')
+      expect(pending.getByRole('textbox', { name: textbox })).toHaveValue('Descrição recém-confirmada')
       expect(pending.getByRole('combobox', { name: categoryLabel })).toHaveValue('7')
+      await user.click(pending.getByRole('button', { name: 'Importar este item' }))
+      expect(api.post).toHaveBeenCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
+        expectedRevision: 2,
+        selectedItems: [{ itemId: 'bank-pending', action: 'IMPORT', description: 'Descrição recém-confirmada', categoryId: 7 }]
+      })
     }
   )
 
@@ -979,6 +986,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
       }),
       kind: 'CREDIT',
       direction: 'CREDIT',
+      suggestedDescription: 'Devolução de compra',
       signedAmount: '-40.00',
       canImport: false,
       canImportAsCredit: true,
@@ -1022,6 +1030,20 @@ describe('CreditCardReconciliationPage comparison views', () => {
     ).toBeInTheDocument()
     expect(document.getElementById('credit-card-credit-amount')).toBeDisabled()
     expect(document.getElementById('credit-card-credit-date')).toBeDisabled()
+    const dialog = within(screen.getByRole('dialog', { name: 'Lançar crédito da conciliação' }))
+    const description = dialog.getByRole('textbox', { name: 'Descrição' })
+    expect(description).toHaveValue('Devolução de compra')
+    await user.clear(description)
+    await user.type(description, 'Crédito revisado')
+    await user.click(dialog.getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Lançar como crédito' }))
+    expect(screen.getByRole('textbox', { name: 'Descrição' })).toHaveValue('Crédito revisado')
+    await user.click(screen.getByRole('button', { name: 'Cashback' }))
+    await user.click(screen.getByRole('button', { name: 'Adicionar crédito' }))
+    expect(api.post).toHaveBeenCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
+      expectedRevision: 1,
+      selectedItems: [{ itemId: 'bank-credit', action: 'IMPORT_CREDIT', description: 'Crédito revisado', creditKind: 'CASHBACK' }]
+    })
   })
 
   it('mantem a troca valida de arquivo e bloqueia nova escolha enquanto a previa esta pendente', async () => {

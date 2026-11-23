@@ -61,6 +61,7 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
   const [audit, setAudit] = useState<BankAudit | null>(null), [auditPage, setAuditPage] = useState(1);
   const [undoId, setUndoId] = useState<number | null>(null), [undoNote, setUndoNote] = useState('');
   const [creating, setCreating] = useState(false), [description, setDescription] = useState(''), [createDate, setCreateDate] = useState('');
+  const createDescriptionEdited = useRef(false);
   const [categoryId, setCategoryId] = useState(''), [transfer, setTransfer] = useState(false), [transferAccountId, setTransferAccountId] = useState('');
   const [categories, setCategories] = useState<BankCategoryOption[]>([]);
   const [accounts, setAccounts] = useState<Array<{ id: number; name: string; type: string; isActive: boolean }>>([]);
@@ -81,6 +82,19 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
   const eligibleItems = displayedItems.filter(item => !item.activeGroupId && !item.ignoredAt);
   const allPageSelected = eligibleItems.length > 0 && eligibleItems.every(item => selected.some(s => s.id === item.id));
   const groupAllowed = selected.length > 0 && selected.length <= 20 && new Set(selected.map(item => Math.sign(Number(item.amount)))).size === 1;
+  const createItemId = creating && selected.length === 1 ? selected[0].id : null;
+  useEffect(() => {
+    if (createItemId === null) return;
+    const abort = new AbortController();
+    api.get<{ suggestedDescription: string | null }>(`${base}/items/${createItemId}/description-suggestion`, { signal: abort.signal })
+      .then(({ data: suggestion }) => {
+        if (!abort.signal.aborted && !createDescriptionEdited.current && suggestion.suggestedDescription) {
+          setDescription(suggestion.suggestedDescription.slice(0, 255));
+        }
+      })
+      .catch(() => { /* The statement description remains available when history cannot be loaded. */ });
+    return () => abort.abort();
+  }, [base, createItemId]);
   useEffect(() => { alive.current = true; return () => { alive.current = false; generation.current++; searchAbort.current?.abort(); }; }, []);
   useEffect(() => { if (selectAllRef.current) selectAllRef.current.indeterminate = !allPageSelected && eligibleItems.some(item => selected.some(s => s.id === item.id)); }, [allPageSelected, eligibleItems, selected]);
 
@@ -209,10 +223,14 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
     finally { if (alive.current) { setBusy(false); setSavingLinks(false); } }
   }
   async function beginCreate(items = selected) {
+    const sameSelection = items.length === selected.length && items.every((item, index) => item.id === selected[index].id);
+    if (!items.length || (creating && sameSelection)) return;
+    if (!sameSelection) changeSelection(items);
+    const selectionGeneration = generation.current;
     setBusy(true);
     try {
       const [categoryResponse, accountResponse] = await Promise.all([api.get('/financial/categories'), api.get('/financial/accounts')]);
-      if (!alive.current) return;
+      if (!alive.current || generation.current !== selectionGeneration) return;
       setCategories((categoryResponse.data || []).map((category: any) => ({
         id: category.id,
         name: category.name,
@@ -223,10 +241,16 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
         type: category.type
       })));
       setAccounts(accountResponse.data || []);
+      createDescriptionEdited.current = false;
       setDescription(items.map(i => i.description).join(' / ').slice(0, 255)); setCreateDate(items[0].date.slice(0, 10));
       setCategoryId(''); setTransfer(false); setTransferAccountId(''); setCreating(true);
     } catch (e) { setError(errorMessage(e)); }
     finally { if (alive.current) setBusy(false); }
+  }
+
+  function editCreateDescription(value: string) {
+    createDescriptionEdited.current = true;
+    setDescription(value);
   }
 
   async function fetchCreateDescriptionSuggestions(query: string): Promise<AutocompleteSuggestion[]> {
@@ -241,7 +265,7 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
   }
 
   function handleCreateSuggestionSelect(suggestion: AutocompleteSuggestion) {
-    setDescription(suggestion.description);
+    editCreateDescription(suggestion.description);
     if (transfer || suggestion.categoryId == null) return;
     const suggestedCategoryId = String(suggestion.categoryId);
     if (availableCreateCategories.some(category => String(category.id) === suggestedCategoryId)) setCategoryId(suggestedCategoryId);
@@ -331,7 +355,7 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
               <label htmlFor="bank-reconciliation-description" className="text-sm font-medium text-text-muted">Descrição *</label>
               <span className="text-xs text-text-muted">Digite pelo menos 3 caracteres para buscar no histórico</span>
             </div>
-            <AutocompleteInput id="bank-reconciliation-description" required autoFocus maxLength={255} value={description} disabled={busy} onChange={setDescription} onSuggestionSelect={handleCreateSuggestionSelect} fetchSuggestions={fetchCreateDescriptionSuggestions} placeholder="Descrição do lançamento" minLength={3} maxSuggestions={10} />
+            <AutocompleteInput id="bank-reconciliation-description" required autoFocus maxLength={255} value={description} disabled={busy} onChange={editCreateDescription} onSuggestionSelect={handleCreateSuggestionSelect} fetchSuggestions={fetchCreateDescriptionSuggestions} placeholder="Descrição do lançamento" minLength={3} maxSuggestions={10} />
           </div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={transfer} disabled={busy} onChange={e => { setTransfer(e.target.checked); if (e.target.checked) setCategoryId(''); else setTransferAccountId(''); }} /> É uma transferência entre minhas contas</label>
           <div className="grid items-end gap-4 md:grid-cols-[minmax(12rem,0.7fr)_minmax(16rem,1.3fr)] lg:grid-cols-[minmax(12rem,0.55fr)_minmax(18rem,1.45fr)_auto]">
@@ -351,7 +375,7 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
         onFilter={value => { changeSelection([]); setLoading(true); setFilter(value); setPage(1); }}
         onPage={value => { changeSelection([]); setLoading(true); setPage(value); }} onSelect={changeSelection}
         onReview={(items, transactions, candidate, cacheId) => { setReviewError(''); setReview({ items, transactions, candidate, cacheId }); }}
-        onReject={candidate => void rejectCandidate(candidate)} onCreate={items => { changeSelection(items); void beginCreate(items); }}
+        onReject={candidate => void rejectCandidate(candidate)} onCreate={items => void beginCreate(items)}
         onIgnore={item => void mutate(`items/${item.id}/ignored`, { ignored: !item.ignoredAt }, item.ignoredAt ? 'Movimento devolvido para conferência.' : 'Movimento ignorado.')}
         onAi={item => void suggest(true, [item], false)} onRetry={item => computedMode ? filteredSearch.recheck([item.id]) : ruleSearch.retry(item.id)} onRetryScan={filteredSearch.retry}
         onBatch={() => { setBatchError(''); setBatchReview(bankBatchSnapshot(selected, searchRows)); }}
@@ -405,7 +429,7 @@ export default function BankReconciliationSession({ accountId, month, onMonthCha
           {suggestionMessage && <p role="status" className="mb-3 text-sm text-text-muted">{suggestionMessage}</p>}
           <BankMatchSuggestions results={results} items={selected} disabled={busy}
             onManual={item => { changeSelection([item]); setTab('transactions'); }}
-            onCreate={item => { changeSelection([item]); void beginCreate([item]); }}
+            onCreate={item => void beginCreate([item])}
             onReview={(candidate, cacheId) => { setReviewError(''); setReview({ items: candidate.items, transactions: candidate.transactions, candidate, cacheId }); }}
             onReject={candidate => void rejectCandidate(candidate)} />
         </Card>}

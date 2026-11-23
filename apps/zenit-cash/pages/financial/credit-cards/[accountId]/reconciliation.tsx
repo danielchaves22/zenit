@@ -240,6 +240,7 @@ interface ReconciliationPreviewItem {
     lastConfirmedAt?: string | null;
   }>;
   historySuggestedMatchKey?: string | null;
+  suggestedDescription?: string | null;
   categorySuggestion: {
     categoryId: number | null;
     categoryName: string | null;
@@ -1164,13 +1165,9 @@ function getSystemTransactionDateLabel(transaction: ReconciliationInvoiceSystemT
 
 function initialItemDraft(item: ReconciliationPreviewItem): ReconciliationItemDraft {
   const option = item.historyOptions?.[0];
-  if (option) {
-    return { description: option.description, categoryId: String(option.categoryId ?? '') };
-  }
-
   return {
-    description: item.sourceDescription,
-    categoryId: String(item.categorySuggestion.categoryId ?? '')
+    description: item.suggestedDescription ?? option?.description ?? item.sourceDescription,
+    categoryId: String((option ? option.categoryId : item.categorySuggestion.categoryId) ?? '')
   };
 }
 
@@ -1218,11 +1215,18 @@ function ExpenseDraftEditor({
       )}
       <div id={fieldId} hidden={compact && !expanded}>
         {(!compact || expanded) && (<>
+          {item.suggestedDescription && (
+            <p className="mt-2 text-sm text-text-muted">
+              {draft.description === item.suggestedDescription
+                ? 'Descrição sugerida pela última conciliação.'
+                : 'Descrição da última conciliação: ' + item.suggestedDescription}
+            </p>
+          )}
           {options.length > 0 && (
             <fieldset className="my-3 min-w-0">
               <legend className="mb-2 text-sm font-medium text-text">
                 {commonDescription
-                  ? `Categorias usadas para “${commonDescription}” em faturas anteriores`
+                  ? `Categorias usadas para “${commonDescription}” em faturas anteriores deste cartão`
                   : 'Escolhas em faturas anteriores deste cartão'}
               </legend>
               <div className="flex flex-wrap gap-2">
@@ -2351,7 +2355,8 @@ function CreditCardReconciliationPageInner() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [commitLoading, setCommitLoading] = useState(false);
   const [committingItemIds, setCommittingItemIds] = useState<string[]>([]);
-  const [creditItem, setCreditItem] = useState<ReconciliationPreviewItem | null>(null);
+  const [creditItemId, setCreditItemId] = useState<string | null>(null);
+  const creditItem = creditItemId ? preview?.items.find(item => item.id === creditItemId) : null;
   const [selectedTargetInvoiceKey, setSelectedTargetInvoiceKey] = useState('');
   const [targetInvoiceDetail, setTargetInvoiceDetail] =
     useState<ReconciliationTargetInvoiceDetail | null>(null);
@@ -2968,6 +2973,7 @@ function CreditCardReconciliationPageInner() {
     setFileSourceType(null);
 
     if (!nextPreview) {
+      setCreditItemId(null);
       setDraftEdits({});
       setSelectedItemIds([]);
       setFocusedPreviewItemId(null);
@@ -2980,6 +2986,7 @@ function CreditCardReconciliationPageInner() {
         Object.entries(current).filter(([itemId]) => nextItemsById.has(itemId))
       ));
     } else {
+      setCreditItemId(null);
       setDraftEdits({});
     }
     if (options.resetTransient) {
@@ -3723,7 +3730,7 @@ function CreditCardReconciliationPageInner() {
     );
 
     if (committed) {
-      setCreditItem(null);
+      setCreditItemId(null);
     }
   }
 
@@ -4468,7 +4475,7 @@ function CreditCardReconciliationPageInner() {
                   onSelectPreviewItem={handlePreviewItemFocus}
                   onSelectSystemTransaction={handleLocalSystemSelectionChange}
                   onToggleImportSelection={handleToggleSelection}
-                  onAddCredit={setCreditItem}
+                  onAddCredit={(item) => setCreditItemId(item.id)}
                   onConfirmExisting={(itemId, transactionId) =>
                     void updateItemDecision(itemId, 'CONFIRM_EXISTING', [transactionId])
                   }
@@ -4635,7 +4642,7 @@ function CreditCardReconciliationPageInner() {
                                 {item.canImportAsCredit && resolution === 'PENDING' && (
                                   <Button
                                     variant="accent"
-                                    onClick={() => setCreditItem(item)}
+                                    onClick={() => setCreditItemId(item.id)}
                                     disabled={
                                       !sessionTargetReady ||
                                       commitLoading ||
@@ -5114,16 +5121,20 @@ function CreditCardReconciliationPageInner() {
         loading={confirmation.loading}
       />
       <CreditCardCreditModal
+        key={creditItem?.id}
         isOpen={Boolean(creditItem)}
         accountId={accountId}
         title="Lançar crédito da conciliação"
         submitting={Boolean(creditItem && committingItemIds.includes(creditItem.id))}
-        initialDescription={creditItem?.sourceDescription || ''}
+        descriptionDraft={creditItem ? {
+          value: itemDrafts[creditItem.id].description,
+          onChange: (description) => editItemDraft(creditItem.id, { description })
+        } : undefined}
         initialAmount={creditItem?.amount || '0'}
         initialDate={(creditItem?.purchaseDate || preview?.statement.dueDate || '').slice(0, 10)}
         initialCreditKind={creditItem?.kind === 'ADJUSTMENT' ? 'ADJUSTMENT' : 'REFUND'}
         lockStatementFields
-        onClose={() => setCreditItem(null)}
+        onClose={() => setCreditItemId(null)}
         onSubmit={handleCreditSubmit}
       />
     </DashboardLayout>

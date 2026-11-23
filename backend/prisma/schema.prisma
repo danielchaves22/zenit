@@ -993,6 +993,7 @@ model BankStatementItem {
   @@index([accountId, externalId])
   @@index([accountId, date, activeGroupId])
   @@index([activeGroupId])
+  // The reconciliation-description migration indexes the normalized hash of confirmed items.
 }
 
 model BankStatementImportItem {
@@ -1192,6 +1193,7 @@ model CreditCardDescriptionHistory {
   confirmedAt       DateTime?
 
   @@index([accountId, sourceType, sourceHash], map: "idx_credit_card_description_history_source")
+  @@index([sourceHash], map: "idx_credit_card_description_history_hash")
 }
 
 model CreditCardInvoice {

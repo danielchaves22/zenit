@@ -209,7 +209,7 @@ import financialAccountMovementRoutes from './financial-account-movement-report.
 import {
   loadBankReconciliation, previewBankStatement, importBankStatement, suggestBankCandidates, suggestBankCandidatesBatch,
   confirmBankMatch, confirmBankBatch, rejectBankMatch, createBankTransaction, undoBankMatch, updateBankMonthStatus,
-  getBankAudit, getBankTransactions, resetBankReconciliation, scanMissingBankItems, updateBankStatementIgnore,
+  getBankAudit, getBankTransactions, resetBankReconciliation, scanMissingBankItems, updateBankStatementIgnore, suggestBankCreateDescription,
   getGuidedBankDiagnostics, getGuidedBankTransactions, suggestGuidedBankCandidates, suggestGuidedBankCandidatesBatch, scanGuidedBankItems, confirmGuidedBankBatch
 } from '../controllers/bank-reconciliation.controller';
 import rateLimit from 'express-rate-limit';
@@ -240,6 +240,7 @@ bankRouter.post('/preview', previewBankStatement);
 bankRouter.post('/imports', importBankStatement);
 bankRouter.post('/reset', resetBankReconciliation);
 bankRouter.post('/items/:itemId/ignored', updateBankStatementIgnore);
+bankRouter.get('/items/:itemId/description-suggestion', suggestBankCreateDescription);
 const bankSuggestionLimit = rateLimit({ windowMs: 60_000, max: 30, standardHeaders: true, legacyHeaders: false,
   keyGenerator: req => `bank:${req.user.companyId}:${req.user.userId}`,
   message: { error: 'Aguarde um minuto antes de solicitar novas sugestões.' } });

@@ -39,18 +39,18 @@ export async function recordCreditCardDescriptionHistory(
   itemId: number,
   item: Pick<StatementItem, 'kind' | 'direction' | 'sourceDescription'>,
   transaction: Pick<FinancialTransaction,
-    'id' | 'fromAccountId' | 'creditCardInvoiceId' | 'amount' | 'date' | 'installmentNumber' | 'totalInstallments'>,
+    'id' | 'fromAccountId' | 'toAccountId' | 'creditCardInvoiceId' | 'amount' | 'date' | 'installmentNumber' | 'totalInstallments'>,
   confirmedAt: Date
 ) {
   const normalized = normalizeCreditCardHistoryDescription(item.sourceDescription);
-  if (!normalized || item.direction !== 'DEBIT' || !expenseKinds.has(item.kind) ||
-      !transaction.fromAccountId || !transaction.creditCardInvoiceId) {
+  const accountId = item.direction === 'CREDIT' ? transaction.toAccountId : transaction.fromAccountId;
+  if (!normalized || !accountId || !transaction.creditCardInvoiceId) {
     return;
   }
 
   const evidence = {
     itemId,
-    accountId: transaction.fromAccountId,
+    accountId,
     sourceType,
     sourceDescription: item.sourceDescription,
     sourceHash: hashDescription(normalized),

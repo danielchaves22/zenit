@@ -9,6 +9,7 @@ import { suggestBankMatchByAi } from './bank-reconciliation-ai.service';
 import { buildOperationalTransactionWhere } from '../utils/financial-transaction-query';
 import { BankMatchingStrategy, GUIDED_BANK_RULE_VERSION, diagnoseBankCandidates, guidedBankCandidates, refineGuidedBankCandidates } from './bank-reconciliation-guided';
 import { bankReconciliationDiagnostics } from './bank-reconciliation-diagnostics';
+import { loadReconciliationDescriptionSuggestions } from './reconciliation-description-suggestion.service';
 
 type Db = Prisma.TransactionClient;
 export interface BankContext { accountId: number; companyId: number; userId: number; role: string }
@@ -122,6 +123,17 @@ async function checkStatementAccount(context: BankContext, account: Awaited<Retu
 }
 
 export default class BankReconciliationService {
+  static async suggestCreateDescription(context: BankContext, month: string, itemId: number) {
+    await access(context);
+    const [item] = await selectedItems(prisma, context.accountId, month, [itemId]);
+    const suggestions = await loadReconciliationDescriptionSuggestions({
+      companyId: context.companyId,
+      userId: context.userId,
+      sourceDescriptions: [item.description]
+    });
+    return { suggestedDescription: suggestions.get(item.description) ?? null };
+  }
+
   static async diagnostics(context: BankContext, month: string) {
     const { accountIds } = await access(context);
     return bankReconciliationDiagnostics(context, accountIds, monthRange(month));

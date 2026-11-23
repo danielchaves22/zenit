@@ -243,6 +243,15 @@ app.use('/api/admin/operations', createRateLimitMiddleware('api'), systemOperati
 app.use('/api/app-access', createRateLimitMiddleware('api'), appAccessRoutes);
 app.use('/api/cash', createRateLimitMiddleware('financial'), cashRoutes);
 app.use('/api/assistant', createRateLimitMiddleware('financial'), assistantRoutes);
+// Reconciliation depends on current account grants and changes after each confirmed link.
+app.use([
+  '/api/financial/accounts/:id/reconciliation',
+  '/api/financial/accounts/:id/reconciliation-v2',
+  '/api/financial/credit-cards/:id/reconciliation'
+], (_req, res, next) => {
+  res.set('Cache-Control', 'private, no-store');
+  next();
+});
 // Financial routes with cache for read operations
 app.use('/api/financial/summary', createRateLimitMiddleware('financial'), cacheMiddleware(600)); // 10min cache
 app.use('/api/financial/accounts', createRateLimitMiddleware('financial'), cacheMiddleware(300)); // 5min cache

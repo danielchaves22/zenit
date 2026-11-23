@@ -1725,7 +1725,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     }
   )
 
-  it('avisa quando um servidor anterior salva somente o vínculo e permite confirmar novamente', async () => {
+  it('avisa quando um servidor anterior salva somente o vínculo e oferece a remoção', async () => {
     const resultMessage = 'A alias desta fixa ja estava mapeada'
     const linkedWorkspace = {
       ...buildWorkspace({
@@ -1768,7 +1768,8 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(expect.stringContaining('aplicação do valor do extrato ainda está pendente'), 'error'))
     expect(await screen.findByText('Fixa vinculada')).toBeInTheDocument()
-    expect(within(fixedCard).getByRole('button', { name: /Vincular e lançar/ })).toBeEnabled()
+    expect(within(fixedCard).getByRole('button', { name: 'Remover vínculo' })).toBeEnabled()
+    expect(within(fixedCard).queryByRole('button', { name: /Vincular e lançar/ })).not.toBeInTheDocument()
     const resultRegion = screen.getByRole('region', {
       name: 'Resultado do ultimo processamento'
     })
@@ -2081,28 +2082,33 @@ describe('CreditCardReconciliationPage comparison views', () => {
     })
     expect(await detailed().findByText(fixed.description)).toBeVisible()
     expect(detailed().getByRole('link', { name: 'Abrir' })).toHaveAttribute('href', '/financial/transactions/912')
-    expect(detailed().queryByRole('button', button)).not.toBeInTheDocument()
+    expect(detailed().getByRole('button', { name: 'Remover vínculo' })).toBeEnabled()
+    expect(detailed().queryByRole('button', { name: /^(Vincular|Ajustar de)/i })).not.toBeInTheDocument()
     const market = within(screen.getByText('Mercado no arquivo').closest('section')!)
     expect(market.getByRole('textbox', { name: 'Descrição a lançar' })).toHaveValue('Mercado revisado')
     expect(market.queryByRole('option', { name: /Dropbox Plus/ })).not.toBeInTheDocument()
   }, 20_000)
 
-  it('permite materializar o vínculo antigo da fatura sem projetar outro mês com o mesmo modelo', async () => {
+  it.each(['MANUAL_PROJECTED', 'PROJECTED_MATCH'])('mostra somente a ação de remover a fixa já vinculada (%s) nas duas vistas', async (mode) => {
     const linkedWorkspace = buildWorkspace({ revision: 4, resolutions: { 'bank-fixed': 'LINKED_FIXED' },
-      resolutionData: { 'bank-fixed': { action: 'LINK_FIXED', mode: 'MANUAL_PROJECTED',
+      resolutionData: { 'bank-fixed': { mode,
         fixedTemplateId: 77, occurrenceKey: fixedMatch.occurrenceKey, matchKey: fixedMatch.matchKey } } })
-    const previousGet = vi.mocked(api.get).getMockImplementation()!
-    vi.mocked(api.get).mockImplementation((url: string) => url === '/financial/credit-card-invoices/101'
-      ? Promise.resolve({ data: { ...targetInvoiceDetail, transactions: targetInvoiceDetail.transactions.slice(6) } })
-      : previousGet(url))
     vi.mocked(api.post).mockResolvedValueOnce({ data: linkedWorkspace })
     const user = await renderAnalyzedPage()
     const linked = within(screen.getByText('Netflix no arquivo').closest('section')!)
-    await user.click(linked.getByRole('button', { name: /Vincular e lançar R\$\s*39,90/ }))
-    expect(api.post).toHaveBeenLastCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
-      expectedRevision: 4, selectedItems: [{ itemId: 'bank-fixed', action: 'LINK_FIXED', applyStatementAmount: true,
-        fixedTemplateId: 77, occurrenceKey: '77:2026-09' }]
-    })
+    const linkAction = { name: /^(Vincular|Ajustar de|Confirmar correspond)/i }
+    expect(linked.getByRole('button', { name: 'Remover vínculo' })).toBeEnabled()
+    expect(linked.queryByRole('button', linkAction)).not.toBeInTheDocument()
+    expect(linked.queryByRole('combobox')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+    const files = screen.getByRole('region', { name: 'Itens do arquivo da fatura' })
+    await user.click(getFileSelectionButton(files, 'bank-fixed', /Netflix no arquivo/))
+    expect(screen.getByRole('button', { name: 'Remover vínculo' })).toBeEnabled()
+    expect(screen.queryByRole('button', linkAction)).not.toBeInTheDocument()
+    const rows = screen.getByRole('region', { name: 'Lançamentos da fatura no Zenit' })
+    expect(within(getZenitItem(rows, 'transaction:504')).getByRole('button')).toBeDisabled()
+    expect(api.post).toHaveBeenCalledTimes(1)
   })
 
   it.each(['detalhada', 'lado a lado'])('ajusta pelo ID a fixa já lançada, inclusive legada, na vista %s', async view => {
@@ -2361,7 +2367,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     expect(
       screen.getByRole('status')
     ).toHaveTextContent(
-      'Possível correspondência destacada. Vínculo automático removido. Selecione a contraparte para confirmar manualmente.'
+      'Possível correspondência destacada. Vínculo removido. Selecione a contraparte para confirmar novamente.'
     )
 
     await user.click(screen.getByRole('button', { name: 'Visualização detalhada' }))
@@ -2369,7 +2375,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     expect(within(pendingCard).getByText('1 sugestão de correspondência')).toBeInTheDocument()
     expect(
       within(pendingCard).getByText(
-        'Vínculo automático removido. Selecione a contraparte para confirmar manualmente.'
+        'Vínculo removido. Selecione a contraparte para confirmar novamente.'
       )
     ).toBeInTheDocument()
     expect(within(pendingCard).queryByText('Lancamento ja encontrado.')).not.toBeInTheDocument()
@@ -2436,7 +2442,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     ).toBeEnabled()
     expect(
       within(linkedCard).getByText(
-        /a despesa já lançada permanece na fatura pelo valor gravado/
+        /preserva a recorrência e os lançamentos existentes/
       )
     ).toBeInTheDocument()
 
@@ -2445,7 +2451,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await user.click(getFileSelectionButton(fileRegion, 'bank-fixed', /Netflix no arquivo/))
     expect(
       screen.getByText(
-        /a despesa já lançada permanece na fatura pelo valor gravado/
+        /preserva a recorrência e os lançamentos existentes/
       )
     ).toBeInTheDocument()
 
@@ -2456,7 +2462,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Remover o vínculo preserva a despesa da fatura pelo valor gravado e a recorrência dos próximos meses.'
+        'O item voltará a ficar pendente. A recorrência e os lançamentos existentes serão preservados.'
       )
     ).toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()

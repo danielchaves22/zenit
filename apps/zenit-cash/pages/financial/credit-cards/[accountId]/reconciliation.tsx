@@ -599,12 +599,18 @@ function isSuccessfulCommitResult(
   );
 }
 
+function shouldShowMatchReason(item: ReconciliationPreviewItem) {
+  const resolution = getItemResolution(item);
+  return resolution !== 'CONFIRMED_EXISTING' &&
+    (resolution !== 'LINKED_FIXED' || item.reason === 'AMOUNT_DIVERGENCE');
+}
+
 function getReasonLabel(item: ReconciliationPreviewItem) {
   if (
     item.operationalMatchState === 'SUPPRESSED' ||
     item.progress?.resolutionData?.mode === 'AUTO_MATCH_SUPPRESSED'
   ) {
-    return 'Vínculo automático removido. Selecione a contraparte para confirmar manualmente.';
+    return 'Vínculo removido. Selecione a contraparte para confirmar novamente.';
   }
 
   switch (item.operationalMatchState) {
@@ -628,7 +634,7 @@ function getReasonLabel(item: ReconciliationPreviewItem) {
         ? 'Fixa projetada equivalente ja encontrada para esta fatura.'
         : 'Lancamento ja encontrado.';
     case 'MAPPED_FIXED':
-      return 'Descricao vinculada automaticamente a fixa recorrente desta fatura.';
+      return 'O histórico desta descrição sugere a fixa desta fatura.';
     case 'AMBIGUOUS_EXACT':
       return hasProjectedFixedMatch
         ? 'Ha mais de uma correspondencia equivalente, incluindo fixas projetadas.'
@@ -2016,7 +2022,7 @@ function CreditCardReconciliationSideBySide({
                                 )}
                                 {item.cardSuffix ? ` • cartão final ${item.cardSuffix}` : ''}
                               </span>
-                              {getItemResolution(item) !== 'CONFIRMED_EXISTING' && (
+                              {shouldShowMatchReason(item) && (
                                 <span className="mt-2 block text-sm text-text-muted">
                                   {getReasonLabel(item)}
                                 </span>
@@ -2207,7 +2213,7 @@ function CreditCardReconciliationSideBySide({
                         : 'Remover vínculo'}
                     </Button>
                     <span className="basis-full text-xs text-text-muted">
-                      Ao remover o vínculo, a despesa já lançada permanece na fatura pelo valor gravado.
+                      Remover o vínculo preserva a recorrência e os lançamentos existentes.
                     </span>
                   </>
                 )}
@@ -2254,7 +2260,7 @@ function CreditCardReconciliationSideBySide({
                     transaction.id && resolvedSystemTransactionIds.has(transaction.id)
                   );
                   const canSelect =
-                    focusedItem && !isExternalSettlement && !isAlreadyClaimed &&
+                    focusedItem && focusedResolution === 'PENDING' && !isExternalSettlement && !isAlreadyClaimed &&
                     (!usesFixedLink(focusedItem, transaction) || canSelectFixedOccurrence(focusedItem, transaction));
 
                   return (
@@ -3903,7 +3909,7 @@ function CreditCardReconciliationPageInner() {
         {
           title: 'Remover vínculo com a transação fixa?',
           message:
-            'Remover o vínculo preserva a despesa da fatura pelo valor gravado e a recorrência dos próximos meses.',
+            'O item voltará a ficar pendente. A recorrência e os lançamentos existentes serão preservados.',
           confirmText: 'Remover vínculo',
           cancelText: 'Cancelar',
           type: 'warning'
@@ -4004,12 +4010,8 @@ function CreditCardReconciliationPageInner() {
   function indicatedFixedRow(item: ReconciliationPreviewItem) {
     const selectedKey = localSystemSelections[item.id];
     if (selectedKey) return targetInvoiceTransactionsByKey.get(selectedKey);
-    const saved = item.progress?.resolutionData;
-    const savedKey = getItemResolution(item) === 'LINKED_FIXED' && typeof saved?.occurrenceKey === 'string'
-      ? saved.occurrenceKey : null;
-    if (savedKey && fixedRowsByOccurrence.has(savedKey)) return fixedRowsByOccurrence.get(savedKey);
     const match = item.matchedTransactions.length === 1 ? item.matchedTransactions[0] : null;
-    if (!selectedTargetInvoice || !match?.fixedTemplateId || (savedKey && savedKey !== match.occurrenceKey) ||
+    if (!selectedTargetInvoice || !match?.fixedTemplateId ||
         match.invoiceReference !== formatReference(selectedTargetInvoice.referenceMonth, selectedTargetInvoice.referenceYear)) return null;
     if (match.matchSource === 'TRANSACTION' && match.id != null) return targetInvoiceTransactionsByKey.get(`transaction:${match.id}`);
     if (match.occurrenceKey && fixedRowsByOccurrence.has(match.occurrenceKey)) return fixedRowsByOccurrence.get(match.occurrenceKey);
@@ -4019,15 +4021,12 @@ function CreditCardReconciliationPageInner() {
   }
 
   function renderFixedLinkAction(item: ReconciliationPreviewItem) {
-    if (!isPurchaseForFixedLink(item) || !selectedTargetInvoice || sessionCompleted ||
+    if (getItemResolution(item) !== 'PENDING' || !isPurchaseForFixedLink(item) || !selectedTargetInvoice || sessionCompleted ||
         selectedTargetInvoice.status === 'PAID' || targetInvoiceDetail?.status === 'PAID') return null;
-    const resolution = getItemResolution(item);
-    if (resolution !== 'PENDING' && (resolution !== 'LINKED_FIXED' || item.progress?.resolutionData?.mode === 'MATERIALIZED_FIXED')) return null;
     const row = indicatedFixedRow(item);
     if (!row) return null;
     const target = fixedOccurrenceTarget(row, targetReference);
-    if (!target || identityCollisionRowIds.has(getSystemInvoiceTransactionKey(row)) ||
-        (resolution === 'PENDING' && !canSelectFixedOccurrence(item, row))) return null;
+    if (!target || !canSelectFixedOccurrence(item, row)) return null;
     const actualAmount = formatCurrency(item.amount);
     const currentAmount = formatCurrency(row.amount);
     const label = row.id == null ? `Vincular e lançar ${actualAmount}`
@@ -4735,7 +4734,7 @@ function CreditCardReconciliationPageInner() {
                                 <div className="mt-2 text-base font-semibold text-text">
                                   {item.sourceDescription}
                                 </div>
-                                {resolution !== 'CONFIRMED_EXISTING' && (
+                                {shouldShowMatchReason(item) && (
                                   <div className="mt-2 text-sm text-text-muted">
                                     {getReasonLabel(item)}
                                   </div>
@@ -4863,7 +4862,7 @@ function CreditCardReconciliationPageInner() {
                               )}
                               {resolution === 'LINKED_FIXED' && (
                                 <div className="max-w-md text-xs text-text-muted lg:text-right">
-                                  Ao remover o vínculo, a despesa já lançada permanece na fatura pelo valor gravado.
+                                  Remover o vínculo preserva a recorrência e os lançamentos existentes.
                                 </div>
                               )}
                             </div>

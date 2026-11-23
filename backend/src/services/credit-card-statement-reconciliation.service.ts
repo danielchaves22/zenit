@@ -298,7 +298,13 @@ export type ReconciliationCommitResult = {
       | 'FAILED';
     message: string;
     createdTransactionIds: number[];
-    linkedFixed?: { fixedTemplateId: number; occurrenceKey: string; matchKey: string };
+    linkedFixed?: {
+      fixedTemplateId: number;
+      occurrenceKey: string;
+      matchKey: string;
+      transactionId?: number;
+      amountChanged?: boolean;
+    };
   }>;
 };
 
@@ -2633,10 +2639,12 @@ function buildPreviewItems(
 ): ReconciliationPreviewItem[] {
   const claimedKeys = new Set(manualFixedByItemId?.values());
   const fixedByKey = new Map(candidates.filter(candidate =>
-    claimedKeys.has(candidate.matchKey) && candidate.matchSource === 'PROJECTED_FIXED' &&
+    claimedKeys.has(candidate.matchKey) && candidate.fixedTemplateId &&
     isCandidateInStatementReference(candidate, statement.referenceYear, statement.referenceMonth)
   ).map(candidate => [candidate.matchKey, candidate]));
-  const availableCandidates = claimedKeys.size ? candidates.filter(candidate => !claimedKeys.has(candidate.matchKey)) : candidates;
+  const availableCandidates = claimedKeys.size
+    ? candidates.filter(candidate => candidate.matchSource === 'TRANSACTION' || !claimedKeys.has(candidate.matchKey))
+    : candidates;
   const items: ReconciliationPreviewItem[] = statement.items.map((item) => {
     const chosenKey = manualFixedByItemId?.get(item.id);
     const chosen = chosenKey ? fixedByKey.get(chosenKey) : undefined;
@@ -3112,11 +3120,13 @@ export default class CreditCardStatementReconciliationService {
     deferPostCommitEffects?: boolean;
     forceImportItemIds?: string[];
     forceLinkFixedItemIds?: string[];
-    claimedFixedOccurrenceKeys?: string[];
+    claimedFixedOccurrences?: ReadonlyMap<string, string | null>;
     selectedItems: Array<{
       itemId: string;
       action?: 'IMPORT' | 'IMPORT_CREDIT' | 'LINK_FIXED';
       fixedTemplateId?: number;
+      fixedTransactionId?: number;
+      applyStatementAmount?: true;
       occurrenceKey?: string;
       description?: string;
       categoryId?: number;
@@ -3176,7 +3186,7 @@ export default class CreditCardStatementReconciliationService {
 
     const selectedProjections = candidates.filter(candidate => candidate.matchSource === 'PROJECTED_FIXED' &&
       isCandidateInStatementReference(candidate, statement.referenceYear, statement.referenceMonth));
-    const claimedOccurrences = new Set(params.claimedFixedOccurrenceKeys);
+    const claimedOccurrences = new Map(params.claimedFixedOccurrences);
     const requestOrder = new Map(selectedItemIds.map((id, index) => [id, index]));
     // Resolve the chosen projections before checking imports for duplicates, even when the
     // caller submitted a charge first. Actual transactions remain evidence throughout the batch.
@@ -3248,11 +3258,27 @@ export default class CreditCardStatementReconciliationService {
           candidate => candidate.matchSource === 'PROJECTED_FIXED' && candidate.fixedTemplateId &&
             isCandidateInStatementReference(candidate, statement.referenceYear, statement.referenceMonth)
         );
-        const target = explicit
+        let target = explicit
           ? selectedProjections.find(candidate =>
               candidate.fixedTemplateId === selectedInput.fixedTemplateId && candidate.occurrenceKey === selectedInput.occurrenceKey)
           : classification.matchedTransactions.length === 1 ? projectedFixedMatches[0] : undefined;
-        if (!target?.fixedTemplateId || !target.occurrenceKey || claimedOccurrences.has(target.occurrenceKey)) {
+        if (selectedInput.applyStatementAmount) {
+          const { fixedTemplateId, occurrenceKey, fixedTransactionId } = selectedInput;
+          const expectedKey = fixedTemplateId && buildOccurrenceKeyValue(fixedTemplateId, importedStatementInvoiceReference.closingDate);
+          const matching = candidates.filter(candidate =>
+            candidate.fixedTemplateId === fixedTemplateId &&
+            isCandidateInStatementReference(candidate, statement.referenceYear, statement.referenceMonth) &&
+            (candidate.occurrenceKey === expectedKey || (candidate.matchSource === 'TRANSACTION' && !candidate.occurrenceKey))
+          );
+          const candidate = matching.length === 1 ? matching[0] : undefined;
+          target = expectedKey && expectedKey === occurrenceKey && candidate &&
+            (fixedTransactionId === undefined || candidate.id === fixedTransactionId)
+            ? { ...candidate, occurrenceKey: expectedKey } : undefined;
+        }
+        const ownsPriorClaim = selectedInput.applyStatementAmount && target?.occurrenceKey &&
+          claimedOccurrences.get(target.occurrenceKey) === itemId;
+        if (!target?.fixedTemplateId || !target.occurrenceKey ||
+          (claimedOccurrences.has(target.occurrenceKey) && !ownsPriorClaim)) {
           results.push({
             itemId,
             status: 'FAILED',
@@ -3261,11 +3287,41 @@ export default class CreditCardStatementReconciliationService {
           });
           continue;
         }
-        const linkedFixed = {
+        const linkedFixed: NonNullable<ReconciliationCommitResult['results'][number]['linkedFixed']> = {
           fixedTemplateId: target.fixedTemplateId, occurrenceKey: target.occurrenceKey,
           matchKey: target.matchKey
         };
-        claimedOccurrences.add(target.occurrenceKey);
+        claimedOccurrences.set(target.occurrenceKey, itemId);
+
+        let createdTransactionIds: number[] = [];
+        if (selectedInput.applyStatementAmount) {
+          if (!params.existingTx) throw new Error('A confirmação financeira requer uma sessão de conciliação.');
+          if (target.id !== null && await params.existingTx.creditCardReconciliationItemTransaction.findFirst({
+            where: { transactionId: target.id }, select: { id: true }
+          })) {
+            throw new CreditCardReconciliationItemCommitError(itemId, 'Este lançamento já foi confirmado em outro item da conciliação.');
+          }
+          const occurrence = await FixedTransactionService.reconcileCardOccurrenceTx(params.existingTx, {
+            templateId: target.fixedTemplateId,
+            occurrenceKey: target.occurrenceKey,
+            invoiceReference: importedStatementInvoiceReference,
+            companyId: params.companyId,
+            userId: params.userId,
+            amount: item.amount,
+            expectedTransactionId: selectedInput.fixedTransactionId
+          });
+          linkedFixed.transactionId = occurrence.transactionId;
+          linkedFixed.matchKey = `transaction:${occurrence.transactionId}`;
+          linkedFixed.amountChanged = occurrence.amountChanged;
+          if (occurrence.created) createdTransactionIds = [occurrence.transactionId];
+          // The confirmed row is itself evidence for subsequent imports in this batch.
+          const previousMatchKey = target.matchKey;
+          candidates = candidates.filter(candidate => candidate.matchKey !== previousMatchKey);
+          candidates.push({
+            ...target, id: occurrence.transactionId, matchKey: linkedFixed.matchKey, matchSource: 'TRANSACTION',
+            amount: parseDecimal(item.amount), requiresFixedAlias: false
+          });
+        }
 
         if (!explicit && classification.reason === 'MAPPED_FIXED') {
           const reassociated = forceLinkFixedItemIds.has(itemId);
@@ -3293,9 +3349,9 @@ export default class CreditCardStatementReconciliationService {
         results.push({
           itemId,
           status: 'LINKED_FIXED',
-          message: 'Descricao vinculada a fixa recorrente com sucesso',
+          message: selectedInput.applyStatementAmount ? 'Ocorrência da fixa confirmada pelo valor do extrato.' : 'Descricao vinculada a fixa recorrente com sucesso',
           linkedFixed,
-          createdTransactionIds: []
+          createdTransactionIds
         });
         continue;
       }
@@ -3483,7 +3539,7 @@ export default class CreditCardStatementReconciliationService {
       },
       summary: {
         selectedCount: selectedItemIds.length,
-        createdCount: results.filter((result) => result.status === 'CREATED').length,
+        createdCount: results.filter(result => result.createdTransactionIds.length > 0).length,
         linkedFixedCount: results.filter((result) => result.status === 'LINKED_FIXED').length,
         skippedDuplicateCount: results.filter((result) => result.status === 'SKIPPED_DUPLICATE').length,
         skippedNotImportableCount: results.filter((result) => result.status === 'SKIPPED_NOT_IMPORTABLE').length,

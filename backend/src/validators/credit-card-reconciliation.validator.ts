@@ -32,6 +32,8 @@ const selectedItemSchema = z.object({
   itemId: z.string().trim().min(1, 'ID do item selecionado e obrigatorio').max(64),
   action: z.enum(['IMPORT', 'IMPORT_CREDIT', 'LINK_FIXED']).optional().default('IMPORT'),
   fixedTemplateId: z.number().int().positive().optional(),
+  fixedTransactionId: z.number().int().positive().optional(),
+  applyStatementAmount: z.literal(true).optional(),
   occurrenceKey: z.string().max(64).regex(/^[1-9]\d*:\d{4}-(0[1-9]|1[0-2])$/).optional(),
   description: z.string()
     .trim()
@@ -45,10 +47,13 @@ const selectedItemSchema = z.object({
   refundOfTransactionId: z.coerce.number().int().positive().optional()
 }).superRefine((item, ctx) => {
   const action = item.action || 'IMPORT';
-  if (item.fixedTemplateId !== undefined || item.occurrenceKey !== undefined) {
+  if (item.fixedTemplateId !== undefined || item.occurrenceKey !== undefined || item.applyStatementAmount || item.fixedTransactionId !== undefined) {
     if (action !== 'LINK_FIXED' || !item.fixedTemplateId || !item.occurrenceKey?.startsWith(`${item.fixedTemplateId}:`)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['occurrenceKey'], message: 'Informe a ocorrência da fixa selecionada.' });
     }
+  }
+  if (item.fixedTransactionId !== undefined && !item.applyStatementAmount) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['applyStatementAmount'], message: 'Confirme a aplicação do valor do extrato.' });
   }
   if (action === 'LINK_FIXED') {
     return;

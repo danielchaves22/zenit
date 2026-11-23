@@ -4,6 +4,8 @@ import { AppKey, PrismaClient } from '@prisma/client';
 import app from '../../src/app';
 import { generateToken } from '../../src/utils/jwt';
 import FixedTransactionService, { buildOccurrenceKeyValue } from '../../src/services/fixed-transaction.service';
+import FinancialTransactionService from '../../src/services/financial-transaction.service';
+import { resolveCreditCardInvoiceReference } from '../../src/utils/credit-card';
 
 const prisma = new PrismaClient();
 const APP_KEY_HEADER = 'x-app-key';
@@ -1344,6 +1346,88 @@ describe('Fixed transactions virtualization and materialization', () => {
     expect(occurrences).toHaveLength(1);
     expect(occurrences[0].status).toBe('CANCELED');
     expect(occurrences[0].isVirtual).toBe(false);
+  });
+
+  describe('statement reconciliation of fixed card occurrences', () => {
+    async function createMonthlyCharge() {
+      const closing = buildOccurrenceDate(9, 10);
+      const invoiceReference = { ...resolveCreditCardInvoiceReference(closing, 10, 15), accountId: creditCardAccountId };
+      const template = await prisma.recurringTransaction.create({
+        data: {
+          description: 'Dropbox', amount: 69, type: 'EXPENSE', frequency: 'MONTHLY',
+          startDate: monthBounds(0).start, nextDueDate: closing, fromAccountId: creditCardAccountId,
+          categoryId: expenseCategoryId, companyId, createdBy: userId
+        }
+      });
+      const occurrenceKey = buildOccurrenceKeyValue(template.id, closing);
+      const confirm = (amount: string, expectedTransactionId?: number) => prisma.$transaction(
+        tx => FixedTransactionService.reconcileCardOccurrenceTx(tx, {
+          templateId: template.id, occurrenceKey, companyId, userId, invoiceReference, amount, expectedTransactionId
+        }), { timeout: 15000 }
+      );
+      const close = () => FixedTransactionService.materializeOccurrence({
+        templateId: template.id, companyId, userId, occurrenceDate: closing
+      });
+      return { confirm, close, template, occurrenceKey, invoiceReference };
+    }
+
+    it('converges on the bank amount when closing the invoice and confirming concurrently', async () => {
+      const { confirm, close, template, occurrenceKey } = await createMonthlyCharge();
+      const startingBalance = (await prisma.financialAccount.findUniqueOrThrow({ where: { id: creditCardAccountId } })).balance;
+      const [confirmed, closing] = await Promise.all([confirm('68.76'), close()]);
+      expect(confirmed.transactionId).toBe(closing.transaction.id);
+      expect((await close()).created).toBe(false);
+      const transactions = await prisma.financialTransaction.findMany({
+        where: { companyId, recurringTransactionId: template.id }, include: { creditCardInvoice: true }
+      });
+      expect(transactions).toHaveLength(1);
+      const [occurrence] = transactions;
+      expect(occurrence.occurrenceKey).toBe(occurrenceKey);
+      expect(occurrence.amount.toFixed(2)).toBe('68.76');
+      expect(occurrence.creditCardInvoice?.totalAmount.toFixed(2)).toBe('68.76');
+      const card = await prisma.financialAccount.findUniqueOrThrow({ where: { id: creditCardAccountId } });
+      expect(card.balance.toString()).toBe(startingBalance.minus('68.76').toString());
+      expect((await prisma.recurringTransaction.findUniqueOrThrow({ where: { id: template.id } })).amount.toFixed(2)).toBe('69.00');
+    });
+
+    it('adjusts the same transaction and rejects a bank amount smaller than a recorded refund', async () => {
+      const { confirm, close, invoiceReference } = await createMonthlyCharge();
+      const { transaction } = await close();
+      const originalBalance = (await prisma.financialAccount.findUniqueOrThrow({ where: { id: creditCardAccountId } })).balance;
+      expect(await confirm('68.76', transaction.id)).toEqual({ transactionId: transaction.id, created: false, amountChanged: true });
+      const card = await prisma.financialAccount.findUniqueOrThrow({ where: { id: creditCardAccountId } });
+      expect(card.balance.toString()).toBe(originalBalance.plus('0.24').toString());
+      const refund = await FinancialTransactionService.createCreditCardCredit({
+        description: 'Estorno', amount: '60', date: invoiceReference.closingDate, accountId: creditCardAccountId,
+        creditKind: 'REFUND', refundOfTransactionId: transaction.id, invoiceReference, companyId, createdBy: userId
+      });
+      await expect(confirm('59.99', transaction.id)).rejects.toThrow(/menor que o total ja estornado/);
+      const purchase = await prisma.financialTransaction.findUniqueOrThrow({
+        where: { id: transaction.id }, include: { creditCardInvoice: true }
+      });
+      expect(purchase.amount.toFixed(2)).toBe('68.76');
+      expect(purchase.creditCardInvoice?.totalAmount.toFixed(2)).toBe('8.76');
+      expect(refund.refundOfTransactionId).toBe(purchase.id);
+    });
+
+    it('rejects ambiguous legacy rows and adopts a single legacy occurrence without replacing it', async () => {
+      const { confirm, close, template, occurrenceKey, invoiceReference } = await createMonthlyCharge();
+      const { transaction } = await close();
+      await prisma.financialTransaction.update({ where: { id: transaction.id }, data: { occurrenceKey: null } });
+      const duplicate = await prisma.financialTransaction.create({ data: {
+        description: template.description, amount: 69, type: 'EXPENSE', date: invoiceReference.closingDate,
+        companyId, fromAccountId: creditCardAccountId, creditCardInvoiceId: transaction.creditCardInvoiceId,
+        recurringTransactionId: template.id, createdBy: userId
+      } });
+      await expect(confirm('68.76', transaction.id)).rejects.toThrow(/mais de uma ocorrência/);
+      expect((await prisma.financialTransaction.findUniqueOrThrow({ where: { id: transaction.id } })).amount.toFixed(2)).toBe('69.00');
+      await prisma.financialTransaction.delete({ where: { id: duplicate.id } });
+      await prisma.financialTransaction.update({ where: { id: transaction.id }, data: { installmentNumber: 2, totalInstallments: null } });
+      await expect(confirm('68.76', transaction.id)).rejects.toThrow(/ocorrência disponível/);
+      await prisma.financialTransaction.update({ where: { id: transaction.id }, data: { installmentNumber: 1, totalInstallments: 1 } });
+      expect(await confirm('68.76', transaction.id)).toEqual({ transactionId: transaction.id, created: false, amountChanged: true });
+      expect((await prisma.financialTransaction.findUniqueOrThrow({ where: { occurrenceKey } })).id).toBe(transaction.id);
+    });
   });
 
   it('materialization on demand is idempotent under concurrent calls', async () => {

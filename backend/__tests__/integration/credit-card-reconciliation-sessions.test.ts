@@ -8,6 +8,7 @@ import {
 import CreditCardReconciliationCategorySuggestionService from '../../src/services/credit-card-reconciliation-category-suggestion.service';
 import CreditCardInvoiceService from '../../src/services/credit-card-invoice.service';
 import FinancialTransactionService from '../../src/services/financial-transaction.service';
+import FixedTransactionService from '../../src/services/fixed-transaction.service';
 import CreditCardReconciliationSessionService, {
   CreditCardReconciliationSessionError,
   type CreditCardReconciliationSessionContext
@@ -1883,6 +1884,135 @@ describe('Credit-card reconciliation persisted sessions', () => {
       fileBase64: nubankFile([['2026-08-05', 'Mercado', '45,90']]),
       fileName: 'paid-link-status-mismatch.csv'
     })).rejects.toMatchObject({ code: 'SESSION_TARGET_PAID' });
+  });
+
+  it.each(['projected', 'materialized', 'legacy', 'materialized after preview'] as const)(
+    'confirms the statement amount exactly once for a %s Dropbox occurrence',
+    async (initialState) => {
+      const closingDate = new Date('2026-12-10T12:00:00Z');
+      const template = await prisma.recurringTransaction.create({ data: {
+        description: 'Dropbox', amount: 69, type: 'EXPENSE', frequency: 'MONTHLY',
+        startDate: new Date('2026-01-01T12:00:00Z'), nextDueDate: closingDate,
+        fromAccountId: accountId, categoryId, companyId, createdBy: userId
+      } });
+      const occurrenceKey = `${template.id}:2026-12`;
+      const runClosing = () => FixedTransactionService.materializeOccurrence({
+        companyId, userId, templateId: template.id, occurrenceDate: closingDate
+      });
+      const where = { companyId, recurringTransactionId: template.id };
+      try {
+        let originalId: number | undefined;
+        if (initialState === 'materialized' || initialState === 'legacy') {
+          originalId = (await runClosing()).transaction.id;
+          if (initialState === 'legacy') {
+            await prisma.financialTransaction.update({ where: { id: originalId }, data: { occurrenceKey: null } });
+          }
+        }
+        const started = await CreditCardReconciliationSessionService.start(context, {
+          sourceType: 'NUBANK_CSV', targetReferenceYear: 2026, targetReferenceMonth: 12,
+          fileName: 'dezembro.csv', fileBase64: nubankFile([['2026-11-10', 'Dropbox Fhs9llrvt8yy', '68,76']])
+        });
+        const selection = {
+          itemId: started.preview.items[0].id, action: 'LINK_FIXED' as const, applyStatementAmount: true as const,
+          fixedTemplateId: template.id, occurrenceKey, fixedTransactionId: originalId
+        };
+        if (initialState === 'materialized after preview') originalId = (await runClosing()).transaction.id;
+        const beforeConfirm = await prisma.financialTransaction.findMany({ where });
+        expect(beforeConfirm.map(row => row.amount.toString())).toEqual(originalId ? ['69'] : []);
+
+        const saved = await CreditCardReconciliationSessionService.commit(context, started.session.id,
+          started.session.revision, [selection]);
+        expect(saved.commitResult.results[0].status).toBe('LINKED_FIXED');
+        const [expense] = await prisma.financialTransaction.findMany({ where });
+        expect(expense).toMatchObject({ fromAccountId: accountId, categoryId, description: 'Dropbox' });
+        expect(saved.commitResult.results[0].createdTransactionIds).toEqual(originalId ? [] : [expense.id]);
+        expect(saved.commitResult.summary).toMatchObject({ createdCount: originalId ? 0 : 1, linkedFixedCount: 1 });
+        if (originalId) expect(expense.id).toBe(originalId);
+        expect(expense.amount.toString()).toBe('68.76');
+        const again = await runClosing();
+        expect(again).toMatchObject({ created: false, transaction: { id: expense.id } });
+        expect(await prisma.financialTransaction.count({ where })).toBe(1);
+        const detail = await CreditCardInvoiceService.getInvoiceById(expense.creditCardInvoiceId!, companyId);
+        expect(detail).toMatchObject({ referenceYear: 2026, referenceMonth: 12, totalAmount: '68.76', fixedItemCount: 0 });
+        expect(detail!.transactions.map(row => row.id)).toEqual([expense.id]);
+        expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } })).balance.toString()).toBe('-68.76');
+        expect((await prisma.recurringTransaction.findUniqueOrThrow({ where: { id: template.id } })).amount.toString()).toBe('69');
+        const january = await CreditCardInvoiceService.getReconciliationProjectedFixed({
+          accountId, companyId, referenceYear: 2027, referenceMonth: 1
+        });
+        expect(january).toEqual([expect.objectContaining({ fixedTemplateId: template.id, amount: '69' })]);
+        const reopened = await CreditCardReconciliationSessionService.get(context, 2026, 12);
+        expect(reopened.preview!.items[0].progress).toMatchObject({
+          resolution: 'LINKED_FIXED', resolutionData: { mode: 'MATERIALIZED_FIXED', fixedTemplateId: template.id, occurrenceKey }
+        });
+        const claim = await prisma.creditCardReconciliationItemTransaction.findMany({ where: { transactionId: expense.id } });
+        expect(claim).toHaveLength(1);
+
+        const unlinked = await CreditCardReconciliationSessionService.decide(context, started.session.id, selection.itemId,
+          { expectedRevision: reopened.session!.revision, decision: 'UNLINK_FIXED' });
+        expect(unlinked.preview.items[0].progress.resolution).toBe('PENDING');
+        expect((await prisma.financialTransaction.findUniqueOrThrow({ where: { id: expense.id } })).amount.toString()).toBe('68.76');
+        const reapplied = await CreditCardReconciliationSessionService.commit(context, started.session.id, unlinked.session.revision,
+          [{ ...selection, fixedTransactionId: expense.id }]);
+        expect(reapplied.commitResult.results[0].status).toBe('LINKED_FIXED');
+        expect(await prisma.financialTransaction.count({ where })).toBe(1);
+        expect((await prisma.financialAccount.findUniqueOrThrow({ where: { id: accountId } })).balance.toString()).toBe('-68.76');
+      } finally {
+        await prisma.financialTransaction.deleteMany({ where });
+        await prisma.recurringTransaction.delete({ where: { id: template.id } });
+      }
+    }
+  );
+
+  it('applies the real amount to a previously confirmed projection only after explicit confirmation', async () => {
+    const template = await prisma.recurringTransaction.create({ data: {
+      description: 'Dropbox', amount: 69, type: 'EXPENSE', frequency: 'MONTHLY',
+      startDate: new Date('2026-01-01T12:00:00Z'), nextDueDate: new Date('2026-12-10T12:00:00Z'),
+      fromAccountId: accountId, categoryId, companyId, createdBy: userId
+    } });
+    const where = { companyId, recurringTransactionId: template.id };
+    try {
+      const source = {
+        sourceType: 'NUBANK_CSV' as const, targetReferenceYear: 2026, targetReferenceMonth: 12,
+        fileName: 'dezembro.csv', fileBase64: nubankFile([
+          ['2026-11-10', 'Dropbox Fhs9llrvt8yy', '68,76'], ['2026-11-09', 'Outra cobrança', '51,00']
+        ])
+      };
+      const started = await CreditCardReconciliationSessionService.start(context, source);
+      const charge = started.preview.items.find(row => row.sourceDescription === 'Dropbox Fhs9llrvt8yy')!;
+      const other = started.preview.items.find(row => row.sourceDescription === 'Outra cobrança')!;
+      const choice = { itemId: charge.id, action: 'LINK_FIXED' as const,
+        fixedTemplateId: template.id, occurrenceKey: `${template.id}:2026-12` };
+      const legacy = await CreditCardReconciliationSessionService.commit(context, started.session.id, started.session.revision, [choice]);
+      expect(legacy.commitResult.results[0].status).toBe('LINKED_FIXED');
+      const reopened = await CreditCardReconciliationSessionService.get(context, 2026, 12);
+      expect(await prisma.financialTransaction.count({ where })).toBe(0);
+      const applied = await CreditCardReconciliationSessionService.commit(context, started.session.id, reopened.session!.revision,
+        [{ ...choice, applyStatementAmount: true }]);
+      expect(applied.preview.items.find(row => row.id === charge.id)!.progress).toMatchObject({
+        resolution: 'LINKED_FIXED', resolutionData: { mode: 'MATERIALIZED_FIXED' }
+      });
+      const expenses = await prisma.financialTransaction.findMany({ where });
+      expect(expenses.map(row => row.amount.toString())).toEqual(['68.76']);
+      const sameExpense = { ...choice, fixedTransactionId: expenses[0].id, applyStatementAmount: true as const };
+      const duplicate = await CreditCardReconciliationSessionService.commit(context, started.session.id, applied.session.revision,
+        [{ ...sameExpense, itemId: other.id }]);
+      expect(duplicate.commitResult.results[0].status).toBe('FAILED');
+      expect((await prisma.financialTransaction.findUniqueOrThrow({ where: { id: expenses[0].id } })).amount.toString()).toBe('68.76');
+      await CreditCardReconciliationSessionService.reset(context, started.session.id, duplicate.session.revision);
+      const restarted = await CreditCardReconciliationSessionService.start(context, source);
+      const sameCharge = restarted.preview.items.find(row => row.sourceDescription === charge.sourceDescription)!;
+      expect(sameCharge.matchedTransactions.map(row => row.id)).toContain(expenses[0].id);
+      if (sameCharge.progress.resolution === 'PENDING') {
+        const result = await CreditCardReconciliationSessionService.commit(context, restarted.session.id,
+          restarted.session.revision, [{ ...sameExpense, itemId: sameCharge.id }]);
+        expect(result.commitResult.results[0].status).toBe('LINKED_FIXED');
+      }
+      expect(await prisma.financialTransaction.count({ where })).toBe(1);
+    } finally {
+      await prisma.financialTransaction.deleteMany({ where });
+      await prisma.recurringTransaction.delete({ where: { id: template.id } });
+    }
   });
 
   it('links a manually selected projected Dropbox charge, preserving its amount and suggesting it next month', async () => {

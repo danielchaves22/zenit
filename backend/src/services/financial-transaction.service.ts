@@ -1909,6 +1909,12 @@ export default class FinancialTransactionService {
     return updated;
   }
 
+  static async adjustReconciledFixedAmountTx(
+    tx: Prisma.TransactionClient, occurrence: FinancialTransaction, amount: Prisma.Decimal, companyId: number
+  ): Promise<void> {
+    await this.updateSingleTransactionRecordTx(tx, occurrence, { amount: amount.toFixed(2) }, companyId);
+  }
+
   private static async deleteSingleTransactionRecordTx(
     tx: Prisma.TransactionClient,
     originalTxn: any,

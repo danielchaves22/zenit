@@ -207,13 +207,13 @@ async function findMaterializedOccurrence(companyId: number, occurrenceKey: stri
   });
 }
 
-async function findLegacyCreditCardOccurrences(params: {
+function creditCardOccurrenceWhere(params: {
   companyId: number;
   templateId: number;
   accountId: number;
   referenceYear: number;
   referenceMonth: number;
-}) {
+}): Prisma.FinancialTransactionWhereInput {
   const monthStart = new Date(
     params.referenceYear,
     params.referenceMonth - 1,
@@ -233,32 +233,29 @@ async function findLegacyCreditCardOccurrences(params: {
     999
   );
 
-  return prisma.financialTransaction.findMany({
-    where: {
-      companyId: params.companyId,
-      occurrenceKey: null,
-      recurringTransactionId: params.templateId,
-      fromAccountId: params.accountId,
-      type: TransactionType.EXPENSE,
-      OR: [
-        {
-          creditCardInvoice: {
-            is: {
-              accountId: params.accountId,
-              referenceYear: params.referenceYear,
-              referenceMonth: params.referenceMonth
-            }
-          }
-        },
-        {
-          creditCardInvoiceId: null,
-          date: {
-            gte: monthStart,
-            lte: monthEnd
+  return {
+    companyId: params.companyId,
+    recurringTransactionId: params.templateId,
+    fromAccountId: params.accountId,
+    type: TransactionType.EXPENSE,
+    OR: [
+      {
+        creditCardInvoice: {
+          is: {
+            accountId: params.accountId,
+            referenceYear: params.referenceYear,
+            referenceMonth: params.referenceMonth
           }
         }
-      ]
-    },
+      },
+      { occurrenceKey: null, creditCardInvoiceId: null, date: { gte: monthStart, lte: monthEnd } }
+    ]
+  };
+}
+
+async function findLegacyCreditCardOccurrences(params: Parameters<typeof creditCardOccurrenceWhere>[0]) {
+  return prisma.financialTransaction.findMany({
+    where: { ...creditCardOccurrenceWhere(params), occurrenceKey: null },
     include: materializedOccurrenceInclude,
     orderBy: { id: 'asc' }
   });
@@ -276,11 +273,49 @@ function isOccurrenceLinkedToInvoiceReference(
   );
 }
 
+async function createFixedOccurrence(params: {
+  template: RecurringTransaction;
+  amount: Prisma.Decimal;
+  occurrenceDate: Date;
+  occurrenceKey: string;
+  fromAccountId: number | null;
+  toAccountId: number | null;
+  invoice: FixedMaterializationInvoiceReference | null;
+  userId: number;
+}, tx?: Prisma.TransactionClient) {
+  const { template, amount, occurrenceDate, occurrenceKey, invoice } = params;
+  const { default: FinancialTransactionService } = await import('./financial-transaction.service');
+  const created = await FinancialTransactionService.createTransaction({
+    description: template.description,
+    amount: amount.toFixed(2),
+    date: occurrenceDate,
+    dueDate: occurrenceDate,
+    effectiveDate: invoice ? occurrenceDate : null,
+    type: template.type,
+    status: invoice ? TransactionStatus.COMPLETED : TransactionStatus.PENDING,
+    notes: template.notes ?? undefined,
+    fromAccountId: params.fromAccountId,
+    toAccountId: params.toAccountId,
+    categoryId: template.categoryId,
+    companyId: template.companyId,
+    createdBy: params.userId,
+    recurringTransactionId: template.id,
+    occurrenceKey,
+    allowMissingAccount: true,
+    creditCardInvoiceReference: invoice ?? undefined
+  }, tx, tx ? { deferPostCommitEffects: true } : undefined);
+  if (Array.isArray(created)) {
+    throw new Error('Materializacao de transacao fixa retornou mais de uma transacao');
+  }
+  return created;
+}
+
 function isMaterializationConcurrencyError(error: any): boolean {
   const message = String(error?.message ?? '');
 
   return (
     error?.code === 'P2002' ||
+    error?.code === 'P2034' ||
     message.includes('Another transaction is using one of these accounts') ||
     message.includes('could not serialize access due to concurrent update') ||
     message.includes('could not obtain lock')
@@ -1079,6 +1114,117 @@ export default class FixedTransactionService {
     );
   }
 
+  /** Write the selected monthly occurrence inside the reconciliation's existing transaction. */
+  static async reconcileCardOccurrenceTx(tx: Prisma.TransactionClient, params: {
+    templateId: number;
+    occurrenceKey: string;
+    invoiceReference: FixedMaterializationInvoiceReference;
+    companyId: number;
+    userId: number;
+    amount: string;
+    expectedTransactionId?: number;
+  }): Promise<{ transactionId: number; created: boolean; amountChanged: boolean }> {
+    const { templateId, companyId, invoiceReference, occurrenceKey, expectedTransactionId } = params;
+    const { accountId, referenceYear, referenceMonth } = invoiceReference;
+    const amount = new Prisma.Decimal(params.amount);
+    if (!amount.isFinite() || !amount.gt(0) || amount.decimalPlaces() > 2) {
+      throw new Error('Valor do extrato inválido para a ocorrência da fixa.');
+    }
+
+    // The closing job, invoice payments and other financial writers all serialize on the card.
+    // Lock before deciding whether this occurrence already has a transaction.
+    const accounts = await tx.$queryRaw<Array<{ id: number }>>`
+      SELECT id FROM "FinancialAccount" WHERE id = ${accountId} AND "companyId" = ${companyId}
+        AND type = 'CREDIT_CARD' AND "isActive" FOR NO KEY UPDATE
+    `;
+    if (!accounts.length) {
+      throw new Error('Cartão indisponível para conciliar a fixa.');
+    }
+    const savedInvoice = await tx.creditCardInvoice.findUnique({
+      where: { unique_credit_card_invoice_reference: { accountId, referenceYear, referenceMonth } },
+      select: {
+        closingDate: true, dueDate: true, status: true, settlementType: true,
+        paymentTransaction: { select: { status: true } }
+      }
+    });
+    if (savedInvoice?.status === 'PAID' || savedInvoice?.settlementType || savedInvoice?.paymentTransaction?.status === 'COMPLETED') {
+      throw new Error('A fatura já está paga.');
+    }
+    const invoice = savedInvoice
+      ? { ...invoiceReference, closingDate: savedInvoice.closingDate, dueDate: savedInvoice.dueDate }
+      : invoiceReference;
+    const occurrenceDate = startOfDay(invoice.closingDate);
+    if (
+      referenceMonth !== occurrenceDate.getMonth() + 1 || referenceYear !== occurrenceDate.getFullYear() ||
+      buildOccurrenceKeyValue(templateId, occurrenceDate) !== occurrenceKey
+    ) {
+      throw new Error('A ocorrência da fixa não pertence à fatura selecionada.');
+    }
+
+    const [template] = await tx.$queryRaw<RecurringTransaction[]>`
+      SELECT * FROM "RecurringTransaction"
+      WHERE id = ${templateId} AND "companyId" = ${companyId} AND "fromAccountId" = ${accountId}
+        AND type = 'EXPENSE' AND frequency = 'MONTHLY'
+      FOR SHARE
+    `;
+    if (!template) {
+      throw new Error('Fixa mensal não encontrada neste cartão.');
+    }
+
+    const occurrences = await tx.financialTransaction.findMany({
+      where: { companyId, OR: [
+        { occurrenceKey },
+        creditCardOccurrenceWhere({ companyId, templateId, accountId, referenceYear, referenceMonth })
+      ] },
+      select: { id: true },
+      take: 2
+    });
+    if (occurrences.length > 1) {
+      throw new Error('Há mais de uma ocorrência desta fixa na fatura.');
+    }
+    const [candidate] = occurrences;
+    if (expectedTransactionId !== undefined && candidate?.id !== expectedTransactionId) {
+      throw new Error('O lançamento da fixa selecionado mudou. Atualize a conciliação.');
+    }
+    if (candidate) {
+      await tx.$queryRaw`SELECT id FROM "FinancialTransaction" WHERE id = ${candidate.id} AND "companyId" = ${companyId} FOR UPDATE`;
+      const existing = await tx.financialTransaction.findUniqueOrThrow({
+        where: { id: candidate.id, companyId },
+        include: { creditCardInvoice: { select: { accountId: true, referenceYear: true, referenceMonth: true } } }
+      });
+      const originInvoice = existing.creditCardInvoice;
+      if (
+        existing.fromAccountId !== accountId || existing.recurringTransactionId !== template.id ||
+        existing.type !== TransactionType.EXPENSE || originInvoice?.accountId !== accountId ||
+        originInvoice.referenceYear !== referenceYear || originInvoice.referenceMonth !== referenceMonth ||
+        (existing.occurrenceKey !== null && existing.occurrenceKey !== occurrenceKey) ||
+        existing.archivedAt || existing.status === TransactionStatus.CANCELED ||
+        existing.isExternalCreditCardSettlement ||
+        (existing.installmentNumber ?? 1) !== 1 || (existing.totalInstallments ?? 1) !== 1
+      ) {
+        throw new Error('O lançamento não é uma ocorrência disponível desta fixa na fatura.');
+      }
+      const amountChanged = !existing.amount.equals(amount);
+      if (amountChanged) {
+        const { default: FinancialTransactionService } = await import('./financial-transaction.service');
+        await FinancialTransactionService.adjustReconciledFixedAmountTx(tx, existing, amount, companyId);
+      }
+      if (existing.occurrenceKey === null) {
+        await tx.financialTransaction.update({ where: { id: existing.id }, data: { occurrenceKey } });
+      }
+      return { transactionId: existing.id, created: false, amountChanged };
+    }
+
+    if (!template.isActive || template.startDate > occurrenceDate || (template.endDate && template.endDate < occurrenceDate)) {
+      throw new Error('A fixa não está vigente nesta fatura.');
+    }
+    const created = await createFixedOccurrence({
+      template, amount, occurrenceDate, occurrenceKey, invoice, userId: params.userId,
+      fromAccountId: accountId, toAccountId: template.toAccountId
+    }, tx);
+    return { transactionId: created.id, created: true, amountChanged: false };
+  }
+
   static async materializeOccurrence(params: {
     templateId: number;
     occurrenceDate: Date;
@@ -1247,7 +1393,6 @@ export default class FixedTransactionService {
     }
 
     try {
-      const { default: FinancialTransactionService } = await import('./financial-transaction.service');
       const resolvedAccounts = await resolveMaterializationAccountIds({
         companyId,
         type: template.type,
@@ -1255,29 +1400,10 @@ export default class FixedTransactionService {
         toAccountId: template.toAccountId
       });
 
-      const createdResult = await FinancialTransactionService.createTransaction({
-        description: template.description,
-        amount: Number(template.amount),
-        date: occurrenceDate,
-        dueDate: occurrenceDate,
-        effectiveDate: isCreditCardFixedExpense ? occurrenceDate : null,
-        type: template.type,
-        status: isCreditCardFixedExpense ? TransactionStatus.COMPLETED : TransactionStatus.PENDING,
-        notes: template.notes ?? undefined,
-        fromAccountId: resolvedAccounts.fromAccountId,
-        toAccountId: resolvedAccounts.toAccountId,
-        categoryId: template.categoryId,
-        companyId,
-        createdBy: userId,
-        recurringTransactionId: template.id,
-        occurrenceKey,
-        allowMissingAccount: true,
-        creditCardInvoiceReference: targetInvoiceReference ?? undefined
+      const createdResult = await createFixedOccurrence({
+        template, amount: template.amount, occurrenceDate, occurrenceKey, userId,
+        invoice: targetInvoiceReference, ...resolvedAccounts
       });
-
-      if (Array.isArray(createdResult)) {
-        throw new Error('Materializacao de transacao fixa retornou mais de uma transacao');
-      }
 
       const created = await findMaterializedOccurrence(companyId, occurrenceKey);
 

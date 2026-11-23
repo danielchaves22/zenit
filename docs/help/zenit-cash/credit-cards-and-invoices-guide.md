@@ -52,7 +52,9 @@ Quando há mais de um lançamento compatível na fatura atual, o histórico tamb
 
 ### Vincular uma cobrança a uma fixa projetada
 
-Se o valor de uma assinatura variar, selecione a **Fixa projetada** em **Selecionar contraparte na fatura do Zenit** e clique em **Vincular a fixa**. Por exemplo, você pode associar uma cobrança de R$ 68,76 do Dropbox à previsão de R$ 69,00. O Cash salva o vínculo da ocorrência e a descrição usada no extrato. O valor previsto da fixa continua em R$ 69,00, e a cobrança permanece no arquivo por R$ 68,76.
+Se o valor de uma assinatura variar, selecione a fixa em **Selecionar contraparte na fatura do Zenit**. Por exemplo, se o Dropbox estava previsto em R$ 69,00 e o extrato trouxe R$ 68,76, clique em **Vincular e lançar R$ 68,76**. Se o fechamento já lançou a mensalidade, o botão será **Ajustar de R$ 69,00 para R$ 68,76 e vincular**. A confirmação atualiza aquela mesma despesa.
+
+A fatura passa a mostrar uma única ocorrência do Dropbox. A previsão dos próximos meses continua em R$ 69,00. **Remover vínculo** desfaz a confirmação na conciliação e preserva a despesa com o valor lançado.
 
 Em outra fatura do cartão, quando a descrição já vinculada aparecer com um valor diferente, o Cash pode sugerir a fixa daquele mês para você conferir. Se o banco mudar o texto da cobrança, você também pode selecionar a fixa manualmente.
 

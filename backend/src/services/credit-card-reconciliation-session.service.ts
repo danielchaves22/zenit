@@ -80,6 +80,8 @@ type CommitSelection = {
   itemId: string;
   action?: 'IMPORT' | 'IMPORT_CREDIT' | 'LINK_FIXED';
   fixedTemplateId?: number;
+  fixedTransactionId?: number;
+  applyStatementAmount?: true;
   occurrenceKey?: string;
   description?: string;
   categoryId?: number;
@@ -255,7 +257,7 @@ function buildMatchKeyUsage(items: ReconciliationPreviewItem[]) {
 function manualFixedTarget(item: any): { matchKey: string; occurrenceKey: string } | null {
   const data = item.resolutionData;
   if (item.resolution !== CreditCardReconciliationItemResolution.LINKED_FIXED || data?.action !== 'LINK_FIXED') return null;
-  if (data.mode === 'MANUAL_PROJECTED' || data.mode === 'ALREADY_MAPPED') {
+  if (data.mode === 'MANUAL_PROJECTED' || data.mode === 'ALREADY_MAPPED' || data.mode === 'MATERIALIZED_FIXED') {
     if (typeof data.matchKey === 'string' && typeof data.occurrenceKey === 'string') return data;
   }
   if (data.mode != null && data.mode !== 'ALREADY_MAPPED') return null;
@@ -269,17 +271,32 @@ function manualFixedTarget(item: any): { matchKey: string; occurrenceKey: string
   return { matchKey: match.matchKey, occurrenceKey: match.occurrenceKey };
 }
 
-function claimedFixedOccurrenceKeys(items: any[], preview: ReconciliationPreviewResult): string[] {
+function canCommitItem(item: any, selection?: CommitSelection) {
+  if (item.resolution === CreditCardReconciliationItemResolution.PENDING) return true;
+  // Previously confirmed projections can acquire a financial occurrence only
+  // when the user explicitly authorizes the same saved target.
+  if (item.resolution !== CreditCardReconciliationItemResolution.LINKED_FIXED ||
+      item.resolutionData?.mode === 'MATERIALIZED_FIXED' || selection?.action !== 'LINK_FIXED' ||
+      !selection.applyStatementAmount || !selection.occurrenceKey) return false;
+  const savedKey = item.resolutionData?.occurrenceKey ?? manualFixedTarget(item)?.occurrenceKey;
+  return savedKey === selection.occurrenceKey;
+}
+
+function claimedFixedOccurrences(items: any[], preview: ReconciliationPreviewResult) {
   const currentById = new Map(preview.items.map(item => [item.id, item]));
-  return items.flatMap(item => {
-    if (item.resolution !== CreditCardReconciliationItemResolution.LINKED_FIXED) return [];
-    const key = item.resolutionData?.occurrenceKey ?? manualFixedTarget(item)?.occurrenceKey;
-    if (typeof key === 'string') return [key];
-    // Reserve an existing resolution's sole current projection even when the old
-    // snapshot cannot establish a saved target. Never use this fallback to restore a choice.
-    const matches = currentById.get(item.sourceItemId)?.matchedTransactions.filter(match => match.matchSource === 'PROJECTED_FIXED');
-    return matches?.length === 1 && matches[0].occurrenceKey ? [matches[0].occurrenceKey] : [];
-  });
+  const owners = new Map<string, string | null>();
+  for (const item of items) {
+    if (item.resolution !== CreditCardReconciliationItemResolution.LINKED_FIXED) continue;
+    let key = item.resolutionData?.occurrenceKey ?? manualFixedTarget(item)?.occurrenceKey;
+    if (typeof key !== 'string') {
+      // An older resolution can still reserve the unique projected match, even
+      // if its snapshot is insufficient to authorize a financial confirmation.
+      const matches = currentById.get(item.sourceItemId)?.matchedTransactions.filter(match => match.matchSource === 'PROJECTED_FIXED');
+      key = matches?.length === 1 ? matches[0].occurrenceKey : null;
+    }
+    if (typeof key === 'string') owners.set(key, owners.has(key) ? null : item.sourceItemId);
+  }
+  return owners;
 }
 
 function getAutomaticLinkedFixedResolution(
@@ -750,6 +767,8 @@ async function loadWorkspaceSession(
                   isExternalCreditCardSettlement: true,
                   installmentNumber: true,
                   totalInstallments: true,
+                  recurringTransactionId: true,
+                  occurrenceKey: true,
                   amount: true,
                   date: true,
                   creditCardInvoice: {
@@ -1220,6 +1239,9 @@ function isSuppressedAutomaticMatch(
     );
   }
 
+  if (suppression.transactionId !== null && item.matchedTransactions.some(match =>
+    match.matchSource === 'TRANSACTION' && match.id === suppression.transactionId)) return true;
+
   return item.matchedTransactions.some((match) =>
     match.matchSource === 'PROJECTED_FIXED' &&
     (
@@ -1327,6 +1349,10 @@ async function projectPreviewForWorkspace(
         status: 'PENDING' as const,
         operationalMatchState: 'SUPPRESSED' as const
       };
+    }
+
+    if (persisted?.resolution === 'LINKED_FIXED' && persisted.resolutionData?.mode === 'MATERIALIZED_FIXED') {
+      return item;
     }
 
     if (item.status !== 'OK') {
@@ -1545,6 +1571,12 @@ async function invalidateStaleResolutions(
 
     if (item.resolution === CreditCardReconciliationItemResolution.LINKED_FIXED) {
       const current = previewById.get(item.sourceItemId);
+      if (item.resolutionData?.mode === 'MATERIALIZED_FIXED') {
+        const link = item.transactions.find((entry: any) => entry.transactionId === item.resolutionData.transactionId);
+        return !link || !isOperationalTargetTransaction(link.transaction, context, session) ||
+          !hasStableFinancialIdentity(link) || link.transaction.recurringTransactionId !== item.resolutionData.fixedTemplateId ||
+          link.transaction.occurrenceKey !== item.resolutionData.occurrenceKey;
+      }
       const target = manualFixedTarget(item);
       if (target) {
         return !current?.matchedTransactions.some(match => match.matchKey === target.matchKey);
@@ -2058,6 +2090,7 @@ export default class CreditCardReconciliationSessionService {
     expectedRevision: number,
     selectedItems: CommitSelection[]
   ) {
+    const inputByItemId = new Map(selectedItems.map(item => [item.itemId, item]));
     const mutationToken = randomUUID();
     const claimed = await prisma.$transaction(async (tx) => {
       const session = await loadScopedSession(tx, context, sessionId);
@@ -2100,7 +2133,7 @@ export default class CreditCardReconciliationSessionService {
       if (persistedItems.length !== itemIds.length) {
         throw new Error('Um ou mais itens nao pertencem a esta conciliacao');
       }
-      if (persistedItems.some((item) => item.resolution !== CreditCardReconciliationItemResolution.PENDING)) {
+      if (persistedItems.some(item => !canCommitItem(item, inputByItemId.get(item.sourceItemId)))) {
         throw new CreditCardReconciliationSessionError(
           'Um ou mais itens selecionados ja foram resolvidos',
           'ITEM_STATE_CONFLICT',
@@ -2204,9 +2237,7 @@ export default class CreditCardReconciliationSessionService {
         );
         if (
           persistedItems.length !== itemIds.length ||
-          persistedItems.some(
-            (item) => item.resolution !== CreditCardReconciliationItemResolution.PENDING
-          )
+          persistedItems.some(item => !canCommitItem(item, inputByItemId.get(item.sourceItemId)))
         ) {
           throw new CreditCardReconciliationSessionError(
             'Um ou mais itens selecionados mudaram depois da reserva da operacao',
@@ -2276,12 +2307,11 @@ export default class CreditCardReconciliationSessionService {
           allowPaidInvoiceSettlement: false,
           existingTx: tx,
           deferPostCommitEffects: true,
-          claimedFixedOccurrenceKeys: claimedFixedOccurrenceKeys(allPersistedItems, revalidatedPreview),
+          claimedFixedOccurrences: claimedFixedOccurrences(allPersistedItems, revalidatedPreview),
           forceImportItemIds,
           forceLinkFixedItemIds
         });
 
-      const inputByItemId = new Map(selectedItems.map((item) => [item.itemId, item]));
       const persistedBySourceId = new Map(
         persistedItems.map((item) => [item.sourceItemId, item])
       );
@@ -2311,6 +2341,8 @@ export default class CreditCardReconciliationSessionService {
 
         if (resolution) {
           const resolvedAt = new Date();
+          const transactionIds = itemResult.linkedFixed?.transactionId
+            ? [itemResult.linkedFixed.transactionId] : itemResult.createdTransactionIds;
           await tx.creditCardReconciliationItem.update({
             where: { id: persistedItem.id },
             data: {
@@ -2318,26 +2350,24 @@ export default class CreditCardReconciliationSessionService {
               resolutionData: asJson({
                 action: selectedInput.action || 'IMPORT',
                 mode: itemResult.status === 'SKIPPED_DUPLICATE' ? 'ALREADY_MAPPED'
+                  : itemResult.linkedFixed?.transactionId ? 'MATERIALIZED_FIXED'
                   : itemResult.linkedFixed ? 'MANUAL_PROJECTED' : null,
                 ...itemResult.linkedFixed,
                 description: selectedInput.description || null,
                 categoryId: selectedInput.categoryId || null,
                 creditKind: selectedInput.creditKind || null,
                 refundOfTransactionId: selectedInput.refundOfTransactionId || null,
-                transactionIds: itemResult.createdTransactionIds
+                transactionIds
               }),
               resolvedAt,
               resolvedBy: context.userId
             }
           });
 
-          if (
-            resolution === CreditCardReconciliationItemResolution.IMPORTED &&
-            itemResult.createdTransactionIds.length > 0
-          ) {
+          if (transactionIds.length > 0) {
             const transactions = await tx.financialTransaction.findMany({
               where: {
-                id: { in: itemResult.createdTransactionIds },
+                id: { in: transactionIds },
                 companyId: context.companyId,
                 ...(selectedInput.action === 'IMPORT_CREDIT'
                   ? {
@@ -2360,7 +2390,7 @@ export default class CreditCardReconciliationSessionService {
                 }
               }
             });
-            if (transactions.length !== itemResult.createdTransactionIds.length) {
+            if (transactions.length !== transactionIds.length) {
               throw new Error('Lancamento criado nao pode ser vinculado ao item da conciliacao');
             }
 
@@ -2401,7 +2431,8 @@ export default class CreditCardReconciliationSessionService {
             details: asJson({
               resultStatus: itemResult.status,
               message: itemResult.message,
-              createdTransactionIds: itemResult.createdTransactionIds
+              createdTransactionIds: itemResult.createdTransactionIds,
+              linkedFixed: itemResult.linkedFixed
             })
           }
         });
@@ -2443,7 +2474,8 @@ export default class CreditCardReconciliationSessionService {
     await FinancialTransactionService.publishDeferredCommitEffects({
       companyId: context.companyId,
       accountIds: [context.accountId],
-      transactionIds: result.results.flatMap((item) => item.createdTransactionIds),
+      transactionIds: result.results.flatMap(item =>
+        item.linkedFixed?.transactionId ? [item.linkedFixed.transactionId] : item.createdTransactionIds),
       operation: 'CREDIT_CARD_RECONCILIATION'
     });
 

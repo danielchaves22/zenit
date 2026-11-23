@@ -1,6 +1,7 @@
 import { CreditCardInvoiceStatus, Prisma, TransactionStatus, type FinancialTransaction } from '@prisma/client';
 import CreditCardStatementReconciliationService, { __private__, addReconciliationDescriptionSuggestions } from '../../src/services/credit-card-statement-reconciliation.service';
 import FinancialTransactionService from '../../src/services/financial-transaction.service';
+import FixedTransactionService from '../../src/services/fixed-transaction.service';
 import * as descriptionSuggestions from '../../src/services/reconciliation-description-suggestion.service';
 import { logger } from '../../src/utils/logger';
 import type { CreditCardDescriptionHistoryOption } from '../../src/services/credit-card-reconciliation-history.service';
@@ -122,6 +123,33 @@ function fixedCommitFixture(hasReceipt: boolean) {
 }
 
 describe('Credit card statement reconciliation service', () => {
+  it('uses a newly materialized charge at its statement amount as evidence for other imports in the same batch', async () => {
+    const { params } = fixedCommitFixture(false);
+    const csv = 'date,title,amount\n2026-11-10,Plano exterior,121.00\n2026-12-10,Outra linha,121.00';
+    const [subscription, charge] = __private__.parseNubankStatementText(csv, params.fileName).items;
+    const materialize = jest.spyOn(FixedTransactionService, 'reconcileCardOccurrenceTx')
+      .mockResolvedValue({ transactionId: 72, created: true, amountChanged: false });
+    const importCharge = jest.spyOn(FinancialTransactionService, 'createTransaction');
+    try {
+      const result = await CreditCardStatementReconciliationService.commit({
+        ...params, fileBase64: Buffer.from(csv).toString('base64'),
+        selectedItems: [
+          { itemId: charge.id, action: 'IMPORT', description: 'Outra linha', categoryId: 1 },
+          { itemId: subscription.id, action: 'LINK_FIXED', fixedTemplateId: 8, occurrenceKey: '8:2026-12', applyStatementAmount: true }
+        ]
+      });
+      expect(result.results).toEqual([
+        expect.objectContaining({ status: 'SKIPPED_DUPLICATE', createdTransactionIds: [] }),
+        expect.objectContaining({ status: 'LINKED_FIXED', createdTransactionIds: [72], linkedFixed: expect.objectContaining({ transactionId: 72 }) })
+      ]);
+      expect(materialize).toHaveBeenCalledWith(params.existingTx, expect.objectContaining({ amount: '121' }));
+      expect(importCharge).not.toHaveBeenCalled();
+    } finally {
+      materialize.mockRestore();
+      importCharge.mockRestore();
+    }
+  });
+
   it.each([
     { sameBatch: false, hasReceipt: false }, { sameBatch: true, hasReceipt: false }, { sameBatch: true, hasReceipt: true }
   ])('ranks imports against actual receipts and unclaimed projections (sameBatch=$sameBatch, actualReceipt=$hasReceipt)', async ({ sameBatch, hasReceipt }) => {
@@ -130,7 +158,7 @@ describe('Credit card statement reconciliation service', () => {
     try {
       const result = await CreditCardStatementReconciliationService.commit({
         ...params,
-        claimedFixedOccurrenceKeys: sameBatch ? [] : ['8:2026-12'],
+        claimedFixedOccurrences: sameBatch ? new Map() : new Map([['8:2026-12', subscription.id]]),
         selectedItems: [
           { itemId: charge.id, action: 'IMPORT', description: 'Cobranca distinta', categoryId: 1 },
           ...(sameBatch ? [{ itemId: subscription.id, action: 'LINK_FIXED' as const, fixedTemplateId: 8, occurrenceKey: '8:2026-12' }] : [])
@@ -186,6 +214,10 @@ describe('Credit card statement reconciliation service', () => {
       accountId: 1, sessionId: 2, expectedRevision: 1, selectedItems: [row]
     }).success;
     expect(valid(selection)).toBe(true);
+    expect(valid({ ...selection, applyStatementAmount: true, fixedTransactionId: 12 })).toBe(true);
+    expect(valid({ ...selection, fixedTransactionId: 12 })).toBe(false);
+    expect(valid({ itemId: 'row', action: 'LINK_FIXED', applyStatementAmount: true })).toBe(false);
+    expect(valid({ ...selection, applyStatementAmount: 'true' })).toBe(false);
     expect(valid({ itemId: 'row', action: 'LINK_FIXED' })).toBe(true);
     expect(valid({ ...selection, occurrenceKey: undefined })).toBe(false);
     expect(valid({ ...selection, occurrenceKey: '9:2026-12' })).toBe(false);

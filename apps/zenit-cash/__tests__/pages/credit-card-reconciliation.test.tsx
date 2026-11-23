@@ -1725,7 +1725,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     }
   )
 
-  it('trata retry de alias fixo ja mapeado como sucesso terminal idempotente', async () => {
+  it('avisa quando um servidor anterior salva somente o vínculo e permite confirmar novamente', async () => {
     const resultMessage = 'A alias desta fixa ja estava mapeada'
     const linkedWorkspace = {
       ...buildWorkspace({
@@ -1764,11 +1764,11 @@ describe('CreditCardReconciliationPage comparison views', () => {
 
     const user = await renderAnalyzedPage()
     const fixedCard = screen.getByText('Netflix no arquivo').closest('section') as HTMLElement
-    await user.click(within(fixedCard).getByRole('button', { name: 'Vincular a fixa' }))
+    await user.click(within(fixedCard).getByRole('button', { name: /Vincular e lançar R\$\s*39,90/ }))
 
-    await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(resultMessage, 'success'))
-    expect(addToastMock).not.toHaveBeenCalledWith(resultMessage, 'error')
+    await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(expect.stringContaining('aplicação do valor do extrato ainda está pendente'), 'error'))
     expect(await screen.findByText('Fixa vinculada')).toBeInTheDocument()
+    expect(within(fixedCard).getByRole('button', { name: /Vincular e lançar/ })).toBeEnabled()
     const resultRegion = screen.getByRole('region', {
       name: 'Resultado do ultimo processamento'
     })
@@ -2028,20 +2028,28 @@ describe('CreditCardReconciliationPage comparison views', () => {
       isFixedProjection: view === 'detalhada' ? true : undefined, description: 'Dropbox Plus (Mensal)',
       fixedTemplateId: 45, occurrenceKey: '45:2026-09', amount: '69.00' }
     const key = 'projected-fixed:45:45:2026-09'
+    const materialized = { ...fixed, id: 912, amount: '68.76', recurringTransactionId: 45, fixedTemplateId: null,
+      isProjected: false, isFixedProjection: false }
+    let saved = false
     const previousGet = vi.mocked(api.get).getMockImplementation()!
     vi.mocked(api.get).mockImplementation((url: string) => url === '/financial/credit-card-invoices/101'
-      ? Promise.resolve({ data: { ...targetInvoiceDetail, transactions: [...targetInvoiceDetail.transactions, fixed] } })
+      ? Promise.resolve({ data: { ...targetInvoiceDetail, transactions: [...targetInvoiceDetail.transactions, saved ? materialized : fixed] } })
       : previousGet(url))
     const sourcePreview = { ...preview, items: preview.items.map(item => item.id === 'bank-pending'
       ? { ...item, sourceDescription: 'Paypal *Dropbox', amount: '68.76',
           ...(view === 'lado a lado' ? { status: 'SIMILAR', matchedTransactions: [fixedMatch] } : {}) }
       : item) }
     const linked = buildWorkspace({ sourcePreview, revision: 2, resolutions: { 'bank-pending': 'LINKED_FIXED' },
-      resolutionData: { 'bank-pending': { fixedTemplateId: 45, occurrenceKey: fixed.occurrenceKey, matchKey: key } } })
-    vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) }).mockResolvedValueOnce({ data: linked })
+      transactionIds: { 'bank-pending': [912] },
+      resolutionData: { 'bank-pending': { mode: 'MATERIALIZED_FIXED', transactionId: 912,
+        fixedTemplateId: 45, occurrenceKey: fixed.occurrenceKey, matchKey: 'transaction:912' } } })
+    vi.mocked(api.post).mockResolvedValueOnce({ data: buildWorkspace({ sourcePreview }) }).mockImplementationOnce(async () => {
+      saved = true
+      return { data: linked }
+    })
     const user = await renderAnalyzedPage()
     const detailed = () => within(screen.getByText('Paypal *Dropbox').closest('section')!)
-    const button = { name: 'Vincular a fixa' }
+    const button = { name: /Vincular e lançar R\$\s*68,76/ }
     const counterpart = { name: 'Selecionar contraparte na fatura do Zenit' }
     const marketDraft = within(screen.getByText('Mercado no arquivo').closest('section')!).getByRole('textbox', { name: 'Descrição a lançar' })
     await user.clear(marketDraft)
@@ -2068,32 +2076,67 @@ describe('CreditCardReconciliationPage comparison views', () => {
     }
     expect(vi.mocked(api.post).mock.calls).toHaveLength(2)
     expect(api.post).toHaveBeenLastCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
-      expectedRevision: 1, selectedItems: [{ itemId: 'bank-pending', action: 'LINK_FIXED', fixedTemplateId: 45, occurrenceKey: fixed.occurrenceKey }]
+      expectedRevision: 1, selectedItems: [{ itemId: 'bank-pending', action: 'LINK_FIXED', applyStatementAmount: true,
+        fixedTemplateId: 45, occurrenceKey: fixed.occurrenceKey }]
     })
-    expect(detailed().getByText(fixed.description)).toBeVisible()
+    expect(await detailed().findByText(fixed.description)).toBeVisible()
+    expect(detailed().getByRole('link', { name: 'Abrir' })).toHaveAttribute('href', '/financial/transactions/912')
     expect(detailed().queryByRole('button', button)).not.toBeInTheDocument()
     const market = within(screen.getByText('Mercado no arquivo').closest('section')!)
     expect(market.getByRole('textbox', { name: 'Descrição a lançar' })).toHaveValue('Mercado revisado')
     expect(market.queryByRole('option', { name: /Dropbox Plus/ })).not.toBeInTheDocument()
+  }, 20_000)
+
+  it('permite materializar o vínculo antigo da fatura sem projetar outro mês com o mesmo modelo', async () => {
+    const linkedWorkspace = buildWorkspace({ revision: 4, resolutions: { 'bank-fixed': 'LINKED_FIXED' },
+      resolutionData: { 'bank-fixed': { action: 'LINK_FIXED', mode: 'MANUAL_PROJECTED',
+        fixedTemplateId: 77, occurrenceKey: fixedMatch.occurrenceKey, matchKey: fixedMatch.matchKey } } })
+    const previousGet = vi.mocked(api.get).getMockImplementation()!
+    vi.mocked(api.get).mockImplementation((url: string) => url === '/financial/credit-card-invoices/101'
+      ? Promise.resolve({ data: { ...targetInvoiceDetail, transactions: targetInvoiceDetail.transactions.slice(6) } })
+      : previousGet(url))
+    vi.mocked(api.post).mockResolvedValueOnce({ data: linkedWorkspace })
+    const user = await renderAnalyzedPage()
+    const linked = within(screen.getByText('Netflix no arquivo').closest('section')!)
+    await user.click(linked.getByRole('button', { name: /Vincular e lançar R\$\s*39,90/ }))
+    expect(api.post).toHaveBeenLastCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
+      expectedRevision: 4, selectedItems: [{ itemId: 'bank-fixed', action: 'LINK_FIXED', applyStatementAmount: true,
+        fixedTemplateId: 77, occurrenceKey: '77:2026-09' }]
+    })
   })
 
-  it('bloqueia projeções sem identidade ou duplicadas e mantém a confirmação de uma ocorrência materializada', async () => {
+  it.each(['detalhada', 'lado a lado'])('ajusta pelo ID a fixa já lançada, inclusive legada, na vista %s', async view => {
     const base = targetInvoiceDetail.transactions[5]
     const rows = [
       { ...base, description: 'Duplicada A' },
       { ...base, description: 'Duplicada B' },
       { ...base, description: 'Sem identidade', occurrenceKey: null },
-      { ...base, description: 'Mensalidade já lançada', id: 971, occurrenceKey: '93:2026-09', fixedTemplateId: 93 }
+      { ...base, description: 'Outro mês', occurrenceKey: '77:2026-10' },
+      { ...base, description: 'Mensalidade já lançada', id: 971, amount: '26.00', type: 'EXPENSE',
+        isProjected: false, isFixedProjection: false, recurringTransactionId: 93, fixedTemplateId: null,
+        installmentNumber: 1, totalInstallments: 1,
+        occurrenceKey: view === 'detalhada' ? '93:2026-09' : null }
     ]
     const previousGet = vi.mocked(api.get).getMockImplementation()!
     vi.mocked(api.get).mockImplementation((url: string) => url === '/financial/credit-card-invoices/101'
       ? Promise.resolve({ data: { ...targetInvoiceDetail, transactions: rows } }) : previousGet(url))
     const user = await renderAnalyzedPage()
     const pending = within(screen.getByText('Pendente no arquivo').closest('section')!)
-    expect(pending.queryByRole('option', { name: /Duplicada|Sem identidade/ })).not.toBeInTheDocument()
-    await user.selectOptions(pending.getByRole('combobox', { name: 'Selecionar contraparte na fatura do Zenit' }), 'transaction:971')
-    expect(pending.getByRole('button', { name: 'Confirmar correspondencia existente' })).toBeEnabled()
-    expect(pending.queryByRole('button', { name: 'Vincular a fixa' })).not.toBeInTheDocument()
+    expect(pending.queryByRole('option', { name: /Duplicada|Sem identidade|Outro mês/ })).not.toBeInTheDocument()
+    if (view === 'detalhada') {
+      await user.selectOptions(pending.getByRole('combobox', { name: 'Selecionar contraparte na fatura do Zenit' }), 'transaction:971')
+    } else {
+      await user.click(screen.getByRole('button', { name: 'Visualização lado a lado' }))
+      await user.click(getFileSelectionButton(screen.getByRole('region', { name: 'Itens do arquivo da fatura' }), 'bank-pending', /Pendente no arquivo/))
+      const systemRows = screen.getByRole('region', { name: 'Lançamentos da fatura no Zenit' })
+      await user.click(within(getZenitItem(systemRows, 'transaction:971')).getByRole('button'))
+    }
+    expect(screen.queryByRole('button', { name: 'Confirmar correspondencia existente' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Ajustar de R\$\s*26,00 para R\$\s*25,00 e vincular/ }))
+    expect(api.post).toHaveBeenLastCalledWith('/financial/credit-cards/1/reconciliation/sessions/301/commit', {
+      expectedRevision: 1, selectedItems: [{ itemId: 'bank-pending', action: 'LINK_FIXED', applyStatementAmount: true,
+        fixedTemplateId: 93, occurrenceKey: '93:2026-09', fixedTransactionId: 971 }]
+    })
   })
 
   it('confirma a contraparte visual selecionada como checkpoint persistido', async () => {
@@ -2393,7 +2436,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     ).toBeEnabled()
     expect(
       within(linkedCard).getByText(
-        /Remove o vínculo somente desta conciliação; a regra recorrente será mantida para os próximos meses\./
+        /a despesa já lançada permanece na fatura pelo valor gravado/
       )
     ).toBeInTheDocument()
 
@@ -2402,7 +2445,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await user.click(getFileSelectionButton(fileRegion, 'bank-fixed', /Netflix no arquivo/))
     expect(
       screen.getByText(
-        /Remove o vínculo somente desta conciliação; a regra recorrente será mantida para os próximos meses\./
+        /a despesa já lançada permanece na fatura pelo valor gravado/
       )
     ).toBeInTheDocument()
 
@@ -2413,7 +2456,7 @@ describe('CreditCardReconciliationPage comparison views', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'O vínculo será removido somente desta conciliação. A regra recorrente será mantida para os próximos meses.'
+        'Remover o vínculo preserva a despesa da fatura pelo valor gravado e a recorrência dos próximos meses.'
       )
     ).toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
@@ -2449,9 +2492,9 @@ describe('CreditCardReconciliationPage comparison views', () => {
     await user.click(screen.getByRole('button', { name: 'Visualização detalhada' }))
     const unlinkedCard = screen.getByText('Netflix no arquivo').closest('section') as HTMLElement
     expect(within(unlinkedCard).getByText('1 sugestão de correspondência')).toBeInTheDocument()
-    expect(within(unlinkedCard).getByRole('button', { name: 'Vincular a fixa' })).toBeEnabled()
+    expect(within(unlinkedCard).getByRole('button', { name: /Vincular e lançar/ })).toBeEnabled()
     expect(addToastMock).toHaveBeenCalledWith(
-      'Vínculo removido desta conciliação. A regra recorrente foi mantida para os próximos meses.',
+      'Vínculo removido. Os lançamentos da fatura e a recorrência foram preservados.',
       'success'
     )
   }, 20_000)

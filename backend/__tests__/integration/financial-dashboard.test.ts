@@ -432,6 +432,40 @@ describe('Financial dashboard', () => {
       { id: salary.id, description: 'Salary', amount: '1000.00', included: true }
     ]);
     expect(complete.transactions.some((row) => row.description === 'Future variable receipt')).toBe(false);
+    const calendar = await WorkspaceFinancialCalendarService.getContext(primaryCompanyId, params.at);
+    const clock = jest.spyOn(WorkspaceFinancialCalendarService, 'getContext').mockResolvedValue(calendar);
+    const access = { companyId: primaryCompanyId, accessibleAccountIds: [account.id] };
+    const september = await FinancialForecastService.getHubForecast({ month: '2026-09', limit: 1 }, access);
+    expect(september).toMatchObject({
+      ok: true, income: '1500.00', remainingIncome: '500.00', endingBalance: '5300.00',
+      fixedIncome: {
+        totalItems: 2, hasMore: true,
+        totals: { projected: '0.00', pending: '500.00', settled: '1000.00' },
+        items: [{ description: 'Rent received', projected: false, settled: false }]
+      }
+    });
+    const secondPage = await FinancialForecastService.getHubForecast({ month: '2026-09', page: 2, limit: 1 }, access);
+    if (!september.ok || !secondPage.ok) throw new Error('Falha ao consultar a previsão mensal');
+    expect(secondPage.fixedIncome).toMatchObject({
+      hasMore: false, totals: september.fixedIncome.totals,
+      items: [{ description: 'Salary', projected: false, settled: true }]
+    });
+    const october = await FinancialForecastService.getHubForecast({ month: '2026-10' }, access);
+    expect(october).toMatchObject({
+      remainingIncome: '1500.00', endingBalance: '6600.00',
+      fixedIncome: {
+        totalItems: 2, totals: { projected: '1500.00', pending: '0.00', settled: '0.00' },
+        items: [
+          { description: 'Salary', projected: true, settled: false },
+          { description: 'Rent received', projected: true, settled: false }
+        ]
+      }
+    });
+    const restricted = await FinancialForecastService.getHubForecast({ month: '2026-10' }, {
+      companyId: primaryCompanyId, accessibleAccountIds: [], accessFilter: { id: { in: [] } }
+    });
+    expect(restricted).toMatchObject({ income: '0.00', fixedIncome: { totalItems: 0, items: [] } });
+    clock.mockRestore();
     const withoutSalary = await FinancialForecastService.getForecast({
       ...params, options: { ...defaultForecastOptions, excludedIncomeIds: [salary.id] }
     });

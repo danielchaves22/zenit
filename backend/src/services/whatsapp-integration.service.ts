@@ -16,6 +16,8 @@ import { WhatsAppAudioError } from '../utils/whatsapp-audio';
 import { formatWhatsAppActionError } from '../utils/whatsapp-action-error';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import ToolExecutorService from './tool-executor.service';
+import FinancialForecastService from './financial-forecast.service';
+import UserFinancialAccountAccessService from './user-financial-account-access.service';
 import AssistantOrchestratorService from './assistant-orchestrator.service';
 import AssistantSessionService from './assistant-session.service';
 import AssistantMessageService from './assistant-message.service';
@@ -31,7 +33,7 @@ import { logger } from '../utils/logger';
 
 export type HubCashReply = { text: string; buttons?: WhatsAppReplyButton[]; list?: WhatsAppReplyList };
 const hubReplies = new AsyncLocalStorage<HubCashReply[]>();
-const HUB_READ_TOOLS = new Set(['get_financial_overview', 'get_due_obligations', 'get_credit_card_overview', 'get_recent_transactions', 'get_realized_expenses']);
+const HUB_READ_TOOLS = new Set(['get_financial_overview', 'get_financial_forecast', 'get_due_obligations', 'get_credit_card_overview', 'get_recent_transactions', 'get_realized_expenses']);
 
 
 type CompanyChannelAccess = {
@@ -346,6 +348,11 @@ export default class WhatsAppIntegrationService {
     const current = await this.getHubBinding(waId, workspaceId);
     if (!current) throw new Error('Conexao Cash ausente ou sem permissao.');
     const { binding, role } = current;
+    if (tool === 'get_financial_forecast') {
+      const access = await UserFinancialAccountAccessService.getDashboardAccess(binding.userId, role, binding.activeCompanyId);
+      const data = await FinancialForecastService.getHubForecast(args, access);
+      return { data, workspace: await HubWorkspaceService.description(binding) };
+    }
     const context = await ensureBindingCompanyContext({ bindingId: binding.id, companyId: binding.activeCompanyId, userId: binding.userId });
     const result = await ToolExecutorService.executeTool(tool, args, {
       sessionId: context.assistantSessionId, turnId: 0, userId: binding.userId,

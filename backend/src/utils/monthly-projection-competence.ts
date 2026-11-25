@@ -1,4 +1,4 @@
-import { formatFinancialMonthKey } from './financial-calendar';
+import { formatFinancialDateKey, formatFinancialMonthKey } from './financial-calendar';
 
 export type MonthlyProjectionCompetenceBasis =
   | 'TRANSACTION_DUE_DATE'
@@ -20,6 +20,7 @@ export type MonthlyProjectionInstallment = Readonly<{
 
 export type MonthlyProjectionCompetence = Readonly<{
   month: string;
+  date: string;
   basis: MonthlyProjectionCompetenceBasis;
   installment: MonthlyProjectionInstallment | null;
 }>;
@@ -80,6 +81,7 @@ export function resolveMonthlyProjectionCompetence(
 
     return {
       month: formatFinancialMonthKey(competenceDate),
+      date: formatFinancialDateKey(competenceDate),
       basis: isCreditCardOccurrence
         ? 'CREDIT_CARD_INVOICE_DUE_DATE'
         : 'FIXED_OCCURRENCE_DATE',
@@ -90,6 +92,7 @@ export function resolveMonthlyProjectionCompetence(
   if (input.kind === 'MATERIALIZED_CREDIT_CARD') {
     return {
       month: formatFinancialMonthKey(input.invoiceDueDate),
+      date: formatFinancialDateKey(input.invoiceDueDate),
       basis: 'CREDIT_CARD_INVOICE_DUE_DATE',
       installment: hasMultipleInstallments(input)
         ? buildInstallment('CREDIT_CARD_INSTALLMENT', input, input.purchaseGroupId)
@@ -108,6 +111,7 @@ export function resolveMonthlyProjectionCompetence(
 
   return {
     month: formatFinancialMonthKey(competenceDate),
+    date: formatFinancialDateKey(competenceDate),
     basis: input.dueDate ? 'TRANSACTION_DUE_DATE' : 'TRANSACTION_DATE',
     installment
   };

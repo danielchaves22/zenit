@@ -12,6 +12,7 @@ function row(
   return {
     competence: {
       month,
+      date: month + '-01',
       basis: 'TRANSACTION_DUE_DATE',
       installment: null
     },

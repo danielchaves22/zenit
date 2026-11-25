@@ -99,4 +99,15 @@ describe('Cash first-party Hub bridge', () => {
     jest.mocked(Workspaces.select).mockRejectedValue(new Error('forbidden'));
     expect((await signed({ operation: 'select_workspace', sender: body.sender, workspaceId: 99 }).send()).status).toBe(422);
   });
+  it('requires an authorized workspace to read the forecast', async () => {
+    const body = { operation: 'query', sender: '5544999990000', tool: 'get_financial_forecast',
+      workspaceId: 12, args: { month: '2026-12', page: 2, limit: 5 } };
+    jest.mocked(Service.getHubBinding).mockResolvedValue(null);
+    expect((await signed(body).send()).status).toBe(403);
+    expect(Service.queryForHub).not.toHaveBeenCalled();
+    jest.mocked(Service.getHubBinding).mockResolvedValue({ binding: { userId: 7 } } as any);
+    expect((await signed(body).send()).status).toBe(200);
+    expect(Service.getHubBinding).toHaveBeenCalledWith(body.sender, 12);
+    expect(Service.queryForHub).toHaveBeenCalledWith(body.sender, body.tool, body.args, 12);
+  });
 });

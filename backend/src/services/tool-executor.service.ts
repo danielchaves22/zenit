@@ -1865,7 +1865,7 @@ export default class ToolExecutorService {
           status: item.status,
           accountName: item.fromAccount?.name || item.toAccount?.name || null,
           categoryName: item.category?.name || null,
-          isProjected: Boolean(item.isProjected),
+          isProjected: Boolean(item.isProjected || item.isVirtual),
           isCreditCardInvoiceSummary: Boolean(item.isCreditCardInvoiceSummary),
           invoiceReference: formatCreditCardReference(
             item.creditCardInvoice?.referenceYear,

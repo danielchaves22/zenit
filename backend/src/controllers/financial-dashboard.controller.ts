@@ -25,27 +25,8 @@ function getDashboardUserContext(req: Request): {
 async function resolveDashboardAccess(req: Request) {
   const { companyId, userId, role } = getDashboardUserContext(req);
 
-  const accessFilter =
-    role === 'ADMIN' || role === 'SUPERUSER'
-      ? undefined
-      : await UserFinancialAccountAccessService.getAccessibleTransactionFilter(
-          userId,
-          role,
-          companyId
-        );
-
-  const accessibleAccountIds =
-    role === 'ADMIN' || role === 'SUPERUSER'
-      ? undefined
-      : await UserFinancialAccountAccessService.getUserAccessibleAccounts(userId, role, companyId);
-
-  return {
-    companyId,
-    userId,
-    role,
-    accessFilter,
-    accessibleAccountIds
-  };
+  const access = await UserFinancialAccountAccessService.getDashboardAccess(userId, role, companyId);
+  return { ...access, userId, role };
 }
 
 export async function getFinancialForecast(req: Request, res: Response) {

@@ -13,6 +13,7 @@ describe('Monthly projection competence', () => {
 
     expect(competence).toEqual({
       month: '2026-10',
+      date: '2026-10-05',
       basis: 'TRANSACTION_DUE_DATE',
       installment: {
         kind: 'NON_CARD_INSTALLMENT',
@@ -34,6 +35,7 @@ describe('Monthly projection competence', () => {
 
     expect(competence).toEqual({
       month: '2026-11',
+      date: '2026-11-10',
       basis: 'CREDIT_CARD_INVOICE_DUE_DATE',
       installment: {
         kind: 'CREDIT_CARD_INSTALLMENT',
@@ -56,6 +58,7 @@ describe('Monthly projection competence', () => {
 
     expect(competence).toEqual({
       month: '2026-12',
+      date: '2026-12-15',
       basis: 'TRANSACTION_DATE',
       installment: {
         kind: 'FINITE_SERIES',
@@ -75,6 +78,7 @@ describe('Monthly projection competence', () => {
 
     expect(competence).toEqual({
       month: '2026-10',
+      date: '2026-10-10',
       basis: 'CREDIT_CARD_INVOICE_DUE_DATE',
       installment: null
     });

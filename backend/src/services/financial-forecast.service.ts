@@ -1,6 +1,8 @@
 import VariableExpenseProjectionService from './variable-expense-projection.service';
 import MonthlyCategoryBudgetService from './monthly-category-budget.service';
 import { Prisma } from '@prisma/client';
+import { z } from 'zod';
+import { financialForecastSchema } from '../validators/financial-dashboard.validator';
 import FinancialDashboardService from './financial-dashboard.service';
 import WorkspaceFinancialCalendarService from './workspace-financial-calendar.service';
 import {
@@ -11,6 +13,7 @@ import {
 import {
   calculateForecastMonth,
   cashEffect,
+  defaultForecastOptions,
   ForecastOptions,
   forecastSource,
   isFixedForecastIncome,
@@ -29,6 +32,19 @@ type Access = {
   accessFilter?: Prisma.FinancialTransactionWhereInput;
 };
 
+type ForecastRequest = Access & { month?: string; options: ForecastOptions; at?: Date };
+const hubForecastQuery = z.object({
+  month: financialForecastSchema.shape.month.nullish(),
+  page: z.number().int().min(1).max(10000).nullish(),
+  limit: z.number().int().min(1).max(20).nullish()
+}).strict();
+
+class ForecastPeriodError extends Error {
+  constructor(readonly currentMonth: string, readonly maximumMonth: string) {
+    super('Escolha um mês entre o atual e os próximos 24 meses');
+  }
+}
+
 function serializeRow(row: MonthlyProjectionKnownRow) {
   return {
     transactionId: row.transactionId ?? null,
@@ -45,9 +61,7 @@ function serializeRow(row: MonthlyProjectionKnownRow) {
 }
 
 export default class FinancialForecastService {
-  static async getForecast(
-    params: Access & { month?: string; options: ForecastOptions; at?: Date }
-  ) {
+  private static async calculateScenario(params: ForecastRequest) {
     const calendar = await WorkspaceFinancialCalendarService.getContext(
       params.companyId,
       params.at
@@ -55,7 +69,7 @@ export default class FinancialForecastService {
     const month = params.month ?? calendar.currentMonthKey;
     const requestedDate = parseFinancialMonthKey(month);
     if (month < calendar.currentMonthKey || month > calendar.maximumPlanningMonthKey) {
-      throw new Error('Escolha um mês entre o atual e os próximos 24 meses');
+      throw new ForecastPeriodError(calendar.currentMonthKey, calendar.maximumPlanningMonthKey);
     }
     const [currentBalance, priorPeriodRows, variableContext] = await Promise.all([
       FinancialDashboardService.getCurrentBalance(params),
@@ -126,6 +140,99 @@ export default class FinancialForecastService {
     }
     if (!selected) throw new Error('Não foi possível calcular a previsão');
     const p = selected.projection;
+    const summary = {
+      month,
+      currentMonth: calendar.currentMonthKey,
+      maximumMonth: calendar.maximumPlanningMonthKey,
+      isCurrentMonth: p.isCurrentMonth,
+      currentBalance: money(currentBalance),
+      openingBalance: money(p.carryOverAmount),
+      endingBalance: money(p.projectedEndingBalance),
+      income: money(p.totals.incomeTotal),
+      expense: money(p.totals.expenseTotal),
+      result: money(p.totals.incomeTotal.minus(p.totals.expenseTotal)),
+      remainingIncome: money(p.totals.remainingIncomeTotal),
+      remainingExpense: money(
+        p.totals.remainingCommittedExpenseTotal.plus(p.totals.variableProjectedExpenseTotal)
+      ),
+      sources: selected.sources.map((source) => ({
+        ...source,
+        income: money(source.income),
+        expense: money(source.expense)
+      })),
+      overdue: {
+        included: params.options.includeOverdue,
+        cashEffect: money(overdueCashEffect),
+        income: money(
+          selectedOverdue
+            .filter((row) => row.type === 'INCOME')
+            .reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0))
+        ),
+        expense: money(
+          selectedOverdue
+            .filter((row) => row.type === 'EXPENSE')
+            .reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0))
+        ),
+      }
+    };
+    return { summary, selected, selectedRows, incomeRows, overdueRows, history, cards, preference, timeline };
+  }
+
+  static async getHubForecast(args: Record<string, unknown>, access: Access) {
+    const parsed = hubForecastQuery.safeParse(args);
+    if (!parsed.success) {
+      if (parsed.error.issues.some((issue) => issue.path[0] === 'month')) {
+        return { ok: false as const, code: 'invalid_period', message: 'Informe o mês no formato YYYY-MM.' };
+      }
+      return { ok: false as const, code: 'invalid_arguments', message: 'Use mês, página de 1 a 10000 e limite de 1 a 20.' };
+    }
+    const { month, page, limit } = parsed.data;
+    try {
+      const { summary, selectedRows } = await this.calculateScenario({
+        ...access, month: month ?? undefined, options: defaultForecastOptions
+      });
+      const fixedIncome = selectedRows.filter(isFixedForecastIncome).sort((a, b) =>
+        Number(a.isSettled) - Number(b.isSettled) ||
+        a.competence.date.localeCompare(b.competence.date) ||
+        (a.recurringTransactionId ?? 0) - (b.recurringTransactionId ?? 0) ||
+        (a.transactionId ?? 0) - (b.transactionId ?? 0)
+      );
+      const totals = { projected: new Prisma.Decimal(0), pending: new Prisma.Decimal(0), settled: new Prisma.Decimal(0) };
+      for (const row of fixedIncome) {
+        const state = row.isSettled ? 'settled' : row.source === 'FIXED_PROJECTED' ? 'projected' : 'pending';
+        totals[state] = totals[state].plus(row.amount);
+      }
+      const pageNumber = page ?? 1;
+      const pageSize = limit ?? 20;
+      const offset = (pageNumber - 1) * pageSize;
+      return {
+        ok: true as const, ...summary,
+        fixedIncome: {
+          page: pageNumber, limit: pageSize, totalItems: fixedIncome.length,
+          hasMore: offset + pageSize < fixedIncome.length,
+          totals: { projected: money(totals.projected), pending: money(totals.pending), settled: money(totals.settled) },
+          items: fixedIncome.slice(offset, offset + pageSize).map((row) => ({
+            description: row.description ?? row.categoryName,
+            date: row.competence.date,
+            amount: money(row.amount),
+            projected: row.source === 'FIXED_PROJECTED',
+            settled: row.isSettled
+          }))
+        }
+      };
+    } catch (error) {
+      if (error instanceof ForecastPeriodError) {
+        return { ok: false as const, code: 'invalid_period', message: error.message,
+          currentMonth: error.currentMonth, maximumMonth: error.maximumMonth };
+      }
+      throw error;
+    }
+  }
+
+  static async getForecast(params: ForecastRequest) {
+    const { summary, selected, selectedRows, incomeRows, overdueRows, history, cards, preference, timeline } =
+      await this.calculateScenario(params);
+    const month = summary.month;
     const incomes = new Map<
       number,
       { id: number; description: string; amount: Prisma.Decimal; included: boolean }
@@ -142,33 +249,15 @@ export default class FinancialForecastService {
       incomes.set(income.id, income);
     }
     return {
-      month,
-      currentMonth: calendar.currentMonthKey,
-      maximumMonth: calendar.maximumPlanningMonthKey,
+      ...summary,
       options: params.options,
       habitual: { configured: preference.configured, categoryIds: preference.categoryIds },
-      budgets: await MonthlyCategoryBudgetService.compareProjection({ ...params, month, projection: p }),
-      isCurrentMonth: p.isCurrentMonth,
-      currentBalance: money(currentBalance),
-      openingBalance: money(p.carryOverAmount),
-      endingBalance: money(p.projectedEndingBalance),
-      income: money(p.totals.incomeTotal),
-      expense: money(p.totals.expenseTotal),
-      result: money(p.totals.incomeTotal.minus(p.totals.expenseTotal)),
-      remainingIncome: money(p.totals.remainingIncomeTotal),
-      remainingExpense: money(
-        p.totals.remainingCommittedExpenseTotal.plus(p.totals.variableProjectedExpenseTotal)
-      ),
+      budgets: await MonthlyCategoryBudgetService.compareProjection({ ...params, month, projection: selected.projection }),
       history: {
         months: history.months,
         requestedMonths: params.options.historyMonths,
         uncategorizedCount: history.uncategorizedCount
       },
-      sources: selected.sources.map((source) => ({
-        ...source,
-        income: money(source.income),
-        expense: money(source.expense)
-      })),
       incomes: [...incomes.values()]
         .sort((a, b) => a.description.localeCompare(b.description) || a.id - b.id)
         .map((income) => ({ ...income, amount: money(income.amount) })),
@@ -185,18 +274,7 @@ export default class FinancialForecastService {
         included: isForecastRowIncluded(row, params.options)
       })),
       overdue: {
-        included: params.options.includeOverdue,
-        cashEffect: money(overdueCashEffect),
-        income: money(
-          selectedOverdue
-            .filter((row) => row.type === 'INCOME')
-            .reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0))
-        ),
-        expense: money(
-          selectedOverdue
-            .filter((row) => row.type === 'EXPENSE')
-            .reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0))
-        ),
+        ...summary.overdue,
         items: overdueRows.map((row) => ({
           ...serializeRow(row),
           included: params.options.includeOverdue && isForecastRowIncluded(row, params.options)

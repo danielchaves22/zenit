@@ -4,6 +4,13 @@ import { logger } from '../utils/logger';
 
 
 export default class UserFinancialAccountAccessService {
+  static async getDashboardAccess(userId: number, role: string, companyId: number) {
+    if (role === 'ADMIN' || role === 'SUPERUSER') {
+      return { companyId, accessibleAccountIds: undefined, accessFilter: undefined };
+    }
+    const accessibleAccountIds = await this.getUserAccessibleAccounts(userId, role, companyId);
+    return { companyId, accessibleAccountIds, accessFilter: this.buildTransactionFilter(accessibleAccountIds) };
+  }
   
   /**
    * Verifica se um usuário tem acesso a uma conta específica
@@ -251,7 +258,10 @@ export default class UserFinancialAccountAccessService {
     companyId: number
   ): Promise<any> {
     const accessibleAccountIds = await this.getUserAccessibleAccounts(userId, userRole, companyId);
+    return this.buildTransactionFilter(accessibleAccountIds);
+  }
 
+  private static buildTransactionFilter(accessibleAccountIds: number[]) {
     // Filtro para transações que envolvem contas acessíveis
     // ou não possuem conta associada.
     return {

@@ -34,7 +34,7 @@ const fact = (
   categoryId: 1,
   categoryName: 'Alimentação',
   categoryColor: '#fff',
-  competence: { month: '2026-09', basis: 'TRANSACTION_DUE_DATE', installment: null },
+  competence: { month: '2026-09', date: '2026-09-01', basis: 'TRANSACTION_DUE_DATE', installment: null },
   isSettled: false,
   categoryAggregationState: 'PENDING',
   ...extra
@@ -50,6 +50,7 @@ const knownRows = [
   fact('AD_HOC_MATERIALIZED', 30, {
     competence: {
       month: '2026-09',
+      date: '2026-09-01',
       basis: 'TRANSACTION_DUE_DATE',
       installment: { kind: 'NON_CARD_INSTALLMENT', number: 1, total: 3, seriesId: 'plan' }
     }

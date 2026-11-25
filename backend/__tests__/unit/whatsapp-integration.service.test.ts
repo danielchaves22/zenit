@@ -32,6 +32,8 @@ import { draftIntent, draftTextAssignment } from '../../src/utils/whatsapp-draft
 import type { PendingAction } from '@zenit/assistant-contracts';
 import { logger } from '../../src/utils/logger';
 import Audio from '../../src/services/whatsapp-audio.service';
+import FinancialForecastService from '../../src/services/financial-forecast.service';
+import UserFinancialAccountAccessService from '../../src/services/user-financial-account-access.service';
 import { WhatsAppAudioError } from '../../src/utils/whatsapp-audio';
 
 const db = prisma as any;
@@ -80,6 +82,31 @@ describe('WhatsApp native feedback and decisions', () => {
       telemetry: { model: 'gpt-transcribe', bytes: 1000, latencyMs: 100 } });
   });
   afterEach(() => { jest.useRealTimers(); });
+
+  it('uses the selected workspace and effective account grants for forecasts without creating a session', async () => {
+    jest.mocked(Users.getUserCompanyContext).mockResolvedValue({ role: 'USER' } as any);
+    const grants = jest.spyOn(UserFinancialAccountAccessService, 'getUserAccessibleAccounts').mockResolvedValue([]);
+    const forecast = jest.spyOn(FinancialForecastService, 'getHubForecast')
+      .mockResolvedValue({ ok: false, code: 'invalid_period', message: 'Mês inválido.' });
+    try {
+      const args = { month: '2025-01' };
+      const result = await WhatsAppIntegrationService.queryForHub(binding.waId, 'get_financial_forecast', args, 12);
+      expect(grants).toHaveBeenCalledWith(binding.userId, 'USER', 12);
+      expect(forecast).toHaveBeenCalledWith(args, expect.objectContaining({
+        companyId: 12, accessibleAccountIds: [], accessFilter: { OR: expect.any(Array) }
+      }));
+      expect(result.workspace.id).toBe(12);
+      expect(db.whatsAppBindingCompanyContext.findUnique).not.toHaveBeenCalled();
+      expect(db.whatsAppUserBinding.update).not.toHaveBeenCalled();
+      jest.mocked(AppAccess.hasEffectiveAccess).mockResolvedValue(false);
+      await expect(WhatsAppIntegrationService.queryForHub(binding.waId, 'get_financial_forecast', {}, 12))
+        .rejects.toThrow('sem permissao');
+      expect(forecast).toHaveBeenCalledTimes(1);
+    } finally {
+      grants.mockRestore();
+      forecast.mockRestore();
+    }
+  });
 
   it('transcribes voice as a continuation of the same owned session and returns text/buttons', async () => {
     simulateActiveDraft = true;
